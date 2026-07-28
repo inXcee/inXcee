@@ -9,7 +9,7 @@ import LinesTab from './tabs/LinesTab.jsx'
 import PlanningTab from './tabs/PlanningTab.jsx'
 import ResourcesTab from './tabs/ResourcesTab.jsx'
 import PeopleTab from './tabs/PeopleTab.jsx'
-import ReportsTab from './tabs/ReportsTab.jsx'
+import AnalyticsTab from './tabs/AnalyticsTab.jsx'
 import OperationsTab from './tabs/OperationsTab.jsx'
 
 const TABS = [
@@ -113,7 +113,7 @@ export default function TransportPage() {
         {tab === 'lines' && <LinesTab view={lineView} onViewChange={setLineView} />}
         {tab === 'resources' && <ResourcesTab />}
         {tab === 'people' && <PeopleTab />}
-        {tab === 'analytics' && <ReportsTab />}
+        {tab === 'analytics' && <AnalyticsTab />}
       </section>
 
       {searchOpen && (

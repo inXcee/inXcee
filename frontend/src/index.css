@@ -247,6 +247,40 @@ h1, h2, h3, h4 { font-family: var(--display); letter-spacing: 2px; }
 .transport-share-card small { display: block; }
 .transport-share-card small { margin: 5px 0 9px; color: var(--text3); }
 .transport-share-card__actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.transport-analytics { display: grid; gap: 14px; }
+.transport-analytics__filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 8px; padding: 12px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
+.transport-analytics__filters label { display: grid; gap: 5px; font: 600 9px/1.2 var(--mono); letter-spacing: 1px; color: var(--text3); text-transform: uppercase; }
+.transport-analytics__filters input,
+.transport-analytics__filters select { width: 100%; min-height: 40px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface2); color: var(--text); }
+.transport-analytics__export { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 6px; }
+.transport-analytics__export span { margin-right: auto; color: var(--text3); font: 10px var(--mono); }
+.transport-analytics__export button,
+.transport-analytics__breakdowns button,
+.transport-share-card__actions button { min-height: 36px; padding: 7px 11px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface2); color: var(--text2); font: 700 9px var(--mono); letter-spacing: .6px; }
+.transport-analytics__kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 8px; }
+.transport-analytics__panel { overflow: hidden; padding: 16px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
+.transport-analytics__panel > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.transport-analytics__panel h2 { margin: 0; font-size: 14px; }
+.transport-analytics__panel header > span { color: var(--text3); font: 10px var(--mono); }
+.transport-analytics__trend { display: flex; align-items: flex-end; gap: 8px; min-height: 140px; overflow-x: auto; padding: 8px 2px 0; }
+.transport-analytics__trend > div { display: grid; justify-items: center; gap: 4px; min-width: 42px; }
+.transport-analytics__trend strong,
+.transport-analytics__trend small { font: 9px var(--mono); color: var(--text3); }
+.transport-analytics__trend i { width: 24px; border-radius: 6px 6px 2px 2px; background: linear-gradient(var(--accent), var(--blue)); }
+.transport-analytics__breakdowns { align-items: flex-start !important; flex-wrap: wrap; }
+.transport-analytics__breakdowns nav { display: flex; flex-wrap: wrap; gap: 4px; }
+.transport-analytics__breakdowns button.is-active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--surface2)); color: var(--accent); }
+.transport-analytics__table-wrap { overflow: auto; max-height: 440px; }
+.transport-analytics table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.transport-analytics th { position: sticky; top: 0; z-index: 1; padding: 9px; background: var(--surface2); color: var(--text3); text-align: left; font: 700 9px var(--mono); letter-spacing: .6px; }
+.transport-analytics td { padding: 10px 9px; border-top: 1px solid var(--border); color: var(--text2); }
+.transport-analytics__empty,
+.transport-analytics__loading { padding: 36px; text-align: center; color: var(--text3); }
+@media (max-width: 600px) {
+  .transport-analytics__filters { grid-template-columns: 1fr 1fr; }
+  .transport-analytics__kpis { grid-template-columns: repeat(2, 1fr); }
+  .transport-analytics__panel { padding: 12px; }
+}
 .staff-directory-table .staff-directory-group-row td strong { float: right; color: var(--text3); font-size: 8px; }
 .staff-compare-table th:first-child,
 .staff-compare-table td:first-child { position: sticky; left: 0; z-index: 2; background: var(--surface); }

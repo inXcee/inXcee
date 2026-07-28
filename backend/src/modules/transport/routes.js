@@ -24,6 +24,12 @@ import { getWorkSite, saveWorkSite } from './workSite.js'
 import * as planning from './planning-service.js'
 import * as operations from './operations-service.js'
 import * as driverAccess from './driver-access.js'
+import {
+  createAnalyticsCsv,
+  createAnalyticsWorkbook,
+  getTransportAnalytics,
+  writeAnalyticsPdf,
+} from './analytics-service.js'
 
 const WORK_SITE_NAME = 'Filyos Doğal Gaz İşleme Tesisi'
 const WORK_SITE_SHORT = 'FILYOS'
@@ -188,6 +194,35 @@ transportRouter.post('/plan/publish', ...mgr, validate(planPublishSchema), (req,
 })
 
 // ── V2 Operasyon komuta merkezi ve sefer yaşam döngüsü ──
+transportRouter.get('/analytics', ...mgr, (req, res) => {
+  try { res.json(getTransportAnalytics(req.query)) }
+  catch (e) { logger.error('[Transport/V2 analytics]', e); serviceError(res, e) }
+})
+
+transportRouter.get('/analytics/export/:format', ...mgr, async (req, res) => {
+  try {
+    const format = req.params.format
+    const suffix = `${req.query.start || 'baslangic'}-${req.query.end || 'bugun'}`
+    if (format === 'csv') {
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+      res.setHeader('Content-Disposition', `attachment; filename="servis-analiz-${suffix}.csv"`)
+      return res.send(`\uFEFF${createAnalyticsCsv(req.query)}`)
+    }
+    if (format === 'xlsx') {
+      const buffer = await createAnalyticsWorkbook(req.query)
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+      res.setHeader('Content-Disposition', `attachment; filename="servis-analiz-${suffix}.xlsx"`)
+      return res.send(Buffer.from(buffer))
+    }
+    if (format === 'pdf') {
+      res.setHeader('Content-Type', 'application/pdf')
+      res.setHeader('Content-Disposition', `attachment; filename="servis-analiz-${suffix}.pdf"`)
+      return writeAnalyticsPdf(res, req.query)
+    }
+    res.status(400).json({ error: 'Format csv, xlsx veya pdf olmalı' })
+  } catch (e) { logger.error('[Transport/V2 analytics export]', e); serviceError(res, e) }
+})
+
 transportRouter.get('/operations', ...view, (req, res) => {
   try {
     res.json(operations.getOperations(req.query))
