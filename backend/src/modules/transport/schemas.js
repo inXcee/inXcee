@@ -61,6 +61,10 @@ export const boardQrSchema = z.object({
   work_date: dateStr.optional(),
 })
 
-export const savePathSchema = z.object({
-  geometry: z.array(z.tuple([z.number(), z.number()])).min(2, 'En az 2 nokta gerekli'),
+export const saveViaPointsSchema = z.object({
+  via_points: z.array(z.object({
+    after_stop_id: z.coerce.number().int().positive(),
+    lat: z.coerce.number().min(-90).max(90),
+    lng: z.coerce.number().min(-180).max(180),
+  })).max(50, 'En fazla 50 uğrak'),
 })

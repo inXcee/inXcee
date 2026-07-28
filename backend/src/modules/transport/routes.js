@@ -10,7 +10,7 @@ import { logger } from '../../shared/logger.js'
 import { validate } from '../../shared/middleware/validate.js'
 import {
   createPickupPointSchema, pickupPointUpdateSchema, createRouteSchema, routeUpdateSchema,
-  addStopSchema, stopUpdateSchema, setPickupSchema, assignSchema, boardQrSchema, savePathSchema,
+  addStopSchema, stopUpdateSchema, setPickupSchema, assignSchema, boardQrSchema, saveViaPointsSchema,
 } from './schemas.js'
 import { enqueue } from '../../shared/jobs/index.js'
 import { recomputeRoutePathSync } from './jobs.js'
@@ -173,12 +173,24 @@ transportRouter.post('/routes/:id/reorder-stops', ...mgr, (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-transportRouter.put('/routes/:id/path', ...mgr, validate(savePathSchema), (req, res) => {
+// Ugrak noktalari: ekleme/tasima/silme hepsi bu tek uctan gelir (istemci tam listeyi gonderir).
+// OSRM hesaplayamazsa hicbir sey kaydedilmez — yarim durum olusmaz.
+transportRouter.put('/routes/:id/via-points', ...mgr, validate(saveViaPointsSchema), async (req, res) => {
   try {
-    q.saveRoutePath(+req.params.id, req.validated.geometry, { isManual: true })
-    logAudit(req.user.id, 'transport_route_path_manual', 'transport', +req.params.id, null)
-    res.json({ ok: true })
-  } catch (e) { res.status(400).json({ error: e.message }) }
+    const routeId = +req.params.id
+    const previous = q.getRouteViaPoints(routeId)
+    q.saveRouteViaPoints(routeId, req.validated.via_points)
+    const geometry = await recomputeRoutePathSync(routeId)
+    if (!geometry) {
+      q.saveRouteViaPoints(routeId, previous)
+      return res.status(502).json({ error: 'Yol hesaplanamadı — uğrak kaydedilmedi' })
+    }
+    logAudit(req.user.id, 'transport_route_vias', 'transport', routeId, `${req.validated.via_points.length} uğrak`)
+    res.json({ ok: true, path_geometry: geometry, via_points: req.validated.via_points })
+  } catch (e) {
+    logger.error('[Route] via-points:', e)
+    res.status(500).json({ error: 'Sunucu hatası' })
+  }
 })
 
 transportRouter.post('/routes/:id/recompute-path', ...mgr, async (req, res) => {
