@@ -1,4 +1,9 @@
 import { getDB } from '../../shared/db/index.js'
+import {
+  syncLegacyAssignment,
+  syncLegacyDate,
+  syncLegacyRouteResources,
+} from './legacy-adapter.js'
 
 // ── Pickup Points ──
 export function listPickupPoints({ activeOnly = false } = {}) {
@@ -146,7 +151,7 @@ export function getRoute(id) {
 }
 
 export function createRoute(data) {
-  return getDB().prepare(`
+  const id = getDB().prepare(`
     INSERT INTO routes(name, vehicle_plate, capacity, driver_name, driver_phone, shift_def_id, color, is_active, notes)
     VALUES(?,?,?,?,?,?,?,?,?)
   `).run(
@@ -160,6 +165,8 @@ export function createRoute(data) {
     data.is_active ?? 1,
     data.notes || null,
   ).lastInsertRowid
+  syncLegacyRouteResources(id)
+  return id
 }
 
 export function updateRoute(id, data) {
@@ -174,6 +181,7 @@ export function updateRoute(id, data) {
   if (!sets.length) return
   params.push(id)
   db.prepare(`UPDATE routes SET ${sets.join(',')} WHERE id=?`).run(...params)
+  syncLegacyRouteResources(id)
 }
 
 export function deleteRoute(id) {
@@ -314,6 +322,7 @@ export function autoAssign(workDate, options = {}) {
     }
   })
   tx()
+  syncLegacyDate(workDate)
   return stats
 }
 
@@ -377,6 +386,7 @@ export function promoteFromWaitlist(assignmentId) {
   if (!row) throw new Error('Atama bulunamadı')
   if (!row.is_waitlist) throw new Error('Zaten aktif')
   db.prepare('UPDATE route_assignments SET is_waitlist = 0 WHERE id = ?').run(assignmentId)
+  syncLegacyAssignment(assignmentId)
 }
 
 // Faz 6: katılım işaretle
@@ -388,6 +398,7 @@ export function setBoarded(assignmentId, boarded, userId) {
     SET boarded = ?, boarded_marked_at = CURRENT_TIMESTAMP, boarded_marked_by = ?
     WHERE id = ?
   `).run(val, userId || null, assignmentId)
+  syncLegacyAssignment(assignmentId)
 }
 
 // Faz 6: devamsızlık top N — son N gün servise atanmış ama binmemiş kişiler
@@ -506,16 +517,19 @@ export function getDailyOverview(workDate) {
 }
 
 export function setAssignment({ staffId, routeId, stopId, workDate, userId }) {
-  return getDB().prepare(`
+  const result = getDB().prepare(`
     INSERT INTO route_assignments(route_id, stop_id, staff_id, work_date, assigned_by)
     VALUES(?,?,?,?,?)
     ON CONFLICT(staff_id, work_date) DO UPDATE SET
       route_id = excluded.route_id, stop_id = excluded.stop_id, assigned_by = excluded.assigned_by
   `).run(routeId, stopId || null, staffId, workDate, userId).lastInsertRowid
+  syncLegacyDate(workDate)
+  return result
 }
 
 export function clearAssignment(staffId, workDate) {
   getDB().prepare('DELETE FROM route_assignments WHERE staff_id=? AND work_date=?').run(staffId, workDate)
+  syncLegacyDate(workDate)
 }
 
 // ── Personel detay (servis geçmişi) ──

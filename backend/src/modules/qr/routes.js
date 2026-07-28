@@ -6,6 +6,7 @@ import { requireRole } from '../../shared/auth/middleware.js'
 import { logAudit } from '../../shared/audit.js'
 import { getDB } from '../../shared/db/index.js'
 import { checkInService, checkOutService } from '../shifts/service.js'
+import { setBoarded } from '../transport/queries.js'
 import { logger } from '../../shared/logger.js'
 
 export const qrRouter = Router()
@@ -148,11 +149,7 @@ qrRouter.post('/scan/transport', ...view, (req, res) => {
       staff_id: staff.id, staff_name: staff.full_name,
     })
 
-    db.prepare(`
-      UPDATE route_assignments
-      SET boarded = 1, boarded_marked_at = CURRENT_TIMESTAMP, boarded_marked_by = ?
-      WHERE id = ?
-    `).run(req.user.id, assignment.id)
+    setBoarded(assignment.id, true, req.user.id)
 
     logAudit(req.user.id, 'qr_scan_transport', 'qr', staff.id, `assignment:${assignment.id} bindi`)
     res.json({
