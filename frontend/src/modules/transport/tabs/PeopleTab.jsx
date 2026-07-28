@@ -31,6 +31,7 @@ export default function PeopleTab() {
     const q = search.toLowerCase()
     return staff.filter(s =>
       s.full_name.toLowerCase().includes(q) ||
+      (s.tc_no || '').toLowerCase().includes(q) ||
       (s.pickup_name || '').toLowerCase().includes(q) ||
       (s.role_label || '').toLowerCase().includes(q) ||
       (s.dept_name || '').toLowerCase().includes(q)
@@ -150,7 +151,7 @@ export default function PeopleTab() {
       )}
 
       {detailId && <StaffDetailDrawer staffId={detailId} onClose={() => setDetailId(null)} />}
-      {importOpen && <BulkImportModal onClose={() => setImportOpen(false)} points={points} />}
+      {importOpen && <StableBulkImportModal onClose={() => setImportOpen(false)} points={points} staff={staff} />}
     </div>
   )
 }
@@ -272,6 +273,175 @@ function StaffDetailDrawer({ staffId, onClose }) {
         )}
       </div>
     </div>
+  )
+}
+
+function StableBulkImportModal({ onClose, points, staff }) {
+  const qc = useQueryClient()
+  const [text, setText] = useState('')
+  const [preview, setPreview] = useState(null)
+  const [result, setResult] = useState(null)
+
+  function parse() {
+    const lines = text.trim().split('\n').filter(line => line.trim())
+    if (lines.length < 2) {
+      setPreview({ error: 'Başlık ve en az bir veri satırı gerekli.' })
+      return
+    }
+    const split = line => line.split(/[,;\t]/).map(value => value.trim())
+    const header = split(lines[0]).map(value => value.toLocaleLowerCase('tr-TR'))
+    const idIndex = header.findIndex(value => /^(id|personel_id|staff_id)$/.test(value))
+    const tcIndex = header.findIndex(value => /^(tc|tc_no|tckn)$/.test(value))
+    const nameIndex = header.findIndex(value => /^(ad|name|isim|ad_soyad)$/.test(value))
+    const pointIndex = header.findIndex(value => /(durak|pickup|nokta)/.test(value))
+    if (idIndex < 0 && tcIndex < 0 && nameIndex < 0) {
+      setPreview({ error: 'Personel ID, TC veya ad soyad kolonu bulunmalı.' })
+      return
+    }
+    if (pointIndex < 0) {
+      setPreview({ error: 'Durak kolonu bulunmalı.' })
+      return
+    }
+
+    const byId = new Map(staff.map(person => [String(person.id), person]))
+    const byTc = new Map(staff.filter(person => person.tc_no)
+      .map(person => [String(person.tc_no).trim(), person]))
+    const byName = new Map()
+    staff.forEach(person => {
+      const key = person.full_name.trim().toLocaleLowerCase('tr-TR')
+      byName.set(key, [...(byName.get(key) || []), person])
+    })
+    const pointsByName = new Map(points.map(point => [
+      point.name.trim().toLocaleLowerCase('tr-TR'),
+      point,
+    ]))
+
+    const rows = lines.slice(1).map(line => {
+      const columns = split(line)
+      const identifier = idIndex >= 0 ? columns[idIndex] : tcIndex >= 0 ? columns[tcIndex] : columns[nameIndex]
+      const pointName = columns[pointIndex]
+      let person = null
+      let ambiguous = false
+      if (idIndex >= 0) person = byId.get(identifier) || null
+      else if (tcIndex >= 0) person = byTc.get(identifier) || null
+      else {
+        const candidates = byName.get((identifier || '').toLocaleLowerCase('tr-TR')) || []
+        person = candidates.length === 1 ? candidates[0] : null
+        ambiguous = candidates.length > 1
+      }
+      return {
+        identifier,
+        person,
+        ambiguous,
+        pointName,
+        point: pointsByName.get((pointName || '').toLocaleLowerCase('tr-TR')) || null,
+      }
+    }).filter(row => row.identifier)
+
+    setPreview({
+      rows,
+      identifierType: idIndex >= 0 ? 'PERSONEL ID' : tcIndex >= 0 ? 'TC' : 'AD SOYAD',
+    })
+  }
+
+  const validRows = preview?.rows?.filter(row => row.person && row.point && !row.ambiguous) || []
+  const mutation = useMutation({
+    mutationFn: async () => {
+      for (const row of validRows) {
+        await api.put(`/transport/staff/${row.person.id}/pickup`, { pickup_point_id: row.point.id })
+      }
+      return {
+        matched: validRows.length,
+        review: preview.rows.length - validRows.length,
+      }
+    },
+    onSuccess: data => {
+      qc.invalidateQueries({ queryKey: ['transport-staff'] })
+      qc.invalidateQueries({ queryKey: ['transport-daily'] })
+      setResult(data)
+      toast(`${data.matched} kişi durakla eşleştirildi`)
+    },
+    onError: toastErr,
+  })
+
+  const sample = `personel_id,durak
+${staff[0]?.id || 1},${points[0]?.name || 'Merkez Durak'}`
+
+  return (
+    <ModalShell onClose={onClose} title="TOPLU PERSONEL / DURAK EŞLEŞTİRME" wide>
+      {!preview && !result && (
+        <>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginBottom: 10, lineHeight: 1.6 }}>
+            Öncelik <strong>personel_id</strong> veya <strong>tc</strong> alanıdır.
+            Ad soyad yalnızca sistemde tek bir kayıtla eşleşirse kabul edilir; belirsiz kayıtlar uygulanmaz.
+          </div>
+          <textarea value={text} onChange={event => setText(event.target.value)}
+            placeholder={sample} aria-label="Personel durak CSV verisi"
+            style={{ width: '100%', minHeight: 200, padding: 10, border: '1px solid var(--border)', borderRadius: 8, background: 'var(--surface)', color: 'var(--text)', font: '11px var(--mono)' }} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 10 }}>
+            <button className="btn btn-ghost btn-sm" onClick={() => setText(sample)}>ÖRNEK YÜKLE</button>
+            <button className="btn btn-primary btn-sm" disabled={!text.trim()} onClick={parse}>ÖN İZLEME</button>
+          </div>
+        </>
+      )}
+
+      {preview?.error && (
+        <div className="alert alert-danger" style={{ borderRadius: 8 }}>
+          <span>!</span><span>{preview.error}</span>
+        </div>
+      )}
+
+      {preview?.rows && !result && (
+        <>
+          <div style={{ marginBottom: 8, color: 'var(--text3)', font: '10px var(--mono)' }}>
+            {preview.rows.length} satır · {validRows.length} hazır · {preview.rows.length - validRows.length} kullanıcı kontrolü gerekli
+          </div>
+          <div style={{ maxHeight: 280, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+              <thead>
+                <tr style={{ background: 'var(--surface2)' }}>
+                  <th style={{ padding: 7, textAlign: 'left' }}>{preview.identifierType}</th>
+                  <th style={{ padding: 7, textAlign: 'left' }}>PERSONEL</th>
+                  <th style={{ padding: 7, textAlign: 'left' }}>DURAK</th>
+                  <th style={{ padding: 7, textAlign: 'left' }}>DURUM</th>
+                </tr>
+              </thead>
+              <tbody>
+                {preview.rows.map((row, index) => {
+                  const valid = row.person && row.point && !row.ambiguous
+                  const status = row.ambiguous ? 'Belirsiz personel' : !row.person
+                    ? 'Personel bulunamadı' : !row.point ? 'Durak bulunamadı' : 'Hazır'
+                  return (
+                    <tr key={`${row.identifier}-${index}`} style={{ borderTop: '1px solid var(--border)' }}>
+                      <td style={{ padding: 7, fontFamily: 'var(--mono)' }}>{row.identifier}</td>
+                      <td style={{ padding: 7 }}>{row.person?.full_name || '—'}</td>
+                      <td style={{ padding: 7 }}>{row.point?.name || row.pointName || '—'}</td>
+                      <td style={{ padding: 7, color: valid ? 'var(--green)' : 'var(--amber)' }}>{status}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+            <button className="btn btn-ghost" onClick={() => setPreview(null)}>GERİ</button>
+            <button className="btn btn-primary" disabled={!validRows.length || mutation.isPending}
+              onClick={() => mutation.mutate()}>
+              {mutation.isPending ? 'UYGULANIYOR…' : `${validRows.length} ATAMAYI UYGULA`}
+            </button>
+          </div>
+        </>
+      )}
+
+      {result && (
+        <div style={{ padding: 20, textAlign: 'center' }}>
+          <div style={{ color: 'var(--green)', fontSize: 32 }}>✓</div>
+          <h3>{result.matched} eşleştirme tamamlandı</h3>
+          {result.review > 0 && <p style={{ color: 'var(--amber)' }}>{result.review} kayıt değiştirilmedi ve kullanıcı kontrolüne bırakıldı.</p>}
+          <button className="btn btn-primary" onClick={onClose}>KAPAT</button>
+        </div>
+      )}
+    </ModalShell>
   )
 }
 

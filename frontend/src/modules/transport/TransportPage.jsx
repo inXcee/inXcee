@@ -1,145 +1,206 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
-import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
 import HelpHint from '../../shared/components/HelpHint.jsx'
+import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
 import { todayStr } from './shared.jsx'
-import ReportsTab from './tabs/ReportsTab.jsx'
-import MapTab from './tabs/MapTab.jsx'
-import PointsTab from './tabs/PointsTab.jsx'
-import RoutesTab from './tabs/RoutesTab.jsx'
+import SetupWizard from './SetupWizard.jsx'
+import LinesTab from './tabs/LinesTab.jsx'
+import PlanningTab from './tabs/PlanningTab.jsx'
+import ResourcesTab from './tabs/ResourcesTab.jsx'
 import PeopleTab from './tabs/PeopleTab.jsx'
+import ReportsTab from './tabs/ReportsTab.jsx'
 import DailyTab from './tabs/DailyTab.jsx'
 
 const TABS = [
-  { key: 'daily', label: 'BUGÜN', icon: '🚌' },
-  { key: 'routes', label: 'ROTALAR', icon: '🛣' },
-  { key: 'points', label: 'DURAKLAR', icon: '📍' },
-  { key: 'people', label: 'PERSONEL', icon: '👥' },
-  { key: 'reports', label: 'RAPORLAR', icon: '📊' },
-  { key: 'map', label: 'HARİTA', icon: '🗺' },
+  { key: 'operation', label: 'OPERASYON', icon: '🚌', description: 'Bugünün seferleri' },
+  { key: 'planning', label: 'PLANLAMA', icon: '📅', description: 'Öner ve yayınla' },
+  { key: 'lines', label: 'HATLAR', icon: '🛣️', description: 'Rota, durak, harita' },
+  { key: 'resources', label: 'KAYNAKLAR', icon: '🚐', description: 'Araç ve şoförler' },
+  { key: 'people', label: 'PERSONEL', icon: '👥', description: 'Tercih ve geçmiş' },
+  { key: 'analytics', label: 'ANALİZ', icon: '📊', description: 'KPI ve çıktılar' },
 ]
 
+const LEGACY_TAB = {
+  daily: { tab: 'operation' },
+  routes: { tab: 'lines', view: 'routes' },
+  points: { tab: 'lines', view: 'points' },
+  map: { tab: 'lines', view: 'map' },
+  reports: { tab: 'analytics' },
+}
+
 export default function TransportPage() {
-  const [tab, setTab] = useUrlParamState('tab', 'daily')
+  const [tab, setTab] = useUrlParamState('tab', 'operation')
+  const [lineView, setLineView] = useUrlParamState('view', 'routes')
   const [date, setDate] = useState(todayStr())
   const [searchOpen, setSearchOpen] = useState(false)
+  const [wizardOpen, setWizardOpen] = useState(true)
 
-  // Klavye kısayolları
   useEffect(() => {
-    const onKey = (e) => {
-      const t = e.target.tagName
-      if (t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT' || e.target.isContentEditable) return
-      if (e.ctrlKey || e.metaKey || e.altKey) return
-      if (e.key === '/') { e.preventDefault(); setSearchOpen(true) }
-      else if (e.key === '1') setTab('daily')
-      else if (e.key === '2') setTab('routes')
-      else if (e.key === '3') setTab('points')
-      else if (e.key === '4') setTab('people')
-      else if (e.key === '5') setTab('reports')
-      else if (e.key === 'h') setDate(todayStr())
+    const legacy = LEGACY_TAB[tab]
+    if (!legacy) return
+    if (legacy.view) setLineView(legacy.view)
+    setTab(legacy.tab)
+  }, [lineView, setLineView, setTab, tab])
+
+  useEffect(() => {
+    const onKey = event => {
+      const target = event.target
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable) return
+      if (event.ctrlKey || event.metaKey || event.altKey) return
+      if (event.key === '/') {
+        event.preventDefault()
+        setSearchOpen(true)
+        return
+      }
+      const shortcut = Number(event.key)
+      if (shortcut >= 1 && shortcut <= TABS.length) setTab(TABS[shortcut - 1].key)
+      else if (event.key.toLowerCase() === 'h') setDate(todayStr())
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  }, [setTab])
+
+  const navigate = (nextTab, view) => {
+    if (view) setLineView(view)
+    setTab(nextTab)
+  }
 
   return (
-    <div style={{ position: 'relative', zIndex: 1, maxWidth: 1200 }} className="fade-up">
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
+    <main className="transport-v2 fade-up">
+      <header className="transport-v2__header">
         <div>
-          <h1 style={{ fontSize: 30, letterSpacing: 5, color: 'var(--text)', margin: 0 }}>SERVİSLER<HelpHint topic="transport" title="SERVİSLER" /></h1>
-          <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginTop: 5, letterSpacing: 1.5 }}>
-            ULAŞIM ROTALARI · DURAKLAR · GÜNLÜK ATAMA
-          </p>
+          <h1 className="transport-v2__title">
+            SERVİSLER
+            <HelpHint topic="transport" title="SERVİSLER" />
+          </h1>
+          <p className="transport-v2__subtitle">PLANLAMA · SAHA OPERASYONU · KAYNAK YÖNETİMİ</p>
         </div>
-        {tab === 'daily' && (
-          <input type="date" className="form-input" value={date}
-            onChange={e => setDate(e.target.value)}
-            style={{ width: 'auto', fontSize: 12, borderRadius: 10 }} />
-        )}
-      </div>
+        <div className="transport-v2__header-actions">
+          <button className="btn btn-ghost btn-sm transport-v2__search" onClick={() => setSearchOpen(true)}
+            aria-label="Servislerde ara">
+            🔎 ARA <kbd>/</kbd>
+          </button>
+          {tab === 'operation' && (
+            <input type="date" className="form-input" value={date} aria-label="Operasyon tarihi"
+              onChange={event => setDate(event.target.value)} />
+          )}
+        </div>
+      </header>
 
-      <div style={{
-        display: 'flex', gap: 2, marginBottom: 16,
-        background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: 4,
-      }}>
-        {TABS.map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)} style={{
-            flex: 1, padding: '10px 14px', border: 'none', borderRadius: 10,
-            background: tab === t.key ? 'var(--accent)' : 'transparent',
-            color: tab === t.key ? '#000' : 'var(--text3)',
-            fontSize: 10, fontWeight: 700, fontFamily: 'var(--mono)', letterSpacing: 1.5,
-            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-          }}>
-            <span style={{ fontSize: 13 }}>{t.icon}</span> {t.label}
+      <nav className="transport-v2__tabs" aria-label="Servisler bölümleri">
+        {TABS.map((item, index) => (
+          <button key={item.key} type="button" onClick={() => setTab(item.key)}
+            className={tab === item.key ? 'is-active' : ''}
+            aria-current={tab === item.key ? 'page' : undefined}
+            title={`${item.description} · Kısayol ${index + 1}`}>
+            <span aria-hidden="true">{item.icon}</span>
+            <span>
+              <strong>{item.label}</strong>
+              <small>{item.description}</small>
+            </span>
           </button>
         ))}
-      </div>
+      </nav>
 
-      {tab === 'daily' && <DailyTab date={date} />}
-      {tab === 'routes' && <RoutesTab />}
-      {tab === 'points' && <PointsTab />}
-      {tab === 'people' && <PeopleTab />}
-      {tab === 'reports' && <ReportsTab />}
-      {tab === 'map' && <MapTab />}
+      {wizardOpen && (
+        <SetupWizard onNavigate={navigate} onClose={() => setWizardOpen(false)} />
+      )}
 
-      {searchOpen && <GlobalSearch onClose={() => setSearchOpen(false)} setTab={setTab} />}
-    </div>
+      <section className="transport-v2__content" aria-live="polite">
+        {tab === 'operation' && <DailyTab date={date} />}
+        {tab === 'planning' && <PlanningTab />}
+        {tab === 'lines' && <LinesTab view={lineView} onViewChange={setLineView} />}
+        {tab === 'resources' && <ResourcesTab />}
+        {tab === 'people' && <PeopleTab />}
+        {tab === 'analytics' && <ReportsTab />}
+      </section>
+
+      {searchOpen && (
+        <GlobalSearch onClose={() => setSearchOpen(false)} onNavigate={navigate} />
+      )}
+    </main>
   )
 }
 
-// Global arama: / tuşu açar, durak + rota + personel ara
-function GlobalSearch({ onClose, setTab }) {
-  const [q, setQ] = useState('')
-  const { data: points = [] } = useQuery({ queryKey: ['transport-points'], queryFn: () => api.get('/transport/pickup-points').then(r => r.data) })
-  const { data: routes = [] } = useQuery({ queryKey: ['transport-routes'], queryFn: () => api.get('/transport/routes').then(r => r.data) })
-  const { data: staff = [] } = useQuery({ queryKey: ['transport-staff', 'all'], queryFn: () => api.get('/transport/staff').then(r => r.data) })
+function GlobalSearch({ onClose, onNavigate }) {
+  const [query, setQuery] = useState('')
+  const { data: points = [] } = useQuery({
+    queryKey: ['transport-points'],
+    queryFn: () => api.get('/transport/pickup-points').then(response => response.data),
+  })
+  const { data: routes = [] } = useQuery({
+    queryKey: ['transport-routes'],
+    queryFn: () => api.get('/transport/routes').then(response => response.data),
+  })
+  const { data: staff = [] } = useQuery({
+    queryKey: ['transport-staff', 'all'],
+    queryFn: () => api.get('/transport/staff').then(response => response.data),
+  })
 
   const results = useMemo(() => {
-    if (q.length < 1) return []
-    const low = q.toLowerCase()
-    const out = []
-    points.filter(p => `${p.name} ${p.district || ''} ${p.neighborhood || ''}`.toLowerCase().includes(low)).slice(0, 5)
-      .forEach(p => out.push({ type: 'point', icon: '📍', label: p.name, sub: p.district || '—', target: 'points' }))
-    routes.filter(r => `${r.name} ${r.vehicle_plate || ''} ${r.driver_name || ''}`.toLowerCase().includes(low)).slice(0, 5)
-      .forEach(r => out.push({ type: 'route', icon: '🛣', label: r.name, sub: `${r.vehicle_plate || '—'} · ${r.capacity} kişi`, target: 'routes' }))
-    staff.filter(s => `${s.full_name} ${s.role_label || ''} ${s.dept_name || ''} ${s.pickup_name || ''}`.toLowerCase().includes(low)).slice(0, 10)
-      .forEach(s => out.push({ type: 'staff', icon: '👤', label: s.full_name, sub: `${s.dept_name || '—'}${s.pickup_name ? ' · 📍 ' + s.pickup_name : ' · durak yok'}`, target: 'people' }))
-    return out
-  }, [q, points, routes, staff])
+    const normalized = query.trim().toLocaleLowerCase('tr-TR')
+    if (!normalized) return []
+    const contains = value => String(value || '').toLocaleLowerCase('tr-TR').includes(normalized)
+    const found = []
+    points.filter(point => contains(`${point.name} ${point.district} ${point.neighborhood}`)).slice(0, 5)
+      .forEach(point => found.push({
+        type: 'Durak', icon: '📍', label: point.name, sub: point.district || 'İlçe yok',
+        tab: 'lines', view: 'points',
+      }))
+    routes.filter(route => contains(`${route.name} ${route.vehicle_plate} ${route.driver_name}`)).slice(0, 5)
+      .forEach(route => found.push({
+        type: 'Hat', icon: '🛣️', label: route.name,
+        sub: `${route.vehicle_plate || 'Araç yok'} · ${route.capacity || 0} kişi`,
+        tab: 'lines', view: 'routes',
+      }))
+    staff.filter(person => contains(`${person.full_name} ${person.tc_no} ${person.role_label} ${person.dept_name} ${person.pickup_name}`)).slice(0, 10)
+      .forEach(person => found.push({
+        type: 'Personel', icon: '👤', label: person.full_name,
+        sub: `${person.dept_name || 'Birim yok'} · ${person.pickup_name || 'Durak yok'}`,
+        tab: 'people',
+      }))
+    return found
+  }, [points, query, routes, staff])
 
   useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') onClose() }
+    const onKey = event => {
+      if (event.key === 'Escape') onClose()
+    }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
+  const selectResult = result => {
+    onNavigate(result.tab, result.view)
+    onClose()
+  }
+
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 9100, display: 'flex', justifyContent: 'center', alignItems: 'flex-start', paddingTop: 80 }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: 540, maxWidth: '95vw', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: '0 24px 48px rgba(0,0,0,.4)', overflow: 'hidden' }}>
-        <input autoFocus value={q} onChange={e => setQ(e.target.value)}
-          placeholder="🔍 Durak, rota, personel ara…"
-          style={{ width: '100%', padding: '14px 18px', fontSize: 15, border: 'none', background: 'transparent', color: 'var(--text)', outline: 'none', borderBottom: '1px solid var(--border)' }} />
-        {q.length < 1 ? (
-          <div style={{ padding: 18, fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>
-            💡 Kısayollar: <kbd style={{ padding: '1px 5px', background: 'var(--surface2)', borderRadius: 3 }}>1-5</kbd> sekme · <kbd style={{ padding: '1px 5px', background: 'var(--surface2)', borderRadius: 3 }}>h</kbd> bugüne dön · <kbd style={{ padding: '1px 5px', background: 'var(--surface2)', borderRadius: 3 }}>Esc</kbd> kapat
+    <div className="transport-search" role="presentation" onMouseDown={onClose}>
+      <div className="transport-search__dialog" role="dialog" aria-modal="true"
+        aria-label="Servislerde ara" onMouseDown={event => event.stopPropagation()}>
+        <input autoFocus value={query} onChange={event => setQuery(event.target.value)}
+          placeholder="Durak, hat, personel adı veya TC ara…"
+          aria-label="Arama metni" />
+        {!query.trim() ? (
+          <div className="transport-search__hint">
+            <span>Kısayollar</span>
+            <kbd>1–6</kbd> bölüm · <kbd>H</kbd> bugün · <kbd>Esc</kbd> kapat
           </div>
         ) : results.length === 0 ? (
-          <div style={{ padding: 24, textAlign: 'center', color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 11 }}>Sonuç bulunamadı</div>
+          <div className="transport-search__empty">Sonuç bulunamadı</div>
         ) : (
-          <div style={{ maxHeight: 400, overflowY: 'auto' }}>
-            {results.map((r, i) => (
-              <div key={i} onClick={() => { setTab(r.target); onClose() }}
-                style={{ padding: '10px 18px', cursor: 'pointer', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}
-                onMouseEnter={e => e.currentTarget.style.background = 'var(--surface2)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                <span style={{ fontSize: 16 }}>{r.icon}</span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: 13 }}>{r.label}</div>
-                  <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>{r.sub}</div>
-                </div>
-                <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text4)', textTransform: 'uppercase' }}>{r.type}</span>
-              </div>
+          <div className="transport-search__results">
+            {results.map((result, index) => (
+              <button key={`${result.type}-${result.label}-${index}`} onClick={() => selectResult(result)}>
+                <span className="transport-search__icon" aria-hidden="true">{result.icon}</span>
+                <span>
+                  <strong>{result.label}</strong>
+                  <small>{result.sub}</small>
+                </span>
+                <em>{result.type}</em>
+              </button>
             ))}
           </div>
         )}
@@ -147,5 +208,3 @@ function GlobalSearch({ onClose, setTab }) {
     </div>
   )
 }
-
-

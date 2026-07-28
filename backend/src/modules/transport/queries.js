@@ -54,7 +54,7 @@ export function deletePickupPoint(id) {
 export function listStaffWithTransport({ deptId, hasPickup } = {}) {
   const db = getDB()
   let q = `
-    SELECT s.id, s.full_name, s.phone, s.role_label, s.is_active,
+    SELECT s.id, s.tc_no, s.full_name, s.phone, s.role_label, s.is_active,
       s.pickup_point_id,
       pp.name as pickup_name, pp.district as pickup_district,
       d.id as department_id, d.name as dept_name, d.color_class as dept_color,
