@@ -3,7 +3,7 @@ import { lazyWithRetry as lazy } from '../../../shared/lazyWithRetry.js'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
 import { useAuthStore } from '../../../shared/store/authStore.js'
-import { pointsWithoutCoords } from '../logic/routeMap.js'
+import { pointsWithoutCoords, moveStopInOrder } from '../logic/routeMap.js'
 import { toast, toastErr } from '../shared.jsx'
 
 const RouteMap = lazy(() => import('../RouteMap.jsx'))
@@ -43,9 +43,10 @@ export default function MapTab() {
     onSuccess: invalidateMap,
     onError: toastErr,
   })
-  const savePathMut = useMutation({
-    mutationFn: ({ routeId, geometry }) => api.put(`/transport/routes/${routeId}/path`, { geometry }),
-    onSuccess: () => { invalidateMap(); toast('Yol kaydedildi') },
+  const viaPointsMut = useMutation({
+    mutationFn: ({ routeId, viaPoints }) =>
+      api.put(`/transport/routes/${routeId}/via-points`, { via_points: viaPoints }),
+    onSuccess: invalidateMap,
     onError: toastErr,
   })
   const recomputeMut = useMutation({
@@ -103,33 +104,63 @@ export default function MapTab() {
           {routes.map(r => {
             const isSel = selectedRouteId === r.id
             const isEditing = editingRouteId === r.id
+            const orderedStops = [...(r.stops || [])].sort((a, b) => a.sequence_order - b.sequence_order)
             return (
-              <div key={r.id} style={{
-                display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 8,
-                background: isSel || isEditing ? 'var(--surface2)' : 'transparent', cursor: 'pointer',
-              }} onClick={() => setSelectedRouteId(isSel ? null : r.id)}>
-                <input
-                  type="checkbox"
-                  aria-label={`${r.name} rotasını gizle/göster`}
-                  checked={!hiddenIds.has(r.id)}
-                  onChange={() => toggleRoute(r.id)}
-                  onClick={e => e.stopPropagation()}
-                />
-                <span style={{ width: 12, height: 12, borderRadius: 3, background: r.color || FALLBACK_COLOR, flexShrink: 0 }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
-                  <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>
-                    {r.vehicle_plate || '—'} · {r.stops?.length ?? 0} durak
+              <div key={r.id}>
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 8,
+                  background: isSel || isEditing ? 'var(--surface2)' : 'transparent', cursor: 'pointer',
+                }} onClick={() => setSelectedRouteId(isSel ? null : r.id)}>
+                  <input
+                    type="checkbox"
+                    aria-label={`${r.name} rotasını gizle/göster`}
+                    checked={!hiddenIds.has(r.id)}
+                    onChange={() => toggleRoute(r.id)}
+                    onClick={e => e.stopPropagation()}
+                  />
+                  <span style={{ width: 12, height: 12, borderRadius: 3, background: r.color || FALLBACK_COLOR, flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
+                    <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)' }}>
+                      {r.vehicle_plate || '—'} · {orderedStops.length} durak
+                    </div>
                   </div>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      aria-label={`${r.name} rotasını haritadan düzenle`}
+                      onClick={(e) => { e.stopPropagation(); toggleEdit(r.id) }}
+                      className="btn btn-ghost btn-xs"
+                      style={{ borderRadius: 6, color: isEditing ? 'var(--accent)' : undefined }}
+                    >✎</button>
+                  )}
                 </div>
-                {canEdit && (
-                  <button
-                    type="button"
-                    aria-label={`${r.name} rotasını haritadan düzenle`}
-                    onClick={(e) => { e.stopPropagation(); toggleEdit(r.id) }}
-                    className="btn btn-ghost btn-xs"
-                    style={{ borderRadius: 6, color: isEditing ? 'var(--accent)' : undefined }}
-                  >✎</button>
+
+                {isEditing && orderedStops.length > 0 && (
+                  <div style={{ padding: '4px 8px 8px 28px', display: 'flex', flexDirection: 'column', gap: 2 }}
+                    onClick={e => e.stopPropagation()}>
+                    {orderedStops.map((s, i) => {
+                      const stopIds = orderedStops.map(x => x.id)
+                      return (
+                        <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <span style={{
+                            flex: 1, minWidth: 0, fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)',
+                            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                          }}>
+                            {i + 1}. {s.point_name}
+                          </span>
+                          <button type="button" className="btn btn-ghost btn-xs" style={{ borderRadius: 4, padding: '0 4px' }}
+                            aria-label={`${s.point_name} yukarı taşı`} disabled={i === 0}
+                            onClick={() => reorderMut.mutate({ routeId: r.id, stopIds: moveStopInOrder(stopIds, s.id, 'up') })}
+                          >↑</button>
+                          <button type="button" className="btn btn-ghost btn-xs" style={{ borderRadius: 4, padding: '0 4px' }}
+                            aria-label={`${s.point_name} aşağı taşı`} disabled={i === orderedStops.length - 1}
+                            onClick={() => reorderMut.mutate({ routeId: r.id, stopIds: moveStopInOrder(stopIds, s.id, 'down') })}
+                          >↓</button>
+                        </div>
+                      )
+                    })}
+                  </div>
                 )}
               </div>
             )
@@ -143,6 +174,15 @@ export default function MapTab() {
             className="btn btn-ghost btn-xs"
             style={{ borderRadius: 8, width: '100%', marginTop: 8 }}
           >↻ Otomatik yeniden hesapla</button>
+        )}
+        {editingRouteId != null && (
+          <button
+            type="button"
+            onClick={() => viaPointsMut.mutate({ routeId: editingRouteId, viaPoints: [] })}
+            disabled={viaPointsMut.isPending}
+            className="btn btn-ghost btn-xs"
+            style={{ borderRadius: 8, width: '100%', marginTop: 4 }}
+          >⌫ Uğrakları temizle</button>
         )}
       </div>
 
@@ -168,8 +208,8 @@ export default function MapTab() {
               onSelectRoute={(id) => setSelectedRouteId(prev => prev === id ? null : id)}
               editingRouteId={editingRouteId}
               onMoveStop={(pickupPointId, lat, lng) => moveStopMut.mutate({ pickupPointId, lat, lng })}
-              onReorderStop={(routeId, stopIds) => reorderMut.mutate({ routeId, stopIds })}
-              onSaveManualPath={(routeId, geometry) => savePathMut.mutate({ routeId, geometry })}
+              onChangeViaPoints={(routeId, viaPoints) => viaPointsMut.mutate({ routeId, viaPoints })}
+              isBusy={viaPointsMut.isPending}
               onDeleteStop={(stopId) => deleteStopMut.mutate(stopId)}
               onAddStop={(routeId, lat, lng) => addStopAtPointMut.mutate({ routeId, lat, lng })}
             />
