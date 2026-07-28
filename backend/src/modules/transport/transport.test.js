@@ -348,26 +348,40 @@ describe('Transport — harita verisi', () => {
   })
 })
 
-describe('Transport — path sorguları (queries.js)', () => {
-  it('saveRoutePath + getRoutePath round-trip çalışır', async () => {
+describe('Transport — uğrak sorguları (queries.js)', () => {
+  it('saveRouteViaPoints + getRouteViaPoints round-trip çalışır', async () => {
     const routeId = (await request(app).post('/api/transport/routes').set('Authorization', `Bearer ${token}`)
-      .send({ name: 'Query Path Hat' })).body.id
+      .send({ name: 'Via Query Hat' })).body.id
     const q = await import('./queries.js')
-    q.saveRoutePath(routeId, [[41.40, 31.70], [41.42, 31.75]], { isManual: true })
-    const saved = q.getRoutePath(routeId)
-    expect(saved.geometry).toEqual([[41.40, 31.70], [41.42, 31.75]])
-    expect(saved.is_manual).toBe(true)
+    q.saveRouteViaPoints(routeId, [{ after_stop_id: 7, lat: 41.41, lng: 31.72 }])
+    expect(q.getRouteViaPoints(routeId)).toEqual([{ after_stop_id: 7, lat: 41.41, lng: 31.72 }])
   })
 
-  it('addRouteStop path_is_manual bayrağını sıfırlar', async () => {
+  it('uğrağı olmayan rota boş dizi döner', async () => {
+    const routeId = (await request(app).post('/api/transport/routes').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Bos Via Hat' })).body.id
+    const q = await import('./queries.js')
+    expect(q.getRouteViaPoints(routeId)).toEqual([])
+  })
+
+  it('durak silinince ona bağlı uğraklar da silinir, diğerleri kalır', async () => {
     const q = await import('./queries.js')
     const p1 = (await request(app).post('/api/transport/pickup-points').set('Authorization', `Bearer ${token}`)
-      .send({ name: 'Trigger Durak', lat: 41.40, lng: 31.70 })).body.id
+      .send({ name: 'Cascade Durak A', lat: 41.40, lng: 31.70 })).body.id
+    const p2 = (await request(app).post('/api/transport/pickup-points').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Cascade Durak B', lat: 41.42, lng: 31.75 })).body.id
     const routeId = (await request(app).post('/api/transport/routes').set('Authorization', `Bearer ${token}`)
-      .send({ name: 'Trigger Hat' })).body.id
-    q.saveRoutePath(routeId, [[41.0, 31.0], [41.1, 31.1]], { isManual: true })
-    q.addRouteStop(routeId, { pickup_point_id: p1 })
-    expect(q.getRoutePath(routeId).is_manual).toBe(false)
+      .send({ name: 'Cascade Hat' })).body.id
+    const stop1 = q.addRouteStop(routeId, { pickup_point_id: p1 })
+    const stop2 = q.addRouteStop(routeId, { pickup_point_id: p2 })
+    q.saveRouteViaPoints(routeId, [
+      { after_stop_id: stop1, lat: 41.41, lng: 31.71 },
+      { after_stop_id: stop2, lat: 41.43, lng: 31.76 },
+    ])
+
+    q.deleteRouteStop(stop1)
+
+    expect(q.getRouteViaPoints(routeId)).toEqual([{ after_stop_id: stop2, lat: 41.43, lng: 31.76 }])
   })
 })
 

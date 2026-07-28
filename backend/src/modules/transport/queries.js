@@ -38,9 +38,7 @@ export function updatePickupPoint(id, data) {
   params.push(id)
   db.prepare(`UPDATE pickup_points SET ${sets.join(',')} WHERE id=?`).run(...params)
   if (data.lat === undefined && data.lng === undefined) return []
-  const routeIds = db.prepare('SELECT DISTINCT route_id FROM route_stops WHERE pickup_point_id=?').all(id).map(r => r.route_id)
-  routeIds.forEach(routeId => db.prepare('UPDATE routes SET path_is_manual=0 WHERE id=?').run(routeId))
-  return routeIds
+  return db.prepare('SELECT DISTINCT route_id FROM route_stops WHERE pickup_point_id=?').all(id).map(r => r.route_id)
 }
 
 export function deletePickupPoint(id) {
@@ -101,7 +99,7 @@ export function listRoutes({ activeOnly = false, withStops = false, workDate = n
 
   routes.forEach(r => {
     r.path_geometry = r.path_geometry ? JSON.parse(r.path_geometry) : null
-    r.path_is_manual = !!r.path_is_manual
+    r.via_points = parseViaPoints(r.via_points)
   })
 
   if (!withStops && !workDate) return routes
@@ -201,7 +199,6 @@ export function addRouteStop(routeId, data) {
     INSERT INTO route_stops(route_id, pickup_point_id, sequence_order, scheduled_time)
     VALUES(?,?,?,?)
   `).run(routeId, data.pickup_point_id, data.sequence_order ?? (max + 1), data.scheduled_time || null).lastInsertRowid
-  db.prepare('UPDATE routes SET path_is_manual=0 WHERE id=?').run(routeId)
   return id
 }
 
@@ -216,16 +213,15 @@ export function updateRouteStop(id, data) {
   if (!sets.length) return
   params.push(id)
   db.prepare(`UPDATE route_stops SET ${sets.join(',')} WHERE id=?`).run(...params)
-  const row = db.prepare('SELECT route_id FROM route_stops WHERE id=?').get(id)
-  if (row) db.prepare('UPDATE routes SET path_is_manual=0 WHERE id=?').run(row.route_id)
 }
 
 export function deleteRouteStop(id) {
   const db = getDB()
   const row = db.prepare('SELECT route_id FROM route_stops WHERE id=?').get(id)
   db.prepare('DELETE FROM route_stops WHERE id=?').run(id)
-  if (row) db.prepare('UPDATE routes SET path_is_manual=0 WHERE id=?').run(row.route_id)
-  return row?.route_id ?? null
+  if (!row) return null
+  saveRouteViaPoints(row.route_id, getRouteViaPoints(row.route_id).filter(v => v.after_stop_id !== id))
+  return row.route_id
 }
 
 export function reorderRouteStops(routeId, orderedStopIds) {
@@ -233,7 +229,6 @@ export function reorderRouteStops(routeId, orderedStopIds) {
   const upd = db.prepare('UPDATE route_stops SET sequence_order = ? WHERE id = ? AND route_id = ?')
   const tx = db.transaction(() => {
     orderedStopIds.forEach((id, idx) => upd.run(idx + 1, id, routeId))
-    db.prepare('UPDATE routes SET path_is_manual=0 WHERE id=?').run(routeId)
   })
   tx()
 }
@@ -714,18 +709,38 @@ export function getReports({ startDate, endDate } = {}) {
 }
 
 // ── Rota yol geometrisi (path) ──
+// path_geometry her zaman OSRM ciktisidir; elle serbest cizim yoktur (bkz. 064 migration).
 export function getRoutePath(routeId) {
-  const row = getDB().prepare('SELECT path_geometry, path_is_manual, path_computed_at FROM routes WHERE id=?').get(routeId)
+  const row = getDB().prepare('SELECT path_geometry, path_computed_at FROM routes WHERE id=?').get(routeId)
   if (!row) return null
   return {
     geometry: row.path_geometry ? JSON.parse(row.path_geometry) : null,
-    is_manual: !!row.path_is_manual,
     computed_at: row.path_computed_at,
   }
 }
 
-export function saveRoutePath(routeId, geometry, { isManual }) {
+export function saveRoutePath(routeId, geometry) {
   getDB().prepare(`
-    UPDATE routes SET path_geometry=?, path_is_manual=?, path_computed_at=datetime('now') WHERE id=?
-  `).run(JSON.stringify(geometry), isManual ? 1 : 0, routeId)
+    UPDATE routes SET path_geometry=?, path_computed_at=datetime('now') WHERE id=?
+  `).run(JSON.stringify(geometry), routeId)
+}
+
+// ── Ugrak (via) noktalari ──
+function parseViaPoints(raw) {
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+export function getRouteViaPoints(routeId) {
+  const row = getDB().prepare('SELECT via_points FROM routes WHERE id=?').get(routeId)
+  return row ? parseViaPoints(row.via_points) : []
+}
+
+export function saveRouteViaPoints(routeId, viaPoints) {
+  getDB().prepare('UPDATE routes SET via_points=? WHERE id=?').run(JSON.stringify(viaPoints), routeId)
 }
