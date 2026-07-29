@@ -9,7 +9,7 @@ import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
 function GarmentTypesAdmin() {
   const qc = useQueryClient()
   const fileRef = useRef(null)
-  const [form, setForm] = useState({ name: '', emoji: '' })
+  const [form, setForm] = useState({ name: '', emoji: '', default_requires_ironing: 0 })
   const [uploading, setUploading] = useState(false)
   const [imageUrl, setImageUrl] = useState('')
   const [editId, setEditId] = useState(null)
@@ -34,8 +34,14 @@ function GarmentTypesAdmin() {
     if (!form.name.trim()) return setError('İsim zorunlu')
     setSaving(true); setError('')
     try {
-      await laundryApi.createGarmentType({ name: form.name.trim(), emoji: form.emoji.trim() || null, image_url: imageUrl || null, sort_order: types.length + 1 })
-      setForm({ name: '', emoji: '' }); setImageUrl('')
+      await laundryApi.createGarmentType({
+        name: form.name.trim(),
+        emoji: form.emoji.trim() || null,
+        image_url: imageUrl || null,
+        sort_order: types.length + 1,
+        default_requires_ironing: form.default_requires_ironing,
+      })
+      setForm({ name: '', emoji: '', default_requires_ironing: 0 }); setImageUrl('')
       qc.invalidateQueries({ queryKey: ['garment-types-all'] })
       qc.invalidateQueries({ queryKey: ['garment-types'] })
     } catch(e) { setError(e?.response?.data?.error || 'Hata') } finally { setSaving(false) }
@@ -90,6 +96,11 @@ function GarmentTypesAdmin() {
           </button>
           <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }}
             onChange={e => e.target.files[0] && uploadImage(e.target.files[0])} />
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, minHeight: 36, fontSize: 11, color: 'var(--text2)' }}>
+            <input type="checkbox" checked={!!form.default_requires_ironing}
+              onChange={e => setForm(current => ({ ...current, default_requires_ironing: e.target.checked ? 1 : 0 }))} />
+            Varsayılan ütü
+          </label>
         </div>
         {error && <div style={{ color: '#f87171', fontSize: 12 }}>{error}</div>}
         <button onClick={createType} disabled={saving || !form.name.trim()}
@@ -126,6 +137,21 @@ function GarmentTypesAdmin() {
               <div style={{ flex: 1 }}>
                 <span style={{ fontSize: 13, color: 'var(--text)', fontWeight: 600 }}>{type.name}</span>
                 {!type.is_active && <span style={{ fontSize: 10, color: 'var(--text3)', marginLeft: 8 }}>(gizli)</span>}
+                <button type="button"
+                  onClick={() => laundryApi.updateGarmentType(type.id, {
+                    default_requires_ironing: type.default_requires_ironing ? 0 : 1,
+                  }).then(() => {
+                    qc.invalidateQueries({ queryKey: ['garment-types-all'] })
+                    qc.invalidateQueries({ queryKey: ['garment-types'] })
+                  })}
+                  style={{
+                    marginLeft: 8, padding: '2px 7px', borderRadius: 10, cursor: 'pointer',
+                    border: `1px solid ${type.default_requires_ironing ? '#8b5cf6' : 'var(--border)'}`,
+                    background: type.default_requires_ironing ? 'rgba(139,92,246,.12)' : 'transparent',
+                    color: type.default_requires_ironing ? '#a78bfa' : 'var(--text3)', fontSize: 9,
+                  }}>
+                  {type.default_requires_ironing ? 'Ütü açık' : 'Ütü kapalı'}
+                </button>
               </div>
             )}
             <div style={{ display: 'flex', gap: 4 }}>

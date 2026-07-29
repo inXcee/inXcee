@@ -188,6 +188,13 @@ export function listItemsQuery({ status, urgent, sla_only, search } = {}) {
            li.intake_name,
            li.clothing_items,
            (SELECT COUNT(*) FROM premium_garments WHERE item_id = li.id) as premium_garment_count,
+           (SELECT COUNT(*) FROM premium_garments WHERE item_id=li.id AND requires_ironing=1) as ironing_total,
+           (SELECT COUNT(*) FROM premium_garments WHERE item_id=li.id AND requires_ironing=1 AND status IN ('ready','delivered')) as ironed_count,
+           (SELECT COUNT(*) FROM premium_garments WHERE item_id=li.id AND status IN ('ready','delivered')) as ready_garment_count,
+           (SELECT COUNT(*) FROM premium_garments WHERE item_id=li.id AND status='lost') as missing_garment_count,
+           (SELECT COUNT(*) FROM premium_garments WHERE item_id=li.id AND status='damaged') as damaged_garment_count,
+           (SELECT COUNT(*) FROM laundry_garment_exceptions e
+            WHERE e.item_id=li.id AND e.reason='rework' AND e.resolved_at IS NULL) as rework_garment_count,
            (SELECT COUNT(*) FROM laundry_items li2
             WHERE li2.room_id = li.room_id
             AND li2.status NOT IN ('delivered','lost')

@@ -138,7 +138,7 @@ export default function LaundryReport() {
           <button className="btn btn-ghost btn-sm" onClick={handleExport}>CSV İndir</button>
           <button className="btn btn-ghost btn-sm" onClick={handlePremiumExport}
             style={{ color: 'var(--accent)', borderColor: 'rgba(240,165,0,0.3)' }}>
-            ★ Premium CSV
+            Tekil Kıyafet CSV
           </button>
         </div>
       </div>
@@ -466,21 +466,23 @@ export default function LaundryReport() {
         </>
       )}
 
-      {/* ── PREMİUM ÖZET ── */}
+      {/* ── TEKİL KIYAFET ÖZETİ ── */}
       {premiumReport && premiumReport.totals?.total > 0 && (
         <div className="panel fade-up" style={{ marginTop: 16 }}>
           <div className="panel-header">
-            <span className="panel-title" style={{ color: 'var(--accent)' }}>★ PREMİUM KIYAFET ÖZET</span>
+            <span className="panel-title" style={{ color: 'var(--accent)' }}>TEKİL KIYAFET OPERASYON ÖZETİ</span>
           </div>
           <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
             {/* KPI */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
               {[
                 ['TOPLAM', premiumReport.totals.total, 'var(--accent)'],
+                ['ÜTÜLENEN', premiumReport.totals.total_ironed, '#8b5cf6'],
+                ['ÜTÜ GEREKLİ', premiumReport.totals.total_ironing_required, 'var(--blue)'],
                 ['TESLİM EDİLDİ', premiumReport.totals.total_delivered, 'var(--green)'],
-                ['DEVAM EDIYOR', premiumReport.totals.total_in_progress, 'var(--blue)'],
                 ['KAYIP', premiumReport.totals.total_lost, 'var(--red)'],
+                ['HASARLI', premiumReport.totals.total_damaged, '#f97316'],
               ].map(([label, val, color]) => (
                 <div key={label} style={{
                   padding: '10px 12px', borderRadius: 8, textAlign: 'center',
@@ -510,6 +512,29 @@ export default function LaundryReport() {
                     </span>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {(premiumReport.exceptions?.length > 0 || premiumReport.operatorProductivity?.length > 0) && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 8, padding: 12 }}>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', marginBottom: 8 }}>İSTİSNALAR</div>
+                  {premiumReport.exceptions?.map(row => (
+                    <div key={row.reason} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, padding: '4px 0' }}>
+                      <span>{row.reason}</span><strong>{row.total}</strong>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 8, padding: 12 }}>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', marginBottom: 8 }}>ÜTÜ OPERATÖRÜ ÜRETKENLİĞİ</div>
+                  {premiumReport.operatorProductivity?.map(row => (
+                    <div key={row.operator_name} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8, fontSize: 10, padding: '4px 0' }}>
+                      <span>{row.operator_name}</span>
+                      <strong>{row.ironed_count} parça</strong>
+                      <span style={{ color: 'var(--text3)' }}>{row.avg_stage_hours ?? '—'} sa</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 

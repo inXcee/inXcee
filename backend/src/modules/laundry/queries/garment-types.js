@@ -7,22 +7,33 @@ export function listGarmentTypesQuery(includeInactive = false) {
   return db.prepare(`SELECT * FROM laundry_garment_types WHERE is_active=1 ORDER BY sort_order ASC, id ASC`).all()
 }
 
-export function insertGarmentTypeQuery({ name, emoji, image_url, sort_order = 0 }) {
+export function insertGarmentTypeQuery({
+  name, emoji, image_url, sort_order = 0, default_requires_ironing = 0,
+}) {
   const db = getDB()
   const r = db.prepare(`
-    INSERT INTO laundry_garment_types(name, emoji, image_url, sort_order)
-    VALUES(?, ?, ?, ?)
-  `).run(name, emoji || null, image_url || null, sort_order)
+    INSERT INTO laundry_garment_types(
+      name, emoji, image_url, sort_order, default_requires_ironing
+    )
+    VALUES(?, ?, ?, ?, ?)
+  `).run(
+    name, emoji || null, image_url || null, sort_order,
+    default_requires_ironing ? 1 : 0
+  )
   return db.prepare(`SELECT * FROM laundry_garment_types WHERE id=?`).get(r.lastInsertRowid)
 }
 
-export function updateGarmentTypeQuery(id, { name, emoji, image_url, sort_order, is_active }) {
+export function updateGarmentTypeQuery(
+  id,
+  { name, emoji, image_url, sort_order, is_active, default_requires_ironing }
+) {
   const db = getDB()
   const current = db.prepare(`SELECT * FROM laundry_garment_types WHERE id=?`).get(id)
   if (!current) return null
   db.prepare(`
     UPDATE laundry_garment_types
-    SET name=?, emoji=?, image_url=?, sort_order=?, is_active=?
+    SET name=?, emoji=?, image_url=?, sort_order=?, is_active=?,
+        default_requires_ironing=?
     WHERE id=?
   `).run(
     name ?? current.name,
@@ -30,6 +41,9 @@ export function updateGarmentTypeQuery(id, { name, emoji, image_url, sort_order,
     image_url !== undefined ? image_url : current.image_url,
     sort_order ?? current.sort_order,
     is_active !== undefined ? (is_active ? 1 : 0) : current.is_active,
+    default_requires_ironing !== undefined
+      ? (default_requires_ironing ? 1 : 0)
+      : current.default_requires_ironing,
     id
   )
   return db.prepare(`SELECT * FROM laundry_garment_types WHERE id=?`).get(id)

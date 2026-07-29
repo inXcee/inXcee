@@ -665,6 +665,95 @@ export function getPremiumGarmentsService(item_id) {
   return q.getPremiumGarmentsQuery(item_id)
 }
 
+export function getGarmentDetailService(garmentId) {
+  const detail = q.getGarmentDetailQuery(garmentId)
+  if (!detail) throw Object.assign(new Error('Parça bulunamadı'), { status: 404 })
+  return detail
+}
+
+export function setGarmentIroningService(
+  itemId,
+  garmentId,
+  { completed = true, client_action_id = null },
+  userId
+) {
+  const db = getDB()
+  const result = db.transaction(() => q.setGarmentIroningQuery({
+    itemId,
+    garmentId,
+    completed,
+    clientActionId: client_action_id || null,
+    userId,
+    workerId: null,
+  })).immediate()
+  if (!result) throw Object.assign(new Error('Parça bulunamadı'), { status: 404 })
+  if (result.changed) {
+    logAudit(
+      userId,
+      completed ? 'laundry_garment_ironed' : 'laundry_garment_ironing_undo',
+      'laundry',
+      garmentId,
+      JSON.stringify({ itemId, client_action_id: client_action_id || null })
+    )
+  }
+  return { ...result, progress: q.getGarmentProgressQuery(itemId) }
+}
+
+export function addGarmentExceptionService(
+  itemId,
+  garmentId,
+  { reason, note, photo_url },
+  userId
+) {
+  const allowed = new Set(['missing', 'damaged', 'no_ironing', 'rework', 'other'])
+  if (!allowed.has(reason)) throw Object.assign(new Error('Geçersiz istisna nedeni'), { status: 400 })
+  if (reason === 'damaged' && !photo_url) {
+    throw Object.assign(new Error('Hasarlı kıyafet için fotoğraf zorunludur'), { status: 400 })
+  }
+  const item = q.getItemQuery(itemId)
+  if (!item) throw Object.assign(new Error('Torba bulunamadı'), { status: 404 })
+  if (!['ironing', 'ready'].includes(item.status)) {
+    throw Object.assign(new Error('İstisna bu aşamada kaydedilemez'), { status: 409 })
+  }
+  const garment = getDB().transaction(() => q.insertGarmentExceptionQuery({
+    itemId,
+    garmentId,
+    stage: item.status === 'ironing' ? 'ironing' : 'delivery',
+    reason,
+    note: note || null,
+    photoUrl: photo_url || null,
+    userId,
+    workerId: null,
+  })).immediate()
+  if (!garment) throw Object.assign(new Error('Parça bulunamadı'), { status: 404 })
+  logAudit(
+    userId,
+    'laundry_garment_exception',
+    'laundry',
+    garmentId,
+    JSON.stringify({ itemId, reason, photo_url: photo_url || null })
+  )
+  return { garment, progress: q.getGarmentProgressQuery(itemId) }
+}
+
+export function completeGarmentIroningService(itemId, shelfLocation, userId) {
+  const item = q.getItemQuery(itemId)
+  if (!item) throw Object.assign(new Error('Torba bulunamadı'), { status: 404 })
+  if (item.status === 'ready') return { ok: true, idempotent: true }
+  if (item.status !== 'ironing') {
+    throw Object.assign(new Error('Torba ütü aşamasında değil'), { status: 409 })
+  }
+  const progress = q.getGarmentProgressQuery(itemId)
+  if (progress.total > 0 && progress.pending_ironing > 0) {
+    throw Object.assign(
+      new Error(`${progress.pending_ironing} kıyafet henüz çözülmedi`),
+      { status: 409, progress }
+    )
+  }
+  advanceItemService(itemId, { shelf_location: shelfLocation || null }, userId)
+  return { ok: true, progress: q.getGarmentProgressQuery(itemId) }
+}
+
 export function getPremiumGarmentByCodeService(code) {
   const g = q.getPremiumGarmentByCodeQuery(code)
   if (!g) throw Object.assign(new Error('Parça bulunamadı'), { status: 404 })

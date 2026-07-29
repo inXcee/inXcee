@@ -237,6 +237,43 @@ export function getPremiumGarmentsQuery(item_id) {
   return db.prepare(`SELECT * FROM premium_garments WHERE item_id=? ORDER BY garment_code ASC`).all(item_id)
 }
 
+export function getGarmentDetailQuery(garmentId) {
+  const db = getDB()
+  const garment = db.prepare(`
+    SELECT pg.*, li.bag_no, li.status AS bag_status, li.tracking_mode,
+           li.created_at AS intake_date, li.shelf_location,
+           r.block, r.room_no, r.floor,
+           COALESCE(iu.full_name, iw.full_name) AS ironed_by_name
+    FROM premium_garments pg
+    JOIN laundry_items li ON li.id=pg.item_id
+    LEFT JOIN rooms r ON r.id=li.room_id
+    LEFT JOIN users iu ON iu.id=pg.ironed_by
+    LEFT JOIN staff iw ON iw.id=pg.ironed_by_worker_id
+    WHERE pg.id=?
+  `).get(garmentId)
+  if (!garment) return null
+  const history = db.prepare(`
+    SELECT h.id, h.from_status, h.to_status, h.notes, h.created_at,
+           COALESCE(u.full_name, w.full_name, 'Sistem') AS operator_name,
+           CASE WHEN h.action_by_worker_id IS NOT NULL THEN 'avs_worker'
+                WHEN h.action_by IS NOT NULL THEN 'user' ELSE 'system' END AS operator_type
+    FROM premium_garment_history h
+    LEFT JOIN users u ON u.id=h.action_by
+    LEFT JOIN staff w ON w.id=h.action_by_worker_id
+    WHERE h.garment_id=?
+    ORDER BY h.id DESC
+  `).all(garmentId)
+  const exceptions = db.prepare(`
+    SELECT e.*, COALESCE(u.full_name, w.full_name, 'Sistem') AS operator_name
+    FROM laundry_garment_exceptions e
+    LEFT JOIN users u ON u.id=e.created_by_user_id
+    LEFT JOIN staff w ON w.id=e.created_by_worker_id
+    WHERE e.garment_id=?
+    ORDER BY e.id DESC
+  `).all(garmentId)
+  return { garment, history, exceptions }
+}
+
 export function getPremiumGarmentByCodeQuery(code) {
   const db = getDB()
   return db.prepare(`SELECT * FROM premium_garments WHERE garment_code=?`).get(code)
@@ -367,11 +404,20 @@ export function searchPremiumGarmentsQuery({ block, room_no, garment_type, brand
   const rows = db.prepare(`
     SELECT pg.id, pg.garment_code, pg.garment_type, pg.brand, pg.model, pg.size, pg.color,
            pg.pattern, pg.status, pg.condition_notes, pg.delivered_to, pg.delivered_at,
+           pg.emoji, pg.colors_json, pg.sequence_no, pg.requires_ironing, pg.source,
+           pg.ironed_at, li.is_premium,
            li.id AS item_id, li.created_at AS intake_date, li.intake_name,
-           r.block, r.room_no
+           li.bag_no, li.tracking_mode, r.block, r.room_no,
+           COALESCE(iu.full_name, iw.full_name) AS ironed_by_name,
+           (SELECT reason FROM laundry_garment_exceptions e
+            WHERE e.garment_id=pg.id ORDER BY e.id DESC LIMIT 1) AS exception_reason,
+           (SELECT photo_url FROM laundry_garment_exceptions e
+            WHERE e.garment_id=pg.id ORDER BY e.id DESC LIMIT 1) AS exception_photo_url
     FROM premium_garments pg
     JOIN laundry_items li ON li.id = pg.item_id
     JOIN rooms r ON r.id = li.room_id
+    LEFT JOIN users iu ON iu.id=pg.ironed_by
+    LEFT JOIN staff iw ON iw.id=pg.ironed_by_worker_id
     ${where}
     ORDER BY li.created_at DESC, pg.garment_code ASC
     LIMIT ? OFFSET ?
@@ -514,6 +560,9 @@ export function getPremiumReportQuery({ from_date, to_date } = {}) {
   const totals = db.prepare(`
     SELECT COUNT(*) AS total,
            SUM(CASE WHEN pg.status='lost' THEN 1 ELSE 0 END) AS total_lost,
+           SUM(CASE WHEN pg.status='damaged' THEN 1 ELSE 0 END) AS total_damaged,
+           SUM(CASE WHEN pg.requires_ironing=1 THEN 1 ELSE 0 END) AS total_ironing_required,
+           SUM(CASE WHEN pg.requires_ironing=1 AND pg.status IN ('ready','delivered') THEN 1 ELSE 0 END) AS total_ironed,
            SUM(CASE WHEN pg.status='delivered' THEN 1 ELSE 0 END) AS total_delivered,
            SUM(CASE WHEN pg.status='ready' THEN 1 ELSE 0 END) AS total_ready,
            SUM(CASE WHEN pg.status IN ('received','ironing') THEN 1 ELSE 0 END) AS total_in_progress
@@ -522,12 +571,36 @@ export function getPremiumReportQuery({ from_date, to_date } = {}) {
     WHERE 1=1 ${dateWhere}
   `).get(...dateParams)
 
-  return { totals, byBlock, byType, lostList, topRooms, avgDelivery }
+  const exceptions = db.prepare(`
+    SELECT e.reason, COUNT(*) AS total
+    FROM laundry_garment_exceptions e
+    JOIN laundry_items li ON li.id=e.item_id
+    WHERE 1=1 ${dateWhere}
+    GROUP BY e.reason ORDER BY total DESC
+  `).all(...dateParams)
+
+  const operatorProductivity = db.prepare(`
+    SELECT COALESCE(u.full_name, w.full_name, 'Sistem') AS operator_name,
+           COUNT(*) AS ironed_count,
+           ROUND(AVG((julianday(pg.ironed_at) - julianday(li.updated_at)) * 24), 1) AS avg_stage_hours
+    FROM premium_garments pg
+    JOIN laundry_items li ON li.id=pg.item_id
+    LEFT JOIN users u ON u.id=pg.ironed_by
+    LEFT JOIN staff w ON w.id=pg.ironed_by_worker_id
+    WHERE pg.ironed_at IS NOT NULL ${dateWhere}
+    GROUP BY COALESCE(u.full_name, w.full_name, 'Sistem')
+    ORDER BY ironed_count DESC
+  `).all(...dateParams)
+
+  return {
+    totals, byBlock, byType, lostList, topRooms, avgDelivery,
+    exceptions, operatorProductivity,
+  }
 }
 
 export function exportPremiumGarmentsQuery({ from_date, to_date } = {}) {
   const db = getDB()
-  const conditions = ['li.is_premium=1']
+  const conditions = ['1=1']
   const params = []
   if (from_date) { conditions.push("li.created_at >= ?"); params.push(from_date) }
   if (to_date)   { conditions.push("li.created_at <= ?"); params.push(to_date + ' 23:59:59') }
@@ -535,11 +608,17 @@ export function exportPremiumGarmentsQuery({ from_date, to_date } = {}) {
   return db.prepare(`
     SELECT pg.garment_code, r.block, r.room_no, pg.garment_type,
            pg.brand, pg.model, pg.size, pg.color, pg.status,
+           pg.requires_ironing, pg.ironed_at,
+           COALESCE(iu.full_name, iw.full_name) AS ironed_by_name,
+           (SELECT reason FROM laundry_garment_exceptions e
+            WHERE e.garment_id=pg.id ORDER BY e.id DESC LIMIT 1) AS exception_reason,
            li.created_at AS intake_date, pg.delivered_at,
            ROUND((julianday(COALESCE(pg.delivered_at, datetime('now'))) - julianday(li.created_at)) * 24, 1) AS total_hours
     FROM premium_garments pg
     JOIN laundry_items li ON li.id = pg.item_id
     JOIN rooms r ON r.id = li.room_id
+    LEFT JOIN users iu ON iu.id=pg.ironed_by
+    LEFT JOIN staff iw ON iw.id=pg.ironed_by_worker_id
     WHERE ${conditions.join(' AND ')}
     ORDER BY li.created_at DESC, pg.garment_code ASC
   `).all(...params)

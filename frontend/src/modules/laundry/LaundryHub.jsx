@@ -376,7 +376,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
               { key: 'rooms',    label: '▦ Odalar' },
               { key: 'records',  label: '≡ Kayıtlar' },
               { key: 'archive',       label: '▣ Arşiv' },
-              { key: 'premium-search', label: '◎ Premium Ara' },
+              { key: 'premium-search', label: '◎ Kıyafet Listesi' },
               { key: 'reports',       label: '◈ Raporlar' },
               { key: 'settings', label: '⚙ Ayarlar' },
             ].map(s => (

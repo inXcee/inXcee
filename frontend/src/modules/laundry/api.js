@@ -71,6 +71,13 @@ export const laundryApi = {
 
   // ── Premium Garments ───────────────────────────────────────────────────
   getPremiumGarments: (item_id) => api.get(`/laundry/items/${item_id}/garments`).then(r => r.data),
+  getGarmentDetail: (id) => api.get(`/laundry/garments/${id}/detail`).then(r => r.data),
+  setGarmentIroning: (itemId, garmentId, data) =>
+    api.put(`/laundry/items/${itemId}/garments/${garmentId}/ironing`, data).then(r => r.data),
+  addGarmentException: (itemId, garmentId, data) =>
+    api.post(`/laundry/items/${itemId}/garments/${garmentId}/exception`, data).then(r => r.data),
+  completeGarmentIroning: (itemId, shelf_location) =>
+    api.post(`/laundry/items/${itemId}/ironing-complete`, { shelf_location }).then(r => r.data),
   addPremiumGarments: (item_id, garments) => api.post(`/laundry/items/${item_id}/garments`, garments).then(r => r.data),
   getPremiumGarmentByCode: (code) => api.get(`/laundry/garments/by-code/${encodeURIComponent(code)}`).then(r => r.data),
   advancePremiumGarment: (id) => api.patch(`/laundry/garments/${id}/advance`).then(r => r.data),

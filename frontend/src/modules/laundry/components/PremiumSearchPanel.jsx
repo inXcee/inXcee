@@ -5,11 +5,11 @@ import { ColorPatternDisplay } from './ColorPatternPicker.jsx'
 
 const STATUS_LABELS = {
   received: 'Teslim Alındı', ironing: 'Ütüde',
-  ready: 'Hazır', delivered: 'Teslim Edildi', lost: 'Kayıp',
+  ready: 'Hazır', delivered: 'Teslim Edildi', lost: 'Kayıp', damaged: 'Hasarlı',
 }
 const STATUS_COLORS = {
   received: 'var(--accent)', ironing: '#6366f1',
-  ready: 'var(--green)', delivered: 'var(--teal)', lost: 'var(--red)',
+  ready: 'var(--green)', delivered: 'var(--teal)', lost: 'var(--red)', damaged: '#f97316',
 }
 
 function FilterRow({ label, children }) {
@@ -37,14 +37,20 @@ export default function PremiumSearchPanel() {
   })
   const [lostOnly, setLostOnly] = useState(false)
   const [page, setPage] = useState(1)
-  const [activeFilters, setActiveFilters] = useState(null)
+  const [activeFilters, setActiveFilters] = useState({})
+  const [selectedId, setSelectedId] = useState(null)
   const isFirstRender = useRef(true)
   const debounceRef = useRef(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['premium-search', activeFilters, page],
     queryFn: () => laundryApi.searchPremiumGarments({ ...activeFilters, page }),
-    enabled: activeFilters !== null,
+    enabled: true,
+  })
+  const { data: detail, isLoading: detailLoading } = useQuery({
+    queryKey: ['garment-detail', selectedId],
+    queryFn: () => laundryApi.getGarmentDetail(selectedId),
+    enabled: !!selectedId,
   })
 
   const search = () => {
@@ -57,7 +63,7 @@ export default function PremiumSearchPanel() {
     isFirstRender.current = true
     setFilters({ block: '', room_no: '', type: '', brand: '', size: '', color: '', pattern: '', intake_name: '', status: '', from: '', to: '' })
     setLostOnly(false)
-    setActiveFilters(null)
+    setActiveFilters({})
     setPage(1)
   }
 
@@ -83,7 +89,7 @@ export default function PremiumSearchPanel() {
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = url; a.download = `premium-garments-${new Date().toISOString().slice(0,10)}.csv`
+    a.href = url; a.download = `kiyafet-listesi-${new Date().toISOString().slice(0,10)}.csv`
     a.click(); URL.revokeObjectURL(url)
   }
 
@@ -92,9 +98,9 @@ export default function PremiumSearchPanel() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <div>
-          <h2 style={{ margin: 0, fontFamily: 'var(--display)', fontSize: 18, letterSpacing: 2 }}>Premium Kıyafet Ara</h2>
+          <h2 style={{ margin: 0, fontFamily: 'var(--display)', fontSize: 18, letterSpacing: 2 }}>Kıyafet Listesi</h2>
           <p style={{ margin: '2px 0 0', fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--mono)' }}>
-            Blok, oda, marka, beden, durum bazında arama
+            Tüm tekil kıyafetler · kod, oda, ütü, istisna ve operatör geçmişi
           </p>
         </div>
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
@@ -201,10 +207,11 @@ export default function PremiumSearchPanel() {
               {data.rows.map(g => {
                 const color = STATUS_COLORS[g.status] || 'var(--text3)'
                 return (
-                  <div key={g.id} style={{
+                  <button key={g.id} type="button" onClick={() => setSelectedId(g.id)} style={{
                     display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
                     background: 'var(--surface)', border: '1px solid var(--border)',
-                    borderLeft: `3px solid ${color}`, borderRadius: 8,
+                    borderLeft: `3px solid ${color}`, borderRadius: 8, color: 'inherit',
+                    cursor: 'pointer', textAlign: 'left', width: '100%',
                   }}>
                     {/* Code */}
                     <span style={{
@@ -252,7 +259,7 @@ export default function PremiumSearchPanel() {
                     <span style={{ fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--mono)', flexShrink: 0 }}>
                       {g.intake_date?.slice(0, 10)}
                     </span>
-                  </div>
+                  </button>
                 )
               })}
             </div>
@@ -275,6 +282,78 @@ export default function PremiumSearchPanel() {
             </div>
           )}
         </>
+      )}
+
+      {selectedId && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,.58)',
+          display: 'flex', justifyContent: 'flex-end',
+        }} onClick={() => setSelectedId(null)}>
+          <aside style={{
+            width: 'min(520px, 100vw)', height: '100%', overflowY: 'auto',
+            background: 'var(--bg)', borderLeft: '1px solid var(--border)', padding: 20,
+          }} onClick={event => event.stopPropagation()}>
+            <button type="button" onClick={() => setSelectedId(null)}
+              style={{ float: 'right', minWidth: 40, minHeight: 40, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)' }}>
+              ✕
+            </button>
+            {detailLoading || !detail ? (
+              <div style={{ color: 'var(--text3)' }}>Detay yükleniyor…</div>
+            ) : (
+              <>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--accent)' }}>
+                  {detail.garment.garment_code}
+                </div>
+                <h2 style={{ margin: '4px 0 2px' }}>
+                  {detail.garment.emoji || '👕'} {detail.garment.garment_type}
+                </h2>
+                <div style={{ color: 'var(--text3)', marginBottom: 16 }}>
+                  {detail.garment.block} · {detail.garment.room_no} · {detail.garment.bag_no}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 18 }}>
+                  {[
+                    ['Durum', STATUS_LABELS[detail.garment.status] || detail.garment.status],
+                    ['Ütü', detail.garment.requires_ironing ? 'Gerekli' : 'Gerekmiyor'],
+                    ['Ütüleyen', detail.garment.ironed_by_name || '—'],
+                    ['Tik zamanı', detail.garment.ironed_at || '—'],
+                  ].map(([label, value]) => (
+                    <div key={label} style={{ background: 'var(--surface2)', borderRadius: 8, padding: 10 }}>
+                      <div style={{ fontSize: 8, color: 'var(--text3)', letterSpacing: 1 }}>{label.toUpperCase()}</div>
+                      <div style={{ fontSize: 11, marginTop: 3 }}>{value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <h3 style={{ fontSize: 12, letterSpacing: 1 }}>İSTİSNALAR</h3>
+                {detail.exceptions.length === 0 ? (
+                  <div style={{ color: 'var(--text3)', fontSize: 11 }}>İstisna yok</div>
+                ) : detail.exceptions.map(row => (
+                  <div key={row.id} style={{ background: 'var(--surface2)', borderLeft: '3px solid #f97316', borderRadius: 8, padding: 10, marginBottom: 8 }}>
+                    <strong>{row.reason}</strong> · {row.operator_name}
+                    <div style={{ color: 'var(--text3)', fontSize: 10 }}>{row.created_at} {row.note ? `· ${row.note}` : ''}</div>
+                    {row.photo_url && (
+                      <a href={row.photo_url} target="_blank" rel="noreferrer" style={{ color: 'var(--accent)', fontSize: 11 }}>
+                        Fotoğrafı aç
+                      </a>
+                    )}
+                  </div>
+                ))}
+
+                <h3 style={{ fontSize: 12, letterSpacing: 1, marginTop: 20 }}>PARÇA GEÇMİŞİ</h3>
+                {detail.history.map(row => (
+                  <div key={row.id} style={{ display: 'grid', gridTemplateColumns: '110px 1fr', gap: 8, borderBottom: '1px solid var(--border)', padding: '9px 0', fontSize: 10 }}>
+                    <span style={{ color: 'var(--text3)' }}>{row.created_at}</span>
+                    <span>
+                      <strong>{row.from_status || 'başlangıç'} → {row.to_status}</strong>
+                      <br />{row.operator_name} · {row.operator_type}
+                      {row.notes ? <><br /><span style={{ color: 'var(--text3)' }}>{row.notes}</span></> : null}
+                    </span>
+                  </div>
+                ))}
+              </>
+            )}
+          </aside>
+        </div>
       )}
     </div>
   )

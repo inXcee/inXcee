@@ -8,6 +8,7 @@ export const createGarmentTypeSchema = z.object({
   emoji: z.string().trim().max(16, 'Emoji çok uzun').nullish(),
   image_url: z.string().trim().max(500, 'URL çok uzun').nullish(),
   sort_order: z.coerce.number().int().min(0).nullish(),
+  default_requires_ironing: z.coerce.number().int().min(0).max(1).nullish(),
 })
 
 export const updateGarmentTypeSchema = z.object({
@@ -16,6 +17,7 @@ export const updateGarmentTypeSchema = z.object({
   image_url: z.string().trim().max(500, 'URL çok uzun').nullish(),
   sort_order: z.coerce.number().int().min(0).nullish(),
   is_active: z.coerce.number().int().min(0).max(1).nullish(),
+  default_requires_ironing: z.coerce.number().int().min(0).max(1).nullish(),
 })
 
 export const createBagSchema = z.object({

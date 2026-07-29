@@ -1527,9 +1527,10 @@ describe('Garment Types', () => {
     const res = await request(app)
       .post('/api/laundry/garment-types')
       .set('Authorization', `Bearer ${token}`)
-      .send({ name: 'Bornoz', emoji: '🛁', sort_order: 99 })
+      .send({ name: 'Bornoz', emoji: '🛁', sort_order: 99, default_requires_ironing: 1 })
     expect(res.status).toBe(201)
     expect(res.body.name).toBe('Bornoz')
+    expect(res.body.default_requires_ironing).toBe(1)
     expect(res.body.id).toBeTruthy()
   })
 
@@ -1539,9 +1540,10 @@ describe('Garment Types', () => {
     const res = await request(app)
       .patch(`/api/laundry/garment-types/${existing.id}`)
       .set('Authorization', `Bearer ${token}`)
-      .send({ name: 'Gömlek (güncellendi)' })
+      .send({ name: 'Gömlek (güncellendi)', default_requires_ironing: 0 })
     expect(res.status).toBe(200)
     expect(res.body.name).toBe('Gömlek (güncellendi)')
+    expect(res.body.default_requires_ironing).toBe(0)
   })
 
   it('GET /laundry/garment-types/all pasifler dahil döner', async () => {
@@ -1555,6 +1557,93 @@ describe('Garment Types', () => {
     expect(res.body.some(t => t.is_active === 0)).toBe(true)
     // restore
     db.prepare("UPDATE laundry_garment_types SET is_active=1 WHERE id=?").run(first.id)
+  })
+})
+
+describe('individual garment management API', () => {
+  it('lists garment progress and records an idempotent ironing tick', async () => {
+    const db = getDB()
+    const itemId = q.insertItemQuery({
+      room_id: roomId,
+      item_count: 1,
+      created_by: userId,
+      tracking_mode: 'individual',
+      status: 'ironing',
+    })
+    q.setBagNoQuery(itemId)
+    const [garment] = q.insertTrackedGarmentsQuery(itemId, [{
+      type_name: 'Gömlek',
+      count: 1,
+      requires_ironing: true,
+    }], { source: 'test', initialStatus: 'ironing' })
+
+    const before = q.listItemsQuery({ status: 'ironing' }).find(row => row.id === itemId)
+    expect(before).toMatchObject({
+      premium_garment_count: 1,
+      ironing_total: 1,
+      ironed_count: 0,
+    })
+
+    const actionId = `mobile-${Date.now()}`
+    const first = await request(app)
+      .put(`/api/laundry/items/${itemId}/garments/${garment.id}/ironing`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ completed: true, client_action_id: actionId })
+    expect(first.status).toBe(200)
+    expect(first.body.garment.status).toBe('ready')
+    expect(first.body.idempotent).toBe(false)
+
+    const repeated = await request(app)
+      .put(`/api/laundry/items/${itemId}/garments/${garment.id}/ironing`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ completed: true, client_action_id: actionId })
+    expect(repeated.status).toBe(200)
+    expect(repeated.body.idempotent).toBe(true)
+    expect(db.prepare(
+      'SELECT COUNT(*) AS count FROM premium_garment_history WHERE client_action_id=?'
+    ).get(actionId).count).toBe(1)
+  })
+
+  it('returns garment operator history and resolves legacy QR to a canonical item', async () => {
+    const db = getDB()
+    const itemId = q.insertItemQuery({
+      room_id: roomId,
+      item_count: 1,
+      created_by: userId,
+      tracking_mode: 'individual',
+      status: 'ironing',
+    })
+    q.setBagNoQuery(itemId)
+    const [garment] = q.insertTrackedGarmentsQuery(itemId, [{
+      type_name: 'Pantolon',
+      count: 1,
+      requires_ironing: true,
+    }], { source: 'test', initialStatus: 'ironing' })
+    q.setGarmentIroningQuery({
+      itemId,
+      garmentId: garment.id,
+      completed: true,
+      clientActionId: `detail-${Date.now()}`,
+      userId,
+      workerId: null,
+    })
+
+    const detail = await request(app)
+      .get(`/api/laundry/garments/${garment.id}/detail`)
+      .set('Authorization', `Bearer ${token}`)
+    expect(detail.status).toBe(200)
+    expect(detail.body.garment.bag_no).toBe(`T-${String(itemId).padStart(5, '0')}`)
+    expect(detail.body.history[0]).toHaveProperty('operator_name')
+
+    const qr = `LEGACY-${Date.now()}`
+    db.prepare("INSERT INTO laundry_bags(qr_code,room_id,status) VALUES(?,?, 'clean')")
+      .run(qr, roomId)
+    const scan = await request(app)
+      .get(`/api/laundry/items/by-code/${qr}`)
+      .set('Authorization', `Bearer ${token}`)
+    expect(scan.status).toBe(200)
+    expect(scan.body.id).toBe(itemId)
+    expect(scan.body.garments).toHaveLength(1)
   })
 })
 

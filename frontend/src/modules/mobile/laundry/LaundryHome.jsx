@@ -2,10 +2,12 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import mobileApi from '../auth/mobileApi.js'
 import { usePullToRefresh } from '../../../shared/hooks/usePullToRefresh.js'
+import GarmentChecklist from './GarmentChecklist.jsx'
 
 const STATUSES = [
   { key: 'dirty',              label: 'Kirli',        color: '#ef4444' },
   { key: 'washing',            label: 'Yıkanıyor',    color: '#3b82f6' },
+  { key: 'ironing',            label: 'Ütüde',        color: '#8b5cf6' },
   { key: 'ready',              label: 'Hazır',        color: '#10b981' },
   { key: 'pending_collection', label: 'Toplanacak',   color: '#f59e0b' },
 ]
@@ -14,11 +16,13 @@ const NEXT_ACTION = {
   pending_collection: { endpoint: 'collect',  label: '→ Topla',     color: '#3b82f6' },
   dirty:              { endpoint: 'advance',  label: '→ Yıkamaya',  color: '#3b82f6' },
   washing:            { endpoint: 'advance',  label: '→ Hazır',     color: '#10b981' },
+  ironing:            { endpoint: 'checklist', label: 'Tekil Ütü',  color: '#8b5cf6' },
   ready:              { endpoint: 'deliver',  label: '→ Teslim Et', color: '#10b981' },
 }
 
 export default function LaundryHome() {
   const [status, setStatus] = useState('dirty')
+  const [checklistItem, setChecklistItem] = useState(null)
   const qc = useQueryClient()
 
   const { data: items = [], isLoading, refetch } = useQuery({
@@ -85,7 +89,9 @@ export default function LaundryHome() {
                     </div>
                   </div>
                   {action && (
-                    <button onClick={() => advanceMut.mutate({ id: it.id, action: action.endpoint })}
+                    <button onClick={() => action.endpoint === 'checklist'
+                      ? setChecklistItem(it)
+                      : advanceMut.mutate({ id: it.id, action: action.endpoint })}
                       disabled={advanceMut.isPending}
                       style={{ padding: '8px 12px', borderRadius: '8px', background: action.color, color: '#fff',
                         border: 'none', fontSize: '12px', fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
@@ -102,6 +108,13 @@ export default function LaundryHome() {
             )
           })}
         </div>
+      )}
+      {checklistItem && (
+        <GarmentChecklist
+          item={checklistItem}
+          onClose={() => setChecklistItem(null)}
+          onChanged={() => qc.invalidateQueries({ queryKey: ['mobile-laundry-items'] })}
+        />
       )}
     </div>
   )

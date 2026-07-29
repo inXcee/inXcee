@@ -411,6 +411,29 @@ export default function ItemCard({ item, machines = [], onDeliver, onDamage, sel
           </div>
         )}
 
+        {item.premium_garment_count > 0 && (
+          <div style={{
+            display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
+            gap: 4, marginBottom: 8,
+          }}>
+            {[
+              ['Ütü', `${item.ironed_count || 0}/${item.ironing_total || 0}`, '#8b5cf6'],
+              ['Hazır', item.ready_garment_count || 0, 'var(--green)'],
+              ['Eksik', item.missing_garment_count || 0, 'var(--red)'],
+              ['Hasar', item.damaged_garment_count || 0, '#f97316'],
+              ['Tekrar', item.rework_garment_count || 0, 'var(--accent)'],
+            ].map(([label, value, color]) => (
+              <div key={label} style={{
+                border: '1px solid var(--border)', borderRadius: 6, padding: '5px 3px',
+                textAlign: 'center', background: 'var(--surface2)',
+              }}>
+                <div style={{ fontFamily: 'var(--display)', color, fontSize: 14 }}>{value}</div>
+                <div style={{ fontFamily: 'var(--mono)', color: 'var(--text3)', fontSize: 7 }}>{label}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* ── SLA bar ── */}
         {item.hours_in_status != null && item.status !== 'delivered' && item.status !== 'lost' && (
           <SlaBar hours={item.hours_in_status} status={item.status} />

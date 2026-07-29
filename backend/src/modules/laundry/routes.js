@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { unlinkSync } from 'node:fs'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { getDB } from '../../shared/db/index.js'
@@ -16,6 +17,11 @@ export const laundryRouter = Router()
 const laundryFull = requireRole('laundry', 'campus_manager')
 const laundryRead = requireRole('laundry', 'shift_supervisor', 'campus_manager')
 const slaWrite    = requireRole('laundry', 'campus_manager')
+
+function removeUploadedPhoto(req) {
+  if (!req.file?.path) return
+  try { unlinkSync(req.file.path) } catch {}
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ITEMS
@@ -49,6 +55,44 @@ laundryRouter.get('/items', ...laundryRead, (req, res) => {
 laundryRouter.get('/summary', ...laundryRead, (req, res) => {
   try { res.json(svc.getLaundrySummaryService()) }
   catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+})
+
+// Yeni mobil tarama, ana laundry_items durum makinesini kullanır. Eski
+// laundry_bags QR kodları oda üzerinden en güncel aktif torbaya yönlendirilir.
+laundryRouter.get('/items/by-code/:code', ...laundryRead, (req, res) => {
+  try {
+    const db = getDB()
+    const code = String(req.params.code || '').trim()
+    let item = db.prepare(`
+      SELECT li.*, r.block, r.room_no, r.floor, m.name AS machine_name
+      FROM laundry_items li
+      LEFT JOIN rooms r ON r.id=li.room_id
+      LEFT JOIN laundry_machines m ON m.id=li.machine_id
+      WHERE li.bag_no=? OR CAST(li.id AS TEXT)=?
+      ORDER BY li.id DESC LIMIT 1
+    `).get(code, code)
+    if (!item) {
+      const legacy = db.prepare('SELECT room_id FROM laundry_bags WHERE qr_code=?').get(code)
+      if (legacy?.room_id) {
+        item = db.prepare(`
+          SELECT li.*, r.block, r.room_no, r.floor, m.name AS machine_name
+          FROM laundry_items li
+          LEFT JOIN rooms r ON r.id=li.room_id
+          LEFT JOIN laundry_machines m ON m.id=li.machine_id
+          WHERE li.room_id=? AND li.status NOT IN ('delivered','lost')
+          ORDER BY li.id DESC LIMIT 1
+        `).get(legacy.room_id)
+      }
+    }
+    if (!item) return res.status(404).json({ error: 'Aktif torba bulunamadı' })
+    res.json({
+      ...item,
+      garments: svc.getPremiumGarmentsService(item.id),
+    })
+  } catch (e) {
+    logger.error('[laundry item scan]', e)
+    res.status(500).json({ error: 'Sunucu hatası' })
+  }
 })
 
 laundryRouter.get('/items/:id', ...laundryRead, (req, res) => {
@@ -393,15 +437,17 @@ laundryRouter.get('/reports/export-premium', ...laundryRead, (req, res) => {
   try {
     const { from, to } = req.query
     const rows = svc.exportPremiumGarmentsService({ from_date: from, to_date: to })
-    const header = 'Kod,Blok,Oda,Tip,Marka,Model,Beden,Renk,Durum,Giriş,Teslim,Toplam Saat'
+    const header = 'Kod,Blok,Oda,Tip,Marka,Model,Beden,Renk,Durum,Ütü Gerekli,Ütüleyen,Ütü Zamanı,İstisna,Giriş,Teslim,Toplam Saat'
     const csv = [header, ...rows.map(r => [
       r.garment_code, r.block, r.room_no, r.garment_type,
       r.brand || '', r.model || '', r.size || '', r.color || '',
-      r.status, r.intake_date?.slice(0, 10) || '',
+      r.status, r.requires_ironing ? 'Evet' : 'Hayır',
+      r.ironed_by_name || '', r.ironed_at || '', r.exception_reason || '',
+      r.intake_date?.slice(0, 10) || '',
       r.delivered_at?.slice(0, 10) || '', r.total_hours ?? '',
     ].join(','))].join('\n')
     res.setHeader('Content-Type', 'text/csv; charset=utf-8')
-    res.setHeader('Content-Disposition', `attachment; filename="premium-garments-${new Date().toISOString().slice(0,10)}.csv"`)
+    res.setHeader('Content-Disposition', `attachment; filename="laundry-garments-${new Date().toISOString().slice(0,10)}.csv"`)
     res.send('\uFEFF' + csv)
   } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
@@ -573,6 +619,80 @@ laundryRouter.get('/garments/by-code/:code', ...laundryRead, (req, res) => {
 laundryRouter.get('/items/:id/garments', ...laundryRead, (req, res) => {
   try { res.json(svc.getPremiumGarmentsService(+req.params.id)) }
   catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
+})
+
+laundryRouter.get('/garments/:id/detail', ...laundryRead, (req, res) => {
+  try { res.json(svc.getGarmentDetailService(+req.params.id)) }
+  catch (e) { res.status(e.status || 500).json({ error: e.message }) }
+})
+
+laundryRouter.put(
+  '/items/:itemId/garments/:garmentId/ironing',
+  ...laundryFull,
+  (req, res) => {
+    const clientActionId = typeof req.body?.client_action_id === 'string'
+      ? req.body.client_action_id.trim()
+      : ''
+    if (clientActionId && !/^[a-zA-Z0-9-]{8,80}$/.test(clientActionId)) {
+      return res.status(400).json({ error: 'Geçersiz client_action_id' })
+    }
+    try {
+      const result = svc.setGarmentIroningService(
+        +req.params.itemId,
+        +req.params.garmentId,
+        {
+          completed: req.body?.completed !== false,
+          client_action_id: clientActionId || null,
+        },
+        req.user.id
+      )
+      res.json({
+        garment: result.garment,
+        idempotent: result.idempotent,
+        progress: result.progress,
+      })
+    } catch (e) { res.status(e.status || 400).json({ error: e.message, progress: e.progress }) }
+  }
+)
+
+laundryRouter.post(
+  '/items/:itemId/garments/:garmentId/exception',
+  ...laundryFull,
+  upload.single('photo'),
+  verifyMagicBytes,
+  (req, res) => {
+    try {
+      const note = String(req.body?.note || '').trim()
+      if (note.length > 500) {
+        removeUploadedPhoto(req)
+        return res.status(400).json({ error: 'Not en fazla 500 karakter olabilir' })
+      }
+      const result = svc.addGarmentExceptionService(
+        +req.params.itemId,
+        +req.params.garmentId,
+        {
+          reason: String(req.body?.reason || '').trim(),
+          note,
+          photo_url: req.file ? `/uploads/${req.file.filename}` : null,
+        },
+        req.user.id
+      )
+      res.status(201).json(result)
+    } catch (e) {
+      removeUploadedPhoto(req)
+      res.status(e.status || 400).json({ error: e.message })
+    }
+  }
+)
+
+laundryRouter.post('/items/:id/ironing-complete', ...laundryFull, (req, res) => {
+  try {
+    res.json(svc.completeGarmentIroningService(
+      +req.params.id,
+      String(req.body?.shelf_location || '').trim() || null,
+      req.user.id
+    ))
+  } catch (e) { res.status(e.status || 400).json({ error: e.message, progress: e.progress }) }
 })
 
 laundryRouter.post('/items/:id/garments', ...laundryFull, (req, res) => {
