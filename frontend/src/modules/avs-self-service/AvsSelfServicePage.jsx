@@ -24,6 +24,7 @@ import LeaveTab from './tabs/LeaveTab.jsx'
 import MealsTab from './tabs/MealsTab.jsx'
 import InventoryTab from './tabs/InventoryTab.jsx'
 import HomeTab from './tabs/HomeTab.jsx'
+import { downscalePhoto, dataUrlToBlob } from '../../shared/photo.js'
 
 const TAB_KEYS = [
   { key: 'home',          icon: '🏠', i18n: 'avs_kiosk.nav.home' },
@@ -77,6 +78,7 @@ export default function AvsSelfServicePage() {
   const [faultSuccess, setFaultSuccess] = useState(false)
   const [faultError, setFaultError] = useState('')
   const [taskPhotoDrafts, setTaskPhotoDrafts] = useState({})
+  const [maintenanceDrafts, setMaintenanceDrafts] = useState({})
   const [taskUploadProgress, setTaskUploadProgress] = useState({})
   const [taskBlock, setTaskBlock] = useState('')
 
@@ -98,7 +100,9 @@ export default function AvsSelfServicePage() {
     || faultForm.description.trim()
     || faultForm.cleaning_task_id
   )
-  const hasSessionDrafts = taskDraftCount > 0 || faultHasDraft
+  const maintenanceDraftCount = Object.values(maintenanceDrafts)
+    .filter(draft => draft?.photoDataUrl || draft?.note?.trim()).length
+  const hasSessionDrafts = taskDraftCount > 0 || faultHasDraft || maintenanceDraftCount > 0
 
   const handleLogout = useCallback(() => {
     setAvsToken(null)
@@ -113,6 +117,7 @@ export default function AvsSelfServicePage() {
     setFaultForm(EMPTY_FAULT_FORM)
     setFaultPhoto(null)
     setTaskPhotoDrafts({})
+    setMaintenanceDrafts({})
     setTaskUploadProgress({})
     setTaskBlock('')
     setPinMsg({ type: '', text: '' })
@@ -282,15 +287,31 @@ export default function AvsSelfServicePage() {
     onSuccess: refreshTechnicalWork,
   })
   const updateMaintenanceStatus = useMutation({
-    mutationFn: ({ id, status, note }) => (
-      avsApi.patch(`/avs-self-service/maintenance/${id}/status`, { status, note })
-    ),
-    onSuccess: refreshTechnicalWork,
+    mutationFn: ({ id, status, note, photoDataUrl }) => {
+      if (!photoDataUrl) {
+        return avsApi.patch(`/avs-self-service/maintenance/${id}/status`, { status, note })
+      }
+      const fd = new FormData()
+      fd.append('status', status)
+      if (note) fd.append('note', note)
+      fd.append('photo', dataUrlToBlob(photoDataUrl), `ariza-cozum-${id}.jpg`)
+      return avsApi.patch(`/avs-self-service/maintenance/${id}/status`, fd)
+    },
+    onSuccess: (_response, variables) => {
+      if (variables.status === 'done') {
+        setMaintenanceDrafts(previous => {
+          const next = { ...previous }
+          delete next[variables.id]
+          return next
+        })
+      }
+      refreshTechnicalWork()
+    },
   })
 
   // Task 16 — Hızlı Arıza mutation (P2: foto → FormData)
   const submitFault = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const fd = new FormData()
       fd.append('location', faultForm.location)
       fd.append('description', faultForm.description)
@@ -299,7 +320,10 @@ export default function AvsSelfServicePage() {
       if (faultForm.block) fd.append('block', faultForm.block)
       if (faultForm.room_id) fd.append('room_id', faultForm.room_id)
       if (faultForm.cleaning_task_id) fd.append('cleaning_task_id', faultForm.cleaning_task_id)
-      if (faultPhoto) fd.append('photo', faultPhoto)
+      if (faultPhoto) {
+        const photoDataUrl = await downscalePhoto(faultPhoto)
+        fd.append('photo', dataUrlToBlob(photoDataUrl), 'ariza-bildirim.jpg')
+      }
       return avsApi.post('/avs-self-service/maintenance', fd)
     },
     onSuccess: (response) => {
@@ -562,6 +586,12 @@ export default function AvsSelfServicePage() {
               <b>🔧 1</b> {t('avs_kiosk.fault_draft')}
             </button>
           )}
+          {maintenanceDraftCount > 0 && (
+            <button type="button" onClick={() => navigateTo('tasks')}
+              className="min-h-12 rounded-xl border border-blue-500/40 bg-blue-950/40 px-3 text-left text-xs text-blue-200">
+              <b>🛠 {maintenanceDraftCount}</b> {t('avs_kiosk.maintenance_drafts')}
+            </button>
+          )}
         </div>
       )}
 
@@ -607,6 +637,8 @@ export default function AvsSelfServicePage() {
           isOnline={isOnline}
           claimMaintenance={claimMaintenance}
           updateMaintenanceStatus={updateMaintenanceStatus}
+          maintenanceDrafts={maintenanceDrafts}
+          setMaintenanceDrafts={setMaintenanceDrafts}
         />
       )}
 

@@ -44,6 +44,7 @@ export default function QuickFaultTab({
   faultSuccess, setFaultSuccess, faultError, submitFault, myFaults, locationRooms = [],
 }) {
   const { t } = useTranslation()
+  const [viewPhoto, setViewPhoto] = useState(null)
   const [blockType, setBlockType] = useState(BLOCK_BY_NAME[faultForm.block]?.type || 'M')
   const floorMatch = faultForm.location.match(/Kat\s+(\d+)/i)
   const [floor, setFloor] = useState(floorMatch ? Number(floorMatch[1]) : null)
@@ -257,8 +258,58 @@ export default function QuickFaultTab({
                   <span>{item.technician_name || t('avs_kiosk.fault.unassigned')}</span>
                   <span>{item.opened_at ? new Date(item.opened_at).toLocaleDateString() : ''}</span>
                 </div>
+                <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-400">{item.description}</p>
+                {(item.photo_before || item.photo_url) && (
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    {item.photo_before && (
+                      <button type="button"
+                        onClick={() => setViewPhoto({
+                          url: item.photo_before,
+                          label: t('avs_kiosk.fault.report_photo'),
+                        })}
+                        className="overflow-hidden rounded-lg border border-red-500/30 text-left">
+                        <img loading="lazy" src={item.photo_before} alt={t('avs_kiosk.fault.report_photo')}
+                          className="aspect-[4/3] w-full object-cover" />
+                        <span className="block bg-slate-900 px-2 py-1.5 text-[10px] font-semibold text-red-300">
+                          {t('avs_kiosk.fault.report_photo')}
+                        </span>
+                      </button>
+                    )}
+                    {item.photo_url && (
+                      <button type="button"
+                        onClick={() => setViewPhoto({
+                          url: item.photo_url,
+                          label: t('avs_kiosk.fault.resolution_photo'),
+                        })}
+                        className="overflow-hidden rounded-lg border border-green-500/30 text-left">
+                        <img loading="lazy" src={item.photo_url} alt={t('avs_kiosk.fault.resolution_photo')}
+                          className="aspect-[4/3] w-full object-cover" />
+                        <span className="block bg-slate-900 px-2 py-1.5 text-[10px] font-semibold text-green-300">
+                          {t('avs_kiosk.fault.resolution_photo')}
+                        </span>
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {viewPhoto && (
+        <div role="dialog" aria-modal="true" aria-label={viewPhoto.label}
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/90 p-4"
+          onClick={() => setViewPhoto(null)}>
+          <div className="w-full max-w-2xl" onClick={event => event.stopPropagation()}>
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="font-semibold text-white">{viewPhoto.label}</div>
+              <button type="button" onClick={() => setViewPhoto(null)}
+                aria-label={t('avs_kiosk.tasks.close')}
+                className="min-h-11 min-w-11 rounded-xl bg-slate-800 text-white">✕</button>
+            </div>
+            <img src={viewPhoto.url} alt={viewPhoto.label}
+              className="max-h-[80vh] w-full rounded-2xl object-contain" />
           </div>
         </div>
       )}

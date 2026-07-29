@@ -203,6 +203,68 @@ describe('AVS sekme parçaları smoke', () => {
     expect(claimMaintenance.mutate).toHaveBeenCalledWith(302)
   })
 
+  it('TasksTab arıza bildirim fotoğrafını teknik personele gösterir', () => {
+    const data = {
+      type: 'maintenance',
+      worker_id: 77,
+      items: [{
+        id: 303, location: 'A Kat 1 Oda 101', description: 'Priz çevresinde kararma var',
+        status: 'open', priority: 'high', category: 'elektrik',
+        avs_assigned_worker_id: 77, avs_worker_name: 'Teknik Test', is_mine: 1,
+        photo_before: '/uploads/ariza-bildirim.jpg', opened_at: '2026-07-29 10:00:00',
+      }],
+    }
+    renderWithProviders(
+      <TasksTab query={{ ...idleQuery, data }} data={data}
+        completeTask={{ mutate: vi.fn(), isPending: false }}
+        skipTask={{ mutate: vi.fn(), isPending: false }}
+        photoDrafts={{}} setPhotoDrafts={() => {}} uploadProgress={{}}
+        claimMaintenance={{ mutate: vi.fn(), isPending: false }}
+        updateMaintenanceStatus={{ mutate: vi.fn(), isPending: false }}
+        onReportFault={() => {}} selectedBlock="" onSelectBlock={() => {}} />
+    )
+    fireEvent.click(screen.getByRole('button', { name: /A Kat 1 Oda 101/ }))
+    expect(screen.getByRole('img', { name: 'Bildirim fotoğrafı' })).toHaveAttribute(
+      'src',
+      '/uploads/ariza-bildirim.jpg'
+    )
+  })
+
+  it('TasksTab çözüm fotoğrafı taslağıyla işi tamamlar', () => {
+    const updateMaintenanceStatus = { mutate: vi.fn(), isPending: false }
+    const photoDataUrl = 'data:image/jpeg;base64,AA=='
+    const data = {
+      type: 'maintenance',
+      worker_id: 77,
+      items: [{
+        id: 304, location: 'M2 Kat 2 Oda 220', description: 'Sigorta tekrar tekrar atıyor',
+        status: 'in_progress', priority: 'high', category: 'elektrik',
+        avs_assigned_worker_id: 77, avs_worker_name: 'Teknik Test', is_mine: 1,
+        opened_at: '2026-07-29 10:00:00', started_at: '2026-07-29 10:10:00',
+      }],
+    }
+    renderWithProviders(
+      <TasksTab query={{ ...idleQuery, data }} data={data}
+        completeTask={{ mutate: vi.fn(), isPending: false }}
+        skipTask={{ mutate: vi.fn(), isPending: false }}
+        photoDrafts={{}} setPhotoDrafts={() => {}} uploadProgress={{}}
+        claimMaintenance={{ mutate: vi.fn(), isPending: false }}
+        updateMaintenanceStatus={updateMaintenanceStatus}
+        maintenanceDrafts={{ 304: { note: 'Kablo değiştirildi', photoDataUrl } }}
+        setMaintenanceDrafts={vi.fn()}
+        onReportFault={() => {}} selectedBlock="" onSelectBlock={() => {}} />
+    )
+    fireEvent.click(screen.getByRole('button', { name: /M2 Kat 2 Oda 220/ }))
+    expect(screen.getByRole('img', { name: 'Çözüm fotoğrafı' })).toHaveAttribute('src', photoDataUrl)
+    fireEvent.click(screen.getByRole('button', { name: /İşi tamamla/i }))
+    expect(updateMaintenanceStatus.mutate).toHaveBeenCalledWith({
+      id: 304,
+      status: 'done',
+      note: 'Kablo değiştirildi',
+      photoDataUrl,
+    })
+  })
+
   it('TasksTab fotoğraf olmadan tamamlama butonunu kapalı tutar', async () => {
     renderWithProviders(
       <TasksTab query={{ ...idleQuery, data: housekeepingData }} data={housekeepingData}
@@ -353,5 +415,28 @@ describe('AVS sekme parçaları smoke', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Arıza sekmesini değiştir' }))
     expect(screen.getByDisplayValue('M1 kazan dairesi')).toBeInTheDocument()
     expect(screen.getByDisplayValue('Boru bağlantısında su sızıntısı görülüyor')).toBeInTheDocument()
+  })
+
+  it('bildirdiklerim kartında bildirim ve çözüm fotoğraflarını gösterir', () => {
+    renderWithProviders(
+      <QuickFaultTab
+        faultForm={{
+          location: '', description: '', priority: 'medium', category: 'genel',
+          block: '', room_id: '', cleaning_task_id: '',
+        }}
+        setFaultForm={() => {}} faultPhoto={null} setFaultPhoto={() => {}}
+        faultSuccess={false} setFaultSuccess={() => {}} faultError=""
+        submitFault={{ mutate: vi.fn(), isPending: false }}
+        locationRooms={[]}
+        myFaults={[{
+          id: 901, tracking_no: 'ARZ-000901', location: 'M1 Oda 101',
+          description: 'Musluk bağlantısı değiştirildi', status: 'done', category: 'tesisat',
+          photo_before: '/uploads/bildirim.jpg', photo_url: '/uploads/cozum.jpg',
+          technician_name: 'Teknik Test', opened_at: '2026-07-29 10:00:00',
+        }]}
+      />
+    )
+    expect(screen.getByRole('img', { name: 'Bildirim fotoğrafı' })).toHaveAttribute('src', '/uploads/bildirim.jpg')
+    expect(screen.getByRole('img', { name: 'Çözüm fotoğrafı' })).toHaveAttribute('src', '/uploads/cozum.jpg')
   })
 })

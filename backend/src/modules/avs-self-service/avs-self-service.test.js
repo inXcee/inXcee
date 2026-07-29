@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import request from 'supertest'
+import { existsSync, unlinkSync } from 'node:fs'
+import { join } from 'node:path'
 import app from '../../app.js'
 import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
@@ -181,6 +183,23 @@ describe('AVS Self-Service — technical work pool', () => {
     expect(res.body.items[0]).toHaveProperty('sla_deadline')
   })
 
+  it('bildirime eklenen fotoğrafı teknik iş kartına taşır', async () => {
+    const db = getDB()
+    const fault = db.prepare(`
+      INSERT INTO maintenance_requests(
+        location, description, status, priority, category, photo_before
+      ) VALUES(
+        'A Kat 1 Oda 101','Fotoğraflı teknik bildirim kontrolü','open','medium','elektrik',
+        '/uploads/ariza-bildirim-test.jpg'
+      )
+    `).run()
+    const res = await request(app).get('/api/avs-self-service/my-tasks')
+      .set('Authorization', `Bearer ${technicalToken}`)
+    const item = res.body.items.find(row => row.id === fault.lastInsertRowid)
+    expect(item.photo_before).toBe('/uploads/ariza-bildirim-test.jpg')
+    expect(item).toHaveProperty('photo_url')
+  })
+
   it('arızayı atomik sahiplenir, tekrar isteğini idempotent karşılar ve audit yazar', async () => {
     const db = getDB()
     const fault = db.prepare(`
@@ -245,14 +264,20 @@ describe('AVS Self-Service — technical work pool', () => {
     const completed = await request(app)
       .patch(`/api/avs-self-service/maintenance/${id}/status`)
       .set('Authorization', `Bearer ${technicalToken}`)
-      .send({ status: 'done', note: 'Arızalı parça değiştirildi ve test edildi.' })
+      .field('status', 'done')
+      .field('note', 'Arızalı parça değiştirildi ve test edildi.')
+      .attach('photo', JPEG, 'ariza-cozum.jpg')
     expect(completed.status).toBe(200)
+    expect(completed.body.photo_url).toMatch(/^\/uploads\//)
     const saved = db.prepare(`
-      SELECT status, started_at, closed_at FROM maintenance_requests WHERE id=?
+      SELECT status, started_at, closed_at, photo_url FROM maintenance_requests WHERE id=?
     `).get(id)
     expect(saved.status).toBe('done')
     expect(saved.started_at).toBeTruthy()
     expect(saved.closed_at).toBeTruthy()
+    expect(saved.photo_url).toBe(completed.body.photo_url)
+    const savedPhotoPath = join(process.cwd(), saved.photo_url.replace(/^\//, ''))
+    expect(existsSync(savedPhotoPath)).toBe(true)
     const audit = db.prepare(`
       SELECT detail FROM audit_log
       WHERE action='kiosk_avs_maintenance_status' AND target_id=?
@@ -262,7 +287,20 @@ describe('AVS Self-Service — technical work pool', () => {
       workerId: technicalWorkerId,
       status: 'done',
       note: 'Arızalı parça değiştirildi ve test edildi.',
+      photoUrl: saved.photo_url,
     })
+
+    const retry = await request(app)
+      .patch(`/api/avs-self-service/maintenance/${id}/status`)
+      .set('Authorization', `Bearer ${technicalToken}`)
+      .send({ status: 'done', note: 'Tekrar gönderim' })
+    expect(retry.status).toBe(200)
+    expect(retry.body.photo_url).toBe(saved.photo_url)
+    expect(db.prepare(`
+      SELECT COUNT(*) AS count FROM audit_log
+      WHERE action='kiosk_avs_maintenance_status' AND target_id=?
+    `).get(id).count).toBe(2)
+    unlinkSync(savedPhotoPath)
   })
 
   it('temizlik personelinin teknik sahiplenme uç noktasını kullanmasını reddeder', async () => {

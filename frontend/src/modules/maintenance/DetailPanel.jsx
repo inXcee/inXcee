@@ -223,13 +223,19 @@ export default function DetailPanel({ requestId, onClose }) {
             {request.photo_before && (
               <div style={{ flex: 1, minWidth: '140px' }}>
                 <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--red)', letterSpacing: '1.5px', marginBottom: '6px' }}>ÖNCE</div>
-                <img loading="lazy" src={request.photo_before} alt="" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--border)' }} />
+                <a href={request.photo_before} target="_blank" rel="noreferrer" title="Bildirim fotoğrafını tam boy aç">
+                  <img loading="lazy" src={request.photo_before} alt="Arıza bildirim fotoğrafı"
+                    style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--border)' }} />
+                </a>
               </div>
             )}
             {request.photo_url && (
               <div style={{ flex: 1, minWidth: '140px' }}>
                 <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--green)', letterSpacing: '1.5px', marginBottom: '6px' }}>SONRA</div>
-                <img loading="lazy" src={request.photo_url} alt="" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--border)' }} />
+                <a href={request.photo_url} target="_blank" rel="noreferrer" title="Çözüm fotoğrafını tam boy aç">
+                  <img loading="lazy" src={request.photo_url} alt="Arıza çözüm fotoğrafı"
+                    style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--border)' }} />
+                </a>
               </div>
             )}
           </div>

@@ -9,7 +9,7 @@ const SKIP_REASONS = ['occupied', 'dnd', 'locked', 'fault', 'other']
 export default function TasksTab({
   query, data, completeTask, skipTask, photoDrafts, setPhotoDrafts,
   uploadProgress, onReportFault, selectedBlock, onSelectBlock, isOnline = true,
-  claimMaintenance, updateMaintenanceStatus,
+  claimMaintenance, updateMaintenanceStatus, maintenanceDrafts = {}, setMaintenanceDrafts,
 }) {
   const { t } = useTranslation()
   const [selFloor, setSelFloor] = useState(null)
@@ -442,6 +442,8 @@ export default function TasksTab({
           <TechnicalTasksPanel data={data}
             claimMaintenance={claimMaintenance}
             updateMaintenanceStatus={updateMaintenanceStatus}
+            maintenanceDrafts={maintenanceDrafts}
+            setMaintenanceDrafts={setMaintenanceDrafts}
             isOnline={isOnline} />
         ) : (
           <div className="rounded-2xl bg-slate-900 p-6 text-center text-sm text-slate-400">

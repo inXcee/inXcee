@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from '../../../shared/i18n/index.js'
+import { downscalePhoto } from '../../../shared/photo.js'
 
 const PRIORITIES = ['all', 'high', 'medium', 'low']
 const SCOPES = ['mine', 'available', 'all']
@@ -20,6 +21,8 @@ export default function TechnicalTasksPanel({
   data,
   claimMaintenance,
   updateMaintenanceStatus,
+  maintenanceDrafts = {},
+  setMaintenanceDrafts = () => {},
   isOnline = true,
 }) {
   const { t } = useTranslation()
@@ -27,7 +30,8 @@ export default function TechnicalTasksPanel({
   const [priority, setPriority] = useState('all')
   const [search, setSearch] = useState('')
   const [expandedId, setExpandedId] = useState(null)
-  const [notes, setNotes] = useState({})
+  const [viewerPhoto, setViewerPhoto] = useState(null)
+  const [photoErrors, setPhotoErrors] = useState({})
 
   const items = data?.items || []
   const counts = useMemo(() => ({
@@ -48,6 +52,29 @@ export default function TechnicalTasksPanel({
         .toLocaleLowerCase('tr-TR').includes(normalizedSearch)
     return scopeMatch && priorityMatch && searchMatch
   })
+
+  function updateDraft(id, patch) {
+    setMaintenanceDrafts(previous => ({
+      ...previous,
+      [id]: { ...(previous[id] || {}), ...patch },
+    }))
+  }
+
+  async function selectResolutionPhoto(id, event) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    try {
+      const photoDataUrl = await downscalePhoto(file)
+      updateDraft(id, { photoDataUrl })
+      setPhotoErrors(previous => ({ ...previous, [id]: '' }))
+    } catch {
+      setPhotoErrors(previous => ({
+        ...previous,
+        [id]: t('avs_kiosk.tasks.tech_photo_error'),
+      }))
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -106,6 +133,7 @@ export default function TechnicalTasksPanel({
           const expanded = expandedId === item.id
           const available = !item.avs_assigned_worker_id && !item.assigned_to
           const ownerName = item.avs_worker_name || item.technician_name
+          const draft = maintenanceDrafts[item.id] || {}
           const overdue = item.sla_deadline && item.status !== 'done'
             && new Date(item.sla_deadline).getTime() < Date.now()
           const claiming = claimMaintenance?.isPending && claimMaintenance.variables === item.id
@@ -182,6 +210,41 @@ export default function TechnicalTasksPanel({
                     </div>
                   </div>
 
+                  {(item.photo_before || item.photo_url) && (
+                    <div className="grid grid-cols-2 gap-2">
+                      {item.photo_before && (
+                        <button type="button"
+                          onClick={() => setViewerPhoto({
+                            url: item.photo_before,
+                            label: t('avs_kiosk.tasks.tech_report_photo'),
+                          })}
+                          className="overflow-hidden rounded-xl border border-red-500/30 bg-slate-950 text-left">
+                          <img loading="lazy" src={item.photo_before}
+                            alt={t('avs_kiosk.tasks.tech_report_photo')}
+                            className="aspect-[4/3] w-full object-cover" />
+                          <span className="block px-3 py-2 text-xs font-semibold text-red-300">
+                            {t('avs_kiosk.tasks.tech_report_photo')}
+                          </span>
+                        </button>
+                      )}
+                      {item.photo_url && (
+                        <button type="button"
+                          onClick={() => setViewerPhoto({
+                            url: item.photo_url,
+                            label: t('avs_kiosk.tasks.tech_resolution_photo'),
+                          })}
+                          className="overflow-hidden rounded-xl border border-green-500/30 bg-slate-950 text-left">
+                          <img loading="lazy" src={item.photo_url}
+                            alt={t('avs_kiosk.tasks.tech_resolution_photo')}
+                            className="aspect-[4/3] w-full object-cover" />
+                          <span className="block px-3 py-2 text-xs font-semibold text-green-300">
+                            {t('avs_kiosk.tasks.tech_resolution_photo')}
+                          </span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+
                   {(ownerName || item.assigned_at || item.started_at) && (
                     <div className="rounded-xl border border-slate-800 bg-slate-950 p-3 text-xs">
                       <div className="font-semibold text-slate-300">{t('avs_kiosk.tasks.tech_history')}</div>
@@ -230,16 +293,62 @@ export default function TechnicalTasksPanel({
 
                   {Boolean(item.is_mine) && item.status === 'in_progress' && (
                     <div className="space-y-3">
-                      <textarea value={notes[item.id] || ''}
-                        onChange={event => setNotes(previous => ({ ...previous, [item.id]: event.target.value }))}
+                      <textarea value={draft.note || ''}
+                        onChange={event => updateDraft(item.id, { note: event.target.value })}
                         maxLength={500}
                         placeholder={t('avs_kiosk.tasks.tech_note')}
                         className="min-h-24 w-full resize-none rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm text-slate-100 outline-none focus:border-green-500" />
+                      {draft.photoDataUrl ? (
+                        <div className="overflow-hidden rounded-xl border border-green-500/40 bg-green-950/20">
+                          <button type="button"
+                            onClick={() => setViewerPhoto({
+                              url: draft.photoDataUrl,
+                              label: t('avs_kiosk.tasks.tech_resolution_photo'),
+                            })}
+                            className="block w-full">
+                            <img src={draft.photoDataUrl} alt={t('avs_kiosk.tasks.tech_resolution_photo')}
+                              className="max-h-64 w-full object-cover" />
+                          </button>
+                          <div className="flex items-center justify-between gap-3 p-3">
+                            <span className="text-xs font-semibold text-green-300">
+                              {t('avs_kiosk.tasks.tech_resolution_photo_ready')}
+                            </span>
+                            <button type="button" onClick={() => updateDraft(item.id, { photoDataUrl: '' })}
+                              className="min-h-10 rounded-lg bg-slate-800 px-3 text-xs text-slate-300">
+                              {t('avs_kiosk.fault.remove_photo')}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <label className="flex min-h-14 cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-green-500/50 bg-green-950/20 px-2 text-center text-xs font-semibold text-green-300">
+                              📷 {t('avs_kiosk.tasks.tech_take_resolution_photo')}
+                              <input type="file" accept="image/*" capture="environment" className="hidden"
+                                onChange={event => selectResolutionPhoto(item.id, event)} />
+                            </label>
+                            <label className="flex min-h-14 cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-slate-600 bg-slate-950 px-2 text-center text-xs font-semibold text-slate-300">
+                              🖼 {t('avs_kiosk.tasks.tech_choose_resolution_photo')}
+                              <input type="file" accept="image/*" className="hidden"
+                                onChange={event => selectResolutionPhoto(item.id, event)} />
+                            </label>
+                          </div>
+                          <p className="mt-2 text-xs text-slate-500">
+                            {t('avs_kiosk.tasks.tech_resolution_photo_optional')}
+                          </p>
+                        </div>
+                      )}
+                      {photoErrors[item.id] && (
+                        <div role="alert" className="rounded-xl bg-red-950/40 p-3 text-xs text-red-300">
+                          {photoErrors[item.id]}
+                        </div>
+                      )}
                       <button type="button" disabled={!isOnline || updating}
                         onClick={() => updateMaintenanceStatus.mutate({
                           id: item.id,
                           status: 'done',
-                          note: notes[item.id]?.trim() || undefined,
+                          note: draft.note?.trim() || undefined,
+                          photoDataUrl: draft.photoDataUrl || undefined,
                         })}
                         className="min-h-14 w-full rounded-xl bg-green-600 px-4 font-semibold text-white disabled:opacity-50">
                         {updating ? t('avs_kiosk.tasks.tech_saving') : t('avs_kiosk.tasks.tech_complete')}
@@ -252,6 +361,23 @@ export default function TechnicalTasksPanel({
           )
         })}
       </div>
+
+      {viewerPhoto && (
+        <div role="dialog" aria-modal="true" aria-label={viewerPhoto.label}
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/90 p-4"
+          onClick={() => setViewerPhoto(null)}>
+          <div className="w-full max-w-2xl" onClick={event => event.stopPropagation()}>
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="font-semibold text-white">{viewerPhoto.label}</div>
+              <button type="button" onClick={() => setViewerPhoto(null)}
+                aria-label={t('avs_kiosk.tasks.close')}
+                className="min-h-11 min-w-11 rounded-xl bg-slate-800 text-white">✕</button>
+            </div>
+            <img src={viewerPhoto.url} alt={viewerPhoto.label}
+              className="max-h-[80vh] w-full rounded-2xl object-contain" />
+          </div>
+        </div>
+      )}
     </div>
   )
 }

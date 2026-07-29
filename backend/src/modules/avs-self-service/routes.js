@@ -77,6 +77,17 @@ function acceptCleaningProof(req, res, next) {
   })
 }
 
+function acceptMaintenancePhoto(req, res, next) {
+  upload.single('photo')(req, res, err => {
+    if (!err) return next()
+    removeUploadedFiles(req)
+    const message = err.code === 'LIMIT_FILE_SIZE'
+      ? 'Arıza fotoğrafı en fazla 10 MB olabilir'
+      : err.message || 'Arıza fotoğrafı yüklenemedi'
+    return res.status(400).json({ error: message })
+  })
+}
+
 function validateUploadBody(schema) {
   return (req, res, next) => {
     const parsed = schema.safeParse(req.body)
@@ -429,6 +440,7 @@ avsSelfServiceRouter.get('/my-tasks', requireAvsKiosk, (req, res) => {
         SELECT mr.id, mr.location, mr.description, mr.status, mr.priority,
                mr.category, mr.block, mr.room_id, mr.cleaning_task_id,
                mr.opened_at, mr.assigned_at, mr.started_at, mr.sla_deadline,
+               mr.photo_before, mr.photo_url,
                mr.avs_assigned_worker_id, mr.assigned_to,
                aw.full_name AS avs_worker_name,
                t.full_name AS technician_name,
@@ -511,29 +523,55 @@ avsSelfServiceRouter.patch('/maintenance/:id/claim', requireAvsKiosk, (req, res)
 })
 
 // Teknik kiosk durum geçişi — sadece işi üstlenen personel başlatabilir/tamamlayabilir.
-avsSelfServiceRouter.patch('/maintenance/:id/status', requireAvsKiosk, (req, res) => {
-  try {
+avsSelfServiceRouter.patch(
+  '/maintenance/:id/status',
+  requireAvsKiosk,
+  acceptMaintenancePhoto,
+  verifyMagicBytes,
+  (req, res) => {
+    try {
     const db = getDB()
     const worker = loadTechnicalWorker(db, req.user.workerId)
-    if (!worker) return res.status(403).json({ error: 'Bu işlem yalnız teknik personel içindir' })
+    if (!worker) {
+      removeUploadedFiles(req)
+      return res.status(403).json({ error: 'Bu işlem yalnız teknik personel içindir' })
+    }
 
     const id = Number(req.params.id)
-    if (!Number.isInteger(id) || id <= 0) return res.status(404).json({ error: 'Arıza bulunamadı' })
+    if (!Number.isInteger(id) || id <= 0) {
+      removeUploadedFiles(req)
+      return res.status(404).json({ error: 'Arıza bulunamadı' })
+    }
     const status = req.body?.status
     const note = typeof req.body?.note === 'string' ? req.body.note.trim() : ''
     if (!['in_progress', 'done'].includes(status)) {
+      removeUploadedFiles(req)
       return res.status(400).json({ error: 'Geçersiz arıza durumu' })
     }
-    if (note.length > 500) return res.status(400).json({ error: 'İşlem notu en fazla 500 karakter olabilir' })
+    if (note.length > 500) {
+      removeUploadedFiles(req)
+      return res.status(400).json({ error: 'İşlem notu en fazla 500 karakter olabilir' })
+    }
+    if (req.file && status !== 'done') {
+      removeUploadedFiles(req)
+      return res.status(400).json({ error: 'Çözüm fotoğrafı yalnız iş tamamlanırken eklenebilir' })
+    }
+    const photoUrl = req.file ? `/uploads/${req.file.filename}` : null
 
     const transition = db.transaction(() => {
       const current = db.prepare(`
-        SELECT id, status, avs_assigned_worker_id
+        SELECT id, status, avs_assigned_worker_id, photo_url
         FROM maintenance_requests WHERE id=?
       `).get(id)
       if (!current) return { status: 404, error: 'Arıza bulunamadı' }
       if (current.avs_assigned_worker_id !== worker.id) {
         return { status: 403, error: 'Bu arızayı önce sizin üstlenmeniz gerekir' }
+      }
+      if (status === 'in_progress' && current.status === 'in_progress') {
+        return { ok: true, idempotent: true, photoUrl: current.photo_url }
+      }
+      if (status === 'done' && current.status === 'done') {
+        return { ok: true, idempotent: true, photoUrl: current.photo_url }
       }
       const allowed = status === 'in_progress'
         ? ['open', 'assigned'].includes(current.status)
@@ -549,9 +587,10 @@ avsSelfServiceRouter.patch('/maintenance/:id/status', requireAvsKiosk, (req, res
       } else {
         db.prepare(`
           UPDATE maintenance_requests
-          SET status='done', closed_at=datetime('now'), wait_reason=NULL
+          SET status='done', closed_at=datetime('now'), wait_reason=NULL,
+              photo_url=COALESCE(?, photo_url)
           WHERE id=?
-        `).run(id)
+        `).run(photoUrl, id)
       }
       db.prepare(`
         INSERT INTO audit_log(user_id, action, module, target_id, detail)
@@ -560,13 +599,25 @@ avsSelfServiceRouter.patch('/maintenance/:id/status', requireAvsKiosk, (req, res
         workerId: worker.id,
         status,
         note: note || null,
+        photoUrl,
       }))
-      return { ok: true }
+      return { ok: true, photoUrl }
     })()
 
-    if (!transition.ok) return res.status(transition.status).json({ error: transition.error })
-    return res.json({ ok: true, id, status, tracking_no: maintenanceTrackingNo(id) })
+    if (!transition.ok) {
+      removeUploadedFiles(req)
+      return res.status(transition.status).json({ error: transition.error })
+    }
+    if (transition.idempotent) removeUploadedFiles(req)
+    return res.json({
+      ok: true,
+      id,
+      status,
+      photo_url: transition.photoUrl || null,
+      tracking_no: maintenanceTrackingNo(id),
+    })
   } catch (e) {
+    removeUploadedFiles(req)
     logger.error('[avs maintenance status]', e)
     return res.status(500).json({ error: 'Sunucu hatası' })
   }
