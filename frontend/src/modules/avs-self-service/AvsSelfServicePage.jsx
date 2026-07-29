@@ -66,6 +66,10 @@ export default function AvsSelfServicePage() {
 
   // Bildirim akışı paneli (header zili)
   const [feedOpen, setFeedOpen] = useState(false)
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
+  const [isOnline, setIsOnline] = useState(() => (
+    typeof navigator === 'undefined' ? true : navigator.onLine
+  ))
 
   // Task 16 — Hızlı Arıza
   const [faultForm, setFaultForm] = useState(EMPTY_FAULT_FORM)
@@ -87,6 +91,14 @@ export default function AvsSelfServicePage() {
   const [invNote, setInvNote] = useState('')
   const [invLocation, setInvLocation] = useState('')
   const [invMsg, setInvMsg] = useState({ type: '', text: '' })
+  const taskDraftCount = Object.values(taskPhotoDrafts).filter(photos => photos?.length > 0).length
+  const faultHasDraft = Boolean(
+    faultPhoto
+    || faultForm.location.trim()
+    || faultForm.description.trim()
+    || faultForm.cleaning_task_id
+  )
+  const hasSessionDrafts = taskDraftCount > 0 || faultHasDraft
 
   const handleLogout = useCallback(() => {
     setAvsToken(null)
@@ -108,7 +120,33 @@ export default function AvsSelfServicePage() {
     setInvSearch(''); setInvSelected(null); setInvQty(1); setInvNote(''); setInvLocation('')
     setInvMsg({ type: '', text: '' })
     setFeedOpen(false)
+    setLogoutConfirmOpen(false)
   }, [])
+
+  const requestLogout = () => {
+    if (hasSessionDrafts) setLogoutConfirmOpen(true)
+    else handleLogout()
+  }
+
+  useEffect(() => {
+    const updateOnlineState = () => setIsOnline(navigator.onLine)
+    window.addEventListener('online', updateOnlineState)
+    window.addEventListener('offline', updateOnlineState)
+    return () => {
+      window.removeEventListener('online', updateOnlineState)
+      window.removeEventListener('offline', updateOnlineState)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!hasSessionDrafts) return undefined
+    const protectDrafts = event => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', protectDrafts)
+    return () => window.removeEventListener('beforeunload', protectDrafts)
+  }, [hasSessionDrafts])
 
   // 5dk inaktivite → logout (son 30sn'de toast uyarısı)
   useIdleTimeout({
@@ -129,8 +167,10 @@ export default function AvsSelfServicePage() {
   }
 
   const overviewQuery = useQuery({
-    queryKey: ['avs-overview', avsToken],
-    queryFn: () => avsApi.get('/avs-self-service/overview').then(r => r.data),
+    queryKey: ['avs-overview', avsToken, taskBlock],
+    queryFn: () => avsApi.get(
+      `/avs-self-service/overview${taskBlock ? `?block=${encodeURIComponent(taskBlock)}` : ''}`
+    ).then(r => r.data),
     enabled: !!avsToken,
   })
   const overview = overviewQuery.data
@@ -453,6 +493,13 @@ export default function AvsSelfServicePage() {
     setActiveTab('quick_fault')
   }
 
+  const navigateTo = (tabKey) => {
+    if (tabKey === 'quick_fault' && taskBlock && !faultForm.block && !faultForm.cleaning_task_id) {
+      setFaultForm(previous => ({ ...previous, block: taskBlock }))
+    }
+    setActiveTab(tabKey)
+  }
+
   // ─── Login ekranı ───────────────────────────────────────────
   if (!avsToken) {
     return (
@@ -470,13 +517,65 @@ export default function AvsSelfServicePage() {
   // ─── Ana ekran ──────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col max-w-lg mx-auto p-4 pb-24">
-      <KioskHeader userName={selected?.full_name} onLogout={handleLogout}
+      <KioskHeader userName={selected?.full_name} onLogout={requestLogout}
         onRefresh={handleRefresh} refreshing={!!activeQuery?.isFetching}
         onBell={openFeed} unread={unread} />
       <NotificationFeed open={feedOpen} onClose={() => setFeedOpen(false)} items={notifications} avsApi={avsApi} />
       <div className="mb-4 flex justify-end"><LanguageSwitcher compact /></div>
 
-      {activeTab === 'home' && <HomeTab query={overviewQuery} data={overview} onNavigate={setActiveTab} />}
+      {!isOnline && (
+        <div role="status" className="mb-4 flex items-center gap-3 rounded-2xl border border-amber-500/40 bg-amber-950/40 p-3 text-sm text-amber-200">
+          <span className="text-xl">☁</span>
+          <div>
+            <div className="font-semibold">{t('avs_kiosk.offline')}</div>
+            <div className="text-xs text-amber-300/70">{t('avs_kiosk.offline_hint')}</div>
+          </div>
+        </div>
+      )}
+
+      {hasSessionDrafts && (
+        <div className="mb-4 grid grid-cols-2 gap-2">
+          {taskDraftCount > 0 && (
+            <button type="button" onClick={() => navigateTo('tasks')}
+              className="min-h-12 rounded-xl border border-violet-500/40 bg-violet-950/40 px-3 text-left text-xs text-violet-200">
+              <b>📷 {taskDraftCount}</b> {t('avs_kiosk.task_drafts')}
+            </button>
+          )}
+          {faultHasDraft && (
+            <button type="button" onClick={() => navigateTo('quick_fault')}
+              className="min-h-12 rounded-xl border border-amber-500/40 bg-amber-950/40 px-3 text-left text-xs text-amber-200">
+              <b>🔧 1</b> {t('avs_kiosk.fault_draft')}
+            </button>
+          )}
+        </div>
+      )}
+
+      {logoutConfirmOpen && (
+        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/70 p-4 sm:items-center">
+          <div role="dialog" aria-modal="true" aria-labelledby="avs-logout-title"
+            className="w-full max-w-sm rounded-3xl border border-slate-700 bg-slate-900 p-5 shadow-2xl">
+            <h2 id="avs-logout-title" className="text-lg font-semibold text-white">
+              {t('avs_kiosk.logout_draft_title')}
+            </h2>
+            <p className="mt-2 text-sm text-slate-400">{t('avs_kiosk.logout_draft_hint')}</p>
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <button type="button" onClick={() => setLogoutConfirmOpen(false)}
+                className="min-h-12 rounded-xl bg-slate-800 text-sm font-semibold text-slate-200">
+                {t('common.cancel')}
+              </button>
+              <button type="button" onClick={handleLogout}
+                className="min-h-12 rounded-xl bg-red-600 text-sm font-semibold text-white">
+                {t('avs_kiosk.logout_anyway')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'home' && (
+        <HomeTab query={overviewQuery} data={overview} onNavigate={navigateTo}
+          selectedBlock={taskBlock} onSelectBlock={setTaskBlock} />
+      )}
 
       {activeTab === 'shifts' && <ShiftsTab query={shiftsQuery} data={shiftsData} />}
 
@@ -490,6 +589,7 @@ export default function AvsSelfServicePage() {
           uploadProgress={taskUploadProgress}
           onReportFault={openFaultFromTask}
           selectedBlock={taskBlock} onSelectBlock={setTaskBlock}
+          isOnline={isOnline}
         />
       )}
 
@@ -571,8 +671,17 @@ export default function AvsSelfServicePage() {
             return ai - bi
           })
           .filter(tb => tb.key !== 'inventory' || hasInventory)
-          .map(tb => ({ key: tb.key, icon: tb.icon, label: t(tb.i18n), badge: 0 }))}
-        active={activeTab} onChange={setActiveTab} moreLabel={t('avs_kiosk.nav.more')} />
+          .map(tb => ({
+            key: tb.key,
+            icon: tb.icon,
+            label: t(tb.i18n),
+            badge: tb.key === 'tasks'
+              ? Math.min(99, Number(overview?.tasks?.pending || 0))
+              : tb.key === 'quick_fault' && faultHasDraft
+                ? 1
+                : 0,
+          }))}
+        active={activeTab} onChange={navigateTo} moreLabel={t('avs_kiosk.nav.more')} />
     </div>
   )
 }

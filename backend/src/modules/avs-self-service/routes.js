@@ -161,7 +161,25 @@ avsSelfServiceRouter.get('/overview', requireAvsKiosk, (req, res) => {
     if (!worker) return res.status(404).json({ error: 'Çalışan bulunamadı' })
 
     const group = roleGroup(worker.department_name)
-    const taskSummary = group === 'housekeeping'
+    const requestedBlock = typeof req.query.block === 'string' ? req.query.block.trim().toUpperCase() : null
+    if (requestedBlock && !/^[A-Z][A-Z0-9]{0,7}$/.test(requestedBlock)) {
+      return res.status(400).json({ error: 'Geçersiz blok' })
+    }
+    if (worker.assigned_block && requestedBlock && requestedBlock !== worker.assigned_block) {
+      return res.status(403).json({ error: 'Bu blok size atanmış değil' })
+    }
+    const selectedBlock = worker.assigned_block || requestedBlock || null
+    const availableBlocks = group === 'housekeeping'
+      ? (worker.assigned_block
+          ? [worker.assigned_block]
+          : db.prepare(`
+              SELECT DISTINCT block FROM cleaning_tasks
+              WHERE date(scheduled_at)=date('now','localtime') AND block IS NOT NULL
+              ORDER BY block
+            `).all().map(row => row.block))
+      : []
+
+    const taskSummary = group === 'housekeeping' && selectedBlock
       ? db.prepare(`
           SELECT COUNT(*) AS total,
                  SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) AS completed,
@@ -169,19 +187,19 @@ avsSelfServiceRouter.get('/overview', requireAvsKiosk, (req, res) => {
                  SUM(CASE WHEN completed_at IS NULL AND skipped=0 THEN 1 ELSE 0 END) AS pending
           FROM cleaning_tasks
           WHERE date(scheduled_at)=date('now','localtime')
-            AND (? IS NULL OR block=?)
-        `).get(worker.assigned_block || null, worker.assigned_block || null)
+            AND block=?
+        `).get(selectedBlock)
       : { total: 0, completed: 0, skipped: 0, pending: 0 }
 
-    const nextTask = group === 'housekeeping'
+    const nextTask = group === 'housekeeping' && selectedBlock
       ? db.prepare(`
           SELECT id, area, block, floor, task_type, qr_location
           FROM cleaning_tasks
           WHERE date(scheduled_at)=date('now','localtime')
             AND completed_at IS NULL AND skipped=0
-            AND (? IS NULL OR block=?)
+            AND block=?
           ORDER BY block, floor, task_type DESC, id LIMIT 1
-        `).get(worker.assigned_block || null, worker.assigned_block || null)
+        `).get(selectedBlock)
       : null
 
     const nextShift = db.prepare(`
@@ -243,6 +261,8 @@ avsSelfServiceRouter.get('/overview', requireAvsKiosk, (req, res) => {
     res.json({
       role_group: group,
       worker,
+      selected_block: selectedBlock,
+      available_blocks: availableBlocks,
       tasks: {
         total: Number(taskSummary.total || 0),
         completed: Number(taskSummary.completed || 0),
@@ -355,19 +375,21 @@ avsSelfServiceRouter.get('/my-tasks', requireAvsKiosk, (req, res) => {
       // alınır; "bugün" yerel gün sınırıyla karşılaştırılır (00:00-03:00 fix)
       // qr_location oda numarası çözümü için döner (M1-205 → 205);
       // assigned_block yoksa TÜM bloklar gelir, kiosk blok seçtirir
-      const items = db.prepare(`
-        SELECT ct.id, ct.area, ct.block, ct.floor, ct.task_type, ct.scheduled_at,
-               ct.completed_at, ct.skipped, ct.skip_reason, ct.qr_location, ct.photo_url,
-               (SELECT COUNT(*) FROM cleaning_task_photos p WHERE p.task_id=ct.id) AS photo_count,
-               (SELECT r.id FROM rooms r
-                WHERE r.block=ct.block AND ct.qr_location=ct.block || '-' || r.room_no
-                LIMIT 1) AS room_id
-        FROM cleaning_tasks ct
-        WHERE date(scheduled_at) = date('now', 'localtime')
-          AND (? IS NULL OR block = ?)
-        ORDER BY block, floor, task_type DESC, id
-        LIMIT 400
-      `).all(selectedBlock, selectedBlock)
+      const items = selectedBlock
+        ? db.prepare(`
+            SELECT ct.id, ct.area, ct.block, ct.floor, ct.task_type, ct.scheduled_at,
+                   ct.completed_at, ct.skipped, ct.skip_reason, ct.qr_location, ct.photo_url,
+                   (SELECT COUNT(*) FROM cleaning_task_photos p WHERE p.task_id=ct.id) AS photo_count,
+                   (SELECT r.id FROM rooms r
+                    WHERE r.block=ct.block AND ct.qr_location=ct.block || '-' || r.room_no
+                    LIMIT 1) AS room_id
+            FROM cleaning_tasks ct
+            WHERE date(scheduled_at) = date('now', 'localtime')
+              AND block = ?
+            ORDER BY block, floor, task_type DESC, id
+            LIMIT 400
+          `).all(selectedBlock)
+        : []
       const availableBlocks = staff.assigned_block
         ? [staff.assigned_block]
         : db.prepare(`

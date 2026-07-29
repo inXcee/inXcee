@@ -7,16 +7,18 @@ const SKIP_REASONS = ['occupied', 'dnd', 'locked', 'fault', 'other']
 
 export default function TasksTab({
   query, data, completeTask, skipTask, photoDrafts, setPhotoDrafts,
-  uploadProgress, onReportFault, selectedBlock, onSelectBlock,
+  uploadProgress, onReportFault, selectedBlock, onSelectBlock, isOnline = true,
 }) {
   const { t } = useTranslation()
   const [selFloor, setSelFloor] = useState(null)
   const [selTaskId, setSelTaskId] = useState(null)
   const [skipForm, setSkipForm] = useState(null)
+  const [taskFilter, setTaskFilter] = useState('pending')
+  const [roomSearch, setRoomSearch] = useState('')
 
   const items = data?.items || []
   const blocks = data?.available_blocks || [...new Set(items.map(item => item.block).filter(Boolean))]
-  const block = data?.assigned_block || selectedBlock || data?.selected_block || blocks[0] || null
+  const block = data?.assigned_block || selectedBlock || data?.selected_block || null
   const floors = useMemo(
     () => [...new Set(items.filter(item => item.block === block).map(item => item.floor))].sort((a, b) => a - b),
     [items, block]
@@ -31,8 +33,32 @@ export default function TasksTab({
   }))
   const commonTask = floorItems.find(item => item.task_type === 'common_area')
   const selectedTask = floorItems.find(item => item.id === selTaskId) || null
-  const doneCount = floorItems.filter(item => item.completed_at).length
-  const skipCount = floorItems.filter(item => item.skipped && !item.completed_at).length
+  const nextFloorTask = floorItems.find(item => !item.completed_at && !item.skipped)
+  const blockItems = items.filter(item => item.block === block)
+  const blockDoneCount = blockItems.filter(item => item.completed_at).length
+  const blockSkipCount = blockItems.filter(item => item.skipped && !item.completed_at).length
+  const blockPendingCount = blockItems.filter(item => !item.completed_at && !item.skipped).length
+  const progressPercent = blockItems.length ? Math.round((blockDoneCount / blockItems.length) * 100) : 0
+  const draftTaskCount = blockItems.filter(item => (photoDrafts[item.id] || []).length > 0).length
+  const normalizedSearch = roomSearch.trim().toLocaleLowerCase()
+
+  function matchesFilter(task) {
+    if (taskFilter === 'completed') return !!task.completed_at
+    if (taskFilter === 'skipped') return !!task.skipped && !task.completed_at
+    if (taskFilter === 'pending') return !task.completed_at && !task.skipped
+    return true
+  }
+
+  const visibleRoomTasks = roomTasks.filter(task => {
+    const matchesSearch = !normalizedSearch
+      || `${task.room_no} ${task.area}`.toLocaleLowerCase().includes(normalizedSearch)
+    return matchesSearch && matchesFilter(task)
+  })
+  const visibleCommonTask = commonTask && matchesFilter(commonTask)
+    && (!normalizedSearch || `${commonTask.area} ${t('avs_kiosk.tasks.common_area')}`
+      .toLocaleLowerCase().includes(normalizedSearch))
+    ? commonTask
+    : null
 
   async function addTaskPhotos(taskId, event) {
     const existing = photoDrafts[taskId] || []
@@ -139,11 +165,18 @@ export default function TasksTab({
             </div>
           )}
           {photos.length < 3 && (
-            <label className="flex min-h-14 cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-blue-500/60 bg-blue-950/30 px-3 text-sm font-medium text-blue-300">
-              📷 {photos.length ? t('avs_kiosk.tasks.add_photo') : t('avs_kiosk.tasks.take_photo')}
-              <input type="file" accept="image/*" capture="environment" multiple className="hidden"
-                onChange={event => addTaskPhotos(task.id, event)} />
-            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="flex min-h-14 cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-blue-500/60 bg-blue-950/30 px-3 text-center text-sm font-medium text-blue-300">
+                📷 {t('avs_kiosk.tasks.take_photo')}
+                <input type="file" accept="image/*" capture="environment" className="hidden"
+                  onChange={event => addTaskPhotos(task.id, event)} />
+              </label>
+              <label className="flex min-h-14 cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-slate-500/60 bg-slate-900 px-3 text-center text-sm font-medium text-slate-300">
+                🖼 {photos.length ? t('avs_kiosk.tasks.add_photo') : t('avs_kiosk.tasks.choose_photo')}
+                <input type="file" accept="image/*" multiple className="hidden"
+                  onChange={event => addTaskPhotos(task.id, event)} />
+              </label>
+            </div>
           )}
         </div>
 
@@ -154,9 +187,15 @@ export default function TasksTab({
         )}
 
         <button type="button" onClick={() => submitComplete(task.id)}
-          disabled={completing || photos.length === 0}
+          disabled={completing || photos.length === 0 || !isOnline}
           className="min-h-14 w-full rounded-xl bg-green-600 px-4 text-sm font-semibold text-white disabled:bg-slate-700 disabled:text-slate-400">
-          {completing ? t('avs_kiosk.tasks.completing') : `✓ ${t('avs_kiosk.tasks.complete')}`}
+          {!isOnline
+            ? t('avs_kiosk.connection_waiting')
+            : completing
+              ? t('avs_kiosk.tasks.completing')
+              : error
+                ? t('avs_kiosk.tasks.retry_send')
+                : `✓ ${t('avs_kiosk.tasks.complete')}`}
         </button>
         {completing && (
           <div className="space-y-1" aria-label={`${t('avs_kiosk.tasks.upload_progress')} ${progress}%`}>
@@ -204,9 +243,13 @@ export default function TasksTab({
                 className="w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm text-white" />
             )}
             <button type="button" onClick={() => submitSkip(task.id)}
-              disabled={!skipForm.reason || skipping}
+              disabled={!skipForm.reason || skipping || !isOnline}
               className="min-h-12 w-full rounded-xl bg-amber-600 text-sm font-semibold text-white disabled:bg-slate-700">
-              {skipping ? t('avs_kiosk.tasks.completing') : t('avs_kiosk.tasks.save_skip')}
+              {!isOnline
+                ? t('avs_kiosk.connection_waiting')
+                : skipping
+                  ? t('avs_kiosk.tasks.completing')
+                  : t('avs_kiosk.tasks.save_skip')}
             </button>
           </div>
         )}
@@ -226,77 +269,173 @@ export default function TasksTab({
             </a>
           </div>
         ) : data?.type === 'housekeeping' ? (
-          items.length === 0 ? (
-            <div className="rounded-2xl bg-slate-900 p-5 text-sm text-slate-400">{t('avs_kiosk.tasks.none')}</div>
-          ) : (
-            <>
+          <>
+            <div className="flex items-center justify-between gap-3">
               <h2 className="font-medium text-slate-300">{t('avs_kiosk.tasks.housekeeping_title')}</h2>
-              {!data.assigned_block && blocks.length > 1 && (
+              {draftTaskCount > 0 && (
+                <span className="rounded-full bg-violet-950 px-3 py-1 text-xs font-medium text-violet-300">
+                  📷 {draftTaskCount} {t('avs_kiosk.tasks.draft')}
+                </span>
+              )}
+            </div>
+
+            {!data.assigned_block && blocks.length > 0 && (
+              <section className={`rounded-2xl border p-4 ${
+                block ? 'border-slate-700 bg-slate-900' : 'border-blue-500/50 bg-blue-950/30'
+              }`}>
+                <div className="mb-3 text-sm font-semibold text-slate-100">
+                  {block ? t('avs_kiosk.tasks.change_block') : t('avs_kiosk.tasks.choose_block')}
+                </div>
+                {!block && <p className="mb-3 text-xs text-slate-400">{t('avs_kiosk.tasks.choose_block_hint')}</p>}
                 <div className="flex flex-wrap gap-2">
                   {blocks.map(item => (
                     <button key={item} type="button"
-                      onClick={() => { onSelectBlock(item); setSelFloor(null); setSelTaskId(null) }}
-                      className={`min-h-11 rounded-xl px-4 text-sm font-bold ${
+                      onClick={() => {
+                        onSelectBlock(item)
+                        setSelFloor(null)
+                        setSelTaskId(null)
+                        setRoomSearch('')
+                        setTaskFilter('pending')
+                      }}
+                      className={`min-h-11 min-w-12 rounded-xl px-4 text-sm font-bold ${
                         block === item ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300'
                       }`}>
                       {item}
                     </button>
                   ))}
                 </div>
-              )}
-              <div className="space-y-3 rounded-2xl bg-slate-900 p-4">
-                <div className="flex items-center justify-between gap-3">
+              </section>
+            )}
+
+            {!block ? (
+              <div className="rounded-2xl bg-slate-900 p-6 text-center">
+                <div className="text-4xl">🏢</div>
+                <div className="mt-3 font-medium text-slate-200">{t('avs_kiosk.tasks.block_required')}</div>
+                <div className="mt-1 text-sm text-slate-500">{t('avs_kiosk.tasks.choose_block_hint')}</div>
+              </div>
+            ) : items.length === 0 ? (
+              <div className="rounded-2xl bg-slate-900 p-5 text-sm text-slate-400">
+                {t('avs_kiosk.tasks.none_in_block')}
+              </div>
+            ) : (
+              <>
+                <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xs uppercase tracking-wider text-slate-500">{block}</div>
+                      <div className="mt-1 text-lg font-semibold text-white">
+                        {blockDoneCount}/{blockItems.length} {t('avs_kiosk.tasks.done').toLocaleLowerCase()}
+                      </div>
+                    </div>
+                    <div className="text-2xl font-bold text-green-400">%{progressPercent}</div>
+                  </div>
+                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-800">
+                    <div className="h-full rounded-full bg-green-500 transition-all"
+                      style={{ width: `${progressPercent}%` }} />
+                  </div>
+                  <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
+                    <span className="rounded-lg bg-amber-950/40 px-2 py-2 text-amber-300">
+                      {blockPendingCount} {t('avs_kiosk.home.pending')}
+                    </span>
+                    <span className="rounded-lg bg-green-950/40 px-2 py-2 text-green-300">
+                      {blockDoneCount} {t('avs_kiosk.home.completed')}
+                    </span>
+                    <span className="rounded-lg bg-slate-800 px-2 py-2 text-slate-300">
+                      {blockSkipCount} {t('avs_kiosk.home.skipped')}
+                    </span>
+                  </div>
+                </section>
+
+                <div className="space-y-3 rounded-2xl bg-slate-900 p-4">
                   <div className="flex gap-2 overflow-x-auto pb-1">
                     {floors.map(item => (
                       <button key={item} type="button" onClick={() => { setSelFloor(item); setSelTaskId(null) }}
-                        className={`min-h-10 shrink-0 rounded-lg px-3 text-xs font-bold ${
+                        className={`min-h-11 shrink-0 rounded-xl px-4 text-xs font-bold ${
                           floor === item ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'
                         }`}>
                         {block} · {t('avs_kiosk.home.floor')} {item}
                       </button>
                     ))}
                   </div>
-                  <span className="shrink-0 text-xs text-slate-500">
-                    <b className="text-green-400">{doneCount}</b>/{floorItems.length}
-                    {skipCount > 0 ? <span className="text-amber-400"> · {skipCount}⊘</span> : null}
-                  </span>
-                </div>
 
-                {commonTask && (
-                  <button type="button" onClick={() => !commonTask.completed_at && setSelTaskId(commonTask.id)}
-                    className={`min-h-14 w-full rounded-xl border px-4 text-left ${
-                      commonTask.completed_at ? 'border-green-700/40 bg-green-950/40 text-green-300'
-                        : commonTask.skipped ? 'border-amber-700/40 bg-amber-950/30 text-amber-300'
-                          : selTaskId === commonTask.id ? 'border-blue-500 bg-blue-950/50 text-white'
-                            : 'border-slate-700 bg-slate-800 text-slate-200'
-                    }`}>
-                    🚻 {t('avs_kiosk.tasks.common_area')}
-                    {commonTask.completed_at ? ' ✓' : commonTask.skipped ? ' ⊘' : ''}
-                  </button>
-                )}
+                  <div className="relative">
+                    <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-500">⌕</span>
+                    <input type="search" value={roomSearch}
+                      onChange={event => setRoomSearch(event.target.value)}
+                      placeholder={t('avs_kiosk.tasks.search_room')}
+                      className="min-h-12 w-full rounded-xl border border-slate-700 bg-slate-950 pl-10 pr-4 text-sm text-white outline-none focus:border-blue-500" />
+                  </div>
 
-                <div className="grid grid-cols-4 gap-2 sm:grid-cols-5">
-                  {roomTasks.map(task => {
-                    const done = !!task.completed_at
-                    const skipped = task.skipped && !done
-                    const selected = selTaskId === task.id
-                    return (
-                      <button key={task.id} type="button"
-                        onClick={() => !done && setSelTaskId(selected ? null : task.id)}
-                        className={`min-h-12 rounded-xl text-xs font-bold ${
-                          done ? 'bg-green-900/50 text-green-400'
-                            : skipped ? 'bg-amber-900/40 text-amber-400'
-                              : selected ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300'
+                  <div className="grid grid-cols-4 gap-2" role="group" aria-label={t('avs_kiosk.tasks.filter_label')}>
+                    {['pending', 'completed', 'skipped', 'all'].map(filter => (
+                      <button key={filter} type="button" onClick={() => setTaskFilter(filter)}
+                        aria-pressed={taskFilter === filter}
+                        className={`min-h-10 rounded-lg px-1 text-[11px] font-semibold ${
+                          taskFilter === filter ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'
                         }`}>
-                        {task.room_no}{done ? ' ✓' : skipped ? ' ⊘' : ''}
+                        {t(`avs_kiosk.tasks.filter_${filter}`)}
                       </button>
-                    )
-                  })}
+                    ))}
+                  </div>
+
+                  {nextFloorTask && taskFilter !== 'completed' && (
+                    <button type="button"
+                      onClick={() => setSelTaskId(nextFloorTask.id)}
+                      className="min-h-12 w-full rounded-xl border border-blue-500/40 bg-blue-950/30 px-4 text-sm font-semibold text-blue-300">
+                      → {t('avs_kiosk.tasks.open_next')}
+                    </button>
+                  )}
+
+                  {visibleCommonTask && (
+                    <button type="button"
+                      onClick={() => !visibleCommonTask.completed_at && setSelTaskId(visibleCommonTask.id)}
+                      className={`min-h-14 w-full rounded-xl border px-4 text-left ${
+                        visibleCommonTask.completed_at ? 'border-green-700/40 bg-green-950/40 text-green-300'
+                          : visibleCommonTask.skipped ? 'border-amber-700/40 bg-amber-950/30 text-amber-300'
+                            : selTaskId === visibleCommonTask.id ? 'border-blue-500 bg-blue-950/50 text-white'
+                              : 'border-slate-700 bg-slate-800 text-slate-200'
+                      }`}>
+                      🚻 {t('avs_kiosk.tasks.common_area')}
+                      {visibleCommonTask.completed_at ? ' ✓' : visibleCommonTask.skipped ? ' ⊘' : ''}
+                    </button>
+                  )}
+
+                  <div className="grid grid-cols-4 gap-2 sm:grid-cols-5">
+                    {visibleRoomTasks.map(task => {
+                      const done = !!task.completed_at
+                      const skipped = task.skipped && !done
+                      const selected = selTaskId === task.id
+                      const photoCount = (photoDrafts[task.id] || []).length
+                      return (
+                        <button key={task.id} type="button"
+                          aria-label={`${task.room_no}${done ? ' ✓' : skipped ? ' ⊘' : ''}`}
+                          onClick={() => !done && setSelTaskId(selected ? null : task.id)}
+                          className={`relative min-h-14 rounded-xl text-xs font-bold ${
+                            done ? 'bg-green-900/50 text-green-400'
+                              : skipped ? 'bg-amber-900/40 text-amber-400'
+                                : selected ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300'
+                          }`}>
+                          {task.room_no}{done ? ' ✓' : skipped ? ' ⊘' : ''}
+                          {photoCount > 0 && (
+                            <span className="absolute right-1 top-1 rounded-full bg-violet-600 px-1.5 py-0.5 text-[9px] text-white">
+                              📷{photoCount}
+                            </span>
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  {!visibleCommonTask && visibleRoomTasks.length === 0 && (
+                    <div className="rounded-xl bg-slate-950 p-5 text-center text-sm text-slate-500">
+                      {t('avs_kiosk.tasks.no_filter_results')}
+                    </div>
+                  )}
+                  <TaskActionCard task={selectedTask} />
                 </div>
-                <TaskActionCard task={selectedTask} />
-              </div>
-            </>
-          )
+              </>
+            )}
+          </>
         ) : data?.type === 'maintenance' ? (
           <>
             <h2 className="font-medium text-slate-300">{t('avs_kiosk.tasks.maintenance_title')}</h2>

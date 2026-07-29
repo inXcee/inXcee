@@ -105,8 +105,49 @@ describe('AVS sekme parçaları smoke', () => {
     )
     expect(screen.getByText('M1 · Kat 1')).toBeInTheDocument()
     expect(screen.getByText('101')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Tümü' }))
     expect(screen.getByText('102 ✓')).toBeInTheDocument()
     expect(screen.getByText(/Ortak alan \/ WC/)).toBeInTheDocument()
+  })
+
+  it('TasksTab atamasız personelde blok seçmeden kampüs görevlerini göstermez', () => {
+    const data = {
+      type: 'housekeeping', assigned_block: null, selected_block: null,
+      available_blocks: ['A', 'M1'], items: [],
+    }
+    renderWithProviders(
+      <TasksTab query={{ ...idleQuery, data }} data={data}
+        completeTask={{ mutate: vi.fn(), isPending: false }}
+        skipTask={{ mutate: vi.fn(), isPending: false }}
+        photoDrafts={{}} setPhotoDrafts={() => {}} uploadProgress={{}}
+        onReportFault={() => {}} selectedBlock="" onSelectBlock={() => {}} />
+    )
+    expect(screen.getByText(/Görevleri görmek için blok seç/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'A' })).toBeInTheDocument()
+    expect(screen.queryByText('958')).not.toBeInTheDocument()
+  })
+
+  it('TasksTab oda araması ve durum filtresiyle listeyi daraltır', () => {
+    const data = {
+      type: 'housekeeping', assigned_block: 'M1',
+      items: [
+        { id: 21, area: 'M1 Oda 101', block: 'M1', floor: 1, task_type: 'room', qr_location: 'M1-101', completed_at: null, skipped: 0 },
+        { id: 22, area: 'M1 Oda 102', block: 'M1', floor: 1, task_type: 'room', qr_location: 'M1-102', completed_at: '2026-07-29 09:00', skipped: 0 },
+      ],
+    }
+    renderWithProviders(
+      <TasksTab query={{ ...idleQuery, data }} data={data}
+        completeTask={{ mutate: vi.fn(), isPending: false }}
+        skipTask={{ mutate: vi.fn(), isPending: false }}
+        photoDrafts={{}} setPhotoDrafts={() => {}} uploadProgress={{}}
+        onReportFault={() => {}} selectedBlock="" onSelectBlock={() => {}} />
+    )
+    expect(screen.getByText('101')).toBeInTheDocument()
+    expect(screen.queryByText('102 ✓')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Tümü' }))
+    fireEvent.change(screen.getByPlaceholderText(/Oda veya alan ara/), { target: { value: '102' } })
+    expect(screen.getByText('102 ✓')).toBeInTheDocument()
+    expect(screen.queryByText('101')).not.toBeInTheDocument()
   })
 
   it('TasksTab fotoğraf olmadan tamamlama butonunu kapalı tutar', async () => {
@@ -135,6 +176,20 @@ describe('AVS sekme parçaları smoke', () => {
     expect(screen.getByText(/Yükleniyor 47%/)).toBeInTheDocument()
   })
 
+  it('TasksTab çevrimdışıyken taslağı korur ve gönderimi bekletir', () => {
+    renderWithProviders(
+      <TasksTab query={{ ...idleQuery, data: housekeepingData }} data={housekeepingData}
+        completeTask={{ mutate: vi.fn(), isPending: false }}
+        skipTask={{ mutate: vi.fn(), isPending: false }}
+        photoDrafts={{ 10: ['data:image/jpeg;base64,AA=='] }} setPhotoDrafts={() => {}}
+        uploadProgress={{}} isOnline={false}
+        onReportFault={() => {}} selectedBlock="" onSelectBlock={() => {}} />
+    )
+    fireEvent.click(screen.getByRole('button', { name: '110' }))
+    expect(screen.getByRole('button', { name: /Bağlantı bekleniyor/ })).toBeDisabled()
+    expect(screen.getByText(/1\/3/)).toBeInTheDocument()
+  })
+
   it('temizlik fotoğraf taslağını sekme değişiminden sonra korur', () => {
     renderWithProviders(<TaskDraftHarness />)
     fireEvent.click(screen.getByRole('button', { name: '110' }))
@@ -156,6 +211,25 @@ describe('AVS sekme parçaları smoke', () => {
     expect(screen.getByText(/Ayşe Test/)).toBeInTheDocument()
     expect(screen.getByText('M1 Oda 101')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Görevlere git/ })).toBeInTheDocument()
+  })
+
+  it('HomeTab atamasız temizlikçiden oturumluk blok seçmesini ister', () => {
+    const onSelectBlock = vi.fn()
+    const data = {
+      role_group: 'housekeeping',
+      worker: { full_name: 'Bloksuz Test', department_name: 'Temizlik', assigned_block: null },
+      selected_block: null,
+      available_blocks: ['A', 'M1'],
+      tasks: { total: 0, pending: 0, completed: 0, skipped: 0, next: null },
+      faults: { open: 0, urgent: 0 },
+    }
+    renderWithProviders(
+      <HomeTab query={{ ...idleQuery, data }} data={data} onNavigate={() => {}}
+        selectedBlock="" onSelectBlock={onSelectBlock} />
+    )
+    expect(screen.getByText(/Başlamak için çalışacağın bloğu seç/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'M1' }))
+    expect(onSelectBlock).toHaveBeenCalledWith('M1')
   })
 
   it('HomeTab teknik personelde açık, acil ve işlemde arızaları gösterir', () => {

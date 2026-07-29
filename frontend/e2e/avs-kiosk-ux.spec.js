@@ -24,6 +24,8 @@ async function loginKiosk(page) {
     await page.getByRole('button', { name: new RegExp(`^${digit}$`) }).click()
   }
   await expect(page.getByRole('tab', { name: /Ana Sayfa/ })).toBeVisible({ timeout: 10_000 })
+  const blockA = page.getByRole('button', { name: 'A', exact: true })
+  if (await blockA.isVisible()) await blockA.click()
 }
 
 async function expectNoHorizontalOverflow(page, viewportWidth) {

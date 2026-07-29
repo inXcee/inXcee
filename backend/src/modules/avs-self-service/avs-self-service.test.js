@@ -6,7 +6,27 @@ import { seedDev } from '../../shared/db/seed.js'
 
 let avsToken
 let workerId
+let unassignedWorkerSequence = 0
 const JPEG = Buffer.from('/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==', 'base64')
+
+async function createUnassignedHousekeeper() {
+  unassignedWorkerSequence += 1
+  const adminToken = (await request(app).post('/api/auth/login')
+    .send({ username: 'mudur', password: 'admin123' })).body.token
+  const worker = (await request(app).post('/api/avs-workers')
+    .set('Authorization', `Bearer ${adminToken}`)
+    .send({
+      full_name: `Atamasız Kiosk ${unassignedWorkerSequence}`,
+      role_label: 'Temizlik Görevlisi',
+    })).body
+  await request(app).put(`/api/avs-workers/${worker.id}/pin`)
+    .set('Authorization', `Bearer ${adminToken}`)
+    .send({ new_pin: '2468' })
+  getDB().prepare('UPDATE staff SET assigned_block=NULL WHERE id=?').run(worker.id)
+  const token = (await request(app).post('/api/auth/avs-login')
+    .send({ worker_id: worker.id, pin: '2468' })).body.token
+  return { worker, token }
+}
 
 beforeAll(async () => {
   process.env.DB_PATH = ':memory:'; initDB(); seedDev()
@@ -107,6 +127,26 @@ describe('AVS Self-Service — my-tasks', () => {
     expect(Array.isArray(res.body.items)).toBe(true)
     expect(res.body.items.some(t => t.block === 'M1')).toBe(true)
   })
+
+  it('atamasız personelde blok seçilmeden toplu görev yüklemez', async () => {
+    const { token } = await createUnassignedHousekeeper()
+    const res = await request(app).get('/api/avs-self-service/my-tasks')
+      .set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.body.selected_block).toBeNull()
+    expect(res.body.items).toEqual([])
+    expect(res.body.available_blocks).toContain('M1')
+  })
+
+  it('atamasız personelde yalnız seçilen bloğun görevlerini döner', async () => {
+    const { token } = await createUnassignedHousekeeper()
+    const res = await request(app).get('/api/avs-self-service/my-tasks?block=M1')
+      .set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.body.selected_block).toBe('M1')
+    expect(res.body.items.length).toBeGreaterThan(0)
+    expect(res.body.items.every(task => task.block === 'M1')).toBe(true)
+  })
 })
 
 describe('AVS Self-Service — location-rooms', () => {
@@ -140,6 +180,30 @@ describe('AVS Self-Service — overview', () => {
     expect(res.body.transport.pickup_name).toBe('Merkez Durağı')
     expect(res.body.transport).toHaveProperty('schedule')
     expect(res.body.announcements.some(item => item.title === 'Test Duyuru')).toBe(true)
+  })
+
+  it('atamasız personelde blok seçimine kadar kampüs toplamını göstermez', async () => {
+    const { token } = await createUnassignedHousekeeper()
+    const initial = await request(app).get('/api/avs-self-service/overview')
+      .set('Authorization', `Bearer ${token}`)
+    expect(initial.status).toBe(200)
+    expect(initial.body.selected_block).toBeNull()
+    expect(initial.body.available_blocks).toContain('M1')
+    expect(initial.body.tasks).toMatchObject({ total: 0, pending: 0, completed: 0, skipped: 0 })
+    expect(initial.body.tasks.next).toBeNull()
+
+    const selected = await request(app).get('/api/avs-self-service/overview?block=M1')
+      .set('Authorization', `Bearer ${token}`)
+    expect(selected.status).toBe(200)
+    expect(selected.body.selected_block).toBe('M1')
+    expect(selected.body.tasks.total).toBeGreaterThan(0)
+    expect(selected.body.tasks.next?.block).toBe('M1')
+  })
+
+  it('atanmış personelin overview üzerinden başka blok istemesini reddeder', async () => {
+    const res = await request(app).get('/api/avs-self-service/overview?block=S1')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(403)
   })
 })
 
