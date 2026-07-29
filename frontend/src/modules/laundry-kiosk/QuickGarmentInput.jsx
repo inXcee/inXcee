@@ -33,9 +33,18 @@ export default function QuickGarmentInput({ garmentTypes = [], value = EMPTY_VAL
     ? garmentTypes.filter(t => t.name.toLowerCase().includes(quickText.toLowerCase())).slice(0, 6)
     : []
 
+  function withIroningDefault(entry) {
+    const type = garmentTypes.find(candidate => candidate.id === entry.type_id)
+    return {
+      ...entry,
+      requires_ironing: entry.requires_ironing ??
+        Boolean(type?.default_requires_ironing),
+    }
+  }
+
   function addParsed() {
     if (parsed.length === 0) return
-    onChange({ ...value, garments: [...garments, ...parsed] })
+    onChange({ ...value, garments: [...garments, ...parsed.map(withIroningDefault)] })
     setQuickText('')
     setFocusIdx(0)
     quickRef.current?.focus()
@@ -50,6 +59,7 @@ export default function QuickGarmentInput({ garmentTypes = [], value = EMPTY_VAL
       colors: [],
       pattern: 'solid',
       pattern_label: 'Düz',
+      requires_ironing: Boolean(type.default_requires_ironing),
     }
     onChange({ ...value, garments: [...garments, entry] })
     setQuickText('')
@@ -79,14 +89,166 @@ export default function QuickGarmentInput({ garmentTypes = [], value = EMPTY_VAL
     }
   }
 
+  function incrementType(type) {
+    const index = garments.findIndex(garment =>
+      garment.type_id === type.id &&
+      (garment.colors?.length || 0) === 0 &&
+      (!garment.pattern || garment.pattern === 'solid')
+    )
+    if (index === -1) {
+      addStructured(type)
+      return
+    }
+    onChange({
+      ...value,
+      garments: garments.map((garment, garmentIndex) => garmentIndex === index
+        ? { ...garment, count: (garment.count || 1) + 1 }
+        : garment),
+    })
+  }
+
+  function decrementGarment(index) {
+    const garment = garments[index]
+    if ((garment.count || 1) <= 1) {
+      onChange({ ...value, garments: garments.filter((_, garmentIndex) => garmentIndex !== index) })
+      return
+    }
+    onChange({
+      ...value,
+      garments: garments.map((item, garmentIndex) => garmentIndex === index
+        ? { ...item, count: item.count - 1 }
+        : item),
+    })
+  }
+
+  function toggleIroning(index) {
+    onChange({
+      ...value,
+      garments: garments.map((garment, garmentIndex) => garmentIndex === index
+        ? { ...garment, requires_ironing: !garment.requires_ironing }
+        : garment),
+    })
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Fotoğraflı seçici — büyük grid + renk + desen + adet */}
-      <GarmentPicker
-        garmentTypes={garmentTypes}
-        value={garments}
-        onChange={(next) => onChange({ ...value, garments: next })}
-      />
+      <div>
+        <div style={{ fontSize: 11, color: '#64748b', letterSpacing: 1, marginBottom: 8 }}>
+          ⚡ TEK DOKUNUŞLA ADET ARTIR
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 7 }}>
+          {garmentTypes.map(type => {
+            const selectedCount = garments
+              .filter(garment => garment.type_id === type.id)
+              .reduce((total, garment) => total + (garment.count || 1), 0)
+            return (
+              <button type="button" key={type.id} onClick={() => incrementType(type)}
+                style={{
+                  position: 'relative',
+                  minHeight: 72,
+                  borderRadius: 12,
+                  border: `1px solid ${selectedCount ? '#3b82f6' : '#334155'}`,
+                  background: selectedCount ? '#172554' : '#1e293b',
+                  color: '#e2e8f0',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 3,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                }}>
+                <span style={{ fontSize: 25 }}>{type.emoji || '👕'}</span>
+                <span style={{ fontSize: 10, lineHeight: 1.1 }}>{type.name}</span>
+                {selectedCount > 0 && (
+                  <span style={{
+                    position: 'absolute',
+                    right: 5,
+                    top: 5,
+                    minWidth: 22,
+                    height: 22,
+                    borderRadius: 12,
+                    background: '#2563eb',
+                    color: '#fff',
+                    display: 'grid',
+                    placeItems: 'center',
+                    fontSize: 11,
+                  }}>
+                    {selectedCount}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {garments.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+          {garments.map((garment, index) => (
+            <div key={`${garment.type_id || garment.type_name}-${index}`} style={{
+              minHeight: 58,
+              borderRadius: 11,
+              padding: 8,
+              background: '#111827',
+              border: '1px solid #273449',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+            }}>
+              <button type="button" onClick={() => decrementGarment(index)} style={countButton}>−</button>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ color: '#e2e8f0', fontWeight: 900, fontSize: 13 }}>
+                  {garment.emoji || '👕'} {garment.type_name} × {garment.count || 1}
+                </div>
+                <button type="button" onClick={() => toggleIroning(index)}
+                  style={{
+                    minHeight: 32,
+                    border: 0,
+                    padding: 0,
+                    background: 'transparent',
+                    color: garment.requires_ironing ? '#c4b5fd' : '#64748b',
+                    fontSize: 11,
+                    fontWeight: 800,
+                  }}>
+                  {garment.requires_ironing ? '♨️ Ütü açık' : '↪️ Ütü gerekmiyor'}
+                </button>
+              </div>
+              <button type="button"
+                onClick={() => onChange({
+                  ...value,
+                  garments: garments.map((item, garmentIndex) => garmentIndex === index
+                    ? { ...item, count: (item.count || 1) + 1 }
+                    : item),
+                })}
+                style={countButton}>
+                +
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <details style={{
+        border: '1px solid #273449',
+        borderRadius: 12,
+        background: '#0b1220',
+        padding: '10px 12px',
+      }}>
+        <summary style={{ minHeight: 42, color: '#94a3b8', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+          Renk, desen ve ayrıntılı kıyafet girişi
+        </summary>
+        <div style={{ marginTop: 10 }}>
+          <GarmentPicker
+            garmentTypes={garmentTypes}
+            value={garments}
+            onChange={(next) => onChange({
+              ...value,
+              garments: next.map(withIroningDefault),
+            })}
+          />
+        </div>
+      </details>
 
       {/* Yazıyla bölümü — hem hızlı ekleme hem not, aynı blokta */}
       <div style={{ background: '#0f172a', borderRadius: 12, padding: 14, border: '1px solid #1e293b', display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -208,4 +370,16 @@ export default function QuickGarmentInput({ garmentTypes = [], value = EMPTY_VAL
       </div>
     </div>
   )
+}
+
+const countButton = {
+  width: 44,
+  height: 44,
+  flexShrink: 0,
+  borderRadius: 10,
+  border: '1px solid #334155',
+  background: '#1e293b',
+  color: '#f8fafc',
+  fontSize: 21,
+  fontWeight: 900,
 }

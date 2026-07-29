@@ -801,9 +801,35 @@ h1, h2, h3, h4 { font-family: var(--display); letter-spacing: 2px; }
 }
 
 /* AVS Çamaşırhane Kiosk — responsive nav */
+.laundry-kiosk-shell button,
+.laundry-kiosk-shell input,
+.laundry-kiosk-shell select {
+  min-height: 48px;
+}
+
+.laundry-kiosk-shell {
+  overflow-x: hidden;
+}
+
 @media (max-width: 640px) {
   .kiosk-sidenav { display: none !important; }
   .kiosk-bottomnav { display: flex !important; }
+  .kiosk-workerinfo { display: none !important; }
+  .kiosk-content {
+    padding: 10px !important;
+    box-sizing: border-box;
+    max-width: 100vw !important;
+  }
+  .kiosk-bottomnav {
+    height: 72px !important;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+@media (max-width: 380px) {
+  .kiosk-bottomnav span:last-child {
+    font-size: 9px !important;
+  }
 }
 
 /* Bildirim çan — pulse animasyonu (okunmamış varken) */

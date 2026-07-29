@@ -8,19 +8,25 @@ import EntryForm from './EntryForm.jsx'
 import DashboardView from './DashboardView.jsx'
 import RoomsView from './RoomsView.jsx'
 import MachineView from './MachineView.jsx'
+import KioskHome from './KioskHome.jsx'
+import IroningWorkView from './IroningWorkView.jsx'
+import DeliverWorkView from './DeliverWorkView.jsx'
 import { blockNeedsSignature } from './constants.js'
 import { BLOCKS_BY_TYPE, BLOCK_BY_NAME } from '../../shared/blocks.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 
 const TABS = [
-  { key: 'entry',   icon: '🧺', label: 'Giriş' },
-  { key: 'rooms',   icon: '🏠', label: 'Odalar' },
+  { key: 'home',    icon: '⌂', label: 'Ana Sayfa' },
+  { key: 'entry',   icon: '＋', label: 'Hızlı Giriş' },
   { key: 'machine', icon: '⚙️', label: 'Makine' },
-  { key: 'ironing', icon: '🫧', label: 'Ütü' },
-  { key: 'deliver', icon: '🚚', label: 'Teslim' },
+  { key: 'ironing', icon: '✓', label: 'Ütü' },
+  { key: 'deliver', icon: '📦', label: 'Teslim' },
+]
+const MORE_TABS = [
+  { key: 'rooms', icon: '🏠', label: 'Odalar' },
   { key: 'status',  icon: '📋', label: 'Durum' },
 ]
-const VALID_TABS = TABS.map(t => t.key)
+const VALID_TABS = [...TABS, ...MORE_TABS].map(t => t.key)
 
 // ── İmza canvas ──────────────────────────────────────────────────────────────
 function SigPad({ sigRef }) {
@@ -109,8 +115,9 @@ export default function LaundryKioskPage() {
   const [pinInput, setPinInput] = useState('')
   const [activeTab, setActiveTab] = useState(() => {
     const fromUrl = new URLSearchParams(window.location.search).get('tab')
-    return VALID_TABS.includes(fromUrl) ? fromUrl : 'entry'
+    return VALID_TABS.includes(fromUrl) ? fromUrl : 'home'
   })
+  const [moreOpen, setMoreOpen] = useState(false)
   const [focusedBag, setFocusedBag] = useState(null)
   const [focusedRoom, setFocusedRoom] = useState(null) // { block, room_no } | null
   const searchTimer = useRef(null)
@@ -146,9 +153,15 @@ export default function LaundryKioskPage() {
     if (!selectedWorker) return setLoginError('Listeden bir kişi seçin')
     try {
       const res = await api.post('/auth/avs-login', { worker_id: selectedWorker.id, pin: pinInput })
+      await api.get('/self-service/laundry-kiosk/session', {
+        headers: { Authorization: `Bearer ${res.data.token}` },
+      })
       setAvsToken(res.data.token)
       setWorkerInfo(res.data.worker)
-    } catch (err) { setLoginError(err.response?.data?.error || 'Giriş başarısız') }
+      setActiveTab('home')
+    } catch (err) {
+      setLoginError(err.response?.data?.error || 'Giriş başarısız')
+    }
   }
 
   // ── Login ekranı ────────────────────────────────────────────────────────────
@@ -234,7 +247,7 @@ export default function LaundryKioskPage() {
 
   // ── Ana ekran ───────────────────────────────────────────────────────────────
   return (
-    <div style={{ minHeight: '100vh', background: '#020617', display: 'flex', flexDirection: 'column' }}>
+    <div className="laundry-kiosk-shell" style={{ minHeight: '100vh', background: '#020617', display: 'flex', flexDirection: 'column' }}>
       {/* Üst bar */}
       <div style={{
         height: 56, background: '#0f172a', borderBottom: '1px solid #1e293b',
@@ -245,14 +258,62 @@ export default function LaundryKioskPage() {
           <span style={{ fontSize: 20 }}>🧺</span>
           <span style={{ fontSize: 14, fontWeight: 700, color: '#f1f5f9' }}>Çamaşırhane</span>
         </div>
-        <div style={{ textAlign: 'right' }}>
+        <div className="kiosk-workerinfo" style={{ textAlign: 'right' }}>
           <div style={{ fontSize: 13, color: '#e2e8f0', fontWeight: 600 }}>{workerInfo?.full_name}</div>
           {workerInfo?.role_label && <div style={{ fontSize: 11, color: '#64748b' }}>{workerInfo.role_label}</div>}
         </div>
-        <button onClick={() => { setAvsToken(null); setWorkerInfo(null); setActiveTab('entry'); setFocusedBag(null) }}
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 7 }}>
+          <button type="button" onClick={() => setMoreOpen(value => !value)}
+            style={{
+              minHeight: 48,
+              fontSize: 12,
+              color: MORE_TABS.some(tab => tab.key === activeTab) ? '#bfdbfe' : '#94a3b8',
+              padding: '6px 10px',
+              background: MORE_TABS.some(tab => tab.key === activeTab) ? '#1d4ed8' : '#1e293b',
+              border: 'none',
+              borderRadius: 8,
+              cursor: 'pointer',
+              fontWeight: 800,
+            }}>
+            Daha Fazla
+          </button>
+          {moreOpen && (
+            <div style={{
+              position: 'absolute',
+              zIndex: 40,
+              right: 0,
+              top: 46,
+              width: 190,
+              border: '1px solid #334155',
+              borderRadius: 12,
+              background: '#0f172a',
+              padding: 7,
+              boxShadow: '0 18px 40px rgba(0,0,0,.45)',
+            }}>
+              {MORE_TABS.map(tab => (
+                <button type="button" key={tab.key}
+                  onClick={() => { setActiveTab(tab.key); setMoreOpen(false) }}
+                  style={{
+                    width: '100%',
+                    minHeight: 48,
+                    border: 0,
+                    borderRadius: 9,
+                    background: activeTab === tab.key ? '#1d4ed8' : 'transparent',
+                    color: activeTab === tab.key ? '#fff' : '#cbd5e1',
+                    textAlign: 'left',
+                    padding: '0 12px',
+                    fontWeight: 800,
+                  }}>
+                  {tab.icon} {tab.label}
+                </button>
+              ))}
+            </div>
+          )}
+        <button onClick={() => { setAvsToken(null); setWorkerInfo(null); setActiveTab('home'); setFocusedBag(null); setMoreOpen(false) }}
           style={{ fontSize: 12, color: '#94a3b8', padding: '6px 12px', background: '#1e293b', border: 'none', borderRadius: 8, cursor: 'pointer' }}>
           Çıkış
         </button>
+        </div>
       </div>
 
       {/* Body */}
@@ -274,18 +335,37 @@ export default function LaundryKioskPage() {
               <span>{t.label}</span>
             </button>
           ))}
+          <div style={{ height: 1, background: '#1e293b', margin: '5px 8px' }} />
+          {MORE_TABS.map(t => (
+            <button key={t.key} onClick={() => setActiveTab(t.key)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10, minHeight: 48, padding: '10px 14px',
+                background: activeTab === t.key ? '#1e3a5f' : 'transparent',
+                color: activeTab === t.key ? '#bfdbfe' : '#64748b',
+                border: 'none', borderRadius: 10, cursor: 'pointer',
+                fontSize: 13, fontWeight: 700, textAlign: 'left',
+              }}>
+              <span style={{ fontSize: 17 }}>{t.icon}</span>
+              <span>{t.label}</span>
+            </button>
+          ))}
         </nav>
 
-        <div style={{
+        <div className="kiosk-content" style={{
           flex: 1, padding: 16, overflowY: 'auto', maxWidth: 720,
           margin: '0 auto', width: '100%',
         }}>
+          {activeTab === 'home'    && <KioskHome kioskApi={kioskApi}
+                                          onNavigate={(target, bag) => {
+                                            if (bag) setFocusedBag(bag)
+                                            setActiveTab(target)
+                                          }} />}
           {activeTab === 'entry'   && <EntryForm   kioskApi={kioskApi} focusedRoom={focusedRoom} onConsumeFocus={() => setFocusedRoom(null)} />}
           {activeTab === 'rooms'   && <RoomsView   kioskApi={kioskApi}
                                           onPickRoom={(room) => { setFocusedRoom(room); setActiveTab('entry') }} />}
           {activeTab === 'machine' && <MachineView kioskApi={kioskApi} focusedBag={focusedBag} onConsumeFocus={() => setFocusedBag(null)} />}
-          {activeTab === 'ironing' && <IroningView kioskApi={kioskApi} focusedBag={focusedBag} onConsumeFocus={() => setFocusedBag(null)} />}
-          {activeTab === 'deliver' && <DeliverView kioskApi={kioskApi} focusedBag={focusedBag} onConsumeFocus={() => setFocusedBag(null)} />}
+          {activeTab === 'ironing' && <IroningWorkView kioskApi={kioskApi} focusedBag={focusedBag} onConsumeFocus={() => setFocusedBag(null)} />}
+          {activeTab === 'deliver' && <DeliverWorkView kioskApi={kioskApi} focusedBag={focusedBag} onConsumeFocus={() => setFocusedBag(null)} />}
           {activeTab === 'status'  && <DashboardView kioskApi={kioskApi}
                                           onAction={(action, bag) => {
                                             if (action === 'machine') { setFocusedBag(bag); setActiveTab('machine') }

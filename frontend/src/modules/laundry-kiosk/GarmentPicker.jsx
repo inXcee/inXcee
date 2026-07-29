@@ -107,6 +107,9 @@ export default function GarmentPicker({ garmentTypes = [], value = [], onChange 
       colors,
       pattern: selectedPattern || null,
       pattern_label: patternObj?.label || null,
+      requires_ironing: editIndex !== null
+        ? Boolean(value[editIndex]?.requires_ironing)
+        : selectedType.default_requires_ironing === 1,
     }
     if (editIndex !== null) {
       onChange(value.map((g, i) => i === editIndex ? entry : g))
@@ -127,7 +130,12 @@ export default function GarmentPicker({ garmentTypes = [], value = [], onChange 
   function editGarment(i) {
     const g = value[i]
     const type = garmentTypes.find(t => t.id === g.type_id)
-      || { id: g.type_id, name: g.type_name, emoji: g.emoji }
+      || {
+        id: g.type_id,
+        name: g.type_name,
+        emoji: g.emoji,
+        default_requires_ironing: g.requires_ironing ? 1 : 0,
+      }
     setSelectedType(type)
     const cols = g.colors?.map(c => c.key) ?? (g.color ? [g.color] : [])
     setSelectedColors(cols)

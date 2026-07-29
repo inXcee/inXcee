@@ -1,11 +1,15 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { laundryApi } from '../laundry/api.js'
 import RoomGridPicker from './RoomGridPicker.jsx'
 import QuickGarmentInput from './QuickGarmentInput.jsx'
 import { blockNeedsSignature } from './constants.js'
 import { listQueued, enqueueBag, flushQueue, buildBagFormData } from './offlineQueue.js'
 import { downscalePhoto } from '../../shared/photo.js'
+
+function newRequestId() {
+  return globalThis.crypto?.randomUUID?.() ||
+    `bag-${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
 
 // ---- Signature pad (reused pattern) ----
 function SigPad({ sigRef }) {
@@ -91,6 +95,7 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
     }
   }, [focusedRoom])  // eslint-disable-line react-hooks/exhaustive-deps
   const [garmentState, setGarmentState] = useState({ garments: [], freeText: '', itemCount: 0 })
+  const [clientRequestId, setClientRequestId] = useState(newRequestId)
   const [urgent, setUrgent] = useState(false)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -159,6 +164,7 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
           colors: Array.isArray(g.colors) ? g.colors : [],
           pattern: g.pattern || 'solid',
           pattern_label: g.pattern_label || 'Düz',
+          requires_ironing: g.requires_ironing,
         }))
         setLastBagGarments({ count: mapped.reduce((s, g) => s + g.count, 0), garments: mapped })
       })
@@ -167,8 +173,10 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
   }, [selection.block, selection.room_no])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const garmentTypes = useQuery({
-    queryKey: ['garment-types'],
-    queryFn: laundryApi.getGarmentTypes,
+    queryKey: ['garment-types', 'laundry-kiosk'],
+    queryFn: () => kioskApi
+      .get('/self-service/laundry-kiosk/garment-types')
+      .then(response => response.data),
     staleTime: 300000,
   }).data ?? []
 
@@ -191,6 +199,7 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
     setSelection({ block: keepBlock ? selection.block : null, room_no: null, person: null })
     setGarmentState({ garments: [], freeText: '', itemCount: 0 })
     setUrgent(false)
+    setClientRequestId(newRequestId())
     setError('')
     setSuccess(null)
     setPhotoDataUrl(null)
@@ -228,12 +237,18 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
       notes: freeText || null,
       urgent,
       intake_signature: sig,
+      client_request_id: clientRequestId,
+      tracking_mode: isPremium ? 'individual' : 'count_only',
     }
 
     setSubmitting(true)
     try {
       const res = await kioskApi.post('/self-service/laundry-kiosk/bag', buildBagFormData(payload, photoDataUrl))
-      setSuccess({ bag_no: res.data.bag_no })
+      setSuccess({
+        bag_no: res.data.bag_no,
+        garments: res.data.garments || [],
+        idempotent: res.data.idempotent,
+      })
     } catch (e) {
       if (!e.response) {
         // Ağ yok — kuyruğa al, bağlantı gelince otomatik gönderilir
@@ -271,6 +286,28 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
             <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>Torbayı görevliye teslim edin</div>
           </div>
         )}
+        {success.garments?.length > 0 && (
+          <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ fontSize: 11, color: '#64748b', letterSpacing: 1 }}>
+              OLUŞTURULAN KIYAFET KODLARI
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center' }}>
+              {success.garments.map(garment => (
+                <span key={garment.id} style={{
+                  borderRadius: 9,
+                  padding: '6px 9px',
+                  background: '#1e293b',
+                  color: '#bae6fd',
+                  fontFamily: 'monospace',
+                  fontSize: 12,
+                  fontWeight: 800,
+                }}>
+                  {garment.garment_code}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
           {selection.block && (
             <button onClick={() => resetAll(true)} style={btnStyle('#1d4ed8', '#fff')}>
@@ -305,6 +342,7 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
       )}
       {flushMsg && <div style={{ color: '#4ade80', fontSize: 13 }}>{flushMsg}</div>}
 
+      <StepHeader number="1" title="Oda ve kişi" description="Son kullanılan oda ve sakinlerden seçin" />
       {/* 1. Room/Person */}
       <RoomGridPicker value={selection} onChange={setSelection} kioskApi={kioskApi} />
 
@@ -337,7 +375,7 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
 
       {/* 2. Garments */}
       <div>
-        <label style={lbl}>Kıyafetler</label>
+        <StepHeader number="2" title="Kıyafetleri ekle" description="Kartlara dokun veya “3 mavi gömlek” yaz" />
         {lastBagGarments && garmentState.garments.length === 0 && (
           <button type="button"
             onClick={() => setGarmentState(s => ({ ...s, garments: lastBagGarments.garments }))}
@@ -353,6 +391,7 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
       </div>
 
       {/* 3. Fotoğraf — özellikle premium/pahalı parçalarda kayıp itirazına kanıt */}
+      <StepHeader number="3" title="Kontrol ve kaydet" description={`${derivedItemCount} parça · ütü seçenekleri ve fotoğraf`} />
       <div>
         <label style={lbl}>Fotoğraf (opsiyonel)</label>
         {photoDataUrl ? (
@@ -397,6 +436,31 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
         style={btnStyle('#2563eb', '#fff', !canSubmit || submitting)}>
         {submitting ? 'Kaydediliyor…' : '✓ Torba Kaydet'}
       </button>
+    </div>
+  )
+}
+
+function StepHeader({ number, title, description }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 2 }}>
+      <span style={{
+        width: 30,
+        height: 30,
+        borderRadius: 10,
+        display: 'grid',
+        placeItems: 'center',
+        background: '#1d4ed8',
+        color: '#fff',
+        fontWeight: 900,
+        fontSize: 13,
+        flexShrink: 0,
+      }}>
+        {number}
+      </span>
+      <span>
+        <strong style={{ display: 'block', color: '#e2e8f0', fontSize: 13 }}>{title}</strong>
+        <span style={{ color: '#64748b', fontSize: 11 }}>{description}</span>
+      </span>
     </div>
   )
 }
