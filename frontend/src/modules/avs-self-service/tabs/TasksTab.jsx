@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useTranslation } from '../../../shared/i18n/index.js'
 import TabState from '../components/TabState.jsx'
+import TechnicalTasksPanel from '../components/TechnicalTasksPanel.jsx'
 import { downscalePhoto, dataUrlToBlob } from '../../../shared/photo.js'
 
 const SKIP_REASONS = ['occupied', 'dnd', 'locked', 'fault', 'other']
@@ -8,6 +9,7 @@ const SKIP_REASONS = ['occupied', 'dnd', 'locked', 'fault', 'other']
 export default function TasksTab({
   query, data, completeTask, skipTask, photoDrafts, setPhotoDrafts,
   uploadProgress, onReportFault, selectedBlock, onSelectBlock, isOnline = true,
+  claimMaintenance, updateMaintenanceStatus,
 }) {
   const { t } = useTranslation()
   const [selFloor, setSelFloor] = useState(null)
@@ -437,21 +439,10 @@ export default function TasksTab({
             )}
           </>
         ) : data?.type === 'maintenance' ? (
-          <>
-            <h2 className="font-medium text-slate-300">{t('avs_kiosk.tasks.maintenance_title')}</h2>
-            {(data.items || []).map(item => (
-              <div key={item.id} className="rounded-xl bg-slate-900 p-4">
-                <div className="flex items-start justify-between gap-2">
-                  <span className="font-medium text-slate-200">{item.location}</span>
-                  <span className={item.priority === 'high' ? 'text-red-400' : 'text-amber-400'}>
-                    {t(`avs_kiosk.fault.${item.priority}`)}
-                  </span>
-                </div>
-                <div className="mt-1 text-xs text-blue-400">{t(`avs_kiosk.fault.category_${item.category || 'genel'}`)}</div>
-                <div className="mt-2 line-clamp-2 text-sm text-slate-500">{item.description}</div>
-              </div>
-            ))}
-          </>
+          <TechnicalTasksPanel data={data}
+            claimMaintenance={claimMaintenance}
+            updateMaintenanceStatus={updateMaintenanceStatus}
+            isOnline={isOnline} />
         ) : (
           <div className="rounded-2xl bg-slate-900 p-6 text-center text-sm text-slate-400">
             {t('avs_kiosk.tasks.none')}

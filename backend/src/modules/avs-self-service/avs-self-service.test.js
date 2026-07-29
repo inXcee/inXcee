@@ -6,6 +6,9 @@ import { seedDev } from '../../shared/db/seed.js'
 
 let avsToken
 let workerId
+let technicalToken
+let otherTechnicalToken
+let technicalWorkerId
 let unassignedWorkerSequence = 0
 const JPEG = Buffer.from('/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==', 'base64')
 
@@ -38,6 +41,23 @@ beforeAll(async () => {
     .set('Authorization', `Bearer ${adminToken}`)
     .send({ full_name: 'AVS Kiosk Test', role_label: 'Temizlik Görevlisi' })).body
   workerId = w.id
+
+  const createTechnicalLogin = async (fullName, pin) => {
+    const technicalWorker = (await request(app).post('/api/avs-workers')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ full_name: fullName, role_label: 'Teknik Personel' })).body
+    await request(app).put(`/api/avs-workers/${technicalWorker.id}/pin`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ new_pin: pin })
+    const login = await request(app).post('/api/auth/avs-login')
+      .send({ worker_id: technicalWorker.id, pin })
+    return { id: technicalWorker.id, token: login.body.token }
+  }
+  const technical = await createTechnicalLogin('AVS Teknik Test', '1357')
+  const otherTechnical = await createTechnicalLogin('AVS Teknik Diğer', '9753')
+  technicalWorkerId = technical.id
+  technicalToken = technical.token
+  otherTechnicalToken = otherTechnical.token
 
   await request(app).put(`/api/avs-workers/${workerId}/pin`)
     .set('Authorization', `Bearer ${adminToken}`)
@@ -146,6 +166,115 @@ describe('AVS Self-Service — my-tasks', () => {
     expect(res.body.selected_block).toBe('M1')
     expect(res.body.items.length).toBeGreaterThan(0)
     expect(res.body.items.every(task => task.block === 'M1')).toBe(true)
+  })
+})
+
+describe('AVS Self-Service — technical work pool', () => {
+  it('teknik personele sahiplik ve konum bilgileriyle arıza havuzu döner', async () => {
+    const res = await request(app).get('/api/avs-self-service/my-tasks')
+      .set('Authorization', `Bearer ${technicalToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.type).toBe('maintenance')
+    expect(res.body.worker_id).toBe(technicalWorkerId)
+    expect(res.body.items.length).toBeGreaterThan(0)
+    expect(res.body.items[0]).toHaveProperty('is_mine')
+    expect(res.body.items[0]).toHaveProperty('sla_deadline')
+  })
+
+  it('arızayı atomik sahiplenir, tekrar isteğini idempotent karşılar ve audit yazar', async () => {
+    const db = getDB()
+    const fault = db.prepare(`
+      INSERT INTO maintenance_requests(location, description, status, priority, category)
+      VALUES('M1 Kat 2 Oda 205','Test için teknik sahiplenme arızası','open','high','elektrik')
+    `).run()
+
+    const first = await request(app)
+      .patch(`/api/avs-self-service/maintenance/${fault.lastInsertRowid}/claim`)
+      .set('Authorization', `Bearer ${technicalToken}`)
+    const retry = await request(app)
+      .patch(`/api/avs-self-service/maintenance/${fault.lastInsertRowid}/claim`)
+      .set('Authorization', `Bearer ${technicalToken}`)
+
+    expect(first.status).toBe(200)
+    expect(retry.status).toBe(200)
+    expect(db.prepare('SELECT avs_assigned_worker_id FROM maintenance_requests WHERE id=?')
+      .get(fault.lastInsertRowid).avs_assigned_worker_id).toBe(technicalWorkerId)
+    expect(db.prepare(`
+      SELECT COUNT(*) AS count FROM audit_log
+      WHERE action='kiosk_avs_maintenance_claim' AND target_id=?
+    `).get(fault.lastInsertRowid).count).toBe(1)
+  })
+
+  it('başka teknik personelin sahiplenmesini reddeder', async () => {
+    const db = getDB()
+    const fault = db.prepare(`
+      INSERT INTO maintenance_requests(location, description, status, priority)
+      VALUES('M1 Teknik Oda','Sahiplik çakışması kontrol arızası','open','medium')
+    `).run()
+    await request(app).patch(`/api/avs-self-service/maintenance/${fault.lastInsertRowid}/claim`)
+      .set('Authorization', `Bearer ${technicalToken}`)
+
+    const res = await request(app)
+      .patch(`/api/avs-self-service/maintenance/${fault.lastInsertRowid}/claim`)
+      .set('Authorization', `Bearer ${otherTechnicalToken}`)
+    expect(res.status).toBe(409)
+  })
+
+  it('yalnız işi üstlenen teknik personel işi başlatır ve notla tamamlar', async () => {
+    const db = getDB()
+    const fault = db.prepare(`
+      INSERT INTO maintenance_requests(location, description, status, priority)
+      VALUES('S1 Kat 1','Durum geçişi kontrol arızası','open','medium')
+    `).run()
+    const id = fault.lastInsertRowid
+    await request(app).patch(`/api/avs-self-service/maintenance/${id}/claim`)
+      .set('Authorization', `Bearer ${technicalToken}`)
+
+    const unauthorized = await request(app)
+      .patch(`/api/avs-self-service/maintenance/${id}/status`)
+      .set('Authorization', `Bearer ${otherTechnicalToken}`)
+      .send({ status: 'in_progress' })
+    expect(unauthorized.status).toBe(403)
+
+    const started = await request(app)
+      .patch(`/api/avs-self-service/maintenance/${id}/status`)
+      .set('Authorization', `Bearer ${technicalToken}`)
+      .send({ status: 'in_progress' })
+    expect(started.status).toBe(200)
+
+    const completed = await request(app)
+      .patch(`/api/avs-self-service/maintenance/${id}/status`)
+      .set('Authorization', `Bearer ${technicalToken}`)
+      .send({ status: 'done', note: 'Arızalı parça değiştirildi ve test edildi.' })
+    expect(completed.status).toBe(200)
+    const saved = db.prepare(`
+      SELECT status, started_at, closed_at FROM maintenance_requests WHERE id=?
+    `).get(id)
+    expect(saved.status).toBe('done')
+    expect(saved.started_at).toBeTruthy()
+    expect(saved.closed_at).toBeTruthy()
+    const audit = db.prepare(`
+      SELECT detail FROM audit_log
+      WHERE action='kiosk_avs_maintenance_status' AND target_id=?
+      ORDER BY id DESC LIMIT 1
+    `).get(id)
+    expect(JSON.parse(audit.detail)).toMatchObject({
+      workerId: technicalWorkerId,
+      status: 'done',
+      note: 'Arızalı parça değiştirildi ve test edildi.',
+    })
+  })
+
+  it('temizlik personelinin teknik sahiplenme uç noktasını kullanmasını reddeder', async () => {
+    const db = getDB()
+    const fault = db.prepare(`
+      INSERT INTO maintenance_requests(location, description, status, priority)
+      VALUES('M2 Kat 1','Rol yetkisi kontrol arızası','open','low')
+    `).run()
+    const res = await request(app)
+      .patch(`/api/avs-self-service/maintenance/${fault.lastInsertRowid}/claim`)
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(403)
   })
 })
 

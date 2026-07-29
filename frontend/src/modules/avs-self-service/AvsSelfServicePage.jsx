@@ -273,6 +273,21 @@ export default function AvsSelfServicePage() {
     },
   })
 
+  const refreshTechnicalWork = () => {
+    queryClient.invalidateQueries({ queryKey: ['avs-tasks', avsToken] })
+    queryClient.invalidateQueries({ queryKey: ['avs-overview', avsToken] })
+  }
+  const claimMaintenance = useMutation({
+    mutationFn: id => avsApi.patch(`/avs-self-service/maintenance/${id}/claim`),
+    onSuccess: refreshTechnicalWork,
+  })
+  const updateMaintenanceStatus = useMutation({
+    mutationFn: ({ id, status, note }) => (
+      avsApi.patch(`/avs-self-service/maintenance/${id}/status`, { status, note })
+    ),
+    onSuccess: refreshTechnicalWork,
+  })
+
   // Task 16 — Hızlı Arıza mutation (P2: foto → FormData)
   const submitFault = useMutation({
     mutationFn: () => {
@@ -590,6 +605,8 @@ export default function AvsSelfServicePage() {
           onReportFault={openFaultFromTask}
           selectedBlock={taskBlock} onSelectBlock={setTaskBlock}
           isOnline={isOnline}
+          claimMaintenance={claimMaintenance}
+          updateMaintenanceStatus={updateMaintenanceStatus}
         />
       )}
 
@@ -676,7 +693,11 @@ export default function AvsSelfServicePage() {
             icon: tb.icon,
             label: t(tb.i18n),
             badge: tb.key === 'tasks'
-              ? Math.min(99, Number(overview?.tasks?.pending || 0))
+              ? Math.min(99, Number(
+                  overview?.role_group === 'technical'
+                    ? (overview?.faults?.mine || 0) + (overview?.faults?.available || 0)
+                    : overview?.tasks?.pending || 0
+                ))
               : tb.key === 'quick_fault' && faultHasDraft
                 ? 1
                 : 0,

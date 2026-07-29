@@ -145,12 +145,12 @@ export default function DetailPanel({ requestId, onClose }) {
             <div style={{ position: 'relative' }}>
               <StatusActions request={request} onSuccess={() => {}} />
             </div>
-            {request.technician_name && (
+            {(request.technician_name || request.avs_worker_name) && (
               <span style={{
                 fontFamily: 'var(--mono)', fontSize: '9px', padding: '2px 8px', borderRadius: '4px',
                 background: 'rgba(52,152,219,.1)', border: '1px solid rgba(52,152,219,.2)',
                 color: 'var(--blue)', marginLeft: 'auto',
-              }}>Teknisyen: {request.technician_name}</span>
+              }}>Teknisyen: {request.technician_name || request.avs_worker_name}</span>
             )}
           </div>
         )}

@@ -41,6 +41,20 @@ function roleGroup(departmentName = '') {
   return 'general'
 }
 
+function loadTechnicalWorker(db, workerId) {
+  const worker = db.prepare(`
+    SELECT s.id, s.full_name, d.name AS department_name
+    FROM staff s
+    LEFT JOIN departments d ON d.id=s.department_id
+    WHERE s.id=? AND s.is_active=1
+  `).get(workerId)
+  return worker && roleGroup(worker.department_name) === 'technical' ? worker : null
+}
+
+function maintenanceTrackingNo(id) {
+  return `ARZ-${String(id).padStart(6, '0')}`
+}
+
 function uploadedFiles(req) {
   if (req.files) return Object.values(req.files).flat()
   return req.file ? [req.file] : []
@@ -225,9 +239,12 @@ avsSelfServiceRouter.get('/overview', requireAvsKiosk, (req, res) => {
       ? db.prepare(`
           SELECT COUNT(*) AS open,
                  SUM(CASE WHEN priority='high' THEN 1 ELSE 0 END) AS urgent,
-                 SUM(CASE WHEN status='in_progress' THEN 1 ELSE 0 END) AS in_progress
+                 SUM(CASE WHEN status='in_progress' THEN 1 ELSE 0 END) AS in_progress,
+                 SUM(CASE WHEN avs_assigned_worker_id=? AND status!='done' THEN 1 ELSE 0 END) AS mine,
+                 SUM(CASE WHEN avs_assigned_worker_id IS NULL AND assigned_to IS NULL
+                               AND status!='done' THEN 1 ELSE 0 END) AS available
           FROM maintenance_requests WHERE status NOT IN ('done')
-        `).get()
+        `).get(req.user.workerId)
       : null
 
     const staffTransport = getStaffTransport(req.user.workerId)
@@ -275,6 +292,8 @@ avsSelfServiceRouter.get('/overview', requireAvsKiosk, (req, res) => {
             open: Number(technicalFaults.open || 0),
             urgent: Number(technicalFaults.urgent || 0),
             in_progress: Number(technicalFaults.in_progress || 0),
+            mine: Number(technicalFaults.mine || 0),
+            available: Number(technicalFaults.available || 0),
           }
         : {
             open: Number(reportedFaults.open || 0),
@@ -406,18 +425,151 @@ avsSelfServiceRouter.get('/my-tasks', requireAvsKiosk, (req, res) => {
       })
     }
     if (group === 'technical') {
-      // assigned_to → technicians(id); staff eşleşmesi yok → açık talepleri göster (bilgi amaçlı)
       const items = db.prepare(`
-        SELECT id, location, description, status, priority, category, block, room_id, opened_at
-        FROM maintenance_requests
-        WHERE status IN ('open','assigned','in_progress','review')
-        ORDER BY CASE priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, opened_at
-        LIMIT 30
-      `).all()
-      return res.json({ type: 'maintenance', items })
+        SELECT mr.id, mr.location, mr.description, mr.status, mr.priority,
+               mr.category, mr.block, mr.room_id, mr.cleaning_task_id,
+               mr.opened_at, mr.assigned_at, mr.started_at, mr.sla_deadline,
+               mr.avs_assigned_worker_id, mr.assigned_to,
+               aw.full_name AS avs_worker_name,
+               t.full_name AS technician_name,
+               CASE WHEN mr.avs_assigned_worker_id=? THEN 1 ELSE 0 END AS is_mine,
+               (
+                 SELECT json_extract(a.detail, '$.note')
+                 FROM audit_log a
+                 WHERE a.target_id=mr.id
+                   AND a.action='kiosk_avs_maintenance_status'
+                   AND json_extract(a.detail, '$.note') IS NOT NULL
+                 ORDER BY a.id DESC LIMIT 1
+               ) AS last_action_note
+        FROM maintenance_requests mr
+        LEFT JOIN staff aw ON aw.id=mr.avs_assigned_worker_id
+        LEFT JOIN technicians t ON t.id=mr.assigned_to
+        WHERE mr.status IN ('open','assigned','in_progress','review')
+        ORDER BY CASE WHEN mr.avs_assigned_worker_id=? THEN 0
+                      WHEN mr.avs_assigned_worker_id IS NULL AND mr.assigned_to IS NULL THEN 1
+                      ELSE 2 END,
+                 CASE mr.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
+                 mr.opened_at
+        LIMIT 60
+      `).all(req.user.workerId, req.user.workerId)
+      return res.json({ type: 'maintenance', worker_id: req.user.workerId, items })
     }
     return res.json({ type: 'none', items: [] })
   } catch (e) { logger.error('[avs my-tasks]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Teknik kiosk iş havuzu — boş bir arızayı güvenli ve atomik şekilde sahiplenir.
+avsSelfServiceRouter.patch('/maintenance/:id/claim', requireAvsKiosk, (req, res) => {
+  try {
+    const db = getDB()
+    const worker = loadTechnicalWorker(db, req.user.workerId)
+    if (!worker) return res.status(403).json({ error: 'Bu işlem yalnız teknik personel içindir' })
+
+    const id = Number(req.params.id)
+    if (!Number.isInteger(id) || id <= 0) return res.status(404).json({ error: 'Arıza bulunamadı' })
+
+    const claim = db.transaction(() => {
+      const current = db.prepare(`
+        SELECT id, status, assigned_to, avs_assigned_worker_id
+        FROM maintenance_requests WHERE id=?
+      `).get(id)
+      if (!current) return { status: 404, error: 'Arıza bulunamadı' }
+      if (current.status === 'done') return { status: 409, error: 'Tamamlanmış arıza sahiplenilemez' }
+      if (current.assigned_to) return { status: 409, error: 'Arıza yönetim tarafından başka teknisyene atandı' }
+      if (current.avs_assigned_worker_id && current.avs_assigned_worker_id !== worker.id) {
+        return { status: 409, error: 'Arıza başka bir teknik personel tarafından üstlenildi' }
+      }
+      if (current.avs_assigned_worker_id === worker.id) return { ok: true }
+
+      const updated = db.prepare(`
+        UPDATE maintenance_requests
+        SET avs_assigned_worker_id=?, assigned_at=COALESCE(assigned_at, datetime('now'))
+        WHERE id=? AND assigned_to IS NULL
+          AND (avs_assigned_worker_id IS NULL OR avs_assigned_worker_id=?)
+      `).run(worker.id, id, worker.id)
+      if (!updated.changes) return { status: 409, error: 'Arıza şu anda sahiplenilemedi' }
+
+      db.prepare(`
+        INSERT INTO audit_log(user_id, action, module, target_id, detail)
+        VALUES(NULL, 'kiosk_avs_maintenance_claim', 'avs-self-service', ?, ?)
+      `).run(id, JSON.stringify({ workerId: worker.id }))
+      return { ok: true }
+    })()
+
+    if (!claim.ok) return res.status(claim.status).json({ error: claim.error })
+    return res.json({
+      ok: true,
+      id,
+      tracking_no: maintenanceTrackingNo(id),
+      avs_assigned_worker_id: worker.id,
+      avs_worker_name: worker.full_name,
+    })
+  } catch (e) {
+    logger.error('[avs maintenance claim]', e)
+    return res.status(500).json({ error: 'Sunucu hatası' })
+  }
+})
+
+// Teknik kiosk durum geçişi — sadece işi üstlenen personel başlatabilir/tamamlayabilir.
+avsSelfServiceRouter.patch('/maintenance/:id/status', requireAvsKiosk, (req, res) => {
+  try {
+    const db = getDB()
+    const worker = loadTechnicalWorker(db, req.user.workerId)
+    if (!worker) return res.status(403).json({ error: 'Bu işlem yalnız teknik personel içindir' })
+
+    const id = Number(req.params.id)
+    if (!Number.isInteger(id) || id <= 0) return res.status(404).json({ error: 'Arıza bulunamadı' })
+    const status = req.body?.status
+    const note = typeof req.body?.note === 'string' ? req.body.note.trim() : ''
+    if (!['in_progress', 'done'].includes(status)) {
+      return res.status(400).json({ error: 'Geçersiz arıza durumu' })
+    }
+    if (note.length > 500) return res.status(400).json({ error: 'İşlem notu en fazla 500 karakter olabilir' })
+
+    const transition = db.transaction(() => {
+      const current = db.prepare(`
+        SELECT id, status, avs_assigned_worker_id
+        FROM maintenance_requests WHERE id=?
+      `).get(id)
+      if (!current) return { status: 404, error: 'Arıza bulunamadı' }
+      if (current.avs_assigned_worker_id !== worker.id) {
+        return { status: 403, error: 'Bu arızayı önce sizin üstlenmeniz gerekir' }
+      }
+      const allowed = status === 'in_progress'
+        ? ['open', 'assigned'].includes(current.status)
+        : current.status === 'in_progress'
+      if (!allowed) return { status: 409, error: 'Bu durum geçişi artık kullanılamıyor' }
+
+      if (status === 'in_progress') {
+        db.prepare(`
+          UPDATE maintenance_requests
+          SET status='in_progress', started_at=COALESCE(started_at, datetime('now'))
+          WHERE id=?
+        `).run(id)
+      } else {
+        db.prepare(`
+          UPDATE maintenance_requests
+          SET status='done', closed_at=datetime('now'), wait_reason=NULL
+          WHERE id=?
+        `).run(id)
+      }
+      db.prepare(`
+        INSERT INTO audit_log(user_id, action, module, target_id, detail)
+        VALUES(NULL, 'kiosk_avs_maintenance_status', 'avs-self-service', ?, ?)
+      `).run(id, JSON.stringify({
+        workerId: worker.id,
+        status,
+        note: note || null,
+      }))
+      return { ok: true }
+    })()
+
+    if (!transition.ok) return res.status(transition.status).json({ error: transition.error })
+    return res.json({ ok: true, id, status, tracking_no: maintenanceTrackingNo(id) })
+  } catch (e) {
+    logger.error('[avs maintenance status]', e)
+    return res.status(500).json({ error: 'Sunucu hatası' })
+  }
 })
 
 // Genel arıza formu için yetkili bloktaki gerçek oda kimlikleri.
@@ -710,7 +862,7 @@ avsSelfServiceRouter.post('/maintenance', requireAvsKiosk, upload.single('photo'
       category,
       cleaningTaskId: cleaning_task_id || null,
     }))
-    res.status(201).json({ id, tracking_no: `ARZ-${String(id).padStart(6, '0')}` })
+    res.status(201).json({ id, tracking_no: maintenanceTrackingNo(id) })
   } catch (e) {
     removeUploadedFiles(req)
     logger.error('[avs maintenance]', e)
@@ -783,17 +935,18 @@ avsSelfServiceRouter.get('/my-maintenance', requireAvsKiosk, (req, res) => {
       SELECT m.id, m.location, m.description, m.status, m.priority,
              m.category, m.block, m.room_id, m.cleaning_task_id,
              m.photo_before, m.sla_deadline, m.opened_at, m.closed_at,
-             t.full_name AS technician_name
+             COALESCE(t.full_name, aw.full_name) AS technician_name
       FROM maintenance_requests m
       JOIN audit_log a ON a.target_id = m.id
         AND a.action = 'kiosk_avs_maintenance'
         AND json_extract(a.detail, '$.workerId') = ?
       LEFT JOIN technicians t ON t.id=m.assigned_to
+      LEFT JOIN staff aw ON aw.id=m.avs_assigned_worker_id
       ORDER BY m.opened_at DESC LIMIT 20
     `).all(req.user.workerId)
     res.json(rows.map(row => ({
       ...row,
-      tracking_no: `ARZ-${String(row.id).padStart(6, '0')}`,
+      tracking_no: maintenanceTrackingNo(row.id),
     })))
   } catch (e) { logger.error('[avs my-maintenance]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })

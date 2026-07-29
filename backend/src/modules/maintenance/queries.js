@@ -54,10 +54,12 @@ export function getRequests({ status, search, priority, category, reporter_user_
   let q = `
     SELECT mr.*,
       ru.full_name as reporter_name,
-      t.full_name as technician_name
+      COALESCE(t.full_name, aw.full_name) as technician_name,
+      aw.full_name as avs_worker_name
     FROM maintenance_requests mr
     LEFT JOIN users ru ON ru.id = mr.reporter_user_id
     LEFT JOIN technicians t ON t.id = mr.assigned_to
+    LEFT JOIN staff aw ON aw.id = mr.avs_assigned_worker_id
   ` + where +
     ' ORDER BY CASE mr.priority WHEN \'high\' THEN 0 WHEN \'medium\' THEN 1 ELSE 2 END, mr.opened_at DESC'
   if (_limit != null) {
@@ -78,10 +80,12 @@ export function getRequestById(id) {
   return db.prepare(`
     SELECT mr.*,
       ru.full_name as reporter_name,
-      t.full_name as technician_name
+      COALESCE(t.full_name, aw.full_name) as technician_name,
+      aw.full_name as avs_worker_name
     FROM maintenance_requests mr
     LEFT JOIN users ru ON ru.id = mr.reporter_user_id
     LEFT JOIN technicians t ON t.id = mr.assigned_to
+    LEFT JOIN staff aw ON aw.id = mr.avs_assigned_worker_id
     WHERE mr.id=?
   `).get(id)
 }
@@ -119,7 +123,7 @@ export function assignRequest(id, technicianId) {
   const tech = db.prepare('SELECT id FROM technicians WHERE id=?').get(technicianId)
   if (!tech) throw new Error('Teknisyen bulunamadı')
   const r = db.prepare(
-    "UPDATE maintenance_requests SET assigned_to=? WHERE id=?"
+    "UPDATE maintenance_requests SET assigned_to=?, avs_assigned_worker_id=NULL, assigned_at=datetime('now') WHERE id=?"
   ).run(technicianId, id)
   if (!r.changes) throw new Error('Talep bulunamadı')
 }

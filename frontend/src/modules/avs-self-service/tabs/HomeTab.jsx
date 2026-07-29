@@ -105,11 +105,23 @@ export default function HomeTab({ query, data, onNavigate, selectedBlock, onSele
         )}
 
         {role === 'technical' && (
-          <div className="grid grid-cols-3 gap-2">
-            <Metric value={faults.open} label={t('avs_kiosk.home.open_faults')} />
-            <Metric value={faults.urgent} label={t('avs_kiosk.home.urgent')} tone="red" />
-            <Metric value={faults.in_progress} label={t('avs_kiosk.home.in_progress')} tone="amber" />
-          </div>
+          <>
+            <div className="grid grid-cols-3 gap-2">
+              <Metric value={faults.mine} label={t('avs_kiosk.home.my_active_jobs')} />
+              <Metric value={faults.available} label={t('avs_kiosk.home.available_jobs')} tone="amber" />
+              <Metric value={faults.urgent} label={t('avs_kiosk.home.urgent')} tone="red" />
+            </div>
+            <button type="button" onClick={() => onNavigate('tasks')}
+              className="flex min-h-16 w-full items-center justify-between rounded-2xl border border-blue-500/40 bg-blue-950/30 px-4 text-left">
+              <span>
+                <span className="block text-sm font-semibold text-blue-200">{t('avs_kiosk.home.technical_pool')}</span>
+                <span className="mt-1 block text-xs text-slate-400">
+                  {faults.in_progress || 0} {t('avs_kiosk.home.in_progress').toLocaleLowerCase()}
+                </span>
+              </span>
+              <span className="text-xl text-blue-300">→</span>
+            </button>
+          </>
         )}
 
         {role !== 'housekeeping' && role !== 'technical' && (

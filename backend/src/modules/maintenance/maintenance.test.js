@@ -40,6 +40,9 @@ describe('Maintenance — assign endpoint', () => {
   })
 
   it('assigns technician to request', async () => {
+    const staffId = db.prepare('SELECT id FROM staff LIMIT 1').get().id
+    db.prepare('UPDATE maintenance_requests SET avs_assigned_worker_id=? WHERE id=?')
+      .run(staffId, requestId)
     const res = await request(app)
       .patch(`/api/maintenance/requests/${requestId}/assign`)
       .set('Authorization', `Bearer ${token}`)
@@ -49,8 +52,13 @@ describe('Maintenance — assign endpoint', () => {
   })
 
   it('verifies assigned_to is persisted', () => {
-    const row = db.prepare('SELECT assigned_to FROM maintenance_requests WHERE id=?').get(requestId)
+    const row = db.prepare(`
+      SELECT assigned_to, avs_assigned_worker_id, assigned_at
+      FROM maintenance_requests WHERE id=?
+    `).get(requestId)
     expect(row.assigned_to).toBe(techId)
+    expect(row.avs_assigned_worker_id).toBeNull()
+    expect(row.assigned_at).toBeTruthy()
   })
 
   it('rejects assign with missing technician_id', async () => {

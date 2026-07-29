@@ -150,6 +150,59 @@ describe('AVS sekme parçaları smoke', () => {
     expect(screen.queryByText('101')).not.toBeInTheDocument()
   })
 
+  it('TasksTab teknik personelin kendi işini başlatmasını sağlar', () => {
+    const updateMaintenanceStatus = { mutate: vi.fn(), isPending: false }
+    const data = {
+      type: 'maintenance',
+      worker_id: 77,
+      items: [{
+        id: 301, location: 'M1 Kat 2 Oda 205', description: 'Priz kapağı kırılmış durumda',
+        status: 'open', priority: 'high', category: 'elektrik',
+        avs_assigned_worker_id: 77, avs_worker_name: 'Teknik Test', is_mine: 1,
+        opened_at: '2026-07-29 08:00:00', assigned_at: '2026-07-29 08:10:00',
+      }],
+    }
+    renderWithProviders(
+      <TasksTab query={{ ...idleQuery, data }} data={data}
+        completeTask={{ mutate: vi.fn(), isPending: false }}
+        skipTask={{ mutate: vi.fn(), isPending: false }}
+        photoDrafts={{}} setPhotoDrafts={() => {}} uploadProgress={{}}
+        claimMaintenance={{ mutate: vi.fn(), isPending: false }}
+        updateMaintenanceStatus={updateMaintenanceStatus}
+        onReportFault={() => {}} selectedBlock="" onSelectBlock={() => {}} />
+    )
+    fireEvent.click(screen.getByRole('button', { name: /M1 Kat 2 Oda 205/ }))
+    fireEvent.click(screen.getByRole('button', { name: /İşe başla/i }))
+    expect(updateMaintenanceStatus.mutate).toHaveBeenCalledWith({ id: 301, status: 'in_progress' })
+  })
+
+  it('TasksTab alınabilir teknik arızayı sahiplenir', () => {
+    const claimMaintenance = { mutate: vi.fn(), isPending: false }
+    const data = {
+      type: 'maintenance',
+      worker_id: 77,
+      items: [{
+        id: 302, location: 'S1 Kazan Dairesi', description: 'Pompadan olağan dışı ses geliyor',
+        status: 'open', priority: 'medium', category: 'tesisat',
+        avs_assigned_worker_id: null, assigned_to: null, is_mine: 0,
+        opened_at: '2026-07-29 09:00:00',
+      }],
+    }
+    renderWithProviders(
+      <TasksTab query={{ ...idleQuery, data }} data={data}
+        completeTask={{ mutate: vi.fn(), isPending: false }}
+        skipTask={{ mutate: vi.fn(), isPending: false }}
+        photoDrafts={{}} setPhotoDrafts={() => {}} uploadProgress={{}}
+        claimMaintenance={claimMaintenance}
+        updateMaintenanceStatus={{ mutate: vi.fn(), isPending: false }}
+        onReportFault={() => {}} selectedBlock="" onSelectBlock={() => {}} />
+    )
+    fireEvent.click(screen.getByRole('button', { name: /Alınabilir/i }))
+    fireEvent.click(screen.getByRole('button', { name: /S1 Kazan Dairesi/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Bu işi üstlen/i }))
+    expect(claimMaintenance.mutate).toHaveBeenCalledWith(302)
+  })
+
   it('TasksTab fotoğraf olmadan tamamlama butonunu kapalı tutar', async () => {
     renderWithProviders(
       <TasksTab query={{ ...idleQuery, data: housekeepingData }} data={housekeepingData}
@@ -232,17 +285,18 @@ describe('AVS sekme parçaları smoke', () => {
     expect(onSelectBlock).toHaveBeenCalledWith('M1')
   })
 
-  it('HomeTab teknik personelde açık, acil ve işlemde arızaları gösterir', () => {
+  it('HomeTab teknik personelde kendi, alınabilir ve acil işleri gösterir', () => {
     const data = {
       role_group: 'technical',
       worker: { full_name: 'Teknik Test', department_name: 'Teknik' },
       tasks: {},
-      faults: { open: 8, urgent: 2, in_progress: 3 },
+      faults: { open: 8, urgent: 2, in_progress: 3, mine: 4, available: 2 },
     }
     renderWithProviders(<HomeTab query={{ ...idleQuery, data }} data={data} onNavigate={() => {}} />)
-    expect(screen.getByText('Açık arıza')).toBeInTheDocument()
+    expect(screen.getByText('Aktif işlerim')).toBeInTheDocument()
+    expect(screen.getByText('Alınabilir')).toBeInTheDocument()
     expect(screen.getByText('Acil')).toBeInTheDocument()
-    expect(screen.getByText('İşlemde')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Teknik iş havuzunu aç/i })).toBeInTheDocument()
   })
 
   it('HomeTab diğer rollerde vardiya, servis ve duyuru özetini gösterir', () => {
