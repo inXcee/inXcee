@@ -43,12 +43,26 @@ export function archiveItemsQuery({ from, to, status, room, search, page = 1, li
 // DELIVERIES
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function insertDeliveryQuery({ item_id, delivered_to, signature_data, delivered_by }) {
+export function insertDeliveryQuery({
+  item_id,
+  delivered_to,
+  signature_data,
+  delivered_by,
+  delivered_by_worker_id,
+}) {
   const db = getDB()
   db.prepare(`
-    INSERT INTO laundry_deliveries(item_id, delivered_to, signature_data, delivered_by)
-    VALUES(?, ?, ?, ?)
-  `).run(item_id, delivered_to, signature_data || null, delivered_by)
+    INSERT INTO laundry_deliveries(
+      item_id, delivered_to, signature_data, delivered_by, delivered_by_worker_id
+    )
+    VALUES(?, ?, ?, ?, ?)
+  `).run(
+    item_id,
+    delivered_to,
+    signature_data || null,
+    delivered_by || null,
+    delivered_by_worker_id || null
+  )
 }
 
 export function getDeliveryForItemQuery(itemId) {
@@ -102,12 +116,28 @@ export function updateCompensationQuery(id, value, note) {
 // HISTORY
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function insertHistoryQuery({ item_id, from_status, to_status, action_by, notes }) {
+export function insertHistoryQuery({
+  item_id,
+  from_status,
+  to_status,
+  action_by,
+  worker_id,
+  notes,
+}) {
   const db = getDB()
   db.prepare(`
-    INSERT INTO laundry_history(item_id, from_status, to_status, action_by, notes)
-    VALUES(?, ?, ?, ?, ?)
-  `).run(item_id, from_status || null, to_status, action_by, notes || null)
+    INSERT INTO laundry_history(
+      item_id, from_status, to_status, action_by, worker_id, notes
+    )
+    VALUES(?, ?, ?, ?, ?, ?)
+  `).run(
+    item_id,
+    from_status || null,
+    to_status,
+    action_by || null,
+    worker_id || null,
+    notes || null
+  )
 }
 
 export function getItemHistoryQuery(itemId) {

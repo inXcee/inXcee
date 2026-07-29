@@ -231,18 +231,28 @@ describe('GET /api/self-service/my-info expected_departure', () => {
 })
 
 describe('Laundry Kiosk endpoints', () => {
-  let avsToken
+  let avsToken, adminToken, technicalAvsToken
 
   beforeAll(async () => {
-    const adminToken = (await request(app).post('/api/auth/login').send({ username: 'mudur', password: 'admin123' })).body.token
+    adminToken = (await request(app).post('/api/auth/login').send({ username: 'mudur', password: 'admin123' })).body.token
     const w = (await request(app).post('/api/avs-workers')
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ full_name: 'Kiosk Test Worker' })).body
+      .send({ full_name: 'Kiosk Test Worker', role_label: 'Çamaşırhane Personeli' })).body
     await request(app).put(`/api/avs-workers/${w.id}/pin`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ new_pin: '0000' })
     const loginRes = await request(app).post('/api/auth/avs-login').send({ worker_id: w.id, pin: '0000' })
     avsToken = loginRes.body.token
+
+    const technicalWorker = (await request(app).post('/api/avs-workers')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ full_name: 'Yetkisiz Teknik Worker', role_label: 'Teknik Personel' })).body
+    await request(app).put(`/api/avs-workers/${technicalWorker.id}/pin`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ new_pin: '0000' })
+    technicalAvsToken = (await request(app)
+      .post('/api/auth/avs-login')
+      .send({ worker_id: technicalWorker.id, pin: '0000' })).body.token
   })
 
   it('GET /laundry-kiosk/blocks token gerektirmez', async () => {
@@ -294,6 +304,179 @@ describe('Laundry Kiosk endpoints', () => {
       .get('/api/self-service/laundry-kiosk/machines')
       .set('Authorization', `Bearer ${kioskToken}`)
     expect(res.status).toBe(403)
+  })
+
+  it('teknik AVS personelini reddeder, kampüs yöneticisini kabul eder', async () => {
+    const denied = await request(app)
+      .get('/api/self-service/laundry-kiosk/session')
+      .set('Authorization', `Bearer ${technicalAvsToken}`)
+    expect(denied.status).toBe(403)
+
+    const manager = await request(app)
+      .get('/api/self-service/laundry-kiosk/session')
+      .set('Authorization', `Bearer ${adminToken}`)
+    expect(manager.status).toBe(200)
+    expect(manager.body).toMatchObject({
+      role: 'campus_manager',
+      capabilities: { persistent_offline_queue: false },
+    })
+  })
+
+  it('tekil giriş parçaları açar ve client_request_id tekrarında torbayı çoğaltmaz', async () => {
+    const payload = {
+      block: 'A',
+      room_no: '101',
+      item_count: 3,
+      client_request_id: 'bag-request-00000001',
+      tracking_mode: 'individual',
+      garments: [
+        {
+          type_id: 1,
+          type_name: 'Gömlek',
+          emoji: '👔',
+          count: 2,
+          requires_ironing: true,
+        },
+        {
+          type_id: 2,
+          type_name: 'Pantolon',
+          emoji: '👖',
+          count: 1,
+          requires_ironing: true,
+        },
+      ],
+    }
+    const created = await request(app)
+      .post('/api/self-service/laundry-kiosk/bag')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send(payload)
+    expect(created.status).toBe(201)
+    expect(created.body.tracking_mode).toBe('individual')
+    expect(created.body.garments).toHaveLength(3)
+    expect(new Set(created.body.garments.map(garment => garment.garment_code)).size).toBe(3)
+
+    const repeated = await request(app)
+      .post('/api/self-service/laundry-kiosk/bag')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send(payload)
+    expect(repeated.status).toBe(200)
+    expect(repeated.body).toMatchObject({ id: created.body.id, idempotent: true })
+    const count = getDB().prepare(
+      'SELECT COUNT(*) AS count FROM laundry_items WHERE client_request_id=?'
+    ).get(payload.client_request_id)
+    expect(count.count).toBe(1)
+  })
+
+  it('ütü tiki idempotenttir; tekrarında history ve audit çoğalmaz', async () => {
+    const created = await request(app)
+      .post('/api/self-service/laundry-kiosk/bag')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({
+        block: 'A',
+        room_no: '101',
+        item_count: 1,
+        client_request_id: 'bag-request-iron-0001',
+        garments: [{
+          type_id: 1,
+          type_name: 'Gömlek',
+          count: 1,
+          requires_ironing: true,
+        }],
+      })
+    expect(created.status).toBe(201)
+    const bagId = created.body.id
+    const garmentId = created.body.garments[0].id
+    const db = getDB()
+    db.prepare("UPDATE laundry_items SET status='ironing' WHERE id=?").run(bagId)
+    db.prepare("UPDATE premium_garments SET status='ironing' WHERE id=?").run(garmentId)
+    const endpoint = `/api/self-service/laundry-kiosk/bags/${bagId}/garments/${garmentId}/ironing`
+    const body = { completed: true, client_action_id: 'iron-action-00000001' }
+
+    const first = await request(app)
+      .put(endpoint)
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send(body)
+    expect(first.status).toBe(200)
+    expect(first.body.garment.status).toBe('ready')
+    expect(first.body.idempotent).toBe(false)
+
+    const repeated = await request(app)
+      .put(endpoint)
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send(body)
+    expect(repeated.status).toBe(200)
+    expect(repeated.body.idempotent).toBe(true)
+    expect(db.prepare(
+      'SELECT COUNT(*) AS count FROM premium_garment_history WHERE client_action_id=?'
+    ).get(body.client_action_id).count).toBe(1)
+    expect(db.prepare(`
+      SELECT COUNT(*) AS count FROM audit_log
+      WHERE module='laundry-kiosk' AND action='laundry_garment_ironed' AND target_id=?
+    `).get(garmentId).count).toBe(1)
+
+    const completed = await request(app)
+      .post(`/api/self-service/laundry-kiosk/bags/${bagId}/ironing-complete`)
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ shelf_location: 'U-01' })
+    expect(completed.status).toBe(200)
+
+    const withoutChecklist = await request(app)
+      .post(`/api/self-service/laundry-kiosk/bags/${bagId}/deliver`)
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ delivered_name: 'Teslim Alan' })
+    expect(withoutChecklist.status).toBe(400)
+
+    const delivered = await request(app)
+      .post(`/api/self-service/laundry-kiosk/bags/${bagId}/deliver`)
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({
+        delivered_name: 'Teslim Alan',
+        garment_ids: [garmentId],
+        signature: 'data:image/png;base64,dGVzdA==',
+      })
+    expect(delivered.status).toBe(200)
+    expect(delivered.body.delivered_count).toBe(1)
+    expect(db.prepare(
+      'SELECT delivered_by_worker_id FROM laundry_deliveries WHERE item_id=?'
+    ).get(bagId).delivered_by_worker_id).toBeTruthy()
+  })
+
+  it('hasarlı istisnada fotoğraf ister; eksik parçayı fotoğrafsız kapatır', async () => {
+    const created = await request(app)
+      .post('/api/self-service/laundry-kiosk/bag')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({
+        block: 'A',
+        room_no: '101',
+        item_count: 1,
+        garments: [{
+          type_id: 1,
+          type_name: 'Gömlek',
+          count: 1,
+          requires_ironing: true,
+        }],
+      })
+    const bagId = created.body.id
+    const garmentId = created.body.garments[0].id
+    const db = getDB()
+    db.prepare("UPDATE laundry_items SET status='ironing' WHERE id=?").run(bagId)
+    db.prepare("UPDATE premium_garments SET status='ironing' WHERE id=?").run(garmentId)
+    const endpoint = `/api/self-service/laundry-kiosk/bags/${bagId}/garments/${garmentId}/exception`
+
+    const damaged = await request(app)
+      .post(endpoint)
+      .set('Authorization', `Bearer ${avsToken}`)
+      .field('reason', 'damaged')
+    expect(damaged.status).toBe(400)
+    expect(damaged.body.error).toMatch(/fotoğraf/)
+
+    const missing = await request(app)
+      .post(endpoint)
+      .set('Authorization', `Bearer ${avsToken}`)
+      .field('reason', 'missing')
+      .field('note', 'Kontrolde bulunamadı')
+    expect(missing.status).toBe(201)
+    expect(missing.body.garment.status).toBe('lost')
   })
 
   it('POST /laundry-kiosk/bags/:id/ironing-complete — ironing olmayan torba 400 döner', async () => {
@@ -385,7 +568,7 @@ describe('Laundry Kiosk makine akışı', () => {
     const adminToken = (await request(app).post('/api/auth/login').send({ username: 'mudur', password: 'admin123' })).body.token
     const w = (await request(app).post('/api/avs-workers')
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ full_name: 'Makine Test Worker' })).body
+      .send({ full_name: 'Makine Test Worker', role_label: 'Çamaşırhane Personeli' })).body
     await request(app).put(`/api/avs-workers/${w.id}/pin`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ new_pin: '0000' })
@@ -539,7 +722,7 @@ describe('Laundry Kiosk makine akışı', () => {
     const res = await request(app)
       .post(`/api/self-service/laundry-kiosk/bags/${bagId}/ironing-complete`)
       .set('Authorization', `Bearer ${avsToken}`)
-      .send({ shelf_location: 'B-1' })
+      .send({ shelf_location: 'B-1', verified_count: 2 })
     expect(res.status).toBe(200)
     const item = getDB().prepare('SELECT status, shelf_location FROM laundry_items WHERE id=?').get(bagId)
     expect(item).toMatchObject({ status: 'ready', shelf_location: 'B-1' })
@@ -611,7 +794,7 @@ describe('Laundry Kiosk makine akışı', () => {
     const res = await request(app)
       .post(`/api/self-service/laundry-kiosk/bags/${bagId}/ironing-complete`)
       .set('Authorization', `Bearer ${avsToken}`)
-      .send({ shelf_location: 'C-2' })
+      .send({ shelf_location: 'C-2', verified_count: 2 })
     expect(res.status).toBe(200)
     const db = getDB()
     expect(db.prepare('SELECT status, shelf_location FROM laundry_items WHERE id=?').get(bagId)).toMatchObject({ status: 'ready', shelf_location: 'C-2' })

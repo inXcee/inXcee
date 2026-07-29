@@ -40,6 +40,198 @@ export function insertPremiumGarmentsQuery(item_id, garments) {
   return insertMany(garments)
 }
 
+export function insertTrackedGarmentsQuery(item_id, garmentGroups, {
+  source = 'kiosk',
+  initialStatus = 'received',
+} = {}) {
+  const db = getDB()
+  const defaults = new Map(
+    db.prepare('SELECT id, default_requires_ironing FROM laundry_garment_types').all()
+      .map(row => [row.id, row.default_requires_ironing === 1])
+  )
+  const current = db.prepare(
+    'SELECT COALESCE(MAX(sequence_no), 0) AS max_sequence FROM premium_garments WHERE item_id=?'
+  ).get(item_id)
+  let sequence = current.max_sequence
+  const insert = db.prepare(`
+    INSERT INTO premium_garments(
+      item_id, garment_code, garment_type, garment_type_id, emoji,
+      colors_json, color, pattern, sequence_no, requires_ironing, source, status
+    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+  `)
+  const created = []
+  for (const group of garmentGroups) {
+    const count = Math.min(99, Math.max(1, Number(group.count) || 1))
+    const typeId = Number(group.type_id) || null
+    const requiresIroning = group.requires_ironing === undefined
+      ? Boolean(typeId && defaults.get(typeId))
+      : Boolean(group.requires_ironing)
+    for (let copy = 0; copy < count; copy++) {
+      sequence += 1
+      const code = `G${item_id}-${String(sequence).padStart(2, '0')}`
+      const result = insert.run(
+        item_id,
+        code,
+        group.type_name || group.garment_type || 'Parça',
+        typeId,
+        group.emoji || '👕',
+        JSON.stringify(Array.isArray(group.colors) ? group.colors : []),
+        group.color || null,
+        group.pattern || 'solid',
+        sequence,
+        requiresIroning ? 1 : 0,
+        source,
+        initialStatus
+      )
+      created.push(db.prepare('SELECT * FROM premium_garments WHERE id=?').get(result.lastInsertRowid))
+    }
+  }
+  return created
+}
+
+export function getGarmentProgressQuery(itemId) {
+  const db = getDB()
+  return db.prepare(`
+    SELECT
+      COUNT(*) AS total,
+      SUM(CASE WHEN requires_ironing=1 THEN 1 ELSE 0 END) AS ironing_required,
+      SUM(CASE WHEN requires_ironing=1 AND status='ready' THEN 1 ELSE 0 END) AS ironed,
+      SUM(CASE WHEN status='ready' THEN 1 ELSE 0 END) AS ready,
+      SUM(CASE WHEN status='lost' THEN 1 ELSE 0 END) AS missing,
+      SUM(CASE WHEN status='damaged' THEN 1 ELSE 0 END) AS damaged,
+      SUM(CASE WHEN status='ironing' THEN 1 ELSE 0 END) AS pending_ironing
+    FROM premium_garments WHERE item_id=?
+  `).get(itemId)
+}
+
+export function getGarmentWithItemQuery(itemId, garmentId) {
+  const db = getDB()
+  return db.prepare(`
+    SELECT pg.*, li.status AS item_status, li.tracking_mode
+    FROM premium_garments pg
+    JOIN laundry_items li ON li.id=pg.item_id
+    WHERE pg.id=? AND pg.item_id=?
+  `).get(garmentId, itemId)
+}
+
+export function setTrackedGarmentsAfterWashQuery(itemId, userId, workerId) {
+  const db = getDB()
+  const garments = db.prepare(`
+    SELECT id, status, requires_ironing FROM premium_garments
+    WHERE item_id=? AND status NOT IN ('lost','damaged','delivered')
+  `).all(itemId)
+  const update = db.prepare(`
+    UPDATE premium_garments SET status=?, updated_at=datetime('now') WHERE id=?
+  `)
+  const history = db.prepare(`
+    INSERT INTO premium_garment_history(
+      garment_id, from_status, to_status, action_by, action_by_worker_id, notes
+    ) VALUES(?,?,?,?,?,?)
+  `)
+  for (const garment of garments) {
+    const next = garment.requires_ironing ? 'ironing' : 'ready'
+    if (garment.status === next) continue
+    update.run(next, garment.id)
+    history.run(
+      garment.id, garment.status, next, userId || null, workerId || null,
+      'Yıkama tamamlandı'
+    )
+  }
+  return getGarmentProgressQuery(itemId)
+}
+
+export function setGarmentIroningQuery({
+  itemId, garmentId, completed, clientActionId, userId, workerId,
+}) {
+  const db = getDB()
+  if (clientActionId) {
+    const duplicate = db.prepare(
+      'SELECT id FROM premium_garment_history WHERE client_action_id=?'
+    ).get(clientActionId)
+    if (duplicate) {
+      return {
+        garment: getGarmentWithItemQuery(itemId, garmentId),
+        changed: false,
+        idempotent: true,
+      }
+    }
+  }
+  const garment = getGarmentWithItemQuery(itemId, garmentId)
+  if (!garment) return null
+  if (garment.item_status !== 'ironing') {
+    throw Object.assign(new Error('Torba ütü aşamasında değil'), { status: 409 })
+  }
+  if (!garment.requires_ironing) {
+    throw Object.assign(new Error('Bu parça için ütü gerekmiyor'), { status: 409 })
+  }
+  if (['lost', 'damaged', 'delivered'].includes(garment.status)) {
+    throw Object.assign(new Error('İstisna durumundaki parça değiştirilemez'), { status: 409 })
+  }
+  const next = completed ? 'ready' : 'ironing'
+  if (garment.status === next) {
+    return { garment, changed: false, idempotent: true }
+  }
+  db.prepare(`
+    UPDATE premium_garments
+    SET status=?, ironed_by=?, ironed_by_worker_id=?,
+        ironed_at=CASE WHEN ?='ready' THEN datetime('now') ELSE NULL END,
+        updated_at=datetime('now')
+    WHERE id=?
+  `).run(next, completed ? userId || null : null, completed ? workerId || null : null, next, garmentId)
+  db.prepare(`
+    INSERT INTO premium_garment_history(
+      garment_id, from_status, to_status, action_by, action_by_worker_id,
+      notes, client_action_id
+    ) VALUES(?,?,?,?,?,?,?)
+  `).run(
+    garmentId, garment.status, next, userId || null, workerId || null,
+    completed ? 'Ütülendi' : 'Ütü tiki geri alındı', clientActionId || null
+  )
+  return {
+    garment: getGarmentWithItemQuery(itemId, garmentId),
+    changed: true,
+    idempotent: false,
+  }
+}
+
+export function insertGarmentExceptionQuery({
+  itemId, garmentId, stage, reason, note, photoUrl, userId, workerId,
+}) {
+  const db = getDB()
+  const garment = getGarmentWithItemQuery(itemId, garmentId)
+  if (!garment) return null
+  let nextStatus = garment.status
+  if (reason === 'missing') nextStatus = 'lost'
+  if (reason === 'damaged') nextStatus = 'damaged'
+  if (reason === 'no_ironing') nextStatus = 'ready'
+  if (reason === 'rework') nextStatus = 'ironing'
+  if (reason === 'other') nextStatus = 'damaged'
+  db.prepare(`
+    INSERT INTO laundry_garment_exceptions(
+      garment_id, item_id, stage, reason, note, photo_url,
+      created_by_user_id, created_by_worker_id
+    ) VALUES(?,?,?,?,?,?,?,?)
+  `).run(
+    garmentId, itemId, stage, reason, note || null, photoUrl || null,
+    userId || null, workerId || null
+  )
+  db.prepare(`
+    UPDATE premium_garments
+    SET status=?, requires_ironing=CASE WHEN ?='no_ironing' THEN 0 ELSE requires_ironing END,
+        updated_at=datetime('now')
+    WHERE id=?
+  `).run(nextStatus, reason, garmentId)
+  db.prepare(`
+    INSERT INTO premium_garment_history(
+      garment_id, from_status, to_status, action_by, action_by_worker_id, notes
+    ) VALUES(?,?,?,?,?,?)
+  `).run(
+    garmentId, garment.status, nextStatus, userId || null, workerId || null,
+    `İstisna: ${reason}${note ? ` — ${note}` : ''}`
+  )
+  return getGarmentWithItemQuery(itemId, garmentId)
+}
+
 export function getPremiumGarmentsQuery(item_id) {
   const db = getDB()
   return db.prepare(`SELECT * FROM premium_garments WHERE item_id=? ORDER BY garment_code ASC`).all(item_id)
@@ -73,7 +265,10 @@ export function advancePremiumGarmentQuery(garment_id, to_status, userId) {
 export function checkAllGarmentsStatusQuery(item_id) {
   const db = getDB()
   const rows = db.prepare(`SELECT status FROM premium_garments WHERE item_id=?`).all(item_id)
-  const counts = { total: rows.length, received: 0, ironing: 0, ready: 0, delivered: 0, lost: 0 }
+  const counts = {
+    total: rows.length, received: 0, ironing: 0, ready: 0,
+    delivered: 0, lost: 0, damaged: 0,
+  }
   for (const r of rows) counts[r.status] = (counts[r.status] || 0) + 1
   return counts
 }
@@ -97,7 +292,13 @@ export function bulkSetGarmentsStatusQuery(item_id, to_status, userId) {
 // PREMIUM GARMENT DELIVERIES
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function deliverPremiumGarmentQuery(garment_id, item_id, { delivered_to, signature_data }, userId) {
+export function deliverPremiumGarmentQuery(
+  garment_id,
+  item_id,
+  { delivered_to, signature_data },
+  userId,
+  workerId = null
+) {
   const db = getDB()
   db.prepare(`
     UPDATE premium_garments
@@ -105,13 +306,25 @@ export function deliverPremiumGarmentQuery(garment_id, item_id, { delivered_to, 
     WHERE id=?
   `).run(delivered_to, garment_id)
   db.prepare(`
-    INSERT INTO premium_garment_history(garment_id, from_status, to_status, action_by, notes)
-    VALUES(?, 'ready', 'delivered', ?, ?)
-  `).run(garment_id, userId || null, `Teslim: ${delivered_to}`)
+    INSERT INTO premium_garment_history(
+      garment_id, from_status, to_status, action_by, action_by_worker_id, notes
+    )
+    VALUES(?, 'ready', 'delivered', ?, ?, ?)
+  `).run(garment_id, userId || null, workerId || null, `Teslim: ${delivered_to}`)
   db.prepare(`
-    INSERT INTO premium_garment_deliveries(garment_id, item_id, delivered_to, signature_data, delivered_by)
-    VALUES(?, ?, ?, ?, ?)
-  `).run(garment_id, item_id, delivered_to, signature_data || null, userId || null)
+    INSERT INTO premium_garment_deliveries(
+      garment_id, item_id, delivered_to, signature_data,
+      delivered_by, delivered_by_worker_id
+    )
+    VALUES(?, ?, ?, ?, ?, ?)
+  `).run(
+    garment_id,
+    item_id,
+    delivered_to,
+    signature_data || null,
+    userId || null,
+    workerId || null
+  )
 }
 
 export function getPremiumDeliveryReceiptQuery(item_id) {

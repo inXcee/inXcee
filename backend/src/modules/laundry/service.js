@@ -45,14 +45,19 @@ export function createItemService({ room_id, item_count, item_details, notes, ur
   return q.getItemQuery(id)
 }
 
-export function advanceItemService(id, { machine_id, shelf_location, timer_minutes } = {}, userId) {
+export function advanceItemService(id, { machine_id, shelf_location, timer_minutes } = {}, userId, workerId = null) {
   const item = q.getItemQuery(id)
   if (!item) throw new Error('Kayıt bulunamadı')
   if (!TRANSITIONS[item.status]) throw new Error(`"${item.status}" durumundan ilerlenemez`)
 
   let nextStatus = TRANSITIONS[item.status]
-  if (item.status === 'washing' && item.needs_ironing) {
-    nextStatus = 'ironing'
+  const garmentProgress = q.getGarmentProgressQuery(id)
+  if (item.status === 'washing') {
+    if (garmentProgress.total > 0) {
+      nextStatus = garmentProgress.ironing_required > 0 ? 'ironing' : 'ready'
+    } else if (item.needs_ironing) {
+      nextStatus = 'ironing'
+    }
   }
   const extra = {}
 
@@ -99,13 +104,18 @@ export function advanceItemService(id, { machine_id, shelf_location, timer_minut
       }
     }
 
-    if (item.is_premium && item.status === 'washing') {
-      const garmentStatus = nextStatus === 'ironing' ? 'ironing' : 'ready'
-      q.bulkSetGarmentsStatusQuery(id, garmentStatus, userId)
+    if (garmentProgress.total > 0 && item.status === 'washing') {
+      q.setTrackedGarmentsAfterWashQuery(id, userId, workerId)
     }
 
     q.updateItemStatusQuery(id, nextStatus, extra)
-    q.insertHistoryQuery({ item_id: id, from_status: item.status, to_status: nextStatus, action_by: userId })
+    q.insertHistoryQuery({
+      item_id: id,
+      from_status: item.status,
+      to_status: nextStatus,
+      action_by: userId,
+      worker_id: workerId,
+    })
   })
   tx.immediate()
 
@@ -152,29 +162,69 @@ export function advanceItemService(id, { machine_id, shelf_location, timer_minut
   return q.getItemQuery(id)
 }
 
-export function deliverItemService(id, { delivered_to, signature_data }, userId) {
+export function deliverItemService(
+  id,
+  { delivered_to, signature_data, garment_ids },
+  userId,
+  workerId = null
+) {
   if (!delivered_to || !delivered_to.trim()) throw new Error('Teslim alanın adı zorunlu')
 
-  const item = q.getItemQuery(id)
-  if (!item) throw new Error('Kayıt bulunamadı')
-  if (item.status !== 'ready') throw new Error('Sadece rafta hazır kayıtlar teslim edilebilir')
+  const db = getDB()
+  const delivered = db.transaction(() => {
+    const item = q.getItemQuery(id)
+    if (!item) throw new Error('Kayıt bulunamadı')
+    if (item.status !== 'ready') throw new Error('Sadece rafta hazır kayıtlar teslim edilebilir')
 
-  // Premium item: tüm ready garments delivered yapılır
-  if (item.is_premium) {
     const garments = q.getPremiumGarmentsQuery(id)
     const readyGarments = garments.filter(g => g.status === 'ready')
-    for (const g of readyGarments) {
-      q.deliverPremiumGarmentQuery(g.id, id, { delivered_to: delivered_to.trim(), signature_data }, userId)
+    const unresolved = garments.filter(g => !['ready', 'lost', 'damaged'].includes(g.status))
+    if (unresolved.length > 0) {
+      throw new Error(`${unresolved.length} kıyafet teslim için henüz hazır değil`)
     }
-    syncParentStatusService(id)
-  }
 
-  q.insertDeliveryQuery({ item_id: id, delivered_to: delivered_to.trim(), signature_data, delivered_by: userId })
-  q.updateItemStatusQuery(id, 'delivered')
-  q.insertHistoryQuery({ item_id: id, from_status: 'ready', to_status: 'delivered', action_by: userId, notes: `Teslim: ${delivered_to.trim()}` })
+    if (Array.isArray(garment_ids)) {
+      const selected = new Set(garment_ids.map(Number))
+      if (
+        selected.size !== readyGarments.length ||
+        readyGarments.some(garment => !selected.has(garment.id))
+      ) {
+        throw new Error('Teslimden önce tüm hazır kıyafetler tek tek doğrulanmalıdır')
+      }
+    }
+
+    for (const garment of readyGarments) {
+      q.deliverPremiumGarmentQuery(
+        garment.id,
+        id,
+        { delivered_to: delivered_to.trim(), signature_data },
+        userId,
+        workerId
+      )
+    }
+
+    q.insertDeliveryQuery({
+      item_id: id,
+      delivered_to: delivered_to.trim(),
+      signature_data,
+      delivered_by: userId,
+      delivered_by_worker_id: workerId,
+    })
+    q.updateItemStatusQuery(id, 'delivered')
+    q.insertHistoryQuery({
+      item_id: id,
+      from_status: 'ready',
+      to_status: 'delivered',
+      action_by: userId,
+      worker_id: workerId,
+      notes: `Teslim: ${delivered_to.trim()}`,
+    })
+    return { ...q.getItemQuery(id), delivered_count: readyGarments.length }
+  }).immediate()
+
   logAudit(userId, 'laundry_deliver', 'laundry', id, `→ ${delivered_to.trim()}`)
 
-  return q.getItemQuery(id)
+  return delivered
 }
 
 export function deliverPremiumGarmentService(garment_id, { delivered_to, signature_data }, userId) {
@@ -629,8 +679,9 @@ export function syncParentStatusService(item_id) {
   const counts = q.checkAllGarmentsStatusQuery(item_id)
   if (counts.total === 0) return
   let parentStatus = null
-  if (counts.delivered === counts.total) parentStatus = 'delivered'
-  else if (counts.ready === counts.total) parentStatus = 'ready'
+  const terminalExceptions = counts.lost + counts.damaged
+  if (counts.delivered + terminalExceptions === counts.total) parentStatus = 'delivered'
+  else if (counts.ready + terminalExceptions === counts.total) parentStatus = 'ready'
   else if (counts.ironing > 0) parentStatus = 'ironing'
   else if (counts.received > 0) parentStatus = 'washing' // hepsi received = henüz yıkamada
   if (parentStatus) q.updateItemStatusQuery(item_id, parentStatus)

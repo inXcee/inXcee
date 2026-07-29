@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs'
 import { verifyToken } from './service.js'
 import { getDB } from '../db/index.js'
+import { avsRoleGroup } from './avsRoles.js'
 
 const STAFF_ROLES = new Set(['campus_manager', 'shift_supervisor', 'technical', 'laundry', 'housekeeper'])
 const COOKIE_NAME = 'yys_session'
@@ -59,6 +60,37 @@ export function requireAvsKiosk(req, res, next) {
   } catch {
     res.status(401).json({ error: 'Geçersiz token' })
   }
+}
+
+export function requireLaundryKioskOperator(req, res, next) {
+  requireAuth(req, res, () => {
+    if (req.user.role === 'campus_manager') {
+      req.laundryOperator = {
+        type: 'user',
+        id: req.user.id || req.user.userId,
+        name: req.user.full_name || 'Kampüs yöneticisi',
+      }
+      return next()
+    }
+    if (req.user.role !== 'avs_kiosk' || !req.user.workerId) {
+      return res.status(403).json({ error: 'Çamaşır kiosk yetkisi gerekli' })
+    }
+    try {
+      const worker = getDB().prepare(`
+        SELECT s.id, s.full_name, d.name AS department_name
+        FROM staff s
+        LEFT JOIN departments d ON d.id=s.department_id
+        WHERE s.id=? AND s.is_active=1
+      `).get(req.user.workerId)
+      if (!worker || avsRoleGroup(worker.department_name) !== 'laundry') {
+        return res.status(403).json({ error: 'Bu ekran yalnız çamaşırhane personeli içindir' })
+      }
+      req.laundryOperator = { type: 'worker', id: worker.id, name: worker.full_name }
+      return next()
+    } catch {
+      return res.status(500).json({ error: 'Yetki doğrulanamadı' })
+    }
+  })
 }
 
 export function requireKioskOrStaff(req, res, next) {

@@ -224,6 +224,31 @@ export function seedDev() {
     }
   }
 
+  // AVS çamaşır kiosk demo hesabı (yalnız geliştirme seed'i).
+  // Sabit TC üzerinden upsert edildiği için seed tekrarında ikinci kayıt oluşmaz.
+  const laundryKioskPin = bcrypt.hashSync('2468', 10)
+  db.prepare(`
+    INSERT INTO staff(
+      tc_no, full_name, phone, position, department_id,
+      role_label, kiosk_pin, is_active
+    )
+    VALUES(?, ?, ?, ?, 8, ?, ?, 1)
+    ON CONFLICT(tc_no) DO UPDATE SET
+      full_name=excluded.full_name,
+      position=excluded.position,
+      department_id=excluded.department_id,
+      role_label=excluded.role_label,
+      kiosk_pin=excluded.kiosk_pin,
+      is_active=1
+  `).run(
+    '99999992468',
+    'Demo Çamaşır Personeli',
+    '05550002468',
+    'Çamaşırhane Görevlisi',
+    'Çamaşırhane Personeli',
+    laundryKioskPin
+  )
+
   // Haftalık vardiya çizelgesi (bu hafta + geçen hafta)
   const scheduleInsert = db.prepare(`INSERT OR IGNORE INTO shift_schedule(staff_id,dept_id,shift_def_id,work_date,status) VALUES(?,?,?,?,?)`)
   const today = new Date()

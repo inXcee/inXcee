@@ -20,26 +20,13 @@ import {
   mealSelectionSchema, maintenanceSchema, feedbackSchema, skipCleaningTaskSchema,
 } from './schemas.js'
 import { getStaffTransport } from '../transport/self-service.js'
+import { avsRoleGroup } from '../../shared/auth/avsRoles.js'
 
 export const avsSelfServiceRouter = Router()
 const cleaningProofUpload = createImageUpload('housekeeping').fields([
   { name: 'photo', maxCount: 1 },
   { name: 'photos', maxCount: 3 },
 ])
-
-const ROLE_GROUPS = {
-  laundry: ['çama', 'cama'],
-  housekeeping: ['temizlik', 'meydan', 'housekeep'],
-  technical: ['teknik'],
-}
-
-function roleGroup(departmentName = '') {
-  const dept = String(departmentName || '').toLocaleLowerCase('tr-TR')
-  for (const [group, needles] of Object.entries(ROLE_GROUPS)) {
-    if (needles.some(needle => dept.includes(needle))) return group
-  }
-  return 'general'
-}
 
 function loadTechnicalWorker(db, workerId) {
   const worker = db.prepare(`
@@ -48,7 +35,7 @@ function loadTechnicalWorker(db, workerId) {
     LEFT JOIN departments d ON d.id=s.department_id
     WHERE s.id=? AND s.is_active=1
   `).get(workerId)
-  return worker && roleGroup(worker.department_name) === 'technical' ? worker : null
+  return worker && avsRoleGroup(worker.department_name) === 'technical' ? worker : null
 }
 
 function maintenanceTrackingNo(id) {
@@ -185,7 +172,7 @@ avsSelfServiceRouter.get('/overview', requireAvsKiosk, (req, res) => {
     `).get(req.user.workerId)
     if (!worker) return res.status(404).json({ error: 'Çalışan bulunamadı' })
 
-    const group = roleGroup(worker.department_name)
+    const group = avsRoleGroup(worker.department_name)
     const requestedBlock = typeof req.query.block === 'string' ? req.query.block.trim().toUpperCase() : null
     if (requestedBlock && !/^[A-Z][A-Z0-9]{0,7}$/.test(requestedBlock)) {
       return res.status(400).json({ error: 'Geçersiz blok' })
@@ -384,7 +371,7 @@ avsSelfServiceRouter.get('/my-tasks', requireAvsKiosk, (req, res) => {
       FROM staff s LEFT JOIN departments d ON d.id = s.department_id
       WHERE s.id = ?
     `).get(req.user.workerId)
-    const group = roleGroup(staff?.dept_name)
+    const group = avsRoleGroup(staff?.dept_name)
 
     if (group === 'laundry') {
       // Çamaşır işleme ayrı kioskta yapılır
