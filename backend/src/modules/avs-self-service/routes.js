@@ -1,11 +1,14 @@
 import { Router } from 'express'
 import { randomBytes } from 'crypto'
+import { unlinkSync } from 'node:fs'
 import { requireAvsKiosk } from '../../shared/auth/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import { createRequest } from '../maintenance/queries.js'
 import { changeStaffKioskPin } from '../../shared/auth/service.js'
 import { logger } from '../../shared/logger.js'
-import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
+import {
+  upload, createImageUpload, verifyMagicBytes, verifyImageMagicBytes,
+} from '../../shared/uploads/middleware.js'
 import { createLeaveService, leaveListService, leaveBalanceService } from '../shifts/service.js'
 import { checkoutToStaff, getStaffCheckouts } from '../inventory/service.js'
 import { departmentToInventoryCategory, getKioskSystemUserId } from './inventory-helpers.js'
@@ -13,10 +16,91 @@ import { isPushConfigured, getVapidPublicKey, saveWorkerSubscription, deleteWork
 import { getStaffActivity } from '../activity/service.js'
 import { MEAL_TYPES, localDay } from '../meals/service.js'
 import { validate } from '../../shared/middleware/validate.js'
-import { mealSelectionSchema, maintenanceSchema, feedbackSchema } from './schemas.js'
+import {
+  mealSelectionSchema, maintenanceSchema, feedbackSchema, skipCleaningTaskSchema,
+} from './schemas.js'
 import { getStaffTransport } from '../transport/self-service.js'
 
 export const avsSelfServiceRouter = Router()
+const cleaningProofUpload = createImageUpload('housekeeping').fields([
+  { name: 'photo', maxCount: 1 },
+  { name: 'photos', maxCount: 3 },
+])
+
+const ROLE_GROUPS = {
+  laundry: ['çama', 'cama'],
+  housekeeping: ['temizlik', 'meydan', 'housekeep'],
+  technical: ['teknik'],
+}
+
+function roleGroup(departmentName = '') {
+  const dept = String(departmentName || '').toLocaleLowerCase('tr-TR')
+  for (const [group, needles] of Object.entries(ROLE_GROUPS)) {
+    if (needles.some(needle => dept.includes(needle))) return group
+  }
+  return 'general'
+}
+
+function uploadedFiles(req) {
+  if (req.files) return Object.values(req.files).flat()
+  return req.file ? [req.file] : []
+}
+
+function removeUploadedFiles(req) {
+  for (const file of uploadedFiles(req)) {
+    try { unlinkSync(file.path) } catch { /* already removed or unavailable */ }
+  }
+}
+
+function acceptCleaningProof(req, res, next) {
+  cleaningProofUpload(req, res, err => {
+    if (!err) return next()
+    removeUploadedFiles(req)
+    const message = err.code === 'LIMIT_FILE_SIZE'
+      ? 'Fotoğraf başına en fazla 10 MB yüklenebilir'
+      : 'En fazla 3 temizlik fotoğrafı yüklenebilir'
+    return res.status(400).json({ error: message })
+  })
+}
+
+function validateUploadBody(schema) {
+  return (req, res, next) => {
+    const parsed = schema.safeParse(req.body)
+    if (!parsed.success) {
+      removeUploadedFiles(req)
+      const details = parsed.error.issues.map(issue => ({
+        path: issue.path.join('.') || '(root)',
+        message: issue.message,
+      }))
+      return res.status(400).json({ error: details[0]?.message || 'Geçersiz istek', details })
+    }
+    req.validated = parsed.data
+    next()
+  }
+}
+
+function loadAuthorizedCleaningTask(req, res, next) {
+  const taskId = Number(req.params.id)
+  if (!Number.isInteger(taskId) || taskId <= 0) {
+    return res.status(404).json({ error: 'Görev bulunamadı' })
+  }
+  const db = getDB()
+  const task = db.prepare(`
+    SELECT ct.*,
+      (SELECT r.id FROM rooms r
+       WHERE r.block=ct.block AND ct.qr_location=ct.block || '-' || r.room_no
+       LIMIT 1) AS room_id
+    FROM cleaning_tasks ct
+    WHERE ct.id=?
+  `).get(taskId)
+  if (!task) return res.status(404).json({ error: 'Görev bulunamadı' })
+  const staff = db.prepare('SELECT assigned_block FROM staff WHERE id=?').get(req.user.workerId)
+  if (staff?.assigned_block && staff.assigned_block !== task.block) {
+    return res.status(403).json({ error: 'Bu görev sizin bloğunuza ait değil' })
+  }
+  req.avsTask = task
+  next()
+}
 
 // ── Ertesi-gün öğün seçimi (Faz 8b) — çalışan kendi yarınki öğününü seçer ──
 avsSelfServiceRouter.put('/my-meal-selection', requireAvsKiosk, validate(mealSelectionSchema), (req, res) => {
@@ -60,6 +144,133 @@ avsSelfServiceRouter.get('/my-info', requireAvsKiosk, (req, res) => {
     if (!w) return res.status(404).json({ error: 'Çalışan bulunamadı' })
     res.json({ ...w, inventory_category: departmentToInventoryCategory(w.department_name) })
   } catch (e) { logger.error('[avs my-info]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Rol bazlı ana ekran özeti — kiosk ilk açılışında tek istekle kritik operasyon verisi.
+avsSelfServiceRouter.get('/overview', requireAvsKiosk, (req, res) => {
+  try {
+    const db = getDB()
+    const worker = db.prepare(`
+      SELECT s.id, s.full_name, s.role_label, s.assigned_block, s.pickup_point_id,
+             d.name AS department_name, pp.name AS pickup_name
+      FROM staff s
+      LEFT JOIN departments d ON d.id=s.department_id
+      LEFT JOIN pickup_points pp ON pp.id=s.pickup_point_id
+      WHERE s.id=?
+    `).get(req.user.workerId)
+    if (!worker) return res.status(404).json({ error: 'Çalışan bulunamadı' })
+
+    const group = roleGroup(worker.department_name)
+    const taskSummary = group === 'housekeeping'
+      ? db.prepare(`
+          SELECT COUNT(*) AS total,
+                 SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) AS completed,
+                 SUM(CASE WHEN skipped=1 AND completed_at IS NULL THEN 1 ELSE 0 END) AS skipped,
+                 SUM(CASE WHEN completed_at IS NULL AND skipped=0 THEN 1 ELSE 0 END) AS pending
+          FROM cleaning_tasks
+          WHERE date(scheduled_at)=date('now','localtime')
+            AND (? IS NULL OR block=?)
+        `).get(worker.assigned_block || null, worker.assigned_block || null)
+      : { total: 0, completed: 0, skipped: 0, pending: 0 }
+
+    const nextTask = group === 'housekeeping'
+      ? db.prepare(`
+          SELECT id, area, block, floor, task_type, qr_location
+          FROM cleaning_tasks
+          WHERE date(scheduled_at)=date('now','localtime')
+            AND completed_at IS NULL AND skipped=0
+            AND (? IS NULL OR block=?)
+          ORDER BY block, floor, task_type DESC, id LIMIT 1
+        `).get(worker.assigned_block || null, worker.assigned_block || null)
+      : null
+
+    const nextShift = db.prepare(`
+      SELECT ss.work_date, ss.status, sd.name AS shift_name,
+             sd.start_hour, sd.end_hour
+      FROM shift_schedule ss
+      LEFT JOIN shift_definitions sd ON sd.id=ss.shift_def_id
+      WHERE ss.staff_id=? AND ss.work_date>=date('now','localtime')
+      ORDER BY ss.work_date LIMIT 1
+    `).get(req.user.workerId) || null
+
+    const reportedFaults = db.prepare(`
+      SELECT COUNT(DISTINCT m.id) AS open,
+             SUM(CASE WHEN m.priority='high' THEN 1 ELSE 0 END) AS urgent
+      FROM maintenance_requests m
+      JOIN audit_log a ON a.target_id=m.id
+        AND a.action='kiosk_avs_maintenance'
+        AND json_extract(a.detail, '$.workerId')=?
+      WHERE m.status NOT IN ('done')
+    `).get(req.user.workerId)
+
+    const technicalFaults = group === 'technical'
+      ? db.prepare(`
+          SELECT COUNT(*) AS open,
+                 SUM(CASE WHEN priority='high' THEN 1 ELSE 0 END) AS urgent,
+                 SUM(CASE WHEN status='in_progress' THEN 1 ELSE 0 END) AS in_progress
+          FROM maintenance_requests WHERE status NOT IN ('done')
+        `).get()
+      : null
+
+    const staffTransport = getStaffTransport(req.user.workerId)
+    let transportSchedule = staffTransport.schedule || null
+    if (!transportSchedule && worker.pickup_point_id) {
+      transportSchedule = db.prepare(`
+        SELECT rs.scheduled_time AS time, r.name AS route_name,
+               r.driver_name, r.driver_phone, r.vehicle_plate AS plate
+        FROM route_assignments ra
+        JOIN routes r ON r.id=ra.route_id
+        LEFT JOIN route_stops rs ON rs.id=ra.stop_id
+        WHERE ra.staff_id=? AND ra.work_date=date('now','localtime')
+        LIMIT 1
+      `).get(req.user.workerId) || db.prepare(`
+        SELECT rs.scheduled_time AS time, r.name AS route_name,
+               r.driver_name, r.driver_phone, r.vehicle_plate AS plate
+        FROM route_stops rs
+        JOIN routes r ON r.id=rs.route_id AND r.is_active=1
+        WHERE rs.pickup_point_id=?
+        ORDER BY rs.id LIMIT 1
+      `).get(worker.pickup_point_id) || null
+    }
+
+    const announcements = db.prepare(`
+      SELECT id, title, body, created_at
+      FROM announcements
+      WHERE expires_at IS NULL OR expires_at>datetime('now')
+      ORDER BY created_at DESC LIMIT 2
+    `).all()
+
+    res.json({
+      role_group: group,
+      worker,
+      tasks: {
+        total: Number(taskSummary.total || 0),
+        completed: Number(taskSummary.completed || 0),
+        skipped: Number(taskSummary.skipped || 0),
+        pending: Number(taskSummary.pending || 0),
+        next: nextTask,
+      },
+      faults: technicalFaults
+        ? {
+            open: Number(technicalFaults.open || 0),
+            urgent: Number(technicalFaults.urgent || 0),
+            in_progress: Number(technicalFaults.in_progress || 0),
+          }
+        : {
+            open: Number(reportedFaults.open || 0),
+            urgent: Number(reportedFaults.urgent || 0),
+      },
+      next_shift: nextShift,
+      transport: {
+        pickup_name: worker.pickup_name || null,
+        schedule: transportSchedule,
+      },
+      announcements,
+    })
+  } catch (e) {
+    logger.error('[avs overview]', e)
+    res.status(500).json({ error: 'Sunucu hatası' })
+  }
 })
 
 // Vardiyam — bugünden itibaren 7 gün
@@ -123,36 +334,61 @@ avsSelfServiceRouter.get('/my-tasks', requireAvsKiosk, (req, res) => {
       FROM staff s LEFT JOIN departments d ON d.id = s.department_id
       WHERE s.id = ?
     `).get(req.user.workerId)
-    const dept = (staff?.dept_name || '').toLowerCase()
+    const group = roleGroup(staff?.dept_name)
 
-    if (dept.includes('çama') || dept.includes('cama')) {
+    if (group === 'laundry') {
       // Çamaşır işleme ayrı kioskta yapılır
       return res.json({ type: 'laundry', items: [] })
     }
     // Temizlik ekibi farklı isimlerle tanımlı olabilir: Temizlik / Meydancı /
     // Housekeeping — hepsi housekeeping görev akışına gider
-    if (dept.includes('temizlik') || dept.includes('meydan') || dept.includes('housekeep')) {
+    if (group === 'housekeeping') {
+      const requestedBlock = typeof req.query.block === 'string' ? req.query.block.trim().toUpperCase() : null
+      if (requestedBlock && !/^[A-Z][A-Z0-9]{0,7}$/.test(requestedBlock)) {
+        return res.status(400).json({ error: 'Geçersiz blok' })
+      }
+      if (staff.assigned_block && requestedBlock && requestedBlock !== staff.assigned_block) {
+        return res.status(403).json({ error: 'Bu blok size atanmış değil' })
+      }
+      const selectedBlock = staff.assigned_block || requestedBlock || null
       // scheduled_at TZ'siz yerel string ("YYYY-MM-DD 08:00:00") — date() ham
       // alınır; "bugün" yerel gün sınırıyla karşılaştırılır (00:00-03:00 fix)
       // qr_location oda numarası çözümü için döner (M1-205 → 205);
       // assigned_block yoksa TÜM bloklar gelir, kiosk blok seçtirir
       const items = db.prepare(`
-        SELECT id, area, block, floor, task_type, scheduled_at, completed_at,
-               skipped, skip_reason, qr_location, photo_url
-        FROM cleaning_tasks
+        SELECT ct.id, ct.area, ct.block, ct.floor, ct.task_type, ct.scheduled_at,
+               ct.completed_at, ct.skipped, ct.skip_reason, ct.qr_location, ct.photo_url,
+               (SELECT COUNT(*) FROM cleaning_task_photos p WHERE p.task_id=ct.id) AS photo_count,
+               (SELECT r.id FROM rooms r
+                WHERE r.block=ct.block AND ct.qr_location=ct.block || '-' || r.room_no
+                LIMIT 1) AS room_id
+        FROM cleaning_tasks ct
         WHERE date(scheduled_at) = date('now', 'localtime')
           AND (? IS NULL OR block = ?)
         ORDER BY block, floor, task_type DESC, id
         LIMIT 400
-      `).all(staff.assigned_block || null, staff.assigned_block || null)
-      return res.json({ type: 'housekeeping', assigned_block: staff.assigned_block || null, items })
+      `).all(selectedBlock, selectedBlock)
+      const availableBlocks = staff.assigned_block
+        ? [staff.assigned_block]
+        : db.prepare(`
+            SELECT DISTINCT block FROM cleaning_tasks
+            WHERE date(scheduled_at)=date('now','localtime') AND block IS NOT NULL
+            ORDER BY block
+          `).all().map(row => row.block)
+      return res.json({
+        type: 'housekeeping',
+        assigned_block: staff.assigned_block || null,
+        selected_block: selectedBlock,
+        available_blocks: availableBlocks,
+        items,
+      })
     }
-    if (dept.includes('teknik')) {
+    if (group === 'technical') {
       // assigned_to → technicians(id); staff eşleşmesi yok → açık talepleri göster (bilgi amaçlı)
       const items = db.prepare(`
-        SELECT id, location, description, status, priority, opened_at
+        SELECT id, location, description, status, priority, category, block, room_id, opened_at
         FROM maintenance_requests
-        WHERE status IN ('open','assigned','in_progress')
+        WHERE status IN ('open','assigned','in_progress','review')
         ORDER BY CASE priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, opened_at
         LIMIT 30
       `).all()
@@ -162,37 +398,140 @@ avsSelfServiceRouter.get('/my-tasks', requireAvsKiosk, (req, res) => {
   } catch (e) { logger.error('[avs my-tasks]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-// Görev tamamla — sadece kendi assigned_block'undaki cleaning_task.
-// Multipart 'photo' ile temizlik kanıt fotoğrafı eklenebilir (oda + ortak
-// alan/WC görevleri); fotosuz JSON istek de çalışmaya devam eder.
-avsSelfServiceRouter.post('/tasks/:id/complete', requireAvsKiosk, upload.single('photo'), verifyMagicBytes, (req, res) => {
+// Genel arıza formu için yetkili bloktaki gerçek oda kimlikleri.
+avsSelfServiceRouter.get('/location-rooms', requireAvsKiosk, (req, res) => {
+  try {
+    const block = typeof req.query.block === 'string' ? req.query.block.trim().toUpperCase() : ''
+    if (!/^[A-Z][A-Z0-9]{0,7}$/.test(block)) {
+      return res.status(400).json({ error: 'Geçersiz blok' })
+    }
+    const db = getDB()
+    const staff = db.prepare('SELECT assigned_block FROM staff WHERE id=?').get(req.user.workerId)
+    if (staff?.assigned_block && staff.assigned_block !== block) {
+      return res.status(403).json({ error: 'Bu blok size atanmış değil' })
+    }
+    const items = db.prepare(`
+      SELECT id, block, floor, room_no
+      FROM rooms
+      WHERE block=?
+      ORDER BY floor, CAST(room_no AS INTEGER), room_no
+    `).all(block)
+    res.json({ block, items })
+  } catch (e) {
+    logger.error('[avs location-rooms]', e)
+    res.status(500).json({ error: 'Sunucu hatası' })
+  }
+})
+
+// Görev tamamla — 1-3 kanıt fotoğrafı zorunlu. Eski tekil `photo` alanı korunur.
+avsSelfServiceRouter.post(
+  '/tasks/:id/complete',
+  requireAvsKiosk,
+  loadAuthorizedCleaningTask,
+  acceptCleaningProof,
+  verifyImageMagicBytes,
+  (req, res) => {
   try {
     const db = getDB()
-    const task = db.prepare('SELECT id, block, completed_at FROM cleaning_tasks WHERE id=?').get(Number(req.params.id))
-    if (!task) return res.status(404).json({ error: 'Görev bulunamadı' })
-    // Blok ataması varsa sadece kendi bloğu; atama YOKSA kısıt uygulanmaz
-    // (sahada assigned_block çoğu zaman boş — eskiden bu guard her
-    // tamamlamayı 403'le kesiyordu ve "görevler çalışmıyor" görünüyordu)
-    const staff = db.prepare('SELECT assigned_block FROM staff WHERE id=?').get(req.user.workerId)
-    if (staff?.assigned_block && staff.assigned_block !== task.block)
-      return res.status(403).json({ error: 'Bu görev sizin bloğunuza ait değil' })
-    if (task.completed_at) return res.json({ ok: true, completed_at: task.completed_at })
-    // Parite: ana modülün completeTask'i gibi skip durumu da temizlenir —
-    // yoksa atlanmış görev kiosktan tamamlanınca hem skipped=1 hem
-    // completed_at dolu kalır ve raporlar çift sayar
-    const photoUrl = req.file ? '/uploads/' + req.file.filename : null
-    db.prepare(`
-      UPDATE cleaning_tasks
-      SET completed_at=datetime('now'), skipped=0, skip_reason=NULL,
-          photo_url=COALESCE(?, photo_url), completed_by_worker_id=?
-      WHERE id=?
-    `).run(photoUrl, req.user.workerId || null, task.id)
-    const updated = db.prepare('SELECT completed_at, photo_url FROM cleaning_tasks WHERE id=?').get(task.id)
-    db.prepare(`INSERT INTO audit_log(user_id, action, module, target_id, detail)
-      VALUES(NULL, 'kiosk_avs_task_complete', 'avs-self-service', ?, ?)`).run(task.id, JSON.stringify({ workerId: req.user.workerId, photo: !!photoUrl }))
-    res.json({ ok: true, completed_at: updated.completed_at, photo_url: updated.photo_url })
-  } catch (e) { logger.error('[avs task complete]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+    const task = req.avsTask
+    const files = uploadedFiles(req)
+    if (task.completed_at) {
+      removeUploadedFiles(req)
+      return res.json({
+        ok: true,
+        completed_at: task.completed_at,
+        photo_url: task.photo_url,
+        already_completed: true,
+      })
+    }
+    if (files.length < 1) return res.status(400).json({ error: 'En az bir temizlik fotoğrafı gerekli' })
+    if (files.length > 3) {
+      removeUploadedFiles(req)
+      return res.status(400).json({ error: 'En fazla 3 fotoğraf yüklenebilir' })
+    }
+
+    const photoUrls = files.map(file => `/uploads/${file.filename}`)
+    const complete = db.transaction(() => {
+      const startOrder = db.prepare(`
+        SELECT COALESCE(MAX(sort_order), -1) AS value
+        FROM cleaning_task_photos WHERE task_id=?
+      `).get(task.id).value
+      const insertPhoto = db.prepare(`
+        INSERT INTO cleaning_task_photos(
+          task_id, photo_url, category, caption, sort_order, uploaded_by
+        ) VALUES(?,?,'sonrasi',NULL,?,NULL)
+      `)
+      photoUrls.forEach((url, index) => insertPhoto.run(task.id, url, startOrder + index + 1))
+      db.prepare(`
+        UPDATE cleaning_tasks
+        SET completed_at=datetime('now'), skipped=0, skip_reason=NULL,
+            photo_url=?, completed_by_worker_id=?
+        WHERE id=?
+      `).run(photoUrls[0], req.user.workerId, task.id)
+      db.prepare(`
+        INSERT INTO audit_log(user_id, action, module, target_id, detail)
+        VALUES(NULL, 'kiosk_avs_task_complete', 'avs-self-service', ?, ?)
+      `).run(task.id, JSON.stringify({
+        workerId: req.user.workerId,
+        photoCount: photoUrls.length,
+      }))
+      return db.prepare(`
+        SELECT completed_at, photo_url,
+               (SELECT COUNT(*) FROM cleaning_task_photos WHERE task_id=?) AS photo_count
+        FROM cleaning_tasks WHERE id=?
+      `).get(task.id, task.id)
+    })
+    const updated = complete()
+    res.json({ ok: true, ...updated })
+  } catch (e) {
+    removeUploadedFiles(req)
+    logger.error('[avs task complete]', e)
+    res.status(500).json({ error: 'Sunucu hatası' })
+  }
 })
+
+avsSelfServiceRouter.patch(
+  '/tasks/:id/skip',
+  requireAvsKiosk,
+  loadAuthorizedCleaningTask,
+  validate(skipCleaningTaskSchema),
+  (req, res) => {
+    try {
+      if (req.avsTask.completed_at) {
+        return res.status(409).json({ error: 'Tamamlanmış görev temizlenemedi olarak işaretlenemez' })
+      }
+      const labels = {
+        occupied: 'Oda kullanımda',
+        dnd: 'Rahatsız etmeyin',
+        locked: 'Kapı kilitli',
+        fault: 'Arıza nedeniyle',
+        other: 'Diğer',
+      }
+      const reason = `${labels[req.validated.reason]}${req.validated.note ? `: ${req.validated.note}` : ''}`
+      const db = getDB()
+      const applySkip = db.transaction(() => {
+        db.prepare(`
+          UPDATE cleaning_tasks
+          SET skipped=1, skip_reason=?, assigned_to=?, completed_at=NULL
+          WHERE id=?
+        `).run(reason, null, req.avsTask.id)
+        db.prepare(`
+          INSERT INTO audit_log(user_id, action, module, target_id, detail)
+          VALUES(NULL, 'kiosk_avs_task_skip', 'avs-self-service', ?, ?)
+        `).run(req.avsTask.id, JSON.stringify({
+          workerId: req.user.workerId,
+          reason: req.validated.reason,
+          note: req.validated.note || null,
+        }))
+      })
+      applySkip()
+      res.json({ ok: true, skipped: true, skip_reason: reason })
+    } catch (e) {
+      logger.error('[avs task skip]', e)
+      res.status(500).json({ error: 'Sunucu hatası' })
+    }
+  }
+)
 
 // Duyurular — aktif olanlar (target_role yok, herkese)
 avsSelfServiceRouter.get('/announcements', requireAvsKiosk, (req, res) => {
@@ -297,25 +636,64 @@ avsSelfServiceRouter.post('/push/unsubscribe', requireAvsKiosk, (req, res) => {
   } catch (e) { logger.error('[avs push unsubscribe]', e); res.status(400).json({ error: e.message }) }
 })
 
-// Hızlı arıza — staff reporter olarak audit_log'a düşer
-avsSelfServiceRouter.post('/maintenance', requireAvsKiosk, upload.single('photo'), verifyMagicBytes, validate(maintenanceSchema), (req, res) => {
-  const { location, description, priority } = req.body
+// Hızlı arıza — kanonik konum/kategori + opsiyonel temizlik görevi bağlantısı.
+avsSelfServiceRouter.post('/maintenance', requireAvsKiosk, upload.single('photo'), verifyMagicBytes, validateUploadBody(maintenanceSchema), (req, res) => {
+  const {
+    location, description, priority, category, block, room_id, cleaning_task_id,
+  } = req.validated
   try {
+    const db = getDB()
+    if (room_id) {
+      const room = db.prepare('SELECT id, block FROM rooms WHERE id=?').get(room_id)
+      if (!room) {
+        removeUploadedFiles(req)
+        return res.status(400).json({ error: 'Seçilen oda bulunamadı' })
+      }
+      if (block && room.block !== block) {
+        removeUploadedFiles(req)
+        return res.status(400).json({ error: 'Oda seçilen blokla eşleşmiyor' })
+      }
+    }
+    if (cleaning_task_id) {
+      const task = db.prepare('SELECT id, block FROM cleaning_tasks WHERE id=?').get(cleaning_task_id)
+      if (!task) {
+        removeUploadedFiles(req)
+        return res.status(400).json({ error: 'Bağlı temizlik görevi bulunamadı' })
+      }
+      const staff = db.prepare('SELECT assigned_block FROM staff WHERE id=?').get(req.user.workerId)
+      if (staff?.assigned_block && staff.assigned_block !== task.block) {
+        removeUploadedFiles(req)
+        return res.status(403).json({ error: 'Bu görev sizin bloğunuza ait değil' })
+      }
+    }
     const photoBefore = req.file ? '/uploads/' + req.file.filename : null
     const id = createRequest({
       location: location.trim(),
       description: description.trim(),
       priority: priority || 'medium',
+      category,
+      block,
+      roomId: room_id,
+      cleaningTaskId: cleaning_task_id,
       reporterUserId: null,
       reporterPersonnelId: null,
       photoBefore,
     })
-    getDB().prepare(`
+    db.prepare(`
       INSERT INTO audit_log(user_id, action, module, target_id, detail)
       VALUES(NULL, 'kiosk_avs_maintenance', 'avs-self-service', ?, ?)
-    `).run(id, JSON.stringify({ workerId: req.user.workerId, location: location.trim() }))
-    res.status(201).json({ id })
-  } catch (e) { logger.error('[avs maintenance]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+    `).run(id, JSON.stringify({
+      workerId: req.user.workerId,
+      location: location.trim(),
+      category,
+      cleaningTaskId: cleaning_task_id || null,
+    }))
+    res.status(201).json({ id, tracking_no: `ARZ-${String(id).padStart(6, '0')}` })
+  } catch (e) {
+    removeUploadedFiles(req)
+    logger.error('[avs maintenance]', e)
+    res.status(500).json({ error: 'Sunucu hatası' })
+  }
 })
 
 // PIN değiştir — kendi PIN'i
@@ -380,14 +758,21 @@ avsSelfServiceRouter.get('/my-maintenance', requireAvsKiosk, (req, res) => {
   try {
     const db = getDB()
     const rows = db.prepare(`
-      SELECT m.id, m.location, m.description, m.status, m.priority, m.opened_at, m.closed_at
+      SELECT m.id, m.location, m.description, m.status, m.priority,
+             m.category, m.block, m.room_id, m.cleaning_task_id,
+             m.photo_before, m.sla_deadline, m.opened_at, m.closed_at,
+             t.full_name AS technician_name
       FROM maintenance_requests m
       JOIN audit_log a ON a.target_id = m.id
         AND a.action = 'kiosk_avs_maintenance'
         AND json_extract(a.detail, '$.workerId') = ?
+      LEFT JOIN technicians t ON t.id=m.assigned_to
       ORDER BY m.opened_at DESC LIMIT 20
     `).all(req.user.workerId)
-    res.json(rows)
+    res.json(rows.map(row => ({
+      ...row,
+      tracking_no: `ARZ-${String(row.id).padStart(6, '0')}`,
+    })))
   } catch (e) { logger.error('[avs my-maintenance]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 

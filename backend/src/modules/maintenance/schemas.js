@@ -3,8 +3,10 @@ import { z } from 'zod'
 // Cross-cutting Zod sweep — maintenance yazma uçları.
 const PRIORITIES = ['high', 'medium', 'low']
 const STATUSES = ['open', 'in_progress', 'done']
+const CATEGORIES = ['elektrik', 'tesisat', 'klima', 'boya', 'genel']
 
 const priorityEnum = z.enum(PRIORITIES, { errorMap: () => ({ message: 'Geçersiz öncelik' }) })
+const categoryEnum = z.enum(CATEGORIES, { errorMap: () => ({ message: 'Geçersiz arıza kategorisi' }) })
 
 export const createRequestSchema = z.object({
   location: z.string().trim().min(2, 'Konum gerekli').max(200, 'Konum çok uzun'),
@@ -12,6 +14,8 @@ export const createRequestSchema = z.object({
   room_id: z.coerce.number().int().positive('Geçersiz oda').optional(),
   description: z.string().trim().min(5, 'Açıklama en az 5 karakter olmalı').max(2000, 'Açıklama çok uzun'),
   priority: priorityEnum.optional().default('medium'),
+  category: categoryEnum.optional().default('genel'),
+  cleaning_task_id: z.coerce.number().int().positive('Geçersiz temizlik görevi').nullish(),
   wait_reason: z.string().trim().max(500, 'Bekleme nedeni çok uzun').nullish(),
 })
 

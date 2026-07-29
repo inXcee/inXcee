@@ -8,22 +8,33 @@ import { canonicalMaintenanceRow } from './location.js'
 // SQL üretmek yerine sabit lookup. Geçersiz priority gelirse medium varsayar.
 const SLA_HOURS_BY_PRIORITY = { high: 4, medium: 24, low: 72 }
 
-export function createRequest({ location, block, roomId, description, priority, reporterUserId, reporterPersonnelId, photoBefore, waitReason }) {
+export function createRequest({
+  location, block, roomId, description, priority, reporterUserId,
+  reporterPersonnelId, photoBefore, waitReason, category, cleaningTaskId,
+}) {
   const db = getDB()
   const slaHours = SLA_HOURS_BY_PRIORITY[priority] ?? 24
   const safePriority = SLA_HOURS_BY_PRIORITY[priority] ? priority : 'medium'
   const r = db.prepare(`
-    INSERT INTO maintenance_requests(location,block,room_id,description,priority,reporter_user_id,reporter_personnel_id,photo_before,wait_reason,sla_deadline)
-    VALUES(?,?,?,?,?,?,?,?,?,datetime('now', ? || ' hours'))
-  `).run(location, block || null, roomId || null, description, safePriority, reporterUserId || null, reporterPersonnelId || null, photoBefore || null, waitReason || null, `+${slaHours}`)
+    INSERT INTO maintenance_requests(
+      location,block,room_id,description,priority,reporter_user_id,
+      reporter_personnel_id,photo_before,wait_reason,sla_deadline,category,cleaning_task_id
+    )
+    VALUES(?,?,?,?,?,?,?,?,?,datetime('now', ? || ' hours'),?,?)
+  `).run(
+    location, block || null, roomId || null, description, safePriority,
+    reporterUserId || null, reporterPersonnelId || null, photoBefore || null,
+    waitReason || null, `+${slaHours}`, category || 'genel', cleaningTaskId || null
+  )
   return r.lastInsertRowid
 }
 
-function buildRequestsFilter({ status, search, priority, reporter_user_id, assigned_user_id }) {
+function buildRequestsFilter({ status, search, priority, category, reporter_user_id, assigned_user_id }) {
   let where = ' WHERE 1=1'
   const params = []
   if (status) { where += ' AND mr.status=?'; params.push(status) }
   if (priority) { where += ' AND mr.priority=?'; params.push(priority) }
+  if (category) { where += ' AND mr.category=?'; params.push(category) }
   if (reporter_user_id) { where += ' AND mr.reporter_user_id=?'; params.push(reporter_user_id) }
   if (assigned_user_id) {
     where += ' AND mr.assigned_to IN (SELECT id FROM technicians WHERE user_id=?)'
@@ -37,9 +48,9 @@ function buildRequestsFilter({ status, search, priority, reporter_user_id, assig
   return { where, params }
 }
 
-export function getRequests({ status, search, priority, reporter_user_id, assigned_user_id, _limit, _offset } = {}) {
+export function getRequests({ status, search, priority, category, reporter_user_id, assigned_user_id, _limit, _offset } = {}) {
   const db = getDB()
-  const { where, params } = buildRequestsFilter({ status, search, priority, reporter_user_id, assigned_user_id })
+  const { where, params } = buildRequestsFilter({ status, search, priority, category, reporter_user_id, assigned_user_id })
   let q = `
     SELECT mr.*,
       ru.full_name as reporter_name,
@@ -56,9 +67,9 @@ export function getRequests({ status, search, priority, reporter_user_id, assign
   return db.prepare(q).all(...params)
 }
 
-export function countRequests({ status, search, priority, reporter_user_id, assigned_user_id } = {}) {
+export function countRequests({ status, search, priority, category, reporter_user_id, assigned_user_id } = {}) {
   const db = getDB()
-  const { where, params } = buildRequestsFilter({ status, search, priority, reporter_user_id, assigned_user_id })
+  const { where, params } = buildRequestsFilter({ status, search, priority, category, reporter_user_id, assigned_user_id })
   return db.prepare('SELECT COUNT(*) as c FROM maintenance_requests mr' + where).get(...params).c
 }
 

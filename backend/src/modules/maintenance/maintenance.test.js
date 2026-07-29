@@ -135,6 +135,19 @@ describe('Maintenance — pagination (Y2)', () => {
     res.body.data.forEach(r => expect(r.priority).toBe('high'))
   })
 
+  it('kategori filtresi yalnızca seçilen arıza türünü döndürür', async () => {
+    db.prepare(`INSERT INTO maintenance_requests(location,description,priority,category)
+      VALUES('Kategori Elektrik','kategori filtre testi','medium','elektrik')`).run()
+    db.prepare(`INSERT INTO maintenance_requests(location,description,priority,category)
+      VALUES('Kategori Klima','kategori filtre testi','medium','klima')`).run()
+    const res = await request(app)
+      .get('/api/maintenance/requests?category=elektrik')
+      .set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.body.some(item => item.location === 'Kategori Elektrik')).toBe(true)
+    expect(res.body.every(item => item.category === 'elektrik')).toBe(true)
+  })
+
   it('ikinci sayfa farkli kayitlari donduruyor', async () => {
     const p1 = await request(app)
       .get('/api/maintenance/requests?page=1&limit=5')

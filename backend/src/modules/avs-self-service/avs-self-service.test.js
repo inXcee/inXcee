@@ -6,6 +6,7 @@ import { seedDev } from '../../shared/db/seed.js'
 
 let avsToken
 let workerId
+const JPEG = Buffer.from('/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==', 'base64')
 
 beforeAll(async () => {
   process.env.DB_PATH = ':memory:'; initDB(); seedDev()
@@ -108,6 +109,40 @@ describe('AVS Self-Service — my-tasks', () => {
   })
 })
 
+describe('AVS Self-Service — location-rooms', () => {
+  it('atanmış bloktaki odaları gerçek oda kimlikleriyle döner', async () => {
+    const res = await request(app).get('/api/avs-self-service/location-rooms?block=M1')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.items.length).toBeGreaterThan(0)
+    expect(res.body.items[0]).toHaveProperty('id')
+    expect(res.body.items.every(room => room.block === 'M1')).toBe(true)
+  })
+
+  it('atanmış personelin başka blok istemesini reddeder', async () => {
+    const res = await request(app).get('/api/avs-self-service/location-rooms?block=S1')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(403)
+  })
+})
+
+describe('AVS Self-Service — overview', () => {
+  it('temizlik personeli için rol ve günlük operasyon özetini döner', async () => {
+    const res = await request(app).get('/api/avs-self-service/overview')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.role_group).toBe('housekeeping')
+    expect(res.body.worker.assigned_block).toBe('M1')
+    expect(res.body.tasks.total).toBeGreaterThan(0)
+    expect(res.body.tasks).toHaveProperty('pending')
+    expect(res.body).toHaveProperty('faults')
+    expect(res.body.next_shift).not.toBeNull()
+    expect(res.body.transport.pickup_name).toBe('Merkez Durağı')
+    expect(res.body.transport).toHaveProperty('schedule')
+    expect(res.body.announcements.some(item => item.title === 'Test Duyuru')).toBe(true)
+  })
+})
+
 describe('AVS Self-Service — announcements', () => {
   it('aktif duyuru dizisi döner', async () => {
     const res = await request(app).get('/api/avs-self-service/announcements')
@@ -149,6 +184,30 @@ describe('AVS Self-Service — maintenance', () => {
       .field('description', 'd'.repeat(2001))
     expect(res.status).toBe(400)
   })
+
+  it('kategori, kanonik konum ve temizlik görevi bağlantısını kaydeder', async () => {
+    const db = getDB()
+    const task = db.prepare(`INSERT INTO cleaning_tasks(area, block, floor, task_type, scheduled_at)
+      VALUES('M1 Oda 110','M1',1,'room',datetime('now','localtime'))`).run()
+    const res = await request(app).post('/api/avs-self-service/maintenance')
+      .set('Authorization', `Bearer ${avsToken}`)
+      .field('location', 'M1 Kat 1 Oda 110')
+      .field('description', 'Priz kapağı yerinden çıkmış durumda')
+      .field('priority', 'high')
+      .field('category', 'elektrik')
+      .field('block', 'M1')
+      .field('cleaning_task_id', String(task.lastInsertRowid))
+    expect(res.status).toBe(201)
+    expect(res.body.tracking_no).toMatch(/^ARZ-/)
+    const saved = db.prepare(`
+      SELECT category, block, cleaning_task_id FROM maintenance_requests WHERE id=?
+    `).get(res.body.id)
+    expect(saved).toEqual({
+      category: 'elektrik',
+      block: 'M1',
+      cleaning_task_id: task.lastInsertRowid,
+    })
+  })
 })
 
 describe('AVS Self-Service — maintenance foto', () => {
@@ -163,18 +222,18 @@ describe('AVS Self-Service — maintenance foto', () => {
 })
 
 describe('AVS Self-Service — task complete', () => {
-  it('kendi bloğundaki görevi tamamlar (200 + completed_at)', async () => {
+  it('fotoğrafsız görev tamamlama 400 döner ve görev açık kalır', async () => {
     const db = getDB()
     // Global beforeAll M1'e cleaning_task ekledi; worker assigned_block='M1'
     const task = db.prepare("SELECT id FROM cleaning_tasks WHERE block='M1' AND completed_at IS NULL LIMIT 1").get()
     const res = await request(app).post(`/api/avs-self-service/tasks/${task.id}/complete`)
       .set('Authorization', `Bearer ${avsToken}`)
-    expect(res.status).toBe(200)
-    expect(res.body.ok).toBe(true)
-    expect(res.body.completed_at).toBeTruthy()
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/fotoğraf/)
+    expect(db.prepare('SELECT completed_at FROM cleaning_tasks WHERE id=?').get(task.id).completed_at).toBeNull()
   })
 
-  it('foto kanıtıyla tamamlama: photo_url + completed_by_worker_id yazılır', async () => {
+  it('foto kanıtıyla tamamlama: çoklu tablo, kapak ve tamamlayan personel yazılır', async () => {
     const db = getDB()
     const t = db.prepare(`INSERT INTO cleaning_tasks(area, block, floor, task_type, scheduled_at, qr_location)
       VALUES('M1 Oda 105','M1',1,'room',datetime('now','localtime'),'M1-105')`).run()
@@ -184,10 +243,74 @@ describe('AVS Self-Service — task complete', () => {
       .attach('photo', jpeg, 'temizlik.jpg')
     expect(res.status).toBe(200)
     expect(res.body.photo_url).toMatch(/^\/uploads\//)
+    expect(res.body.photo_count).toBe(1)
     const after = db.prepare('SELECT photo_url, completed_by_worker_id, completed_at FROM cleaning_tasks WHERE id=?').get(t.lastInsertRowid)
     expect(after.photo_url).toMatch(/^\/uploads\//)
     expect(after.completed_by_worker_id).toBeTruthy()
     expect(after.completed_at).toBeTruthy()
+    const photos = db.prepare(`
+      SELECT photo_url, category FROM cleaning_task_photos WHERE task_id=?
+    `).all(t.lastInsertRowid)
+    expect(photos).toHaveLength(1)
+    expect(photos[0].category).toBe('sonrasi')
+  })
+
+  it('photos alanıyla üç fotoğrafı atomik kaydeder', async () => {
+    const db = getDB()
+    const t = db.prepare(`INSERT INTO cleaning_tasks(area, block, floor, task_type, scheduled_at)
+      VALUES('M1 Oda 106','M1',1,'room',datetime('now','localtime'))`).run()
+    const res = await request(app).post(`/api/avs-self-service/tasks/${t.lastInsertRowid}/complete`)
+      .set('Authorization', `Bearer ${avsToken}`)
+      .attach('photos', JPEG, 'bir.jpg')
+      .attach('photos', JPEG, 'iki.jpg')
+      .attach('photos', JPEG, 'uc.jpg')
+    expect(res.status).toBe(200)
+    expect(res.body.photo_count).toBe(3)
+    expect(db.prepare('SELECT COUNT(*) AS c FROM cleaning_task_photos WHERE task_id=?').get(t.lastInsertRowid).c).toBe(3)
+  })
+
+  it('dört fotoğrafı 400 ile reddeder ve görevi açık bırakır', async () => {
+    const db = getDB()
+    const t = db.prepare(`INSERT INTO cleaning_tasks(area, block, floor, task_type, scheduled_at)
+      VALUES('M1 Oda 107','M1',1,'room',datetime('now','localtime'))`).run()
+    const res = await request(app).post(`/api/avs-self-service/tasks/${t.lastInsertRowid}/complete`)
+      .set('Authorization', `Bearer ${avsToken}`)
+      .attach('photos', JPEG, 'bir.jpg')
+      .attach('photos', JPEG, 'iki.jpg')
+      .attach('photos', JPEG, 'uc.jpg')
+      .attach('photos', JPEG, 'dort.jpg')
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/En fazla 3/)
+    expect(db.prepare('SELECT completed_at FROM cleaning_tasks WHERE id=?').get(t.lastInsertRowid).completed_at).toBeNull()
+    expect(db.prepare('SELECT COUNT(*) AS c FROM cleaning_task_photos WHERE task_id=?').get(t.lastInsertRowid).c).toBe(0)
+  })
+
+  it('sahte JPEG magic-byte kontrolünde reddedilir ve görev açık kalır', async () => {
+    const db = getDB()
+    const t = db.prepare(`INSERT INTO cleaning_tasks(area, block, floor, task_type, scheduled_at)
+      VALUES('M1 Oda 108','M1',1,'room',datetime('now','localtime'))`).run()
+    const res = await request(app).post(`/api/avs-self-service/tasks/${t.lastInsertRowid}/complete`)
+      .set('Authorization', `Bearer ${avsToken}`)
+      .attach('photo', Buffer.from('bu bir jpeg degildir'), { filename: 'sahte.jpg', contentType: 'image/jpeg' })
+    expect(res.status).toBe(400)
+    expect(db.prepare('SELECT completed_at FROM cleaning_tasks WHERE id=?').get(t.lastInsertRowid).completed_at).toBeNull()
+    expect(db.prepare('SELECT COUNT(*) AS c FROM cleaning_task_photos WHERE task_id=?').get(t.lastInsertRowid).c).toBe(0)
+  })
+
+  it('tamamlanmış görevin tekrar gönderiminde yeni fotoğraf eklemez', async () => {
+    const db = getDB()
+    const t = db.prepare(`INSERT INTO cleaning_tasks(area, block, floor, task_type, scheduled_at)
+      VALUES('M1 Oda 109','M1',1,'room',datetime('now','localtime'))`).run()
+    const first = await request(app).post(`/api/avs-self-service/tasks/${t.lastInsertRowid}/complete`)
+      .set('Authorization', `Bearer ${avsToken}`)
+      .attach('photo', JPEG, 'ilk.jpg')
+    expect(first.status).toBe(200)
+    const retry = await request(app).post(`/api/avs-self-service/tasks/${t.lastInsertRowid}/complete`)
+      .set('Authorization', `Bearer ${avsToken}`)
+      .attach('photo', JPEG, 'tekrar.jpg')
+    expect(retry.status).toBe(200)
+    expect(retry.body.already_completed).toBe(true)
+    expect(db.prepare('SELECT COUNT(*) AS c FROM cleaning_task_photos WHERE task_id=?').get(t.lastInsertRowid).c).toBe(1)
   })
 
   it('atlanmış görev kiosktan tamamlanınca skip durumu temizlenir (parite)', async () => {
@@ -196,6 +319,7 @@ describe('AVS Self-Service — task complete', () => {
       VALUES('Skip Test','M1',1,'room',datetime('now','localtime'),1,'kapı kilitli')`).run()
     const res = await request(app).post(`/api/avs-self-service/tasks/${t.lastInsertRowid}/complete`)
       .set('Authorization', `Bearer ${avsToken}`)
+      .attach('photo', JPEG, 'skip-sonrasi.jpg')
     expect(res.status).toBe(200)
     const after = db.prepare('SELECT completed_at, skipped, skip_reason FROM cleaning_tasks WHERE id=?').get(t.lastInsertRowid)
     expect(after.completed_at).toBeTruthy()
@@ -228,6 +352,7 @@ describe('AVS Self-Service — task complete', () => {
       VALUES('S3 Oda 210','S3',2,'room',datetime('now','localtime'),'S3-210')`).run()
     const res = await request(app).post(`/api/avs-self-service/tasks/${t.lastInsertRowid}/complete`)
       .set('Authorization', `Bearer ${tok2}`)
+      .attach('photo', JPEG, 's3-sonrasi.jpg')
     expect(res.status).toBe(200)
   })
 
@@ -235,6 +360,34 @@ describe('AVS Self-Service — task complete', () => {
     const res = await request(app).post('/api/avs-self-service/tasks/999999/complete')
       .set('Authorization', `Bearer ${avsToken}`)
     expect(res.status).toBe(404)
+  })
+})
+
+describe('AVS Self-Service — task skip', () => {
+  it('kontrollü nedenle görevi temizlenemedi işaretler ve audit yazar', async () => {
+    const db = getDB()
+    const t = db.prepare(`INSERT INTO cleaning_tasks(area, block, floor, task_type, scheduled_at)
+      VALUES('M1 Oda 120','M1',1,'room',datetime('now','localtime'))`).run()
+    const res = await request(app).patch(`/api/avs-self-service/tasks/${t.lastInsertRowid}/skip`)
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ reason: 'locked', note: 'Anahtar bulunamadı' })
+    expect(res.status).toBe(200)
+    const row = db.prepare('SELECT skipped, skip_reason FROM cleaning_tasks WHERE id=?').get(t.lastInsertRowid)
+    expect(row.skipped).toBe(1)
+    expect(row.skip_reason).toContain('Kapı kilitli')
+    expect(db.prepare(`
+      SELECT id FROM audit_log WHERE action='kiosk_avs_task_skip' AND target_id=?
+    `).get(t.lastInsertRowid)).toBeTruthy()
+  })
+
+  it('geçersiz nedeni reddeder', async () => {
+    const db = getDB()
+    const t = db.prepare(`INSERT INTO cleaning_tasks(area, block, floor, task_type, scheduled_at)
+      VALUES('M1 Oda 121','M1',1,'room',datetime('now','localtime'))`).run()
+    const res = await request(app).patch(`/api/avs-self-service/tasks/${t.lastInsertRowid}/skip`)
+      .set('Authorization', `Bearer ${avsToken}`)
+      .send({ reason: 'unknown' })
+    expect(res.status).toBe(400)
   })
 })
 
