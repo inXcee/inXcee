@@ -12,7 +12,7 @@ import { exportRowsToCsv } from '../../shared/utils/exportData.js'
 import { useDebounce } from '../../shared/hooks/useDebounce.js'
 import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 import {
-  MAINTENANCE_EXPORT_COLS, PRIORITIES, priInfo, statusInfo,
+  MAINTENANCE_EXPORT_COLS, PRIORITIES, SPECIALTIES, priInfo, statusInfo,
   SLACountdown, StatusTimeline, StatusActions, PhotoCapture,
 } from './shared.jsx'
 import LocationPicker from './LocationPicker.jsx'
@@ -20,7 +20,7 @@ import KanbanView from './KanbanView.jsx'
 import { AvailableTechnicians, TechnicianManager } from './TechnicianPanels.jsx'
 import DetailPanel from './DetailPanel.jsx'
 
-const INIT_MAINTENANCE = { location: '', description: '', priority: 'medium' }
+const INIT_MAINTENANCE = { location: '', description: '', priority: 'medium', category: 'genel' }
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Main Page
@@ -40,6 +40,7 @@ export default function MaintenancePage() {
   const { hasDraft, restoreDraft, discardDraft, onSubmitSuccess } = useDraft('draft:maintenance', form, setForm, INIT_MAINTENANCE)
   const [formPhoto, setFormPhoto] = useState(null)
   const [filter, setFilter] = useState('open')
+  const [categoryFilter, setCategoryFilter] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
   const debouncedSearch = useDebounce(searchTerm, 250)
   const [selectedId, setSelectedId] = useState(null)
@@ -57,17 +58,19 @@ export default function MaintenancePage() {
     else if (filter === 'all' || filter === 'kanban') { /* no status filter */ }
     else url += `status=${filter}&`
     if (debouncedSearch.trim()) url += `search=${encodeURIComponent(debouncedSearch.trim())}&`
+    if (categoryFilter !== 'all') url += `category=${categoryFilter}&`
     return url
   }
 
   const kanbanQuery = () => {
     let url = '/maintenance/requests?'
     if (debouncedSearch.trim()) url += `search=${encodeURIComponent(debouncedSearch.trim())}&`
+    if (categoryFilter !== 'all') url += `category=${categoryFilter}&`
     return url
   }
 
   const { data: rawRequests = [], isLoading } = useQuery({
-    queryKey: ['maintenance-requests', viewMode === 'kanban' ? 'all' : filter, debouncedSearch],
+    queryKey: ['maintenance-requests', viewMode === 'kanban' ? 'all' : filter, categoryFilter, debouncedSearch],
     queryFn: () => api.get(viewMode === 'kanban' ? kanbanQuery() : buildQuery()).then(r => r.data),
   })
 
@@ -81,6 +84,7 @@ export default function MaintenancePage() {
       fd.append('location', form.location)
       fd.append('description', form.description)
       fd.append('priority', form.priority)
+      fd.append('category', form.category)
       if (formPhoto) fd.append('photo_before', formPhoto)
       return api.post('/maintenance/requests', fd)
     },
@@ -193,6 +197,18 @@ export default function MaintenancePage() {
                 className="form-textarea" placeholder="Arıza detayını yazın..." rows={3} />
             </div>
             <div>
+              <label className="form-label">Arıza Türü</label>
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                {Object.entries(SPECIALTIES).map(([key, label]) => (
+                  <button key={key} type="button"
+                    onClick={() => setForm(previous => ({ ...previous, category: key }))}
+                    className={`filter-chip${form.category === key ? ' active' : ''}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
               <label className="form-label">Öncelik</label>
               <div style={{ display: 'flex', gap: '8px' }}>
                 {PRIORITIES.map(p => (
@@ -246,6 +262,14 @@ export default function MaintenancePage() {
             )}
           </button>
         ))}
+        <select value={categoryFilter} onChange={event => setCategoryFilter(event.target.value)}
+          className="form-select" aria-label="Arıza türü filtresi"
+          style={{ minWidth: '130px', fontSize: '10px' }}>
+          <option value="all">TÜM TÜRLER</option>
+          {Object.entries(SPECIALTIES).map(([key, label]) => (
+            <option key={key} value={key}>{label.toUpperCase()}</option>
+          ))}
+        </select>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '4px' }}>
           <button onClick={() => setViewMode('list')}
             style={{
@@ -322,6 +346,11 @@ export default function MaintenancePage() {
                           background: `color-mix(in srgb, ${si.color} 12%, transparent)`,
                           border: `1px solid color-mix(in srgb, ${si.color} 25%, transparent)`,
                         }}>{si.label}</span>
+                        <span style={{
+                          fontFamily: 'var(--mono)', fontSize: '8.5px', padding: '2px 8px', borderRadius: '4px',
+                          color: 'var(--blue)', background: 'rgba(52,152,219,.1)',
+                          border: '1px solid rgba(52,152,219,.2)',
+                        }}>{SPECIALTIES[req.category] || SPECIALTIES.genel}</span>
                         {req.photo_before && <span style={{ fontSize: '11px' }} title="Fotoğraf var">📷</span>}
                         {req.sla_deadline && req.status !== 'done' && (
                           <SLACountdown deadline={req.sla_deadline} />

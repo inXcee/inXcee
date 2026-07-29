@@ -5,7 +5,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { SkeletonCard } from '../../shared/components/Skeleton.jsx'
-import { statusInfo, priInfo, PRIORITIES, WAIT_REASONS, StatusTimeline, StatusActions, PhotoCapture } from './shared.jsx'
+import {
+  statusInfo, priInfo, PRIORITIES, SPECIALTIES, WAIT_REASONS,
+  StatusTimeline, StatusActions, PhotoCapture,
+} from './shared.jsx'
 
 export default function DetailPanel({ requestId, onClose }) {
   const qc = useQueryClient()
@@ -90,6 +93,11 @@ export default function DetailPanel({ requestId, onClose }) {
               color: pri.color, background: `color-mix(in srgb, ${pri.color} 12%, transparent)`,
               border: `1px solid color-mix(in srgb, ${pri.color} 30%, transparent)`,
             }}>{pri.label}</span>
+            <span style={{
+              fontFamily: 'var(--mono)', fontSize: '8.5px', padding: '2px 8px', borderRadius: '4px',
+              color: 'var(--blue)', background: 'rgba(52,152,219,.1)',
+              border: '1px solid rgba(52,152,219,.2)',
+            }}>{SPECIALTIES[request.category] || SPECIALTIES.genel}</span>
             {request.sla_deadline && request.status !== 'done' && (() => {
               const isOverdue = new Date(request.sla_deadline) < new Date()
               return (
@@ -105,6 +113,9 @@ export default function DetailPanel({ requestId, onClose }) {
           <div className="panel-subtitle" style={{ marginTop: '4px' }}>
             {request.reporter_name && `${request.reporter_name} · `}
             {new Date(request.opened_at).toLocaleString('tr-TR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            {request.block ? ` · ${request.block}` : ''}
+            {request.room_id ? ` · Oda #${request.room_id}` : ''}
+            {request.cleaning_task_id ? ` · Temizlik görevi #${request.cleaning_task_id}` : ''}
           </div>
         </div>
         <div style={{ display: 'flex', gap: '6px' }}>
