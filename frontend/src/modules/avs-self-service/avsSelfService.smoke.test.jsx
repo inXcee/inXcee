@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { fireEvent, screen } from '@testing-library/react'
+import { useState } from 'react'
 import { renderWithProviders } from '../../test/renderWithProviders.jsx'
 
 vi.mock('../../shared/api/client.js', () => ({
@@ -7,6 +8,7 @@ vi.mock('../../shared/api/client.js', () => ({
     get: vi.fn(() => Promise.resolve({ data: [] })),
     post: vi.fn(() => Promise.resolve({ data: {} })),
     put: vi.fn(() => Promise.resolve({ data: {} })),
+    patch: vi.fn(() => Promise.resolve({ data: {} })),
   },
 }))
 
@@ -15,8 +17,56 @@ import ShiftsTab from './tabs/ShiftsTab.jsx'
 import TasksTab from './tabs/TasksTab.jsx'
 import MealsTab from './tabs/MealsTab.jsx'
 import QuickFaultTab from './tabs/QuickFaultTab.jsx'
+import HomeTab from './tabs/HomeTab.jsx'
 
 const idleQuery = { isLoading: false, isError: false, data: undefined, refetch: () => {} }
+
+const housekeepingData = {
+  type: 'housekeeping', assigned_block: 'M1',
+  items: [
+    { id: 10, area: 'M1 Oda 110', block: 'M1', floor: 1, task_type: 'room', qr_location: 'M1-110', completed_at: null, skipped: 0 },
+  ],
+}
+
+function TaskDraftHarness() {
+  const [visible, setVisible] = useState(true)
+  const [drafts, setDrafts] = useState({ 10: ['data:image/jpeg;base64,AA=='] })
+  return (
+    <>
+      <button type="button" onClick={() => setVisible(value => !value)}>Sekme değiştir</button>
+      {visible && (
+        <TasksTab query={{ ...idleQuery, data: housekeepingData }} data={housekeepingData}
+          completeTask={{ mutate: vi.fn(), isPending: false }}
+          skipTask={{ mutate: vi.fn(), isPending: false }}
+          photoDrafts={drafts} setPhotoDrafts={setDrafts} uploadProgress={{}}
+          onReportFault={() => {}} selectedBlock="" onSelectBlock={() => {}} />
+      )}
+    </>
+  )
+}
+
+function FaultRoomHarness({ withToggle = false }) {
+  const [visible, setVisible] = useState(true)
+  const [form, setForm] = useState({
+    location: '', description: '', priority: 'medium', category: 'genel',
+    block: '', room_id: '', cleaning_task_id: '',
+  })
+  return (
+    <>
+      {withToggle && <button type="button" onClick={() => setVisible(value => !value)}>Arıza sekmesini değiştir</button>}
+      <output data-testid="fault-room-id">{form.room_id}</output>
+      {visible && (
+        <QuickFaultTab
+          faultForm={form} setFaultForm={setForm}
+          faultPhoto={null} setFaultPhoto={() => {}}
+          faultSuccess={false} setFaultSuccess={() => {}} faultError=""
+          submitFault={{ mutate: vi.fn(), isPending: false }} myFaults={[]}
+          locationRooms={[{ id: 501, block: 'M1', floor: 1, room_no: '101' }]}
+        />
+      )}
+    </>
+  )
+}
 
 describe('AvsSelfServicePage smoke', () => {
   it('token yokken login ekranı render olur (isim arama + giriş butonu)', () => {
@@ -47,12 +97,94 @@ describe('AVS sekme parçaları smoke', () => {
       ],
     }
     renderWithProviders(
-      <TasksTab query={{ ...idleQuery, data }} data={data} completeTask={{ mutate: () => {}, isPending: false }} />
+      <TasksTab query={{ ...idleQuery, data }} data={data}
+        completeTask={{ mutate: () => {}, isPending: false }}
+        skipTask={{ mutate: () => {}, isPending: false }}
+        photoDrafts={{}} setPhotoDrafts={() => {}}
+        onReportFault={() => {}} selectedBlock="" onSelectBlock={() => {}} />
     )
     expect(screen.getByText('M1 · Kat 1')).toBeInTheDocument()
     expect(screen.getByText('101')).toBeInTheDocument()
     expect(screen.getByText('102 ✓')).toBeInTheDocument()
-    expect(screen.getByText(/Ortak Alan — WC/)).toBeInTheDocument()
+    expect(screen.getByText(/Ortak alan \/ WC/)).toBeInTheDocument()
+  })
+
+  it('TasksTab fotoğraf olmadan tamamlama butonunu kapalı tutar', async () => {
+    renderWithProviders(
+      <TasksTab query={{ ...idleQuery, data: housekeepingData }} data={housekeepingData}
+        completeTask={{ mutate: vi.fn(), isPending: false }}
+        skipTask={{ mutate: vi.fn(), isPending: false }}
+        photoDrafts={{}} setPhotoDrafts={() => {}} uploadProgress={{}}
+        onReportFault={() => {}} selectedBlock="" onSelectBlock={() => {}} />
+    )
+    fireEvent.click(screen.getByRole('button', { name: '110' }))
+    expect(screen.getByRole('button', { name: /Tamamla/ })).toBeDisabled()
+    expect(screen.getByText(/en az 1 zorunlu/i)).toBeInTheDocument()
+  })
+
+  it('TasksTab yükleme yüzdesini aktif görev kartında gösterir', () => {
+    renderWithProviders(
+      <TasksTab query={{ ...idleQuery, data: housekeepingData }} data={housekeepingData}
+        completeTask={{ mutate: vi.fn(), isPending: true, variables: { taskId: 10 } }}
+        skipTask={{ mutate: vi.fn(), isPending: false }}
+        photoDrafts={{ 10: ['data:image/jpeg;base64,AA=='] }} setPhotoDrafts={() => {}}
+        uploadProgress={{ 10: 47 }}
+        onReportFault={() => {}} selectedBlock="" onSelectBlock={() => {}} />
+    )
+    fireEvent.click(screen.getByRole('button', { name: '110' }))
+    expect(screen.getByText(/Yükleniyor 47%/)).toBeInTheDocument()
+  })
+
+  it('temizlik fotoğraf taslağını sekme değişiminden sonra korur', () => {
+    renderWithProviders(<TaskDraftHarness />)
+    fireEvent.click(screen.getByRole('button', { name: '110' }))
+    expect(screen.getByText(/1\/3/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Sekme değiştir' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Sekme değiştir' }))
+    fireEvent.click(screen.getByRole('button', { name: '110' }))
+    expect(screen.getByText(/1\/3/)).toBeInTheDocument()
+  })
+
+  it('HomeTab temizlik özeti ve hızlı aksiyonları render eder', () => {
+    const data = {
+      role_group: 'housekeeping',
+      worker: { full_name: 'Ayşe Test', department_name: 'Temizlik', assigned_block: 'M1' },
+      tasks: { pending: 4, completed: 7, skipped: 1, next: { area: 'M1 Oda 101', block: 'M1', floor: 1 } },
+      faults: { open: 1, urgent: 0 },
+    }
+    renderWithProviders(<HomeTab query={{ ...idleQuery, data }} data={data} onNavigate={() => {}} />)
+    expect(screen.getByText(/Ayşe Test/)).toBeInTheDocument()
+    expect(screen.getByText('M1 Oda 101')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Görevlere git/ })).toBeInTheDocument()
+  })
+
+  it('HomeTab teknik personelde açık, acil ve işlemde arızaları gösterir', () => {
+    const data = {
+      role_group: 'technical',
+      worker: { full_name: 'Teknik Test', department_name: 'Teknik' },
+      tasks: {},
+      faults: { open: 8, urgent: 2, in_progress: 3 },
+    }
+    renderWithProviders(<HomeTab query={{ ...idleQuery, data }} data={data} onNavigate={() => {}} />)
+    expect(screen.getByText('Açık arıza')).toBeInTheDocument()
+    expect(screen.getByText('Acil')).toBeInTheDocument()
+    expect(screen.getByText('İşlemde')).toBeInTheDocument()
+  })
+
+  it('HomeTab diğer rollerde vardiya, servis ve duyuru özetini gösterir', () => {
+    const data = {
+      role_group: 'general',
+      worker: { full_name: 'Genel Test', department_name: 'Güvenlik' },
+      tasks: {},
+      faults: { open: 1, urgent: 0 },
+      next_shift: { work_date: '2026-07-30', shift_name: 'Sabah', start_hour: '08:00', end_hour: '17:00' },
+      transport: { pickup_name: 'Merkez', schedule: { route_name: 'Sabah Servisi', time: '07:15', plate: '34 AVS 1' } },
+      announcements: [{ id: 1, title: 'Günlük Duyuru', body: 'Servis hareket saati güncellendi.' }],
+    }
+    renderWithProviders(<HomeTab query={{ ...idleQuery, data }} data={data} onNavigate={() => {}} />)
+    expect(screen.getByText('Sabah Servisi')).toBeInTheDocument()
+    expect(screen.getByText('Günlük Duyuru')).toBeInTheDocument()
+    expect(screen.getByText('Sabah')).toBeInTheDocument()
   })
 
   it('MealsTab yarın seçimi 4 öğün butonu render eder', () => {
@@ -65,12 +197,33 @@ describe('AVS sekme parçaları smoke', () => {
   it('QuickFaultTab form alanlarını render eder', () => {
     renderWithProviders(
       <QuickFaultTab
-        faultForm={{ location: '', description: '', priority: 'medium' }}
+        faultForm={{ location: '', description: '', priority: 'medium', category: 'genel', block: '', room_id: '', cleaning_task_id: '' }}
         setFaultForm={() => {}} faultPhoto={null} setFaultPhoto={() => {}}
         faultSuccess={false} setFaultSuccess={() => {}} faultError=""
         submitFault={{ mutate: () => {}, isPending: false }} myFaults={[]}
       />
     )
     expect(screen.getAllByRole('textbox').length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('genel arıza seçicisinde gerçek room_id değerini forma bağlar', () => {
+    renderWithProviders(<FaultRoomHarness />)
+    fireEvent.click(screen.getByRole('button', { name: 'M1' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Kat 1' }))
+    fireEvent.click(screen.getByRole('button', { name: '101' }))
+    expect(screen.getByTestId('fault-room-id')).toHaveTextContent('501')
+    expect(screen.getByDisplayValue('M1 Kat 1 Oda 101')).toBeInTheDocument()
+  })
+
+  it('arıza form taslağını sekme değişiminden sonra korur', () => {
+    renderWithProviders(<FaultRoomHarness withToggle />)
+    fireEvent.change(screen.getByPlaceholderText(/Konum yaz/), { target: { value: 'M1 kazan dairesi' } })
+    fireEvent.change(screen.getByPlaceholderText(/Sorunu ve gördüğünüz/), {
+      target: { value: 'Boru bağlantısında su sızıntısı görülüyor' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Arıza sekmesini değiştir' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Arıza sekmesini değiştir' }))
+    expect(screen.getByDisplayValue('M1 kazan dairesi')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('Boru bağlantısında su sızıntısı görülüyor')).toBeInTheDocument()
   })
 })

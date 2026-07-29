@@ -23,8 +23,10 @@ import QrTab from './tabs/QrTab.jsx'
 import LeaveTab from './tabs/LeaveTab.jsx'
 import MealsTab from './tabs/MealsTab.jsx'
 import InventoryTab from './tabs/InventoryTab.jsx'
+import HomeTab from './tabs/HomeTab.jsx'
 
 const TAB_KEYS = [
+  { key: 'home',          icon: '🏠', i18n: 'avs_kiosk.nav.home' },
   { key: 'shifts',        icon: '⏱', i18n: 'avs_kiosk.nav.shifts' },
   { key: 'transport',     icon: '🚌', i18n: 'avs_kiosk.nav.transport' },
   { key: 'tasks',         icon: '✅', i18n: 'avs_kiosk.nav.tasks' },
@@ -38,11 +40,21 @@ const TAB_KEYS = [
   { key: 'inventory',     icon: '📦', i18n: 'avs_kiosk.nav.inventory' },
 ]
 
+const EMPTY_FAULT_FORM = {
+  location: '',
+  description: '',
+  priority: 'medium',
+  category: 'genel',
+  block: '',
+  room_id: '',
+  cleaning_task_id: '',
+}
+
 export default function AvsSelfServicePage() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [avsToken, setAvsToken] = useState(null)
-  const [activeTab, setActiveTab] = useState('shifts')
+  const [activeTab, setActiveTab] = useState('home')
 
   // İsimle giriş
   const [nameQuery, setNameQuery] = useState('')
@@ -56,10 +68,13 @@ export default function AvsSelfServicePage() {
   const [feedOpen, setFeedOpen] = useState(false)
 
   // Task 16 — Hızlı Arıza
-  const [faultForm, setFaultForm] = useState({ location: '', description: '', priority: 'medium' })
+  const [faultForm, setFaultForm] = useState(EMPTY_FAULT_FORM)
   const [faultPhoto, setFaultPhoto] = useState(null)
   const [faultSuccess, setFaultSuccess] = useState(false)
   const [faultError, setFaultError] = useState('')
+  const [taskPhotoDrafts, setTaskPhotoDrafts] = useState({})
+  const [taskUploadProgress, setTaskUploadProgress] = useState({})
+  const [taskBlock, setTaskBlock] = useState('')
 
   // Task 17 — Profil PIN değiştir
   const [pinForm, setPinForm] = useState({ current_pin: '', new_pin: '', new_pin2: '' })
@@ -79,11 +94,15 @@ export default function AvsSelfServicePage() {
     setPin('')
     setNameQuery('')
     setResults([])
-    setActiveTab('shifts')
+    setActiveTab('home')
     setLoginError('')
     setFaultSuccess(false)
     setFaultError('')
-    setFaultForm({ location: '', description: '', priority: 'medium' })
+    setFaultForm(EMPTY_FAULT_FORM)
+    setFaultPhoto(null)
+    setTaskPhotoDrafts({})
+    setTaskUploadProgress({})
+    setTaskBlock('')
     setPinMsg({ type: '', text: '' })
     setPinForm({ current_pin: '', new_pin: '', new_pin2: '' })
     setInvSearch(''); setInvSelected(null); setInvQty(1); setInvNote(''); setInvLocation('')
@@ -101,8 +120,20 @@ export default function AvsSelfServicePage() {
 
   const avsApi = {
     get: (url) => api.get(url, { headers: { Authorization: `Bearer ${avsToken}` } }),
-    post: (url, data) => api.post(url, data, { headers: { Authorization: `Bearer ${avsToken}` } }),
+    post: (url, data, config = {}) => api.post(url, data, {
+      ...config,
+      headers: { ...config.headers, Authorization: `Bearer ${avsToken}` },
+    }),
+    put: (url, data) => api.put(url, data, { headers: { Authorization: `Bearer ${avsToken}` } }),
+    patch: (url, data) => api.patch(url, data, { headers: { Authorization: `Bearer ${avsToken}` } }),
   }
+
+  const overviewQuery = useQuery({
+    queryKey: ['avs-overview', avsToken],
+    queryFn: () => avsApi.get('/avs-self-service/overview').then(r => r.data),
+    enabled: !!avsToken,
+  })
+  const overview = overviewQuery.data
 
   // Task 12 — Vardiyam
   const shiftsQuery = useQuery({
@@ -122,11 +153,16 @@ export default function AvsSelfServicePage() {
 
   // Task 14 — Görevlerim
   const tasksQuery = useQuery({
-    queryKey: ['avs-tasks', avsToken],
-    queryFn: () => avsApi.get('/avs-self-service/my-tasks').then(r => r.data),
+    queryKey: ['avs-tasks', avsToken, taskBlock],
+    queryFn: () => avsApi.get(`/avs-self-service/my-tasks${taskBlock ? `?block=${encodeURIComponent(taskBlock)}` : ''}`).then(r => r.data),
     enabled: !!avsToken && activeTab === 'tasks',
   })
   const tasksData = tasksQuery.data
+  const faultRoomsQuery = useQuery({
+    queryKey: ['avs-location-rooms', avsToken, faultForm.block],
+    queryFn: () => avsApi.get(`/avs-self-service/location-rooms?block=${encodeURIComponent(faultForm.block)}`).then(r => r.data),
+    enabled: !!avsToken && activeTab === 'quick_fault' && !!faultForm.block && !faultForm.cleaning_task_id,
+  })
 
   // Task 15 — Duyurular
   const annQuery = useQuery({
@@ -155,13 +191,46 @@ export default function AvsSelfServicePage() {
 
   // P2 — Görev tamamlama (opsiyonel temizlik kanıt fotoğrafıyla)
   const completeTask = useMutation({
-    mutationFn: ({ taskId, photoBlob }) => {
-      if (!photoBlob) return avsApi.post(`/avs-self-service/tasks/${taskId}/complete`)
+    mutationFn: ({ taskId, photoBlobs }) => {
       const fd = new FormData()
-      fd.append('photo', photoBlob, 'temizlik.jpg')
-      return avsApi.post(`/avs-self-service/tasks/${taskId}/complete`, fd)
+      photoBlobs.forEach((photoBlob, index) => {
+        fd.append('photos', photoBlob, `temizlik-${index + 1}.jpg`)
+      })
+      setTaskUploadProgress(previous => ({ ...previous, [taskId]: 0 }))
+      return avsApi.post(`/avs-self-service/tasks/${taskId}/complete`, fd, {
+        onUploadProgress: event => {
+          if (!event.total) return
+          const value = Math.min(100, Math.round((event.loaded * 100) / event.total))
+          setTaskUploadProgress(previous => ({ ...previous, [taskId]: value }))
+        },
+      })
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['avs-tasks', avsToken] }),
+    onSuccess: (_response, variables) => {
+      setTaskPhotoDrafts(previous => {
+        const next = { ...previous }
+        delete next[variables.taskId]
+        return next
+      })
+      queryClient.invalidateQueries({ queryKey: ['avs-tasks', avsToken] })
+      queryClient.invalidateQueries({ queryKey: ['avs-overview', avsToken] })
+    },
+    onSettled: (_response, _error, variables) => {
+      setTaskUploadProgress(previous => {
+        const next = { ...previous }
+        delete next[variables.taskId]
+        return next
+      })
+    },
+  })
+
+  const skipTask = useMutation({
+    mutationFn: ({ taskId, reason, note }) => (
+      avsApi.patch(`/avs-self-service/tasks/${taskId}/skip`, { reason, note })
+    ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['avs-tasks', avsToken] })
+      queryClient.invalidateQueries({ queryKey: ['avs-overview', avsToken] })
+    },
   })
 
   // Task 16 — Hızlı Arıza mutation (P2: foto → FormData)
@@ -171,10 +240,21 @@ export default function AvsSelfServicePage() {
       fd.append('location', faultForm.location)
       fd.append('description', faultForm.description)
       fd.append('priority', faultForm.priority)
+      fd.append('category', faultForm.category)
+      if (faultForm.block) fd.append('block', faultForm.block)
+      if (faultForm.room_id) fd.append('room_id', faultForm.room_id)
+      if (faultForm.cleaning_task_id) fd.append('cleaning_task_id', faultForm.cleaning_task_id)
       if (faultPhoto) fd.append('photo', faultPhoto)
       return avsApi.post('/avs-self-service/maintenance', fd)
     },
-    onSuccess: () => { setFaultSuccess(true); setFaultError(''); setFaultForm({ location: '', description: '', priority: 'medium' }); setFaultPhoto(null); queryClient.invalidateQueries({ queryKey: ['avs-my-maint', avsToken] }) },
+    onSuccess: (response) => {
+      setFaultSuccess(response.data)
+      setFaultError('')
+      setFaultForm(EMPTY_FAULT_FORM)
+      setFaultPhoto(null)
+      queryClient.invalidateQueries({ queryKey: ['avs-my-maint', avsToken] })
+      queryClient.invalidateQueries({ queryKey: ['avs-overview', avsToken] })
+    },
     onError: (err) => setFaultError(err.response?.data?.error || t('avs_kiosk.fault.error')),
   })
 
@@ -318,6 +398,7 @@ export default function AvsSelfServicePage() {
   // Aktif sekmenin query'si → header'daki ↻ yenileme butonu bunu refetch eder.
   // Eşlemede olmayan sekmeler (profil, hızlı arıza) için tüm aktif query'ler tazelenir.
   const TAB_QUERY = {
+    home: overviewQuery,
     shifts: shiftsQuery, transport: transportQuery, tasks: tasksQuery,
     announcements: annQuery, qr: cardsQuery, leave: leaveQuery,
     meals: menuQuery, inventory: invQuery, activity: activityQuery,
@@ -355,8 +436,21 @@ export default function AvsSelfServicePage() {
     try {
       const res = await api.post('/auth/avs-login', { worker_id: selected.id, pin: pinToUse })
       setAvsToken(res.data.token)
-      setActiveTab('shifts')
+      setActiveTab('home')
     } catch (err) { setLoginError(err.response?.data?.error || t('avs_kiosk.login_failed')) }
+  }
+
+  const openFaultFromTask = (task) => {
+    setFaultSuccess(false)
+    setFaultError('')
+    setFaultForm({
+      ...EMPTY_FAULT_FORM,
+      location: task.area || `${task.block} Kat ${task.floor}`,
+      block: task.block || '',
+      room_id: task.room_id || '',
+      cleaning_task_id: task.id,
+    })
+    setActiveTab('quick_fault')
   }
 
   // ─── Login ekranı ───────────────────────────────────────────
@@ -382,11 +476,22 @@ export default function AvsSelfServicePage() {
       <NotificationFeed open={feedOpen} onClose={() => setFeedOpen(false)} items={notifications} avsApi={avsApi} />
       <div className="mb-4 flex justify-end"><LanguageSwitcher compact /></div>
 
+      {activeTab === 'home' && <HomeTab query={overviewQuery} data={overview} onNavigate={setActiveTab} />}
+
       {activeTab === 'shifts' && <ShiftsTab query={shiftsQuery} data={shiftsData} />}
 
       {activeTab === 'transport' && <TransportTab query={transportQuery} data={transportData} />}
 
-      {activeTab === 'tasks' && <TasksTab query={tasksQuery} data={tasksData} completeTask={completeTask} />}
+      {activeTab === 'tasks' && (
+        <TasksTab
+          query={tasksQuery} data={tasksData}
+          completeTask={completeTask} skipTask={skipTask}
+          photoDrafts={taskPhotoDrafts} setPhotoDrafts={setTaskPhotoDrafts}
+          uploadProgress={taskUploadProgress}
+          onReportFault={openFaultFromTask}
+          selectedBlock={taskBlock} onSelectBlock={setTaskBlock}
+        />
+      )}
 
       {activeTab === 'announcements' && <AnnouncementsTab query={annQuery} announcements={announcements} />}
 
@@ -396,6 +501,7 @@ export default function AvsSelfServicePage() {
           faultPhoto={faultPhoto} setFaultPhoto={setFaultPhoto}
           faultSuccess={faultSuccess} setFaultSuccess={setFaultSuccess}
           faultError={faultError} submitFault={submitFault} myFaults={myFaults}
+          locationRooms={faultRoomsQuery.data?.items || []}
         />
       )}
 
@@ -448,7 +554,22 @@ export default function AvsSelfServicePage() {
       )}
 
       <BottomNav
-        tabs={TAB_KEYS
+        tabs={[...TAB_KEYS]
+          .sort((a, b) => {
+            const orders = {
+              housekeeping: ['home', 'tasks', 'quick_fault', 'shifts'],
+              technical: ['home', 'tasks', 'quick_fault', 'inventory'],
+              general: ['home', 'shifts', 'transport', 'announcements'],
+              laundry: ['home', 'tasks', 'shifts', 'inventory'],
+            }
+            const order = orders[overview?.role_group] || orders.general
+            const ai = order.indexOf(a.key)
+            const bi = order.indexOf(b.key)
+            if (ai === -1 && bi === -1) return 0
+            if (ai === -1) return 1
+            if (bi === -1) return -1
+            return ai - bi
+          })
           .filter(tb => tb.key !== 'inventory' || hasInventory)
           .map(tb => ({ key: tb.key, icon: tb.icon, label: t(tb.i18n), badge: 0 }))}
         active={activeTab} onChange={setActiveTab} moreLabel={t('avs_kiosk.nav.more')} />
