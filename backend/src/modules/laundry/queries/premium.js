@@ -1,45 +1,9 @@
 import { getDB } from '../../../shared/db/index.js'
-export function generateNextGarmentSeqQuery(prefix) {
-  const db = getDB()
-  const row = db.prepare(`SELECT COUNT(*) as cnt FROM premium_garments WHERE garment_code LIKE ?`).get(`${prefix}-%`)
-  return (row?.cnt || 0) + 1
-}
 
-export function insertPremiumGarmentsQuery(item_id, garments) {
-  const db = getDB()
-  // Oda bilgisini al (block + room_no)
-  const item = db.prepare(`
-    SELECT r.block, r.room_no FROM laundry_items li
-    JOIN rooms r ON r.id = li.room_id
-    WHERE li.id = ?
-  `).get(item_id)
-  if (!item) throw new Error('Kayıt bulunamadı')
-
-  const prefix = `${item.block}${item.room_no}`
-
-  const insert = db.prepare(`
-    INSERT INTO premium_garments(item_id, garment_code, garment_type, brand, model, size, color, pattern, condition_notes)
-    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `)
-
-  const insertMany = db.transaction((list) => {
-    const codes = []
-    for (const g of list) {
-      const seq = generateNextGarmentSeqQuery(prefix)
-      const code = `${prefix}-${String(seq).padStart(3, '0')}`
-      insert.run(
-        item_id, code,
-        g.garment_type, g.brand || null, g.model || null,
-        g.size || null, g.color || null, g.pattern || null, g.condition_notes || null
-      )
-      codes.push(code)
-    }
-    return codes
-  })
-
-  return insertMany(garments)
-}
-
+// Tekil parça üretiminin TEK yolu. Eskiden yönetim paneli ayrı bir insert
+// kullanıyordu; o yol sequence_no/requires_ironing/garment_type_id yazmadığı
+// için eklenen parçalar ütü akışına hiç girmiyordu. Sıra numarası MAX(sequence_no)
+// ile üretilir — COUNT(*) tabanlı eski yol satır silinince kod çakıştırıyordu.
 export function insertTrackedGarmentsQuery(item_id, garmentGroups, {
   source = 'kiosk',
   initialStatus = 'received',
@@ -56,8 +20,9 @@ export function insertTrackedGarmentsQuery(item_id, garmentGroups, {
   const insert = db.prepare(`
     INSERT INTO premium_garments(
       item_id, garment_code, garment_type, garment_type_id, emoji,
-      colors_json, color, pattern, sequence_no, requires_ironing, source, status
-    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+      colors_json, color, pattern, sequence_no, requires_ironing, source, status,
+      brand, model, size, condition_notes
+    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `)
   const created = []
   for (const group of garmentGroups) {
@@ -81,7 +46,12 @@ export function insertTrackedGarmentsQuery(item_id, garmentGroups, {
         sequence,
         requiresIroning ? 1 : 0,
         source,
-        initialStatus
+        initialStatus,
+        // Yönetim panelinden gelen künye alanları (kioskta boş gelir)
+        group.brand || null,
+        group.model || null,
+        group.size || null,
+        group.condition_notes || null
       )
       created.push(db.prepare('SELECT * FROM premium_garments WHERE id=?').get(result.lastInsertRowid))
     }

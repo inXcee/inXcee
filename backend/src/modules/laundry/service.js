@@ -26,7 +26,7 @@ const TRANSITIONS = {
 // ITEM CRUD
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function createItemService({ room_id, item_count, item_details, notes, urgent, photo_url, phone_override, intake_name, intake_signature, clothing_items, needs_ironing }, userId) {
+export function createItemService({ room_id, item_count, item_details, notes, urgent, photo_url, phone_override, intake_name, intake_signature, clothing_items, needs_ironing, garments }, userId) {
   if (!room_id) throw new Error('Oda seçilmeli')
   if (!item_count || item_count < 1) throw new Error('Parça adedi en az 1 olmalı')
 
@@ -35,7 +35,19 @@ export function createItemService({ room_id, item_count, item_details, notes, ur
   const room = db.prepare(`SELECT block FROM rooms WHERE id=?`).get(room_id)
   const is_premium = room ? q.isBlockPremiumQuery(room.block) : false
 
-  const id = q.insertItemQuery({ room_id, item_count, item_details, notes, urgent, photo_url, phone_override, intake_name, intake_signature, clothing_items, needs_ironing, is_premium, created_by: userId })
+  // garments[] verilirse torba kiosktakiyle aynı şekilde tekil takibe girer;
+  // verilmezse davranış aynen korunur (geriye uyum).
+  const hasGarments = Array.isArray(garments) && garments.length > 0
+
+  const id = db.transaction(() => {
+    const newId = q.insertItemQuery({
+      room_id, item_count, item_details, notes, urgent, photo_url, phone_override,
+      intake_name, intake_signature, clothing_items, needs_ironing, is_premium,
+      created_by: userId, tracking_mode: hasGarments ? 'individual' : 'legacy',
+    })
+    if (hasGarments) q.insertTrackedGarmentsQuery(newId, garments, { source: 'admin' })
+    return newId
+  }).immediate()
   q.insertHistoryQuery({ item_id: id, from_status: null, to_status: 'dirty', action_by: userId, notes: `${item_count} parça kayıt` })
 
   if (urgent) {
@@ -677,8 +689,12 @@ export function addPremiumGarmentsService(item_id, garments, userId) {
   const item = q.getItemQuery(item_id)
   if (!item) throw Object.assign(new Error('Kayıt bulunamadı'), { status: 404 })
   if (!garments?.length) throw new Error('En az bir parça gerekli')
-  const codes = q.insertPremiumGarmentsQuery(item_id, garments)
-  return { codes, garments: q.getPremiumGarmentsQuery(item_id) }
+  const db = getDB()
+  const created = db.transaction(() =>
+    q.insertTrackedGarmentsQuery(item_id, garments, { source: 'admin' })
+  ).immediate()
+  if (created.length) q.setTrackingModeIndividualQuery(item_id)
+  return { codes: created.map(g => g.garment_code), garments: q.getPremiumGarmentsQuery(item_id) }
 }
 
 export function getPremiumGarmentsService(item_id) {

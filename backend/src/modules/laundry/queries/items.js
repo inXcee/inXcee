@@ -251,6 +251,15 @@ export function updateItemStatusQuery(id, status, extra = {}) {
   db.prepare(`UPDATE laundry_items SET ${sets.join(', ')} WHERE id = ?`).run(...vals)
 }
 
+// Torbaya sonradan tekil parça eklenince bireysel takibe geçir (kioskta bu
+// insert anında yazılır; yönetim panelinden ekleme sonradan olabiliyor).
+export function setTrackingModeIndividualQuery(itemId) {
+  getDB().prepare(`
+    UPDATE laundry_items SET tracking_mode='individual', updated_at=datetime('now')
+    WHERE id=? AND tracking_mode<>'individual'
+  `).run(itemId)
+}
+
 // "Rafta hazır" WhatsApp'ı gönderildi damgası. Yalnızca NULL iken yazar ve
 // changes>0 döner — eşzamanlı iki istek gelse bile tek gönderim garanti olur.
 export function markReadyNotifiedQuery(id) {

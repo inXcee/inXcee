@@ -55,7 +55,7 @@ describe('Laundry queries', () => {
   })
 
   it('listItemsQuery returns premium_garment_count field', async () => {
-    const { listItemsQuery, insertItemQuery, insertPremiumGarmentsQuery } = await import('./queries.js')
+    const { listItemsQuery, insertItemQuery, insertTrackedGarmentsQuery } = await import('./queries.js')
 
     // Insert a new item
     const itemId = insertItemQuery({ room_id: 1, item_count: 1, intake_name: 'PremTest' })
@@ -67,7 +67,7 @@ describe('Laundry queries', () => {
     expect(before.premium_garment_count).toBe(0)
 
     // After adding a premium garment: count should be 1
-    insertPremiumGarmentsQuery(itemId, [{ garment_type: 'Pantolon', brand: null, model: null, size: null, color: null, pattern: null, condition_notes: null }])
+    insertTrackedGarmentsQuery(itemId, [{ garment_type: 'Pantolon' }], { source: 'admin' })
     items = listItemsQuery({ status: 'dirty' })
     const after = items.find(i => i.id === itemId)
     expect(after.premium_garment_count).toBe(1)
@@ -282,7 +282,7 @@ describe('Laundry queries', () => {
     const found = detail.premium_items.find(p => p.item_id === item.id)
     expect(found).toBeTruthy()
     expect(found.garments).toHaveLength(2)
-    expect(found.garments[0].garment_code).toMatch(/^B[0-9]+-001$/)
+    expect(found.garments[0].garment_code).toBe(`G${item.id}-01`)
     expect(found.garments[0].garment_type).toBe('Gömlek')
   })
 
@@ -1022,25 +1022,44 @@ describe('premium garment CRUD', () => {
     }
   })
 
-  test('insertPremiumGarmentsQuery — 3 parça, A*-001/002/003 kodları üretilir', () => {
+  test('yönetim panelinden 3 parça — kiosk ile aynı G{item}-NN kodları üretilir', () => {
     if (!premiumItemId) return
-    const { codes } = addPremiumGarmentsService(premiumItemId, [
+    const { codes, garments } = addPremiumGarmentsService(premiumItemId, [
       { garment_type: 'Gömlek', brand: 'Polo', size: 'L', color: 'Beyaz' },
       { garment_type: 'Pantolon', brand: 'Levi\'s', size: '32' },
       { garment_type: 'T-Shirt' },
     ], adminUser.id)
-    expect(codes).toHaveLength(3)
-    expect(codes[0]).toMatch(/-001$/)
-    expect(codes[1]).toMatch(/-002$/)
-    expect(codes[2]).toMatch(/-003$/)
+    expect(codes).toEqual([
+      `G${premiumItemId}-01`, `G${premiumItemId}-02`, `G${premiumItemId}-03`,
+    ])
+    // Künye alanları korunur ve satırlar sequence_no alır (ütü akışının şartı)
+    const first = garments.find(g => g.garment_code === codes[0])
+    expect(first).toMatchObject({ brand: 'Polo', size: 'L', sequence_no: 1, source: 'admin' })
+    // Torba tekil takibe geçer — eskiden 'legacy' kalıyordu
+    expect(getDB().prepare('SELECT tracking_mode FROM laundry_items WHERE id=?').get(premiumItemId).tracking_mode)
+      .toBe('individual')
   })
 
-  test('aynı item\'a 2. ekleme yapılınca numara 004\'ten devam eder', () => {
+  test('aynı item\'a 2. ekleme MAX(sequence_no) üzerinden devam eder', () => {
     if (!premiumItemId) return
     const { codes } = addPremiumGarmentsService(premiumItemId, [
       { garment_type: 'Kazak' },
     ], adminUser.id)
-    expect(codes[0]).toMatch(/-004$/)
+    expect(codes[0]).toBe(`G${premiumItemId}-04`)
+  })
+
+  // ARADAN satır silinince COUNT(*) tabanlı eski sıra üretimi mevcut bir kodu
+  // tekrar üretiyordu (UNIQUE ihlali). MAX(sequence_no) bunu yapmaz.
+  test('aradan satır silinince kod çakışmaz', () => {
+    if (!premiumItemId) return
+    const db = getDB()
+    const rows = db.prepare('SELECT id, sequence_no FROM premium_garments WHERE item_id=? ORDER BY sequence_no').all(premiumItemId)
+    expect(rows.length).toBeGreaterThan(2)
+    db.prepare('DELETE FROM premium_garments WHERE id=?').run(rows[1].id)
+    const maxSeq = Math.max(...rows.map(r => r.sequence_no))
+
+    const { codes } = addPremiumGarmentsService(premiumItemId, [{ garment_type: 'Mont' }], adminUser.id)
+    expect(codes[0]).toBe(`G${premiumItemId}-${String(maxSeq + 1).padStart(2, '0')}`)
   })
 
   test('M1 bloğu için de garment eklenebilir (is_premium zorunlu değil)', () => {
