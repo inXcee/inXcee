@@ -16,6 +16,8 @@ import {
   insertTrackedGarmentsQuery, getPremiumGarmentsQuery,
   getGarmentProgressQuery, getGarmentWithItemQuery, setGarmentIroningQuery,
   insertGarmentExceptionQuery,
+  upsertArchiveGarmentsQuery, getRoomWardrobeQuery, listArchiveBrandsQuery,
+  deleteArchiveGarmentQuery,
 } from '../laundry/queries.js'
 import { advanceItemService, batchAssignService, lostItemService, deleteItemService, deliverItemService, maintenanceDoneService, markFoundService, getItemService, getMachineDailyRunsService, getOperatorSummaryService } from '../laundry/service.js'
 import { sendFoundMessage } from '../laundry/whatsapp.js'
@@ -45,6 +47,13 @@ function laundryActor(req) {
   return req.laundryOperator?.type === 'user'
     ? { userId: req.laundryOperator.id, workerId: null, name: req.laundryOperator.name }
     : { userId: null, workerId: req.laundryOperator?.id || req.user.workerId, name: req.laundryOperator?.name }
+}
+
+function safeJsonArray(raw) {
+  try {
+    const parsed = JSON.parse(raw || '[]')
+    return Array.isArray(parsed) ? parsed : []
+  } catch { return [] }
 }
 
 function removeLaundryUpload(req) {
@@ -483,6 +492,41 @@ selfServiceRouter.get('/laundry-kiosk/room-history', requireLaundryKioskOperator
   } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
+// Odanın kıyafet dolabı — daha önce görülmüş parçalar. Yeni girişte tek
+// dokunuşla geri eklenir; marka/beden tekrar yazılmaz.
+selfServiceRouter.get('/laundry-kiosk/room-wardrobe', requireLaundryKioskOperator, (req, res) => {
+  const { block, room_no, owner_name, limit } = req.query
+  if (!block || !room_no) return res.status(400).json({ error: 'block ve room_no gerekli' })
+  try {
+    const rows = getRoomWardrobeQuery(block, room_no, {
+      ownerName: owner_name ? String(owner_name) : null,
+      limit: limit ? Number(limit) : 24,
+    })
+    res.json(rows.map(row => ({
+      ...row,
+      colors: safeJsonArray(row.colors_json),
+    })))
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Marka önerileri — operatör markayı baştan yazmasın.
+selfServiceRouter.get('/laundry-kiosk/brands', requireLaundryKioskOperator, (req, res) => {
+  try {
+    res.json(listArchiveBrandsQuery(req.query.q || '', 12))
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Dolaptan kaldır — kişi taşındı ya da kıyafet artık gelmiyor.
+selfServiceRouter.delete('/laundry-kiosk/wardrobe/:id', requireLaundryKioskOperator, (req, res) => {
+  const id = Number(req.params.id)
+  if (!Number.isInteger(id)) return res.status(404).json({ error: 'Kayıt bulunamadı' })
+  try {
+    if (!deleteArchiveGarmentQuery(id)) return res.status(404).json({ error: 'Kayıt bulunamadı' })
+    auditLaundryKiosk(getDB(), req, 'laundry_kiosk_wardrobe_delete', id, {})
+    res.json({ ok: true })
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
 selfServiceRouter.get('/laundry-kiosk/block-room-counts', requireLaundryKioskOperator, (req, res) => {
   const { block } = req.query
   if (!block) return res.status(400).json({ error: 'block gerekli' })
@@ -584,6 +628,15 @@ selfServiceRouter.post('/laundry-kiosk/bag', requireLaundryKioskOperator, upload
       const tracked = hasGarments
         ? insertTrackedGarmentsQuery(id, garments, { source: 'kiosk' })
         : []
+      // Odanın dolabını güncelle — bir dahaki girişte tek dokunuşla geri eklensin.
+      // Arşiv yan üründür: hatası torba girişini düşürmemeli.
+      if (hasGarments) {
+        try {
+          upsertArchiveGarmentsQuery(room.id, intake_name || null, garments)
+        } catch (archiveError) {
+          logger.warn('[kiosk/bag] arşiv güncellenemedi: ' + archiveError.message)
+        }
+      }
       const needsIroning = tracked.some(garment => garment.requires_ironing === 1)
       db.prepare('UPDATE laundry_items SET needs_ironing=? WHERE id=?')
         .run(needsIroning ? 1 : 0, id)

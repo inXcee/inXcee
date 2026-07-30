@@ -1,5 +1,12 @@
 import { getDB } from '../../../shared/db/index.js'
 
+// Tür politikasından ütü varsayılanı. 'never' dışındaki her şey ütü açıktır:
+// 'ask' türler için sessizce "ütü gerekmiyor" demek, ütülenmesi gereken
+// kıyafetin ütüsüz teslim edilmesine yol açıyordu (bkz. migration 072).
+export function resolveIroningPolicy(policy) {
+  return policy !== 'never'
+}
+
 // Tekil parça üretiminin TEK yolu. Eskiden yönetim paneli ayrı bir insert
 // kullanıyordu; o yol sequence_no/requires_ironing/garment_type_id yazmadığı
 // için eklenen parçalar ütü akışına hiç girmiyordu. Sıra numarası MAX(sequence_no)
@@ -9,9 +16,9 @@ export function insertTrackedGarmentsQuery(item_id, garmentGroups, {
   initialStatus = 'received',
 } = {}) {
   const db = getDB()
-  const defaults = new Map(
-    db.prepare('SELECT id, default_requires_ironing FROM laundry_garment_types').all()
-      .map(row => [row.id, row.default_requires_ironing === 1])
+  const policies = new Map(
+    db.prepare('SELECT id, ironing_policy FROM laundry_garment_types').all()
+      .map(row => [row.id, row.ironing_policy])
   )
   const current = db.prepare(
     'SELECT COALESCE(MAX(sequence_no), 0) AS max_sequence FROM premium_garments WHERE item_id=?'
@@ -28,8 +35,10 @@ export function insertTrackedGarmentsQuery(item_id, garmentGroups, {
   for (const group of garmentGroups) {
     const count = Math.min(99, Math.max(1, Number(group.count) || 1))
     const typeId = Number(group.type_id) || null
+    // İstemci açıkça söylediyse ona uy; söylemediyse tür politikası karar verir.
+    // 'ask' (belirtilmemiş) ÜTÜ AÇIK demektir — eksik ütü, fazladan ütüden kötü.
     const requiresIroning = group.requires_ironing === undefined
-      ? Boolean(typeId && defaults.get(typeId))
+      ? resolveIroningPolicy(policies.get(typeId))
       : Boolean(group.requires_ironing)
     for (let copy = 0; copy < count; copy++) {
       sequence += 1
