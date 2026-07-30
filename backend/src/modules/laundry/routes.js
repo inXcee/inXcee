@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { unlinkSync } from 'node:fs'
 import { requireRole } from '../../shared/auth/middleware.js'
-import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
+import { createImageUpload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import * as svc from './service.js'
 import { collectItemQuery, listGarmentTypesQuery, insertGarmentTypeQuery, updateGarmentTypeQuery, reorderGarmentTypesQuery } from './queries.js'
@@ -17,6 +17,10 @@ export const laundryRouter = Router()
 const laundryFull = requireRole('laundry', 'campus_manager')
 const laundryRead = requireRole('laundry', 'shift_supervisor', 'campus_manager')
 const slaWrite    = requireRole('laundry', 'campus_manager')
+
+// `laundry-` öneki gecelik yetim dosya temizliğinin dosyaları hangi modüle ait
+// olduğunu anlamasını sağlar (bkz. photo-retention.js).
+const upload = createImageUpload('laundry')
 
 function removeUploadedPhoto(req) {
   if (!req.file?.path) return

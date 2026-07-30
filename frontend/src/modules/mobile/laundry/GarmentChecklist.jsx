@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import mobileApi from '../auth/mobileApi.js'
+import { downscalePhotoFile } from '../../../shared/photo.js'
 
 const REASONS = [
   ['missing', 'Eksik'],
@@ -82,7 +83,8 @@ export default function GarmentChecklist({ item, onClose, onChanged }) {
     const form = new FormData()
     form.append('reason', reason)
     form.append('note', note)
-    if (photo) form.append('photo', photo)
+    // Ham kamera dosyası 3-8 MB olabiliyor; sahada mobil veriyle yüklenmesi için küçültülür.
+    if (photo) form.append('photo', await downscalePhotoFile(photo), 'istisna.jpg')
     try {
       const response = await mobileApi.post(
         `/laundry/items/${item.id}/garments/${exception.id}/exception`,

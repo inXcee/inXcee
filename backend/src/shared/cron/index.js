@@ -24,6 +24,7 @@ import { cleanupWaterFiles } from '../../modules/water/file-lifecycle.js'
 import { captureError } from '../sentry.js'
 import { reconcileAttendanceService } from '../../modules/shifts/service.js'
 import { cleanupHousekeepingPhotos } from '../../modules/housekeeping/photo-retention.js'
+import { cleanupLaundryPhotos } from '../../modules/laundry/photo-retention.js'
 import { notifyUpcomingTrips } from '../../modules/transport/notifications.js'
 
 let emailJob = null
@@ -285,6 +286,16 @@ export function startCronJobs() {
       }
       if (housekeepingPhotos.errors.length) {
         logger.warn(`[Cron] Temizlik fotoğraf temizliği ${housekeepingPhotos.errors.length} dosyada tamamlanamadı`)
+      }
+      // Çamaşır: yalnızca yetim (hiçbir kayıttan referans verilmeyen) laundry-* dosyaları
+      const laundryPhotos = cleanupLaundryPhotos()
+      if (laundryPhotos.orphan_files_deleted) {
+        logger.info(`[Cron] Çamaşır fotoğraf temizliği: ${laundryPhotos.orphan_files_deleted} yetim dosya`)
+        logAudit(null, 'photo_retention_cleanup', 'laundry', null,
+          `${laundryPhotos.retention_days} gün; yetim:${laundryPhotos.orphan_files_deleted}`)
+      }
+      if (laundryPhotos.errors.length) {
+        logger.warn(`[Cron] Çamaşır fotoğraf temizliği ${laundryPhotos.errors.length} dosyada tamamlanamadı`)
       }
     } catch (e) { logger.error('[Cron] Temizleme hatası:', e.message) }
   }), TZ)

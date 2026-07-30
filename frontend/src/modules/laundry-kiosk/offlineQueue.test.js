@@ -1,9 +1,13 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { listQueued, enqueueBag, removeQueuedAt, buildBagFormData, dataUrlToBlob, flushQueue } from './offlineQueue.js'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import {
+  listQueued, enqueueBag, removeQueuedAt, buildBagFormData, dataUrlToBlob, flushQueue,
+  MAX_QUEUE, QUEUE_TTL_MS,
+} from './offlineQueue.js'
 
 const TINY_JPEG = 'data:image/jpeg;base64,/9j/4AAQSkZJRg=='
 
 beforeEach(() => localStorage.clear())
+afterEach(() => vi.restoreAllMocks())
 
 describe('offlineQueue temel', () => {
   it('enqueue/list/remove döngüsü', () => {
@@ -21,6 +25,48 @@ describe('offlineQueue temel', () => {
   it('bozuk localStorage boş liste döner', () => {
     localStorage.setItem('kiosk-offline-bags', 'bozuk{json')
     expect(listQueued()).toEqual([])
+  })
+})
+
+describe('offlineQueue — hassas veri kuyruğa girmez', () => {
+  it('fotoğraf kuyruğa alınmaz', () => {
+    enqueueBag({ payload: { block: 'M1' }, photoDataUrl: TINY_JPEG, label: 'a' })
+    expect(listQueued()[0].photoDataUrl).toBeUndefined()
+  })
+
+  it('imza payload içinden temizlenir', () => {
+    enqueueBag({ payload: { block: 'M1', intake_signature: 'data:image/png;base64,AAA' }, label: 'a' })
+    expect(listQueued()[0].payload.intake_signature).toBeUndefined()
+    expect(listQueued()[0].payload.block).toBe('M1')
+  })
+})
+
+describe('offlineQueue — TTL ve limit', () => {
+  it('24 saatten eski kayıtlar okunurken elenir', () => {
+    const eski = new Date(Date.now() - QUEUE_TTL_MS - 60_000).toISOString()
+    const yeni = new Date().toISOString()
+    localStorage.setItem('kiosk-offline-bags', JSON.stringify([
+      { payload: { block: 'ESKI' }, label: 'eski', queued_at: eski },
+      { payload: { block: 'YENI' }, label: 'yeni', queued_at: yeni },
+    ]))
+    const q = listQueued()
+    expect(q).toHaveLength(1)
+    expect(q[0].payload.block).toBe('YENI')
+  })
+
+  it('kuyruk dolduğunda açık hata verir, en eskiyi sessizce atmaz', () => {
+    for (let i = 0; i < MAX_QUEUE; i++) enqueueBag({ payload: { block: `B${i}` }, label: `l${i}` })
+    expect(listQueued()).toHaveLength(MAX_QUEUE)
+    expect(() => enqueueBag({ payload: { block: 'TASAN' }, label: 'tasan' })).toThrow(/dolu/i)
+    expect(listQueued()).toHaveLength(MAX_QUEUE)
+    expect(listQueued()[0].payload.block).toBe('B0') // en eski korundu
+  })
+
+  it('localStorage kotası dolarsa hata yüzeye çıkar', () => {
+    vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+      throw new DOMException('quota', 'QuotaExceededError')
+    })
+    expect(() => enqueueBag({ payload: { block: 'M1' }, label: 'a' })).toThrow(/kaydedilemedi/i)
   })
 })
 

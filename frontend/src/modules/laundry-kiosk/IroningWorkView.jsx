@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
+import { downscalePhotoFile } from '../../shared/photo.js'
 
 const REASONS = [
   ['missing', 'Eksik', '🔎'],
@@ -127,7 +128,8 @@ export default function IroningWorkView({ kioskApi, focusedBag, onConsumeFocus }
     const form = new FormData()
     form.append('reason', exception.reason)
     if (exception.note.trim()) form.append('note', exception.note.trim())
-    if (exception.photo) form.append('photo', exception.photo)
+    // Ham kamera dosyası 3-8 MB olabiliyor; sahada mobil veriyle yüklenmesi için küçültülür.
+    if (exception.photo) form.append('photo', await downscalePhotoFile(exception.photo), 'istisna.jpg')
     setError('')
     try {
       const response = await kioskApi.post(

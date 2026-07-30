@@ -4,6 +4,7 @@ import { createNotification } from '../../shared/notifications/service.js'
 import { EVENT_KINDS } from '../../shared/notifications/events.js'
 import { logAudit } from '../../shared/audit.js'
 import { notifyItemReady } from './whatsapp.js'
+import { removeLaundryPhotoFile } from './photo-retention.js'
 
 // Dashboard özeti (laundry rolü) — saf okuma.
 export function getLaundrySummaryService() {
@@ -424,9 +425,21 @@ export function deleteItemService(id, userId) {
   if (!item) throw new Error('Kayıt bulunamadı')
   if (item.status !== 'dirty') throw new Error('Sadece sepetteki kayıtlar silinebilir')
 
+  // Silmeden ÖNCE topla: satırlar cascade ile gidince URL'lere ulaşılamaz.
+  const db = getDB()
+  const photoUrls = [
+    item.photo_url,
+    ...db.prepare('SELECT photo_url FROM laundry_garment_exceptions WHERE item_id=? AND photo_url IS NOT NULL')
+      .all(id).map(row => row.photo_url),
+    ...db.prepare('SELECT photo_url FROM laundry_damages WHERE item_id=? AND photo_url IS NOT NULL')
+      .all(id).map(row => row.photo_url),
+  ].filter(Boolean)
+
   q.removeItemFromQueueQuery(id)
   const deleted = q.deleteItemQuery(id)
   if (!deleted) throw new Error('Silme işlemi başarısız')
+  // Dosya silme DB'den sonra: silme başarısız olursa dosya boşuna gitmesin.
+  photoUrls.forEach(url => removeLaundryPhotoFile(url))
   logAudit(userId, 'laundry_delete', 'laundry', id, '')
 }
 

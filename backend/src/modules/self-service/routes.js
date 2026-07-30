@@ -19,11 +19,15 @@ import {
 } from '../laundry/queries.js'
 import { advanceItemService, batchAssignService, lostItemService, deleteItemService, deliverItemService, maintenanceDoneService, markFoundService, getItemService, getMachineDailyRunsService, getOperatorSummaryService } from '../laundry/service.js'
 import { sendFoundMessage } from '../laundry/whatsapp.js'
-import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
+import { createImageUpload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { logger } from '../../shared/logger.js'
 import { getStaffTransport } from '../transport/self-service.js'
 
 export const selfServiceRouter = Router()
+
+// `laundry-` öneki gecelik yetim dosya temizliğinin dosyaları hangi modüle ait
+// olduğunu anlamasını sağlar (bkz. laundry/photo-retention.js).
+const upload = createImageUpload('laundry')
 
 // Az önce atılan history satırına kiosk operatörünü damgala (operatör
 // performans kırılımı için). 5 sn guard'ı: history yazmayan bir aksiyonda

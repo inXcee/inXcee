@@ -251,14 +251,19 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
       })
     } catch (e) {
       if (!e.response) {
-        // Ağ yok — kuyruğa al, bağlantı gelince otomatik gönderilir
-        const n = enqueueBag({
-          payload,
-          photoDataUrl,
-          label: `${selection.block}-${selection.room_no} · ${derivedItemCount} parça`,
-        })
-        setQueuedCount(n)
-        setSuccess({ queued: true })
+        // Ağ yok — kuyruğa al, bağlantı gelince otomatik gönderilir.
+        // Fotoğraf ve imza kuyruğa GİRMEZ (localStorage şifresiz, cihaz paylaşımlı);
+        // kuyruk dolu/kota hatasında enqueueBag throw eder — form sıfırlanmaz, hata gösterilir.
+        try {
+          const n = enqueueBag({
+            payload,
+            label: `${selection.block}-${selection.room_no} · ${derivedItemCount} parça`,
+          })
+          setQueuedCount(n)
+          setSuccess({ queued: true, droppedPhoto: !!photoDataUrl, droppedSignature: !!sig })
+        } catch (queueErr) {
+          setError(queueErr.message)
+        }
       } else {
         setError(e.response?.data?.error || 'Hata oluştu')
       }
@@ -274,6 +279,12 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
         <div style={{ color: success.queued ? '#fbbf24' : '#4ade80', fontWeight: 700, fontSize: 18 }}>
           {success.queued ? 'İnternet yok — giriş kuyruğa alındı' : 'Torba kaydedildi!'}
         </div>
+        {success.queued && (success.droppedPhoto || success.droppedSignature) && (
+          <div style={{ color: '#fbbf24', fontSize: 12, marginTop: 6 }}>
+            ⚠ {[success.droppedPhoto && 'Fotoğraf', success.droppedSignature && 'İmza'].filter(Boolean).join(' ve ')} çevrimdışı
+            kuyruğa alınmadı — bağlantı gelince kayda ekleyin.
+          </div>
+        )}
         {success.queued && (
           <div style={{ color: '#94a3b8', fontSize: 13 }}>
             Bağlantı gelince otomatik gönderilecek ({queuedCount} bekleyen)

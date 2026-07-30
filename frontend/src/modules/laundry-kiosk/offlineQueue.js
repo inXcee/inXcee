@@ -2,20 +2,47 @@
 // girişleri localStorage'a alınır, bağlantı gelince sırayla gönderilir.
 // Sadece GİRİŞ kuyruklanır (yeni kayıt, çakışma riski yok); durum geçişleri
 // kuyruklanmaz (bayat veriyle yanlış geçiş riskli).
+//
+// GÜVENLİK: fotoğraf ve imza kuyruğa ALINMAZ. localStorage şifresizdir ve
+// kiosk cihazı paylaşımlıdır; hassas veri hiç diske yazılmasın diye çevrimdışı
+// girişte bu alanlar toplanmaz (bkz. EntryForm çevrimdışı uyarısı).
 const KEY = 'kiosk-offline-bags'
 
-export function listQueued() {
+export const MAX_QUEUE = 20
+export const QUEUE_TTL_MS = 24 * 60 * 60 * 1000
+
+function readRaw() {
   try { return JSON.parse(localStorage.getItem(KEY) || '[]') } catch { return [] }
 }
 
-function save(q) {
-  try { localStorage.setItem(KEY, JSON.stringify(q)) } catch { /* dolu — sessiz */ }
+// Okurken TTL uygulanır: bayat giriş sunucuya gitmesin (oda/kişi değişmiş olabilir).
+export function listQueued() {
+  const cutoff = Date.now() - QUEUE_TTL_MS
+  return readRaw().filter(entry => {
+    const at = Date.parse(entry?.queued_at || '')
+    return Number.isFinite(at) ? at >= cutoff : false
+  })
 }
 
-// entry: { payload: {...json alanları}, photoDataUrl?: 'data:image/jpeg;base64,...', label: 'M1-205 · 3 parça' }
+// Kota hatası YUTULMAZ — sessiz veri kaybı yerine çağıran kullanıcıya gösterir.
+function save(q) {
+  try {
+    localStorage.setItem(KEY, JSON.stringify(q))
+  } catch {
+    throw new Error('Çevrimdışı kayıt kaydedilemedi — cihaz depolaması dolu')
+  }
+}
+
+// entry: { payload: {...json alanları}, label: 'M1-205 · 3 parça' }
+// photoDataUrl ve payload.intake_signature bilerek atılır (yukarıdaki güvenlik notu).
 export function enqueueBag(entry) {
   const q = listQueued()
-  q.push({ ...entry, queued_at: new Date().toISOString() })
+  if (q.length >= MAX_QUEUE) {
+    throw new Error(`Çevrimdışı kuyruk dolu (${MAX_QUEUE} kayıt) — bağlantı gelince gönderin`)
+  }
+  const { photoDataUrl, payload = {}, ...rest } = entry
+  const { intake_signature, ...safePayload } = payload
+  q.push({ ...rest, payload: safePayload, queued_at: new Date().toISOString() })
   save(q)
   return q.length
 }
@@ -36,7 +63,8 @@ export function dataUrlToBlob(dataUrl) {
   return new Blob([bytes], { type: mime })
 }
 
-// JSON alanlarını FormData'ya çevirir (objeler JSON string olur — backend parse eder)
+// JSON alanlarını FormData'ya çevirir (objeler JSON string olur — backend parse eder).
+// photoDataUrl yalnızca ÇEVRİMİÇİ gönderimde kullanılır; kuyruktan gelen kayıtta olmaz.
 export function buildBagFormData(payload, photoDataUrl) {
   const fd = new FormData()
   for (const [k, v] of Object.entries(payload)) {
@@ -56,7 +84,7 @@ export async function flushQueue(postFn) {
   let i = 0
   for (; i < q.length; i++) {
     try {
-      await postFn(buildBagFormData(q[i].payload, q[i].photoDataUrl))
+      await postFn(buildBagFormData(q[i].payload))
       sent++
     } catch (err) {
       if (!err?.response) break // ağ yok — bu ve sonrakiler kuyrukta kalır

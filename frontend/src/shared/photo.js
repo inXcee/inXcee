@@ -18,6 +18,18 @@ export function downscalePhoto(file, maxDim = 1280, quality = 0.75) {
   })
 }
 
+// Dosya seçiciden gelen File'ı küçültülmüş JPEG Blob'a çevirir — FormData'ya
+// doğrudan eklenebilir. Küçültme başarısızsa ham dosyayla devam eder (yükleme
+// büyük olur ama kullanıcı istisna kaydını kaybetmez).
+export async function downscalePhotoFile(file, maxDim = 1280, quality = 0.75) {
+  if (!file) return null
+  try {
+    return dataUrlToBlob(await downscalePhoto(file, maxDim, quality))
+  } catch {
+    return file
+  }
+}
+
 export function dataUrlToBlob(dataUrl) {
   const [head, b64] = dataUrl.split(',')
   const mime = (head.match(/data:(.*?);/) || [])[1] || 'image/jpeg'
