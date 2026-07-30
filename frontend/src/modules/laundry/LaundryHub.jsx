@@ -438,7 +438,8 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
       <SlaAlert violations={violations} preWarnings={preWarnings} />
 
       {/* ── KPI STRIP ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 8, marginBottom: 16 }}>
+      {/* 6 sabit sütun 360-412px ekranlarda yatay taşma yapıyordu — auto-fit ile sarılır */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, marginBottom: 16 }}>
         {[
           { label: 'Sepette',      value: counts.dirty,                         color: 'var(--accent)', sub: activeTotal > 0 ? (counts.dirty / activeTotal) * 100 : 0 },
           { label: 'Yıkaniyor',    value: counts.washing,                       color: 'var(--blue)',   sub: activeTotal > 0 ? (counts.washing / activeTotal) * 100 : 0 },
@@ -689,7 +690,7 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                 {lost.map(item => (
                   <div key={item.id} style={{
-                    flex: '0 0 calc(33% - 6px)', minWidth: 200,
+                    flex: '1 1 200px', maxWidth: '100%',
                     background: 'var(--surface)', border: '1px solid rgba(231,76,60,0.25)',
                     borderTop: '2px solid var(--red)', borderRadius: 8, padding: '10px 12px',
                   }}>

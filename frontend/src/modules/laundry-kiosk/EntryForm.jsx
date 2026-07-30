@@ -4,6 +4,7 @@ import RoomGridPicker from './RoomGridPicker.jsx'
 import QuickGarmentInput from './QuickGarmentInput.jsx'
 import { blockNeedsSignature } from './constants.js'
 import { listQueued, enqueueBag, flushQueue, buildBagFormData } from './offlineQueue.js'
+import { listRecentRooms, rememberRoom } from './recentRooms.js'
 import { downscalePhoto } from '../../shared/photo.js'
 
 function newRequestId() {
@@ -83,14 +84,23 @@ const btnStyle = (bg, color = '#fff', disabled = false) => ({
   fontWeight: 700, fontSize: 15, cursor: disabled ? 'default' : 'pointer',
 })
 
+const STEPS = [
+  { number: 1, title: 'Oda ve kişi', description: 'Son kullanılan odalardan seç ya da ızgaradan bul' },
+  { number: 2, title: 'Kıyafetleri ekle', description: 'Kartlara dokun veya “3 mavi gömlek” yaz' },
+  { number: 3, title: 'Kontrol ve kaydet', description: 'Fotoğraf, acil ve imza' },
+]
+
 export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
   const sigRef = useRef(null)
   const [selection, setSelection] = useState({ block: null, room_no: null, person: null })
+  const [step, setStep] = useState(1)
+  const [recentRooms, setRecentRooms] = useState(listRecentRooms)
 
   // focusedRoom ile gelirse otomatik seçili hale getir (Odalar tab'ından gelince)
   useEffect(() => {
     if (focusedRoom && focusedRoom.block && focusedRoom.room_no) {
       setSelection({ block: focusedRoom.block, room_no: String(focusedRoom.room_no), person: null })
+      setStep(2) // oda zaten belli — operatörü doğrudan kıyafet adımına al
       onConsumeFocus?.()
     }
   }, [focusedRoom])  // eslint-disable-line react-hooks/exhaustive-deps
@@ -124,6 +134,15 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
     window.addEventListener('online', tryFlush)
     return () => window.removeEventListener('online', tryFlush)
   }, [tryFlush])
+
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine)
+  useEffect(() => {
+    const on = () => setIsOnline(true)
+    const off = () => setIsOnline(false)
+    window.addEventListener('online', on)
+    window.addEventListener('offline', off)
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
+  }, [])
   const [activeByPerson, setActiveByPerson] = useState([]) // [{ name, count, statuses }]
 
   // Oda seçilince son torbanın kıyafet listesini hazırla — "↺ kopyala" için.
@@ -194,6 +213,23 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
     derivedItemCount > 0
   )
 
+  // Adım geçiş kuralları — her adımın kendi şartı var, "İleri" o şart
+  // sağlanmadan açılmaz (eskiden hepsi tek sayfadaydı, hata ancak kaydette çıkıyordu).
+  const stepReady = {
+    1: Boolean(selection.block && selection.room_no),
+    2: derivedItemCount > 0,
+    3: true,
+  }
+
+  function goNext() {
+    if (!stepReady[step]) {
+      setError(step === 1 ? 'Blok ve oda seçin' : 'Kıyafet ekleyin veya parça sayısını işaretleyin')
+      return
+    }
+    setError('')
+    setStep(s => Math.min(3, s + 1))
+  }
+
   // keepBlock: ardışık girişte aynı bloktan devam — operatör blok seçimini tekrarlamaz
   function resetAll(keepBlock = false) {
     setSelection({ block: keepBlock ? selection.block : null, room_no: null, person: null })
@@ -203,6 +239,7 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
     setError('')
     setSuccess(null)
     setPhotoDataUrl(null)
+    setStep(1)
     sigRef.current?.clear()
   }
 
@@ -244,6 +281,7 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
     setSubmitting(true)
     try {
       const res = await kioskApi.post('/self-service/laundry-kiosk/bag', buildBagFormData(payload, photoDataUrl))
+      setRecentRooms(rememberRoom(selection))
       setSuccess({
         bag_no: res.data.bag_no,
         garments: res.data.garments || [],
@@ -260,6 +298,7 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
             label: `${selection.block}-${selection.room_no} · ${derivedItemCount} parça`,
           })
           setQueuedCount(n)
+          setRecentRooms(rememberRoom(selection))
           setSuccess({ queued: true, droppedPhoto: !!photoDataUrl, droppedSignature: !!sig })
         } catch (queueErr) {
           setError(queueErr.message)
@@ -353,13 +392,41 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
       )}
       {flushMsg && <div style={{ color: '#4ade80', fontSize: 13 }}>{flushMsg}</div>}
 
-      <StepHeader number="1" title="Oda ve kişi" description="Son kullanılan oda ve sakinlerden seçin" />
-      {/* 1. Room/Person */}
-      <RoomGridPicker value={selection} onChange={setSelection} kioskApi={kioskApi} />
+      <StepProgress steps={STEPS} current={step} />
+      <StepHeader
+        number={String(step)}
+        title={STEPS[step - 1].title}
+        description={step === 3 ? `${derivedItemCount} parça · fotoğraf, acil ve imza` : STEPS[step - 1].description}
+      />
+
+      {/* ── ADIM 1: Oda ve kişi ── */}
+      {step === 1 && recentRooms.length > 0 && (
+        <div>
+          <label style={lbl}>Son kullanılan odalar</label>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {recentRooms.map(r => {
+              const active = selection.block === r.block && selection.room_no === r.room_no
+              return (
+                <button key={`${r.block}-${r.room_no}`} type="button"
+                  onClick={() => setSelection({ block: r.block, room_no: r.room_no, person: null })}
+                  style={{
+                    padding: '10px 14px', borderRadius: 10, cursor: 'pointer',
+                    border: `1px solid ${active ? '#3b82f6' : '#334155'}`,
+                    background: active ? 'rgba(29,78,216,0.18)' : '#1e293b',
+                    color: active ? '#93c5fd' : '#cbd5e1', fontSize: 13, fontWeight: 700,
+                  }}>
+                  {r.block}-{r.room_no}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+      {step === 1 && <RoomGridPicker value={selection} onChange={setSelection} kioskApi={kioskApi} />}
 
       {/* Kişi bazlı içeride-torba kırılımı — mükerrer girişi ve "torbam nerede"
           karışıklığını önler */}
-      {activeByPerson.length > 0 && (
+      {step === 1 && activeByPerson.length > 0 && (
         <div style={{
           background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.25)',
           borderRadius: 10, padding: '10px 14px',
@@ -384,9 +451,12 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
         </div>
       )}
 
-      {/* 2. Garments */}
+      {/* ── ADIM 2: Kıyafetler ── */}
+      {step === 2 && (
       <div>
-        <StepHeader number="2" title="Kıyafetleri ekle" description="Kartlara dokun veya “3 mavi gömlek” yaz" />
+        <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 10 }}>
+          📍 {selection.block}-{selection.room_no}{selection.person?.full_name ? ` · ${selection.person.full_name}` : ''}
+        </div>
         {lastBagGarments && garmentState.garments.length === 0 && (
           <button type="button"
             onClick={() => setGarmentState(s => ({ ...s, garments: lastBagGarments.garments }))}
@@ -400,9 +470,25 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
         )}
         <QuickGarmentInput garmentTypes={garmentTypes} value={garmentState} onChange={setGarmentState} />
       </div>
+      )}
 
-      {/* 3. Fotoğraf — özellikle premium/pahalı parçalarda kayıp itirazına kanıt */}
-      <StepHeader number="3" title="Kontrol ve kaydet" description={`${derivedItemCount} parça · ütü seçenekleri ve fotoğraf`} />
+      {/* ── ADIM 3: Fotoğraf (kayıp itirazına kanıt), acil, imza ── */}
+      {step === 3 && (
+      <>
+      <div style={{ fontSize: 12, color: '#94a3b8' }}>
+        📍 {selection.block}-{selection.room_no} · 🧺 {derivedItemCount} parça
+      </div>
+      {/* Çevrimdışı girişte foto/imza kuyruğa alınmaz (localStorage şifresiz,
+          cihaz paylaşımlı) — operatör kaydetmeden ÖNCE bilsin. */}
+      {!isOnline && (
+        <div style={{
+          background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)',
+          borderRadius: 10, padding: '10px 14px', color: '#fbbf24', fontSize: 12,
+        }}>
+          📡 Çevrimdışısınız — fotoğraf ve imza kuyruğa alınamaz. Giriş kaydedilir,
+          bağlantı gelince fotoğraf/imzayı torbaya ekleyebilirsiniz.
+        </div>
+      )}
       <div>
         <label style={lbl}>Fotoğraf (opsiyonel)</label>
         {photoDataUrl ? (
@@ -433,20 +519,52 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
         </label>
       </div>
 
-      {/* 4. Signature (conditional) */}
+      {/* İmza (blok kuralına göre) */}
       {needsSig && (
         <div>
           <label style={lbl}>İmza</label>
           <SigPad sigRef={sigRef} />
         </div>
       )}
+      </>
+      )}
 
       {error && <div style={{ color: '#f87171', fontSize: 13 }}>{error}</div>}
 
-      <button onClick={submit} disabled={!canSubmit || submitting}
-        style={btnStyle('#2563eb', '#fff', !canSubmit || submitting)}>
-        {submitting ? 'Kaydediliyor…' : '✓ Torba Kaydet'}
-      </button>
+      {/* Adım gezinme — son adımda kaydet */}
+      <div style={{ display: 'flex', gap: 8 }}>
+        {step > 1 && (
+          <button type="button" onClick={() => { setError(''); setStep(s => s - 1) }}
+            style={{ ...btnStyle('#1e293b', '#94a3b8'), flex: '0 0 auto' }}>
+            ← Geri
+          </button>
+        )}
+        {step < 3 ? (
+          <button type="button" onClick={goNext} disabled={!stepReady[step]}
+            style={{ ...btnStyle('#2563eb', '#fff', !stepReady[step]), flex: 1 }}>
+            İleri →
+          </button>
+        ) : (
+          <button onClick={submit} disabled={!canSubmit || submitting}
+            style={{ ...btnStyle('#2563eb', '#fff', !canSubmit || submitting), flex: 1 }}>
+            {submitting ? 'Kaydediliyor…' : '✓ Torba Kaydet'}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Adım göstergesi — operatör kaç adım kaldığını görsün, tamamlananlara dönebilsin.
+function StepProgress({ steps, current }) {
+  return (
+    <div style={{ display: 'flex', gap: 6 }}>
+      {steps.map(s => (
+        <div key={s.number} style={{
+          flex: 1, height: 4, borderRadius: 2,
+          background: s.number <= current ? '#3b82f6' : '#1e293b',
+        }} />
+      ))}
     </div>
   )
 }

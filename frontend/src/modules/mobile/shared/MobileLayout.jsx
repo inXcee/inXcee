@@ -17,8 +17,13 @@ const MODULE_KEYS = {
   laundry: [['mobile-laundry-items'], ['mobile-laundry-machines']],
 }
 
+const topBtn = {
+  width:40, height:40, display:'flex', alignItems:'center', justifyContent:'center',
+  background:'none', border:'none', fontSize:20, cursor:'pointer', borderRadius:10,
+}
+
 export default function MobileLayout({ tabs }) {
-  const { logout: rawLogout, token: mobileToken } = useMobileAuth()
+  const { logout: rawLogout, token: mobileToken, user } = useMobileAuth()
   // Logout sirasinda push subscription'i da temizle (yeni cihaza login olunduktan
   // sonra eski cihaz bildirim almasin)
   const logout = useCallback(async () => {
@@ -167,8 +172,23 @@ export default function MobileLayout({ tabs }) {
   return (
     <div className={darkMode ? 'mobile-dark' : ''} style={{ display:'flex', flexDirection:'column', minHeight:'100vh', background:'#f9fafb', maxWidth:'480px', margin:'0 auto' }}>
       {offlineBanner}
+      {/* Üst bar: koyu mod + çıkış buradan yönetilir. Alt nav yalnız rol
+          sekmelerine ayrılır — 7 hücreye bölününce 360px'te dokunma alanı
+          ~50px'e düşüyordu. Tüm mobil roller bu layout'u paylaşır. */}
+      <header style={{
+        display:'flex', alignItems:'center', justifyContent:'space-between', gap:8,
+        background:'#fff', borderBottom:'1px solid #e5e7eb', padding:'8px 12px',
+        paddingTop: isOnline ? 'calc(8px + env(safe-area-inset-top))' : 'calc(44px + env(safe-area-inset-top))',
+      }}>
+        <span style={{ fontSize:13, fontWeight:700, color:'#374151' }}>{user?.full_name || 'AVS Mobil'}</span>
+        <div style={{ display:'flex', gap:4 }}>
+          <button onClick={toggleDarkMode} aria-label={darkMode ? 'Açık mod' : 'Koyu mod'}
+            style={topBtn}>{darkMode ? '☀️' : '🌙'}</button>
+          <button onClick={logout} aria-label="Çıkış yap" style={topBtn}>🚪</button>
+        </div>
+      </header>
       <PushBanner />
-      <main style={{ flex:1, overflowY:'auto', paddingBottom:'calc(72px + env(safe-area-inset-bottom))', paddingTop: isOnline ? 'env(safe-area-inset-top)' : 'calc(36px + env(safe-area-inset-top))' }}>
+      <main style={{ flex:1, overflowY:'auto', paddingBottom:'calc(72px + env(safe-area-inset-bottom))' }}>
         <RouteErrorBoundary>
           <Outlet />
         </RouteErrorBoundary>
@@ -181,15 +201,6 @@ export default function MobileLayout({ tabs }) {
             {t.label}
           </NavLink>
         ))}
-        <button onClick={toggleDarkMode} aria-label={darkMode ? 'Açık mod' : 'Koyu mod'}
-          style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', padding:'10px 0', background:'none', border:'none', color:'#9ca3af', fontSize:'11px', fontWeight:600, gap:'4px', cursor:'pointer' }}>
-          <span aria-hidden="true" style={{ fontSize:'20px' }}>{darkMode ? '☀️' : '🌙'}</span>
-          {darkMode ? 'Açık' : 'Koyu'}
-        </button>
-        <button onClick={logout} aria-label="Çıkış yap"
-          style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', padding:'10px 0', background:'none', border:'none', color:'#9ca3af', fontSize:'11px', fontWeight:600, gap:'4px', cursor:'pointer' }}>
-          <span aria-hidden="true" style={{ fontSize:'20px' }}>🚪</span>Çıkış
-        </button>
       </nav>
     </div>
   )
