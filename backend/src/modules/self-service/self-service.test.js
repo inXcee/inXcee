@@ -816,6 +816,101 @@ describe('Laundry Kiosk makine akışı', () => {
     expect(hist.notes).toBe('Rafta bulunamadı')
   })
 
+  describe('kiosk audit izi', () => {
+    function auditRows(action, targetId) {
+      return getDB().prepare(
+        "SELECT user_id, worker_id, detail FROM audit_log WHERE module='laundry-kiosk' AND action=? AND target_id=?"
+      ).all(action, targetId)
+    }
+
+    // AVS operatöründe user_id NULL kalır; "kim yaptı" worker_id'den okunur.
+    function expectAvsActor(rows) {
+      expect(rows).toHaveLength(1)
+      expect(rows[0].user_id).toBe(null)
+      expect(rows[0].worker_id).toBeTruthy()
+      return JSON.parse(rows[0].detail)
+    }
+
+    it('collect audit düşer', async () => {
+      const bagId = await createDirtyBag()
+      getDB().prepare("UPDATE laundry_items SET status='pending_collection' WHERE id=?").run(bagId)
+      const res = await request(app)
+        .post(`/api/self-service/laundry-kiosk/bags/${bagId}/collect`)
+        .set('Authorization', `Bearer ${avsToken}`)
+      expect(res.status).toBe(200)
+      expectAvsActor(auditRows('laundry_kiosk_collect', bagId))
+      // Regresyon: collected_by FK'si legacy avs_workers'ı gösterdiği için ham
+      // staff id yazmak uçta 500'e sebep oluyordu.
+      const row = getDB().prepare('SELECT status, last_modified_worker_id FROM laundry_items WHERE id=?').get(bagId)
+      expect(row.status).toBe('dirty')
+      expect(row.last_modified_worker_id).toBeTruthy()
+    })
+
+    it('ütü bayrağı audit düşer', async () => {
+      const bagId = await createDirtyBag()
+      const res = await request(app)
+        .put(`/api/self-service/laundry-kiosk/bags/${bagId}/ironing`)
+        .set('Authorization', `Bearer ${avsToken}`)
+        .send({ needs_ironing: true })
+      expect(res.status).toBe(200)
+      expect(expectAvsActor(auditRows('laundry_kiosk_ironing_flag', bagId)).needsIroning).toBe(1)
+    })
+
+    it('void audit torba silinmeden önce düşer', async () => {
+      const bagId = await createDirtyBag()
+      const res = await request(app)
+        .post(`/api/self-service/laundry-kiosk/bags/${bagId}/void`)
+        .set('Authorization', `Bearer ${avsToken}`)
+      expect(res.status).toBe(200)
+      expectAvsActor(auditRows('laundry_kiosk_void', bagId))
+    })
+
+    it('lost ve found audit düşer', async () => {
+      const bagId = await createDirtyBag()
+      getDB().prepare("UPDATE laundry_items SET status='ready' WHERE id=?").run(bagId)
+      await request(app)
+        .post(`/api/self-service/laundry-kiosk/bags/${bagId}/lost`)
+        .set('Authorization', `Bearer ${avsToken}`)
+        .send({ notes: 'Rafta yok' })
+      expect(expectAvsActor(auditRows('laundry_kiosk_lost', bagId)).notes).toBe('Rafta yok')
+
+      await request(app)
+        .post(`/api/self-service/laundry-kiosk/bags/${bagId}/found`)
+        .set('Authorization', `Bearer ${avsToken}`)
+      expectAvsActor(auditRows('laundry_kiosk_found', bagId))
+    })
+
+    it('batch-assign ve deliver-room audit düşer', async () => {
+      const id1 = await createDirtyBag({ room_no: '106' })
+      const id2 = await createDirtyBag({ room_no: '106' })
+      const assign = await request(app)
+        .post(`/api/self-service/laundry-kiosk/machines/${machineId}/batch-assign`)
+        .set('Authorization', `Bearer ${avsToken}`)
+        .send({ item_ids: [id1, id2] })
+      expect(assign.status).toBe(200)
+      expect(expectAvsActor(auditRows('laundry_kiosk_batch_assign', machineId)).itemIds)
+        .toEqual(assign.body.success)
+
+      getDB().prepare('UPDATE laundry_items SET status=? WHERE id IN (?,?)').run('ready', id1, id2)
+      const deliver = await request(app)
+        .post('/api/self-service/laundry-kiosk/deliver-room')
+        .set('Authorization', `Bearer ${avsToken}`)
+        .send({ block: 'M1', room_no: '106', delivered_name: 'Audit Test' })
+      expect(deliver.status).toBe(200)
+      const detail = expectAvsActor(auditRows('laundry_kiosk_deliver_room', id1))
+      expect(detail.itemIds).toEqual([id1, id2])
+      expect(detail.deliveredTo).toBe('Audit Test')
+    })
+
+    it('maintenance-done audit düşer', async () => {
+      const res = await request(app)
+        .post(`/api/self-service/laundry-kiosk/machines/${machineId}/maintenance-done`)
+        .set('Authorization', `Bearer ${avsToken}`)
+      expect(res.status).toBe(200)
+      expectAvsActor(auditRows('laundry_kiosk_maintenance_done', machineId))
+    })
+  })
+
   it('sla-config kioska aşama eşiklerini döndürür', async () => {
     getDB().prepare(`
       INSERT INTO laundry_sla_config(stage, warning_hours, critical_hours, whatsapp_notify)

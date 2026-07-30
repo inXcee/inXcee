@@ -155,8 +155,11 @@ export function advanceItemService(id, { machine_id, shelf_location, timer_minut
       type: 'info',
       module: 'laundry',
       target_role: 'laundry',
+      dedup_key: `laundry_ready_${id}`,
     })
-    notifyItemReady(id).catch(() => {})
+    // Sakine WhatsApp yalnızca ilk hazır olusta. Damga kalıcı; torba ready'den
+    // geri alınırsa revertItemService temizler ve tekrar hazır olunca yine gider.
+    if (q.markReadyNotifiedQuery(id)) notifyItemReady(id).catch(() => {})
   }
   logAudit(userId, 'laundry_advance', 'laundry', id, `${item.status} → ${nextStatus}`)
 
@@ -385,6 +388,10 @@ export function revertItemService(id, targetStatus, userId) {
   if (item.status === 'ironing' && targetStatus === 'dirty') {
     // ironing → dirty: önceki makine zaten serbest bırakılmıştı
   }
+
+  // ready'den çıkan her geri alma bildirim damgasını sıfırlar — torba yeniden
+  // hazır olduğunda sakine tekrar haber gitsin.
+  if (item.status === 'ready') extra.ready_notified_at = null
 
   if (item.status === 'ready' && targetStatus === 'washing') {
     // ready → washing: boş makine ata

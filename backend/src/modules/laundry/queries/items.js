@@ -43,13 +43,24 @@ export function getLaundrySummaryQuery() {
   return { counts, active, urgent, delivered_today }
 }
 
-export function collectItemQuery(id, avsWorkerId) {
+// DİKKAT: collected_by kolonunun FK'si legacy `avs_workers` tablosunu gösterir,
+// oysa kiosk operatörü artık `staff.id`. Ham staff id yazmak FOREIGN KEY
+// constraint failed veriyordu (uç 500 dönüyordu). Legacy karşılığı varsa oraya
+// yazılır; "kim topladı" bilgisinin asıl yeri FK'siz last_modified_worker_id —
+// modülün diğer uçlarında da staff id bu kolonda tutuluyor.
+export function collectItemQuery(id, workerId) {
   const db = getDB()
+  const legacyId = workerId
+    ? db.prepare('SELECT a.id FROM staff s JOIN avs_workers a ON a.id = s.legacy_avs_id WHERE s.id=?')
+      .get(workerId)?.id ?? null
+    : null
   db.prepare(`
     UPDATE laundry_items
-    SET status='dirty', collected_by=?, collected_at=strftime('%s','now'), updated_at=datetime('now')
+    SET status='dirty', collected_by=?, collected_at=strftime('%s','now'),
+        last_modified_worker_id=?, last_modified_at=datetime('now'),
+        updated_at=datetime('now')
     WHERE id=? AND status='pending_collection'
-  `).run(avsWorkerId || null, id)
+  `).run(legacyId, workerId || null, id)
 }
 
 export function generateBagNoQuery(id) {
@@ -235,8 +246,19 @@ export function updateItemStatusQuery(id, status, extra = {}) {
   if (extra.machine_id !== undefined) { sets.push('machine_id = ?'); vals.push(extra.machine_id) }
   if (extra.shelf_location !== undefined) { sets.push('shelf_location = ?'); vals.push(extra.shelf_location) }
   if (extra.photo_url !== undefined) { sets.push('photo_url = ?'); vals.push(extra.photo_url) }
+  if (extra.ready_notified_at !== undefined) { sets.push('ready_notified_at = ?'); vals.push(extra.ready_notified_at) }
   vals.push(id)
   db.prepare(`UPDATE laundry_items SET ${sets.join(', ')} WHERE id = ?`).run(...vals)
+}
+
+// "Rafta hazır" WhatsApp'ı gönderildi damgası. Yalnızca NULL iken yazar ve
+// changes>0 döner — eşzamanlı iki istek gelse bile tek gönderim garanti olur.
+export function markReadyNotifiedQuery(id) {
+  const db = getDB()
+  return db.prepare(`
+    UPDATE laundry_items SET ready_notified_at = datetime('now')
+    WHERE id = ? AND ready_notified_at IS NULL
+  `).run(id).changes > 0
 }
 
 export function deleteItemQuery(id) {

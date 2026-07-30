@@ -52,12 +52,14 @@ function removeLaundryUpload(req) {
   try { unlinkSync(req.file.path) } catch { /* already removed */ }
 }
 
+// AVS personeli için user_id NULL kalır; "kim yaptı" sorgulanabilsin diye
+// worker_id kolonu da doldurulur (migration 071).
 function auditLaundryKiosk(db, req, action, targetId, detail = {}) {
   const actor = laundryActor(req)
   db.prepare(`
-    INSERT INTO audit_log(user_id, action, module, target_id, detail)
-    VALUES(?, ?, 'laundry-kiosk', ?, ?)
-  `).run(actor.userId, action, targetId, JSON.stringify({
+    INSERT INTO audit_log(user_id, worker_id, action, module, target_id, detail)
+    VALUES(?, ?, ?, 'laundry-kiosk', ?, ?)
+  `).run(actor.userId, actor.workerId || null, action, targetId, JSON.stringify({
     ...detail,
     workerId: actor.workerId,
     operatorName: actor.name || null,
@@ -716,7 +718,8 @@ selfServiceRouter.post('/laundry-kiosk/bags/:id/collect', requireLaundryKioskOpe
     const item = db.prepare('SELECT id, status FROM laundry_items WHERE id=?').get(Number(req.params.id))
     if (!item) return res.status(404).json({ error: 'Torba bulunamadı' })
     if (item.status !== 'pending_collection') return res.status(400).json({ error: 'Torba pending_collection değil' })
-    collectItemQuery(Number(req.params.id), req.user.workerId || null)
+    collectItemQuery(Number(req.params.id), laundryActor(req).workerId || null)
+    auditLaundryKiosk(db, req, 'laundry_kiosk_collect', item.id, { from: item.status })
     res.json({ ok: true })
   } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
 })
@@ -746,7 +749,10 @@ selfServiceRouter.put('/laundry-kiosk/bags/:id/ironing', requireLaundryKioskOper
   try {
     const db = getDB()
     db.prepare("UPDATE laundry_items SET needs_ironing=?, last_modified_worker_id=?, last_modified_at=datetime('now'), updated_at=datetime('now') WHERE id=?")
-      .run(needs_ironing ? 1 : 0, req.user.workerId || null, Number(req.params.id))
+      .run(needs_ironing ? 1 : 0, laundryActor(req).workerId || null, Number(req.params.id))
+    auditLaundryKiosk(db, req, 'laundry_kiosk_ironing_flag', Number(req.params.id), {
+      needsIroning: needs_ironing ? 1 : 0,
+    })
     res.json({ ok: true })
   } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
 })
@@ -921,6 +927,8 @@ selfServiceRouter.post('/laundry-kiosk/bags/:id/void', requireLaundryKioskOperat
     if (!item) return res.status(404).json({ error: 'Torba bulunamadı' })
     if (item.status !== 'dirty') return res.status(400).json({ error: 'Sadece henüz işlenmemiş (kirli) torba iptal edilebilir' })
     if (item.age_min > 15) return res.status(400).json({ error: 'İptal süresi doldu (15 dk) — yöneticiye başvurun' })
+    // Audit ÖNCE: torba silindikten sonra id'ye bağlı bağlam kalmaz.
+    auditLaundryKiosk(db, req, 'laundry_kiosk_void', item.id, { ageMinutes: Math.round(item.age_min) })
     deleteItemService(item.id, null)
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
@@ -933,9 +941,11 @@ selfServiceRouter.post('/laundry-kiosk/bags/:id/lost', requireLaundryKioskOperat
     const notes = (req.body?.notes || '').trim() || 'Kiosk: teslimde bulunamadı'
     lostItemService(Number(req.params.id), { notes }, null)
     const dbL = getDB()
+    const actor = laundryActor(req)
     dbL.prepare("UPDATE laundry_items SET last_modified_worker_id=?, last_modified_at=datetime('now') WHERE id=?")
-      .run(req.user.workerId || null, Number(req.params.id))
-    stampHistoryWorker(dbL, Number(req.params.id), req.user.workerId)
+      .run(actor.workerId || null, Number(req.params.id))
+    stampHistoryWorker(dbL, Number(req.params.id), actor.workerId)
+    auditLaundryKiosk(dbL, req, 'laundry_kiosk_lost', Number(req.params.id), { notes })
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
@@ -1108,10 +1118,16 @@ selfServiceRouter.post('/laundry-kiosk/machines/:id/batch-assign', requireLaundr
     const result = dirtyIds.length
       ? batchAssignService(dirtyIds, Number(req.params.id), timer_minutes ? Number(timer_minutes) : null, null)
       : { success: [], failed: [] }
+    const actor = laundryActor(req)
     for (const id of result.success) {
       db.prepare("UPDATE laundry_items SET last_modified_worker_id=?, last_modified_at=datetime('now') WHERE id=?")
-        .run(req.user.workerId || null, id)
-      stampHistoryWorker(db, id, req.user.workerId)
+        .run(actor.workerId || null, id)
+      stampHistoryWorker(db, id, actor.workerId)
+    }
+    if (result.success.length) {
+      auditLaundryKiosk(db, req, 'laundry_kiosk_batch_assign', Number(req.params.id), {
+        itemIds: result.success, timerMinutes: timer_minutes ? Number(timer_minutes) : null,
+      })
     }
     res.json({ success: result.success, failed: [...failed, ...result.failed] })
   } catch (e) { res.status(400).json({ error: e.message }) }
@@ -1140,16 +1156,24 @@ selfServiceRouter.post('/laundry-kiosk/deliver-room', requireLaundryKioskOperato
       WHERE id=?
     `)
     const delivered = []
+    const deliveredIds = []
     const failed = []
+    const actor = laundryActor(req)
     for (const b of bags) {
       try {
         deliverItemService(b.id, { delivered_to: delivered_name.trim(), signature_data: signature || null }, null)
-        extraStmt.run(delivered_name.trim(), signature || null, req.user.workerId || null, b.id)
-        stampHistoryWorker(db, b.id, req.user.workerId)
+        extraStmt.run(delivered_name.trim(), signature || null, actor.workerId || null, b.id)
+        stampHistoryWorker(db, b.id, actor.workerId)
         delivered.push(b.bag_no || `#${b.id}`)
+        deliveredIds.push(b.id)
       } catch (e) {
         failed.push({ id: b.id, error: e.message })
       }
+    }
+    if (deliveredIds.length) {
+      auditLaundryKiosk(db, req, 'laundry_kiosk_deliver_room', deliveredIds[0], {
+        block, roomNo: room_no, deliveredTo: delivered_name.trim(), itemIds: deliveredIds,
+      })
     }
     res.json({ ok: true, delivered: delivered.length, bag_nos: delivered, failed })
   } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
@@ -1165,7 +1189,9 @@ selfServiceRouter.get('/laundry-kiosk/machines/:id/daily-runs', requireLaundryKi
 // Bakım yapıldı — sayaç sıfırlanır; bakımı fiilen yapan kiosk operatörü işaretler
 selfServiceRouter.post('/laundry-kiosk/machines/:id/maintenance-done', requireLaundryKioskOperator, (req, res) => {
   try {
-    res.json(maintenanceDoneService(Number(req.params.id), null))
+    const result = maintenanceDoneService(Number(req.params.id), null)
+    auditLaundryKiosk(getDB(), req, 'laundry_kiosk_maintenance_done', Number(req.params.id), {})
+    res.json(result)
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
@@ -1177,9 +1203,11 @@ selfServiceRouter.post('/laundry-kiosk/bags/:id/found', requireLaundryKioskOpera
     if (!item) return res.status(404).json({ error: 'Torba bulunamadı' })
     if (item.status !== 'lost') return res.status(400).json({ error: 'Torba kayıp durumunda değil' })
     markFoundService(item.id, null)
+    const actor = laundryActor(req)
     db.prepare("UPDATE laundry_items SET last_modified_worker_id=?, last_modified_at=datetime('now') WHERE id=?")
-      .run(req.user.workerId || null, item.id)
-    stampHistoryWorker(db, item.id, req.user.workerId)
+      .run(actor.workerId || null, item.id)
+    stampHistoryWorker(db, item.id, actor.workerId)
+    auditLaundryKiosk(db, req, 'laundry_kiosk_found', item.id, {})
     try {
       const full = getItemService(item.id)
       if (full) await sendFoundMessage(full)

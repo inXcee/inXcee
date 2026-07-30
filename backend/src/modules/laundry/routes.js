@@ -4,7 +4,7 @@ import { requireRole } from '../../shared/auth/middleware.js'
 import { createImageUpload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import * as svc from './service.js'
-import { collectItemQuery, listGarmentTypesQuery, insertGarmentTypeQuery, updateGarmentTypeQuery, reorderGarmentTypesQuery } from './queries.js'
+import { collectItemQuery, listGarmentTypesQuery, insertGarmentTypeQuery, updateGarmentTypeQuery, reorderGarmentTypesQuery, markReadyNotifiedQuery } from './queries.js'
 import { notifyItemReady, sendFoundMessage, notifyRoomPersonReady, sendWhatsApp } from './whatsapp.js'
 import { logger } from '../../shared/logger.js'
 import { validate } from '../../shared/middleware/validate.js'
@@ -509,6 +509,9 @@ laundryRouter.post('/items/:id/notify-whatsapp', ...laundryFull, async (req, res
     // phone override in body takes priority
     const phone = req.body.phone || item.phone_number
     if (!phone) return res.status(400).json({ error: 'Telefon numarası bulunamadı' })
+    // Manuel gönderim bilerek engellenmez (operatör tekrar istedi) ama damgayı
+    // düşer ki otomatik akış aynı torba için bir daha göndermesin.
+    markReadyNotifiedQuery(+req.params.id)
     await notifyItemReady(+req.params.id)
     res.json({ ok: true, phone })
   } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
