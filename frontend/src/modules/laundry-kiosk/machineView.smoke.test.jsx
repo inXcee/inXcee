@@ -58,6 +58,33 @@ describe('MachineView smoke', () => {
     await waitFor(() => expect(screen.getByText(/ütüye gönderildi/)).toBeInTheDocument())
   })
 
+  it('"Hepsini seç" tüm kirli torbaları tek dokunuşla seçer', async () => {
+    const api = makeKioskApi()
+    renderWithProviders(<MachineView kioskApi={api} />)
+    await waitFor(() => expect(screen.getByText(/BAG-10/)).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: /Hepsini seç \(2\)/ }))
+    expect(screen.getByText(/2 seçili/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Temizle/ }))
+    expect(screen.queryByText(/seçili/)).not.toBeInTheDocument()
+  })
+
+  it('"Sadece acil" yalnızca acil torbaları seçer', async () => {
+    const api = makeKioskApi()
+    renderWithProviders(<MachineView kioskApi={api} />)
+    await waitFor(() => expect(screen.getByText(/BAG-10/)).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: /Sadece acil \(1\)/ }))
+    expect(screen.getByText(/1 seçili/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Makine 1 · 🫧 Çamaşır/ }))
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith(
+      '/self-service/laundry-kiosk/machines/1/batch-assign',
+      { item_ids: [10], timer_minutes: null },
+    ))
+  })
+
   it('süresi dolan makinedeki torba SÜRE DOLDU rozetiyle vurgulanır', async () => {
     const api = makeKioskApi()
     api.get = vi.fn((url) => {

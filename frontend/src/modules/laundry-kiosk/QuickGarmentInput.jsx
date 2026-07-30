@@ -1,6 +1,7 @@
 import { useState, useRef, useMemo } from 'react'
 import GarmentPicker from './GarmentPicker.jsx'
 import { parseGarmentLine } from './quickParse.js'
+import { ironingDefaultFor, needsIroningReview, SIZE_OPTIONS } from './ironing.js'
 
 const EMPTY_VALUE = { garments: [], freeText: '', itemCount: 0 }
 
@@ -11,14 +12,36 @@ const EMPTY_VALUE = { garments: [], freeText: '', itemCount: 0 }
 //   garmentTypes: [{id, name, emoji, image_url}]
 //   value: { garments: [...], freeText: '', itemCount: 0 }
 //   onChange: (next) => void
-export default function QuickGarmentInput({ garmentTypes = [], value = EMPTY_VALUE, onChange }) {
+export default function QuickGarmentInput({
+  garmentTypes = [], value = EMPTY_VALUE, onChange, brandSuggestions = [],
+}) {
   const garments = value.garments || []
   const freeText = value.freeText || ''
   const itemCount = value.itemCount || 0
 
   const [quickText, setQuickText] = useState('')
   const [focusIdx, setFocusIdx] = useState(0)
+  const [openTag, setOpenTag] = useState(null) // künye açık olan satır indeksi
   const quickRef = useRef(null)
+
+  const typeById = useMemo(
+    () => new Map(garmentTypes.map(type => [type.id, type])),
+    [garmentTypes]
+  )
+
+  function patchGarment(index, patch) {
+    onChange({
+      ...value,
+      garments: garments.map((garment, i) => (i === index ? { ...garment, ...patch } : garment)),
+    })
+  }
+
+  function setAllIroning(next) {
+    onChange({
+      ...value,
+      garments: garments.map(garment => ({ ...garment, requires_ironing: next })),
+    })
+  }
 
   // Çok-segmentli akıllı ayrıştırma: "3 gömlek mavi, 2 pantolon, çorap"
   const parsed = useMemo(() => parseGarmentLine(quickText, garmentTypes), [quickText, garmentTypes])
@@ -37,8 +60,7 @@ export default function QuickGarmentInput({ garmentTypes = [], value = EMPTY_VAL
     const type = garmentTypes.find(candidate => candidate.id === entry.type_id)
     return {
       ...entry,
-      requires_ironing: entry.requires_ironing ??
-        Boolean(type?.default_requires_ironing),
+      requires_ironing: entry.requires_ironing ?? ironingDefaultFor(type),
     }
   }
 
@@ -59,7 +81,7 @@ export default function QuickGarmentInput({ garmentTypes = [], value = EMPTY_VAL
       colors: [],
       pattern: 'solid',
       pattern_label: 'Düz',
-      requires_ironing: Boolean(type.default_requires_ironing),
+      requires_ironing: ironingDefaultFor(type),
     }
     onChange({ ...value, garments: [...garments, entry] })
     setQuickText('')
@@ -185,47 +207,128 @@ export default function QuickGarmentInput({ garmentTypes = [], value = EMPTY_VAL
 
       {garments.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-          {garments.map((garment, index) => (
-            <div key={`${garment.type_id || garment.type_name}-${index}`} style={{
-              minHeight: 58,
-              borderRadius: 11,
-              padding: 8,
-              background: '#111827',
-              border: '1px solid #273449',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-            }}>
-              <button type="button" onClick={() => decrementGarment(index)} style={countButton}>−</button>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ color: '#e2e8f0', fontWeight: 900, fontSize: 13 }}>
-                  {garment.emoji || '👕'} {garment.type_name} × {garment.count || 1}
+          {/* Toplu ütü — 10 parçalı torbada tek tek dokunmak zaman kaybı */}
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <span style={{ fontSize: 10, color: '#64748b', letterSpacing: 1, flex: 1 }}>
+              ♨️ ÜTÜ · {garments.filter(g => g.requires_ironing).length}/{garments.length} parça
+            </span>
+            <button type="button" onClick={() => setAllIroning(true)} style={bulkButton}>Tümüne aç</button>
+            <button type="button" onClick={() => setAllIroning(false)} style={bulkButton}>Tümünü kapat</button>
+          </div>
+
+          {garments.map((garment, index) => {
+            const type = typeById.get(garment.type_id)
+            const unsetPolicy = needsIroningReview(type)
+            const tagOpen = openTag === index
+            const tagSummary = [garment.brand, garment.size].filter(Boolean).join(' · ')
+            return (
+              <div key={`${garment.type_id || garment.type_name}-${index}`} style={{
+                borderRadius: 11,
+                padding: 8,
+                background: '#111827',
+                border: `1px solid ${tagOpen ? '#3b82f6' : '#273449'}`,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button type="button" onClick={() => decrementGarment(index)} style={countButton}>−</button>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ color: '#e2e8f0', fontWeight: 900, fontSize: 13 }}>
+                      {garment.emoji || '👕'} {garment.type_name} × {garment.count || 1}
+                    </div>
+                    {tagSummary && (
+                      <div style={{ color: '#93c5fd', fontSize: 11, fontWeight: 700 }}>🏷️ {tagSummary}</div>
+                    )}
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <button type="button" onClick={() => toggleIroning(index)}
+                        style={{
+                          minHeight: 32,
+                          border: 0,
+                          padding: 0,
+                          background: 'transparent',
+                          color: garment.requires_ironing ? '#c4b5fd' : '#94a3b8',
+                          fontSize: 11,
+                          fontWeight: 800,
+                        }}>
+                        {garment.requires_ironing ? '♨️ Ütülenecek' : '↪️ Ütülenmeyecek'}
+                      </button>
+                      {/* Tür ayarı yapılmamışsa operatör görsün — sessiz varsayılan bırakmıyoruz */}
+                      {unsetPolicy && (
+                        <span style={{ fontSize: 9, color: '#fbbf24', fontWeight: 800, letterSpacing: 0.5 }}>
+                          KONTROL ET
+                        </span>
+                      )}
+                      <button type="button" onClick={() => setOpenTag(tagOpen ? null : index)}
+                        style={{
+                          minHeight: 32, border: 0, padding: 0, background: 'transparent',
+                          color: tagOpen ? '#93c5fd' : '#64748b', fontSize: 11, fontWeight: 800,
+                        }}>
+                        🏷️ Marka / beden {tagOpen ? '▲' : '▾'}
+                      </button>
+                    </div>
+                  </div>
+                  <button type="button"
+                    onClick={() => patchGarment(index, { count: (garment.count || 1) + 1 })}
+                    style={countButton}>
+                    +
+                  </button>
                 </div>
-                <button type="button" onClick={() => toggleIroning(index)}
-                  style={{
-                    minHeight: 32,
-                    border: 0,
-                    padding: 0,
-                    background: 'transparent',
-                    color: garment.requires_ironing ? '#c4b5fd' : '#64748b',
-                    fontSize: 11,
-                    fontWeight: 800,
-                  }}>
-                  {garment.requires_ironing ? '♨️ Ütü açık' : '↪️ Ütü gerekmiyor'}
-                </button>
+
+                {tagOpen && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 2 }}>
+                    <div>
+                      <label style={tagLabel}>Marka</label>
+                      <input
+                        list={`kiosk-brands-${index}`}
+                        value={garment.brand || ''}
+                        onChange={e => patchGarment(index, { brand: e.target.value })}
+                        placeholder="ör. Nike"
+                        style={tagInput}
+                      />
+                      {/* Arşivde geçen markalar — operatör baştan yazmasın */}
+                      <datalist id={`kiosk-brands-${index}`}>
+                        {brandSuggestions.map(brand => <option key={brand} value={brand} />)}
+                      </datalist>
+                    </div>
+                    <div>
+                      <label style={tagLabel}>Beden</label>
+                      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 6 }}>
+                        {SIZE_OPTIONS.map(size => (
+                          <button key={size} type="button"
+                            onClick={() => patchGarment(index, { size: garment.size === size ? '' : size })}
+                            style={{
+                              minWidth: 44, minHeight: 38, borderRadius: 9, cursor: 'pointer',
+                              border: `1px solid ${garment.size === size ? '#3b82f6' : '#334155'}`,
+                              background: garment.size === size ? 'rgba(29,78,216,0.22)' : '#1e293b',
+                              color: garment.size === size ? '#93c5fd' : '#94a3b8',
+                              fontSize: 12, fontWeight: 800,
+                            }}>
+                            {size}
+                          </button>
+                        ))}
+                      </div>
+                      <input
+                        value={garment.size || ''}
+                        onChange={e => patchGarment(index, { size: e.target.value })}
+                        placeholder="veya sayısal beden — ör. 42"
+                        style={tagInput}
+                      />
+                    </div>
+                    <div>
+                      <label style={tagLabel}>Durum notu</label>
+                      <input
+                        value={garment.condition_notes || ''}
+                        onChange={e => patchGarment(index, { condition_notes: e.target.value })}
+                        placeholder="ör. yakasında leke var"
+                        style={tagInput}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
-              <button type="button"
-                onClick={() => onChange({
-                  ...value,
-                  garments: garments.map((item, garmentIndex) => garmentIndex === index
-                    ? { ...item, count: (item.count || 1) + 1 }
-                    : item),
-                })}
-                style={countButton}>
-                +
-              </button>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
@@ -370,6 +473,23 @@ export default function QuickGarmentInput({ garmentTypes = [], value = EMPTY_VAL
       </div>
     </div>
   )
+}
+
+const bulkButton = {
+  minHeight: 34, padding: '0 10px', borderRadius: 9, cursor: 'pointer',
+  border: '1px solid #334155', background: '#1e293b', color: '#94a3b8',
+  fontSize: 11, fontWeight: 800,
+}
+
+const tagLabel = {
+  display: 'block', fontSize: 10, color: '#64748b',
+  letterSpacing: 1, marginBottom: 5, textTransform: 'uppercase',
+}
+
+const tagInput = {
+  width: '100%', boxSizing: 'border-box', background: '#1e293b',
+  border: '1px solid #334155', borderRadius: 9, padding: '9px 11px',
+  color: '#f1f5f9', fontSize: 13, outline: 'none',
 }
 
 const countButton = {

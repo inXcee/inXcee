@@ -79,3 +79,47 @@ describe('parseGarmentLine', () => {
     expect(parseGarmentLine('150 çorap', TYPES)[0].count).toBe(99)
   })
 })
+
+describe('parseGarmentLine — marka ve beden', () => {
+  it('harf bedeni tek başına yakalar', () => {
+    const [g] = parseGarmentLine('gömlek L', TYPES)
+    expect(g.size).toBe('L')
+    expect(g.brand).toBe(null)
+  })
+
+  it('"42 beden" sayısal bedeni adetten ayırır', () => {
+    const [g] = parseGarmentLine('2 pantolon 42 beden', TYPES)
+    expect(g.count).toBe(2)
+    expect(g.size).toBe('42')
+  })
+
+  it('"beden 42" ters sıralamayı da anlar', () => {
+    expect(parseGarmentLine('pantolon beden 42', TYPES)[0].size).toBe('42')
+  })
+
+  it('çıplak sayı beden değil ADETtir', () => {
+    const [g] = parseGarmentLine('42 çorap', TYPES)
+    expect(g.count).toBe(42)
+    expect(g.size).toBe(null)
+  })
+
+  it('tip eşleştikten sonra artan kelime marka olur', () => {
+    const [g] = parseGarmentLine('3 nike gömlek mavi', TYPES)
+    expect(g).toMatchObject({ type_name: 'Gömlek', count: 3, brand: 'nike' })
+    expect(g.colors[0].key).toBe('blue')
+  })
+
+  it('tip eşleşmezse artan kelime marka değil kıyafet adı kalır', () => {
+    const [g] = parseGarmentLine('2 yelek yeşil', TYPES)
+    expect(g.type_name).toBe('yelek')
+    expect(g.brand).toBe(null)
+  })
+
+  it('marka + beden + renk + desen aynı segmentte', () => {
+    const [g] = parseGarmentLine('2 lacoste gömlek mavi çizgili XL', TYPES)
+    expect(g).toMatchObject({
+      type_name: 'Gömlek', count: 2, brand: 'lacoste', size: 'XL', pattern: 'striped-h',
+    })
+    expect(g.colors[0].key).toBe('blue')
+  })
+})

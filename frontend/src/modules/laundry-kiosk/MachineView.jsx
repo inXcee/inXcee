@@ -9,6 +9,12 @@ const card = { background: '#0f172a', borderRadius: 16, padding: 20, display: 'f
 const lbl = { display: 'block', fontSize: 11, color: '#64748b', letterSpacing: 1, marginBottom: 8, textTransform: 'uppercase' }
 const btn = (bg, color = '#fff') => ({ padding: '12px 20px', borderRadius: 12, border: 'none', background: bg, color, fontWeight: 600, fontSize: 14, cursor: 'pointer' })
 
+const bulkBtn = {
+  minHeight: 38, padding: '0 12px', borderRadius: 9, cursor: 'pointer',
+  border: '1px solid #334155', background: '#1e293b', color: '#94a3b8',
+  fontSize: 12, fontWeight: 800,
+}
+
 const TIMER_OPTIONS = [
   { value: null, label: 'Süresiz' },
   { value: 30,   label: '30 dk' },
@@ -142,6 +148,36 @@ export default function MachineView({ kioskApi, focusedBag, onConsumeFocus }) {
           Torba Seç — Kirli ({dirtyBags.length})
           {selectedIds.length > 0 && <span style={{ color: '#60a5fa' }}> · {selectedIds.length} seçili</span>}
         </label>
+        {/* Toplu seçim — 15 torbalık sabah yığınında tek tek dokunmak zaman kaybı */}
+        {dirtyBags.length > 1 && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+            <button type="button" onClick={() => setSelectedIds(dirtyBags.map(b => b.id))}
+              style={bulkBtn}>
+              ☑ Hepsini seç ({dirtyBags.length})
+            </button>
+            {dirtyBags.some(b => b.urgent) && (
+              <button type="button"
+                onClick={() => setSelectedIds(dirtyBags.filter(b => b.urgent).map(b => b.id))}
+                style={bulkBtn}>
+                ⚡ Sadece acil ({dirtyBags.filter(b => b.urgent).length})
+              </button>
+            )}
+            {/* Aynı bloğu birlikte yıkamak teslimde de kolaylık sağlar */}
+            {[...new Set(dirtyBags.map(b => b.block))].filter(Boolean).length > 1 &&
+              [...new Set(dirtyBags.map(b => b.block))].filter(Boolean).map(blk => (
+                <button key={blk} type="button"
+                  onClick={() => setSelectedIds(dirtyBags.filter(b => b.block === blk).map(b => b.id))}
+                  style={bulkBtn}>
+                  {blk} ({dirtyBags.filter(b => b.block === blk).length})
+                </button>
+              ))}
+            {selectedIds.length > 0 && (
+              <button type="button" onClick={() => setSelectedIds([])} style={bulkBtn}>
+                ✕ Temizle
+              </button>
+            )}
+          </div>
+        )}
         {dirtyBags.length === 0 && !loading && <div style={{ color: '#475569', fontSize: 13 }}>Yıkanacak torba yok</div>}
         {dirtyBags.map(b => {
           const sel = selectedIds.includes(b.id)

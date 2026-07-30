@@ -199,6 +199,65 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
     staleTime: 300000,
   }).data ?? []
 
+  // Arşivde geçen markalar — künye alanında öneri olarak çıkar.
+  const brandSuggestions = useQuery({
+    queryKey: ['kiosk-brands'],
+    queryFn: () => kioskApi.get('/self-service/laundry-kiosk/brands').then(r => r.data),
+    staleTime: 300000,
+  }).data ?? []
+
+  // Odanın dolabı — daha önce görülmüş kıyafetler. Tek dokunuşla geri eklenir,
+  // marka/beden tekrar yazılmaz.
+  const [wardrobe, setWardrobe] = useState([])
+  useEffect(() => {
+    setWardrobe([])
+    if (!selection.block || !selection.room_no) return
+    let cancelled = false
+    const owner = selection.person?.full_name
+    kioskApi.get(
+      `/self-service/laundry-kiosk/room-wardrobe?block=${encodeURIComponent(selection.block)}` +
+      `&room_no=${encodeURIComponent(selection.room_no)}` +
+      (owner ? `&owner_name=${encodeURIComponent(owner)}` : '')
+    )
+      .then(r => { if (!cancelled) setWardrobe(r.data || []) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [selection.block, selection.room_no, selection.person?.full_name])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Aynı künyeden bir tane daha varsa adedi artır, yoksa yeni satır aç.
+  function addFromWardrobe(item) {
+    setGarmentState(current => {
+      const list = current.garments || []
+      const index = list.findIndex(g =>
+        g.type_name === item.type_name &&
+        (g.brand || '') === (item.brand || '') &&
+        (g.size || '') === (item.size || '')
+      )
+      if (index !== -1) {
+        return {
+          ...current,
+          garments: list.map((g, i) => (i === index ? { ...g, count: (g.count || 1) + 1 } : g)),
+        }
+      }
+      return {
+        ...current,
+        garments: [...list, {
+          type_id: item.garment_type_id || null,
+          type_name: item.type_name,
+          emoji: item.emoji || '👕',
+          count: 1,
+          colors: Array.isArray(item.colors) ? item.colors : [],
+          pattern: item.pattern || 'solid',
+          pattern_label: 'Düz',
+          requires_ironing: item.requires_ironing === 1,
+          brand: item.brand || null,
+          size: item.size || null,
+          condition_notes: item.notes || null,
+        }],
+      }
+    })
+  }
+
   const needsSig = selection.block ? blockNeedsSignature(selection.block) : false
 
   // Derived: effective item_count — fotoğraflı eklendiyse onların toplamı,
@@ -457,6 +516,46 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
         <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 10 }}>
           📍 {selection.block}-{selection.room_no}{selection.person?.full_name ? ` · ${selection.person.full_name}` : ''}
         </div>
+        {/* Odanın dolabı — arşivdeki kıyafetler. Marka/beden dahil geri gelir. */}
+        {wardrobe.length > 0 && (
+          <div style={{
+            marginBottom: 10, padding: '10px 12px', borderRadius: 10,
+            background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.25)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <span style={{ flex: 1, fontSize: 10, color: '#93c5fd', letterSpacing: 1 }}>
+                🗄️ BU ODANIN DOLABI ({wardrobe.length})
+              </span>
+              <button type="button" onClick={() => wardrobe.forEach(addFromWardrobe)}
+                style={{
+                  minHeight: 32, padding: '0 10px', borderRadius: 8, cursor: 'pointer',
+                  border: '1px solid #1d4ed8', background: 'rgba(29,78,216,0.2)',
+                  color: '#93c5fd', fontSize: 11, fontWeight: 800,
+                }}>
+                Hepsini ekle
+              </button>
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {wardrobe.map(item => (
+                <button key={item.id} type="button" onClick={() => addFromWardrobe(item)}
+                  style={{
+                    minHeight: 44, padding: '6px 10px', borderRadius: 10, cursor: 'pointer',
+                    border: '1px solid #334155', background: '#1e293b',
+                    color: '#e2e8f0', fontSize: 12, fontWeight: 700, textAlign: 'left',
+                  }}>
+                  {item.emoji || '👕'} {item.type_name}
+                  {(item.brand || item.size) && (
+                    <span style={{ color: '#93c5fd', fontWeight: 600 }}>
+                      {' · '}{[item.brand, item.size].filter(Boolean).join(' ')}
+                    </span>
+                  )}
+                  <span style={{ color: '#64748b', fontWeight: 600 }}> ×{item.times_seen}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {lastBagGarments && garmentState.garments.length === 0 && (
           <button type="button"
             onClick={() => setGarmentState(s => ({ ...s, garments: lastBagGarments.garments }))}
@@ -468,7 +567,12 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
             ↺ Son torbayı kopyala ({lastBagGarments.count} parça: {lastBagGarments.garments.slice(0, 4).map(g => `${g.count > 1 ? g.count + '× ' : ''}${g.type_name}`).join(', ')}{lastBagGarments.garments.length > 4 ? '…' : ''})
           </button>
         )}
-        <QuickGarmentInput garmentTypes={garmentTypes} value={garmentState} onChange={setGarmentState} />
+        <QuickGarmentInput
+          garmentTypes={garmentTypes}
+          value={garmentState}
+          onChange={setGarmentState}
+          brandSuggestions={brandSuggestions}
+        />
       </div>
       )}
 

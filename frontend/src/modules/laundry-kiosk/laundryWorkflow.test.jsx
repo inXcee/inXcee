@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { renderWithProviders } from '../../test/renderWithProviders.jsx'
@@ -6,8 +7,9 @@ import IroningWorkView from './IroningWorkView.jsx'
 import DeliverWorkView from './DeliverWorkView.jsx'
 
 const garmentTypes = [
-  { id: 1, name: 'Gömlek', emoji: '👔', default_requires_ironing: 1 },
-  { id: 2, name: 'Çorap', emoji: '🧦', default_requires_ironing: 0 },
+  { id: 1, name: 'Gömlek', emoji: '👔', ironing_policy: 'always' },
+  { id: 2, name: 'Çorap', emoji: '🧦', ironing_policy: 'ask' },
+  { id: 3, name: 'Havlu', emoji: '🧺', ironing_policy: 'never' },
 ]
 
 describe('Laundry kiosk hızlı operasyon', () => {
@@ -24,15 +26,94 @@ describe('Laundry kiosk hızlı operasyon', () => {
     rerender(<QuickGarmentInput garmentTypes={garmentTypes} value={value} onChange={onChange} />)
 
     expect(screen.getAllByText(/Gömlek × 2/).length).toBeGreaterThan(0)
-    expect(screen.getByRole('button', { name: '♨️ Ütü açık' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '♨️ Ütülenecek' })).toBeInTheDocument()
 
     fireEvent.click(screen.getAllByRole('button', { name: '−' })[0])
     rerender(<QuickGarmentInput garmentTypes={garmentTypes} value={value} onChange={onChange} />)
     expect(screen.getAllByText(/Gömlek × 1/).length).toBeGreaterThan(0)
 
-    fireEvent.click(screen.getByRole('button', { name: '♨️ Ütü açık' }))
+    fireEvent.click(screen.getByRole('button', { name: '♨️ Ütülenecek' }))
     rerender(<QuickGarmentInput garmentTypes={garmentTypes} value={value} onChange={onChange} />)
-    expect(screen.getByRole('button', { name: '↪️ Ütü gerekmiyor' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '↪️ Ütülenmeyecek' })).toBeInTheDocument()
+  })
+
+  it("politikası belirtilmemiş tür ütü AÇIK gelir ve kontrol uyarısı gösterir", () => {
+    let value = { garments: [], freeText: '', itemCount: 0 }
+    const onChange = vi.fn(next => { value = next })
+    const { rerender } = renderWithProviders(
+      <QuickGarmentInput garmentTypes={garmentTypes} value={value} onChange={onChange} />
+    )
+    fireEvent.click(screen.getAllByRole('button', { name: /Çorap/ })[0])
+    rerender(<QuickGarmentInput garmentTypes={garmentTypes} value={value} onChange={onChange} />)
+
+    expect(value.garments[0].requires_ironing).toBe(true)
+    expect(screen.getByRole('button', { name: '♨️ Ütülenecek' })).toBeInTheDocument()
+    expect(screen.getByText('KONTROL ET')).toBeInTheDocument()
+  })
+
+  it("'never' türü ütü kapalı gelir ve kontrol uyarısı çıkmaz", () => {
+    let value = { garments: [], freeText: '', itemCount: 0 }
+    const onChange = vi.fn(next => { value = next })
+    const { rerender } = renderWithProviders(
+      <QuickGarmentInput garmentTypes={garmentTypes} value={value} onChange={onChange} />
+    )
+    fireEvent.click(screen.getAllByRole('button', { name: /Havlu/ })[0])
+    rerender(<QuickGarmentInput garmentTypes={garmentTypes} value={value} onChange={onChange} />)
+
+    expect(value.garments[0].requires_ironing).toBe(false)
+    expect(screen.queryByText('KONTROL ET')).not.toBeInTheDocument()
+  })
+
+  it('toplu ütü düğmeleri bütün parçaları birden değiştirir', () => {
+    let value = {
+      garments: [
+        { type_id: 1, type_name: 'Gömlek', count: 1, requires_ironing: true },
+        { type_id: 3, type_name: 'Havlu', count: 1, requires_ironing: false },
+      ],
+      freeText: '', itemCount: 0,
+    }
+    const onChange = vi.fn(next => { value = next })
+    const { rerender } = renderWithProviders(
+      <QuickGarmentInput garmentTypes={garmentTypes} value={value} onChange={onChange} />
+    )
+    expect(screen.getByText(/1\/2 parça/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tümüne aç' }))
+    rerender(<QuickGarmentInput garmentTypes={garmentTypes} value={value} onChange={onChange} />)
+    expect(value.garments.every(g => g.requires_ironing)).toBe(true)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tümünü kapat' }))
+    expect(value.garments.every(g => !g.requires_ironing)).toBe(true)
+  })
+
+  it('künye açılır; marka ve beden parçaya yazılır', () => {
+    // RTL rerender'ı sarmalayıcıları düşürüp bileşeni yeniden mount ediyor
+    // (künye paneli iç state). Kontrollü harness ile gerçek akış sürdürülür.
+    const state = { current: null }
+    function Harness() {
+      const [value, setValue] = useState({
+        garments: [{ type_id: 1, type_name: 'Gömlek', count: 1, requires_ironing: true }],
+        freeText: '', itemCount: 0,
+      })
+      state.current = value
+      return (
+        <QuickGarmentInput
+          garmentTypes={garmentTypes} value={value} onChange={setValue}
+          brandSuggestions={['Nike', 'Lacoste']}
+        />
+      )
+    }
+    renderWithProviders(<Harness />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Marka \/ beden/ }))
+    fireEvent.change(screen.getByPlaceholderText('ör. Nike'), { target: { value: 'Lacoste' } })
+    expect(state.current.garments[0].brand).toBe('Lacoste')
+
+    fireEvent.click(screen.getByRole('button', { name: 'XL' }))
+    expect(state.current.garments[0].size).toBe('XL')
+
+    // Künye özeti satırda görünür
+    expect(screen.getByText(/Lacoste · XL/)).toBeInTheDocument()
   })
 
   it('tekil ütü tiki iyimser görünür ve sunucuya client_action_id ile kaydedilir', async () => {

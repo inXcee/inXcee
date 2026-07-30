@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { ironingDefaultFor } from './ironing.js'
 
 export const COLORS = [
   { key: 'white',    label: 'Beyaz',    hex: '#f8fafc', chipBg: '#f1f5f9', chipText: '#1e293b' },
@@ -109,7 +110,11 @@ export default function GarmentPicker({ garmentTypes = [], value = [], onChange 
       pattern_label: patternObj?.label || null,
       requires_ironing: editIndex !== null
         ? Boolean(value[editIndex]?.requires_ironing)
-        : selectedType.default_requires_ironing === 1,
+        : ironingDefaultFor(selectedType),
+      // Künye ayrıntılı girişte de korunur (QuickGarmentInput'ta girilmiş olabilir)
+      brand: editIndex !== null ? (value[editIndex]?.brand ?? null) : null,
+      size: editIndex !== null ? (value[editIndex]?.size ?? null) : null,
+      condition_notes: editIndex !== null ? (value[editIndex]?.condition_notes ?? null) : null,
     }
     if (editIndex !== null) {
       onChange(value.map((g, i) => i === editIndex ? entry : g))

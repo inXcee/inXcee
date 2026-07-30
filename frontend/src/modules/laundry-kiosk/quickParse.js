@@ -34,10 +34,24 @@ export function parseRoomShortcut(text) {
   return valid ? { block, room_no } : null
 }
 
-// "3 gömlek mavi çizgili, 2 pantolon siyah, çorap" →
+// Harf bedenleri — tek başına geçtiğinde beden olarak alınır.
+const LETTER_SIZES = new Set(['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', '2XL', '3XL', '4XL'])
+const SIZE_KEYWORDS = new Set(['beden', 'numara', 'no'])
+
+function letterSize(token) {
+  const upper = token.toUpperCase()
+  return LETTER_SIZES.has(upper) ? upper : null
+}
+
+// "3 nike gömlek mavi çizgili L, 2 pantolon siyah 42 beden, çorap" →
 // kiosk garment entry listesi [{type_id, type_name, emoji, count,
-// colors:[{key,label}], pattern, pattern_label}]
+// colors:[{key,label}], pattern, pattern_label, brand, size}]
 // Tip eşleşmeyen segment custom isimle eklenir (ölü uç yok).
+//
+// Beden: harf bedenleri ("L", "XL") tek başına yakalanır; sayısal beden
+// yalnızca "42 beden" / "beden 42" kalıbıyla alınır — çıplak sayı ADETtir.
+// Marka: tip eşleştikten sonra artan kelimeler markaya gider ("nike gömlek");
+// tip eşleşmediyse aynı kelimeler eskisi gibi özel kıyafet adı olur.
 export function parseGarmentLine(text, garmentTypes = []) {
   const segments = (text || '').split(/[,;·+]/).map(s => s.trim()).filter(Boolean)
   if (segments.length === 0) return []
@@ -46,10 +60,26 @@ export function parseGarmentLine(text, garmentTypes = []) {
   const patternLabels = PATTERNS.map(p => p.label)
   const entries = []
   for (const seg of segments) {
-    let count = 1, type = null, pattern = null
+    let count = 1, type = null, pattern = null, size = null
     const colors = []
     const rest = []
-    for (const w of seg.split(/\s+/)) {
+    const words = seg.split(/\s+/)
+    for (let i = 0; i < words.length; i++) {
+      const w = words[i]
+      const lower = w.toLocaleLowerCase('tr')
+      const next = (words[i + 1] || '').toLocaleLowerCase('tr')
+
+      // "beden 42" / "beden L"
+      if (SIZE_KEYWORDS.has(lower)) {
+        if (words[i + 1]) { size = words[i + 1].toUpperCase(); i++ }
+        continue
+      }
+      // "42 beden" — sayı ancak beden kelimesiyle birlikte beden olur
+      if (/^\d+$/.test(w) && SIZE_KEYWORDS.has(next)) { size = w; i++; continue }
+      if (!size) {
+        const s = letterSize(w)
+        if (s) { size = s; continue }
+      }
       if (/^\d+$/.test(w)) { count = Math.min(99, Math.max(1, +w)); continue }
       if (!type) {
         const t = fuzzyFind(w, typeNames)
@@ -63,11 +93,11 @@ export function parseGarmentLine(text, garmentTypes = []) {
       }
       rest.push(w)
     }
-    const customName = rest.join(' ').trim()
-    if (!type && !customName) continue // sadece renk/sayı — eklenecek bir şey yok
+    const leftover = rest.join(' ').trim()
+    if (!type && !leftover) continue // sadece renk/sayı — eklenecek bir şey yok
     entries.push({
       type_id: type ? type.id : null,
-      type_name: type ? type.name : customName,
+      type_name: type ? type.name : leftover,
       emoji: type?.emoji || '👕',
       count,
       colors: colors.map(label => {
@@ -76,6 +106,8 @@ export function parseGarmentLine(text, garmentTypes = []) {
       }),
       pattern: pattern ? pattern.key : 'solid',
       pattern_label: pattern ? pattern.label : 'Düz',
+      brand: type && leftover ? leftover : null,
+      size,
     })
   }
   return entries

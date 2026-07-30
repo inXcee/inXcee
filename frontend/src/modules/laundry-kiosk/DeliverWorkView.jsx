@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { blockNeedsSignature } from './constants.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 
@@ -89,6 +89,61 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [preview, setPreview] = useState(null)
+  // Oda bazlı toplu teslim — aynı odanın birden çok torbası tek isim + tek imzayla
+  const [roomBulk, setRoomBulk] = useState(null) // { block, room_no, bags, people }
+
+  // Hazır torbaları oda bazında grupla (liste ekranındaki toplu teslim rozeti için)
+  const roomGroups = useMemo(() => {
+    const map = new Map()
+    for (const bag of bags) {
+      const key = `${bag.block}-${bag.room_no}`
+      if (!map.has(key)) map.set(key, { key, block: bag.block, room_no: bag.room_no, bags: [] })
+      map.get(key).bags.push(bag)
+    }
+    return [...map.values()]
+  }, [bags])
+
+  async function openRoomBulk(group) {
+    setError('')
+    try {
+      const response = await kioskApi.get(
+        `/self-service/laundry-kiosk/room-persons?block=${encodeURIComponent(group.block)}&room_no=${encodeURIComponent(group.room_no)}`
+      )
+      setRoomBulk({ ...group, people: response.data })
+      setDeliveredName(group.bags.find(bag => bag.intake_name)?.intake_name || '')
+    } catch (requestError) {
+      setError(requestError.response?.data?.error || 'Oda sakinleri yüklenemedi')
+    }
+  }
+
+  async function submitRoomBulk() {
+    if (!roomBulk) return
+    const name = deliveredName.trim()
+    if (!name) return setError('Teslim alan kişiyi seçin veya yazın')
+    const needsSignature = blockNeedsSignature(roomBulk.block)
+    if (needsSignature && signatureRef.current?.isEmpty()) return setError('İmza gerekli')
+    setSubmitting(true)
+    setError('')
+    try {
+      const response = await kioskApi.post('/self-service/laundry-kiosk/deliver-room', {
+        block: roomBulk.block,
+        room_no: roomBulk.room_no,
+        delivered_name: name,
+        signature: needsSignature ? signatureRef.current?.toDataURL() : null,
+      })
+      const failed = response.data.failed?.length || 0
+      setRoomBulk(null)
+      setDeliveredName('')
+      await loadBags()
+      setError(failed > 0
+        ? `✓ ${response.data.delivered} torba teslim edildi · ${failed} başarısız`
+        : `✓ ${response.data.delivered} torba tek imzayla teslim edildi`)
+    } catch (requestError) {
+      setError(requestError.response?.data?.error || 'Toplu teslim başarısız')
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   async function loadBags() {
     setLoading(true)
@@ -213,6 +268,100 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
     }
   }
 
+  // ── Oda bazlı toplu teslim ─────────────────────────────────────────────────
+  if (roomBulk) {
+    const needsSignature = blockNeedsSignature(roomBulk.block)
+    return (
+      <section style={panel}>
+        <header style={headerRow}>
+          <button type="button" onClick={() => { setRoomBulk(null); setError('') }} style={smallButton}>
+            ← Geri
+          </button>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ color: '#f1f5f9', fontWeight: 900, fontSize: 16 }}>
+              {roomBulk.block}-{roomBulk.room_no}
+            </div>
+            <div style={{ color: '#94a3b8', fontSize: 12 }}>
+              {roomBulk.bags.length} torba · {roomBulk.bags.reduce((sum, b) => sum + (b.item_count || 0), 0)} parça
+            </div>
+          </div>
+        </header>
+
+        {error && <Message text={error} />}
+
+        <div style={{
+          borderRadius: 12, padding: '10px 12px',
+          background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)',
+          color: '#fbbf24', fontSize: 12,
+        }}>
+          ⚠️ Bu odanın <strong>tüm</strong> hazır torbaları tek isim ve tek imzayla teslim edilecek.
+          Parça bazlı doğrulama yapılmaz — tek tek teslim için torbaya dokunun.
+        </div>
+
+        <div>
+          <div style={eyebrow}>TESLİM EDİLECEK TORBALAR</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginTop: 8 }}>
+            {roomBulk.bags.map(bag => (
+              <div key={bag.id} style={{ color: '#cbd5e1', fontSize: 13 }}>
+                <span style={{ color: '#38bdf8', fontFamily: 'monospace', fontWeight: 800 }}>
+                  {bag.bag_no || `#${bag.id}`}
+                </span>
+                {' · '}{bag.item_count} parça
+                {bag.shelf_location ? ` · Raf ${bag.shelf_location}` : ''}
+                {bag.intake_name ? ` · ${bag.intake_name}` : ''}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <div style={eyebrow}>TESLİM ALAN KİŞİ</div>
+          {roomBulk.people.length > 0 && (
+            <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', margin: '8px 0' }}>
+              {roomBulk.people.map(person => (
+                <button type="button" key={person.id}
+                  onClick={() => setDeliveredName(person.full_name)}
+                  style={{
+                    minHeight: 48,
+                    borderRadius: 11,
+                    border: `1px solid ${deliveredName === person.full_name ? '#22c55e' : '#334155'}`,
+                    background: deliveredName === person.full_name ? '#14532d' : '#1e293b',
+                    color: '#e2e8f0',
+                    fontWeight: 800,
+                    padding: '0 12px',
+                  }}>
+                  👤 {person.full_name}
+                </button>
+              ))}
+            </div>
+          )}
+          <input value={deliveredName} onChange={event => setDeliveredName(event.target.value)}
+            placeholder="Teslim alan kişinin adı" style={textInput} />
+        </div>
+
+        {needsSignature && (
+          <div>
+            <div style={eyebrow}>İMZA</div>
+            <SignaturePad signatureRef={signatureRef} />
+          </div>
+        )}
+
+        <button type="button" onClick={submitRoomBulk} disabled={submitting}
+          style={{
+            minHeight: 56,
+            border: 0,
+            borderRadius: 13,
+            fontSize: 15,
+            fontWeight: 900,
+            background: submitting ? '#1e293b' : '#15803d',
+            color: submitting ? '#475569' : '#fff',
+          }}>
+          {submitting ? 'Teslim ediliyor…' : `✓ ${roomBulk.bags.length} Torbayı Birden Teslim Et`}
+        </button>
+      </section>
+    )
+  }
+
   if (!detail) {
     return (
       <section style={panel}>
@@ -227,6 +376,30 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
         </header>
         {error && <Message text={error} success={error.startsWith('✓')} />}
         {!loading && bags.length === 0 && <div style={empty}>📦 Teslim bekleyen torba yok</div>}
+
+        {/* Aynı odada birden çok hazır torba varsa tek imzayla toplu teslim */}
+        {roomGroups.filter(group => group.bags.length > 1).length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={eyebrow}>TOPLU TESLİM</div>
+            {roomGroups.filter(group => group.bags.length > 1).map(group => (
+              <button type="button" key={group.key} onClick={() => openRoomBulk(group)}
+                style={{
+                  ...bagButton, borderLeftColor: '#f59e0b', minHeight: 56,
+                }}>
+                <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
+                  <div style={{ color: '#f1f5f9', fontWeight: 900, fontSize: 15 }}>
+                    📦 {group.block}-{group.room_no}
+                  </div>
+                  <div style={{ color: '#64748b', fontSize: 12 }}>
+                    {group.bags.length} torba · {group.bags.reduce((sum, b) => sum + (b.item_count || 0), 0)} parça — tek imza
+                  </div>
+                </div>
+                <span style={{ color: '#fbbf24', fontWeight: 900 }}>Hepsini →</span>
+              </button>
+            ))}
+          </div>
+        )}
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
           {bags.map(bag => (
             <button type="button" key={bag.id} onClick={() => selectBag(bag)} style={bagButton}>

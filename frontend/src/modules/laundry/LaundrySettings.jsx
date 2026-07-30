@@ -6,6 +6,13 @@ import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
 
+// migration 072 — ütü politikası. 'ask' = tür için karar verilmemiş.
+const IRONING_CHOICES = [
+  { key: 'always', label: 'Ütülenir', color: '#a78bfa', bg: 'rgba(139,92,246,.12)' },
+  { key: 'never', label: 'Ütülenmez', color: '#94a3b8', bg: 'rgba(148,163,184,.12)' },
+  { key: 'ask', label: 'Belirtilmedi', color: '#fbbf24', bg: 'rgba(251,191,36,.12)' },
+]
+
 function GarmentTypesAdmin() {
   const qc = useQueryClient()
   const fileRef = useRef(null)
@@ -137,21 +144,30 @@ function GarmentTypesAdmin() {
               <div style={{ flex: 1 }}>
                 <span style={{ fontSize: 13, color: 'var(--text)', fontWeight: 600 }}>{type.name}</span>
                 {!type.is_active && <span style={{ fontSize: 10, color: 'var(--text3)', marginLeft: 8 }}>(gizli)</span>}
-                <button type="button"
-                  onClick={() => laundryApi.updateGarmentType(type.id, {
-                    default_requires_ironing: type.default_requires_ironing ? 0 : 1,
-                  }).then(() => {
-                    qc.invalidateQueries({ queryKey: ['garment-types-all'] })
-                    qc.invalidateQueries({ queryKey: ['garment-types'] })
+                {/* Üç durumlu ütü politikası. "Belirtilmedi" kioskta ütüyü
+                    AÇIK getirir ve operatöre "kontrol et" uyarısı gösterir;
+                    ütü istemeyen türü açıkça "Ütülenmez" işaretleyin. */}
+                <span style={{ marginLeft: 8, display: 'inline-flex', gap: 3 }}>
+                  {IRONING_CHOICES.map(choice => {
+                    const active = (type.ironing_policy || 'ask') === choice.key
+                    return (
+                      <button key={choice.key} type="button"
+                        onClick={() => laundryApi.updateGarmentType(type.id, { ironing_policy: choice.key })
+                          .then(() => {
+                            qc.invalidateQueries({ queryKey: ['garment-types-all'] })
+                            qc.invalidateQueries({ queryKey: ['garment-types'] })
+                          })}
+                        style={{
+                          padding: '2px 7px', borderRadius: 10, cursor: 'pointer',
+                          border: `1px solid ${active ? choice.color : 'var(--border)'}`,
+                          background: active ? choice.bg : 'transparent',
+                          color: active ? choice.color : 'var(--text3)', fontSize: 9,
+                        }}>
+                        {choice.label}
+                      </button>
+                    )
                   })}
-                  style={{
-                    marginLeft: 8, padding: '2px 7px', borderRadius: 10, cursor: 'pointer',
-                    border: `1px solid ${type.default_requires_ironing ? '#8b5cf6' : 'var(--border)'}`,
-                    background: type.default_requires_ironing ? 'rgba(139,92,246,.12)' : 'transparent',
-                    color: type.default_requires_ironing ? '#a78bfa' : 'var(--text3)', fontSize: 9,
-                  }}>
-                  {type.default_requires_ironing ? 'Ütü açık' : 'Ütü kapalı'}
-                </button>
+                </span>
               </div>
             )}
             <div style={{ display: 'flex', gap: 4 }}>
