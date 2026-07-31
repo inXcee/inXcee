@@ -95,6 +95,9 @@ describe('oda bazlı toplu teslim', () => {
     await openBulk(api)
     fireEvent.click(screen.getByRole('button', { name: /2 Torbayı Birden Teslim Et/ }))
 
-    await waitFor(() => expect(screen.getByText(/1 torba teslim edildi · 1 başarısız/)).toBeInTheDocument())
+    // Sebep de görünmeli — yalnız sayı operatöre ne yapacağını söylemiyor
+    await waitFor(() => expect(
+      screen.getByText(/1 torba teslim edildi · 1 başarısız — Torba ready değil/)
+    ).toBeInTheDocument())
   })
 })

@@ -131,12 +131,14 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
         delivered_name: name,
         signature: needsSignature ? signatureRef.current?.toDataURL() : null,
       })
-      const failed = response.data.failed?.length || 0
+      const failures = response.data.failed || []
       setRoomBulk(null)
       setDeliveredName('')
       await loadBags()
-      setError(failed > 0
-        ? `✓ ${response.data.delivered} torba teslim edildi · ${failed} başarısız`
+      // Sebebi de göster: "2 başarısız" tek başına operatöre ne yapacağını
+      // söylemiyor (çoğunlukla parçalar henüz ütüden/yıkamadan çıkmamıştır).
+      setError(failures.length > 0
+        ? `✓ ${response.data.delivered} torba teslim edildi · ${failures.length} başarısız — ${failures[0].error}`
         : `✓ ${response.data.delivered} torba tek imzayla teslim edildi`)
     } catch (requestError) {
       setError(requestError.response?.data?.error || 'Toplu teslim başarısız')
