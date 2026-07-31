@@ -17,6 +17,7 @@ const QUERY_LABELS = {
   'water-pivot': 'Dağıtım matrisi',
   'water-products': 'Ürünler',
   'water-products-all': 'Ürün ayarları',
+  'water-product-distribution': 'Ürün dağıtım dökümü',
   'water-reconciliation': 'Ay sonu karşılaştırması',
   'water-returns': 'Boş iadeler',
   'water-review': 'Kontrol bekleyenler',

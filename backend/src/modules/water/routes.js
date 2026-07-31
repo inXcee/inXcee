@@ -13,7 +13,7 @@ import {
   zoneSubLocationsService, createZoneSubLocationService, deleteZoneSubLocationService,
   createIntakeService, createDistributionService, deleteMovementService, clearDistributionsService, updateMovementService, movementsService,
   createReturnService, batchReturnService, deleteReturnService, returnsService, depositService,
-  summaryService, pivotService, batchIntakeService, batchDistributeService, parseDistributionText,
+  summaryService, productDistributionService, pivotService, batchIntakeService, batchDistributeService, parseDistributionText,
   alertsService, forecastService, trendsService, waterDailyDigest, dailyDigestDeliveriesService,
   intakeLotsService, updateIntakeLotService,
   reconciliationService, buildReconciliationPDF, saveStockCountService, monthlyCloseService, monthlyUnlockService,
@@ -548,6 +548,18 @@ waterRouter.get('/report/accounting.pdf', ...mgr, async (req, res, next) => {
     writeAccountingReportPDF(report, doc)
     logAudit(req.user.id, 'water_accounting_pdf', 'water', null,
       `${report.from}..${report.to}${report.sections.length ? ` +${report.sections.join(',')}` : ''}`)
+  } catch (e) { fail(next, e) }
+})
+
+// Tek ürünün dağıtım dökümü — hangi gün, hangi yere, kaç adet.
+// Dönem verilmezse ürünün tüm geçmişi döner.
+waterRouter.get('/products/:id/distribution', ...mgr, (req, res, next) => {
+  try {
+    res.json(productDistributionService({
+      product_id: +req.params.id,
+      from: req.query.from || undefined,
+      to: req.query.to || undefined,
+    }))
   } catch (e) { fail(next, e) }
 })
 

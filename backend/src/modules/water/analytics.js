@@ -231,3 +231,100 @@ export function summaryService({ from, to, product_id, group = 'day' } = {}) {
 
   return { stock, zones, daily, totals, deposit, group }
 }
+
+// Tek ürünün "nereye, ne zaman, kaç adet" dökümü. Aynı veriden iki yön üretir:
+// gün → yerler (o gün nereye ne kadar) ve yer → günler (o yere hangi gün ne kadar).
+// Toplamlar SQL'de hesaplandığı için satır sınırı yoktur; dönem verilmezse
+// ürünün tüm geçmişi döner.
+export function productDistributionService({ product_id, from, to } = {}) {
+  const productId = Number(product_id)
+  if (!Number.isInteger(productId) || productId <= 0) {
+    throw Object.assign(new Error('Geçersiz ürün'), { status: 400 })
+  }
+  if (from && !isIsoDate(from)) throw Object.assign(new Error('Geçersiz başlangıç tarihi'), { status: 400 })
+  if (to && !isIsoDate(to)) throw Object.assign(new Error('Geçersiz bitiş tarihi'), { status: 400 })
+  if (from && to && from > to) throw Object.assign(new Error('Başlangıç bitişten sonra olamaz'), { status: 400 })
+
+  const product = q.getProduct(productId)
+  if (!product) throw Object.assign(new Error('Ürün bulunamadı'), { status: 404 })
+
+  const cells = q.productDistributionCells({ product_id: productId, from, to })
+  const human = base => humanize(product, base)
+
+  const dayMap = new Map()
+  const zoneMap = new Map()
+  let total = 0
+  let recordCount = 0
+
+  for (const cell of cells) {
+    const qty = cell.qty_base || 0
+    total += qty
+    recordCount += cell.record_count || 0
+
+    const day = dayMap.get(cell.date) || { date: cell.date, total_base: 0, zones: [] }
+    day.total_base += qty
+    day.zones.push({
+      zone_id: cell.zone_id,
+      zone_name: cell.zone_name,
+      qty_base: qty,
+      qty_human: human(qty),
+      record_count: cell.record_count,
+    })
+    dayMap.set(cell.date, day)
+
+    const zoneKey = cell.zone_id ?? 0
+    const zone = zoneMap.get(zoneKey) || {
+      zone_id: cell.zone_id, zone_name: cell.zone_name, total_base: 0, days: [],
+    }
+    zone.total_base += qty
+    zone.days.push({ date: cell.date, qty_base: qty, qty_human: human(qty), record_count: cell.record_count })
+    zoneMap.set(zoneKey, zone)
+  }
+
+  const days = [...dayMap.values()]
+    .sort((left, right) => right.date.localeCompare(left.date))
+    .map(day => ({
+      ...day,
+      total_human: human(day.total_base),
+      zones: day.zones.sort((left, right) => right.qty_base - left.qty_base),
+    }))
+
+  const zones = [...zoneMap.values()]
+    .sort((left, right) => right.total_base - left.total_base)
+    .map(zone => ({
+      ...zone,
+      total_human: human(zone.total_base),
+      // Pay yalnızca toplam varken anlamlı; 0'a bölme yok.
+      share_pct: total > 0 ? Math.round((zone.total_base / total) * 1000) / 10 : 0,
+      day_count: zone.days.length,
+      last_date: zone.days.reduce((latest, row) => (latest && latest > row.date ? latest : row.date), null),
+      days: zone.days.sort((left, right) => right.date.localeCompare(left.date)),
+    }))
+
+  const dayCount = days.length
+  return {
+    product: {
+      id: product.id,
+      name: product.name,
+      brand_name: product.brand_name || null,
+      unit_label: product.unit_label,
+      units_per_case: product.units_per_case,
+      cases_per_pallet: product.cases_per_pallet,
+    },
+    from: from || (days.length ? days[days.length - 1].date : null),
+    to: to || (days.length ? days[0].date : null),
+    totals: {
+      total_base: total,
+      total_human: human(total),
+      day_count: dayCount,
+      zone_count: zones.length,
+      record_count: recordCount,
+      daily_avg_base: dayCount ? Math.round(total / dayCount) : 0,
+      daily_avg_human: human(dayCount ? Math.round(total / dayCount) : 0),
+      first_date: dayCount ? days[dayCount - 1].date : null,
+      last_date: dayCount ? days[0].date : null,
+    },
+    days,
+    zones,
+  }
+}

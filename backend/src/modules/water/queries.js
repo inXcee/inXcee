@@ -1299,3 +1299,25 @@ export function deleteWaybillPhoto(id) {
   getDB().prepare('DELETE FROM water_waybill_photos WHERE id=?').run(id)
   return row
 }
+
+// Bir ürünün gün × dağıtım yeri kırılımı. Toplamlar SQL'de yapılır: satır
+// listelemek yerine (gün, yer) hücresi döner — aylarca veri olsa bile sonuç
+// gün×yer ile sınırlı kalır, listMovements'taki limit tuzağına düşmez.
+export function productDistributionCells({ product_id, from, to }) {
+  const params = [product_id]
+  let where = "mv.type='out' AND mv.product_id=?"
+  if (from) { where += ' AND mv.move_date >= ?'; params.push(from) }
+  if (to) { where += ' AND mv.move_date <= ?'; params.push(to) }
+  return getDB().prepare(`
+    SELECT mv.move_date AS date,
+           mv.zone_id AS zone_id,
+           COALESCE(z.name, 'Yer belirtilmemiş') AS zone_name,
+           SUM(mv.qty_base) AS qty_base,
+           COUNT(*) AS record_count
+    FROM water_movements mv
+    LEFT JOIN water_zones z ON z.id = mv.zone_id
+    WHERE ${where}
+    GROUP BY mv.move_date, mv.zone_id
+    ORDER BY mv.move_date DESC, qty_base DESC
+  `).all(...params)
+}

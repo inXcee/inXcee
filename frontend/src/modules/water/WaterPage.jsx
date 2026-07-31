@@ -15,6 +15,7 @@ import WaterExpiryPanel from './components/WaterExpiryPanel.jsx'
 import WaterModal from './components/WaterModal.jsx'
 import WaterQueryErrorCenter from './components/WaterQueryErrorCenter.jsx'
 import ZoneHistoryModal from './components/ZoneHistoryModal.jsx'
+import ProductDistributionModal from './components/ProductDistributionModal.jsx'
 import {
   availableUnitsForProduct,
   baseEquivalent,
@@ -58,6 +59,7 @@ export default function WaterPage() {
   const [modal, setModal] = useState(null) // 'settings' | 'text' | 'adjust' | null
   const [truckFocus, setTruckFocus] = useState({ seq: 0, mode: 'new' })
   const [selectedZone, setSelectedZone] = useState(null)
+  const [selectedProduct, setSelectedProduct] = useState(null)
   const [waterDraftCount, setWaterDraftCount] = useState(0)
   const [monthChangePending, setMonthChangePending] = useState(false)
   const { from, to, label } = monthBounds(ym.y, ym.m)
@@ -90,6 +92,7 @@ export default function WaterPage() {
       }
       setWaterDraftCount(0)
       setSelectedZone(null)
+      setSelectedProduct(null)
       setYm(({ y, m }) => {
         const idx = (y * 12 + (m - 1)) + delta
         return { y: Math.floor(idx / 12), m: (idx % 12) + 1 }
@@ -173,11 +176,19 @@ export default function WaterPage() {
         label={label}
         lowItems={lowItems}
         onOpenZone={setSelectedZone}
+        onOpenProduct={setSelectedProduct}
         onDraftCountChange={setWaterDraftCount}
       />
 
       {selectedZone && (
         <ZoneHistoryModal zone={selectedZone} from={from} to={to} label={label} onClose={() => setSelectedZone(null)} />
+      )}
+
+      {selectedProduct && (
+        <ProductDistributionModal
+          product={selectedProduct} from={from} to={to} label={label}
+          onClose={() => setSelectedProduct(null)}
+        />
       )}
 
       <ForecastPanel />
@@ -195,7 +206,7 @@ export default function WaterPage() {
       <TrendPanel />
 
       <div className="water-intake-section-stack">
-        <GelenTirPanel from={from} to={to} label={label} stockItems={summary?.stock || []} />
+        <GelenTirPanel from={from} to={to} label={label} stockItems={summary?.stock || []} onOpenProduct={setSelectedProduct} />
         <BosIadePanel from={from} to={to} deposit={summary?.deposit || []} />
       </div>
 
@@ -1110,7 +1121,7 @@ function AccountingReportModal({ from, to, label, busy, onDownload, onClose }) {
 }
 
 // ─────────────────────────── GELEN TIR (aylık giriş) ───────────────────────────
-function GelenTirPanel({ from, to, label, stockItems = [] }) {
+function GelenTirPanel({ from, to, label, stockItems = [], onOpenProduct }) {
   const qc = useQueryClient()
   const { data: products = [] } = useQuery({ queryKey: ['water-products'], queryFn: () => api.get('/water/products').then(r => r.data) })
   const { data: intakes = [] } = useQuery({ queryKey: ['water-intake', from, to], queryFn: () => api.get('/water/movements', { params: { type: 'in', from, to, limit: 1000 } }).then(r => r.data) })
@@ -1546,7 +1557,18 @@ function GelenTirPanel({ from, to, label, stockItems = [] }) {
               <tbody>
                 {stockItems.map(s => (
                   <tr key={s.product_id} style={{ background: s.low ? 'rgba(239,68,68,.06)' : undefined }}>
-                    <td style={{ fontWeight: 600 }}>{s.brand_name ? `${s.brand_name} · ` : ''}{s.name}</td>
+                    <td style={{ fontWeight: 600 }}>
+                      {/* Ürüne tıkla → nereye, ne zaman, kaç adet dağıtıldı */}
+                      <button type="button" onClick={() => onOpenProduct?.(s)}
+                        title={`${s.name} — dağıtım dökümünü aç`}
+                        style={{
+                          background: 'transparent', border: 'none', padding: 0, cursor: 'pointer',
+                          font: 'inherit', fontWeight: 600, color: 'var(--accent)',
+                          textDecoration: 'underline', textUnderlineOffset: '2px', textAlign: 'left',
+                        }}>
+                        {s.brand_name ? `${s.brand_name} · ` : ''}{s.name}
+                      </button>
+                    </td>
                     <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: s.low ? 'var(--red)' : 'var(--text)' }}>{s.balance_human || nf(s.balance)}</td>
                   </tr>
                 ))}

@@ -5,6 +5,7 @@ const WATER_QUERY_KEYS_BY_SCOPE = Object.freeze({
     'water-pivot',
     'water-day',
     'water-zone-history',
+    'water-product-distribution',
     'water-intake',
     'water-pending',
     'water-alerts',
@@ -25,6 +26,7 @@ const WATER_QUERY_KEYS_BY_SCOPE = Object.freeze({
     'water-trends',
     'water-daily-ledger',
     'water-zone-history',
+    'water-product-distribution',
     'water-lots',
   ]),
   returns: Object.freeze([
@@ -46,6 +48,7 @@ const WATER_QUERY_KEYS_BY_SCOPE = Object.freeze({
     'water-trends',
     'water-daily-ledger',
     'water-zone-history',
+    'water-product-distribution',
     'water-lots',
   ]),
   review: Object.freeze([
@@ -64,6 +67,7 @@ const WATER_QUERY_KEYS_BY_SCOPE = Object.freeze({
     'water-alerts',
     'water-daily-ledger',
     'water-zone-history',
+    'water-product-distribution',
     'water-zone-target-suggestions',
   ]),
   templates: Object.freeze([
@@ -84,6 +88,7 @@ const WATER_QUERY_KEYS_BY_SCOPE = Object.freeze({
     'water-returns',
     'water-daily-ledger',
     'water-zone-history',
+    'water-product-distribution',
     'water-lots',
   ]),
   brands: Object.freeze([
@@ -102,6 +107,7 @@ const WATER_QUERY_KEYS_BY_SCOPE = Object.freeze({
     'water-returns',
     'water-daily-ledger',
     'water-zone-history',
+    'water-product-distribution',
     'water-lots',
   ]),
   trucks: Object.freeze([
@@ -116,6 +122,7 @@ const WATER_QUERY_KEYS_BY_SCOPE = Object.freeze({
     'water-alerts',
     'water-daily-ledger',
     'water-zone-history',
+    'water-product-distribution',
   ]),
 })
 

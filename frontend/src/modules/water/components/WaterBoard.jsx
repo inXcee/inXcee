@@ -153,7 +153,7 @@ const WaterMatrixRow = memo(function WaterMatrixRow({
   && previous.registerInput === next.registerInput
 ))
 
-function WaterBoard({ from, to, label, lowItems = [], onOpenZone, onDraftCountChange }) {
+function WaterBoard({ from, to, label, lowItems = [], onOpenZone, onOpenProduct, onDraftCountChange }) {
   const qc = useQueryClient()
   const [day, setDay] = useState(() => {
     const t = todayStr()
@@ -631,7 +631,20 @@ function WaterBoard({ from, to, label, lowItems = [], onOpenZone, onDraftCountCh
                     const tint = brandColor.get(brandKey(c.brand_id))
                     return (
                     <th key={c.product_id} style={{ textAlign: 'right', minWidth: '96px', borderLeft: startsBrand ? `3px solid ${tint?.fg || 'var(--border)'}` : '1px solid var(--border)', background: startsBrand ? tint?.bg : undefined }} title={`${c.brand_name} · ${c.name}`}>
-                      <div style={{ fontWeight: 700, marginBottom: '4px' }}>{c.name}</div>
+                      {/* Ürün adına tıklayınca: bu ürün hangi gün, nereye, kaç adet gitti */}
+                      <button
+                        type="button"
+                        onClick={() => onOpenProduct?.(c)}
+                        title={`${c.name} — dağıtım dökümünü aç`}
+                        style={{
+                          display: 'block', width: '100%', textAlign: 'right', marginBottom: '4px',
+                          background: 'transparent', border: 'none', padding: 0, cursor: 'pointer',
+                          font: 'inherit', fontWeight: 700, color: 'var(--accent)', textDecoration: 'underline',
+                          textUnderlineOffset: '2px',
+                        }}
+                      >
+                        {c.name}
+                      </button>
                       <select
                         className="form-select"
                         value={inputUnitFor(c)}
