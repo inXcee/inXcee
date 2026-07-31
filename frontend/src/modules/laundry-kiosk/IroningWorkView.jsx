@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { downscalePhotoFile } from '../../shared/photo.js'
+import { PATTERNS } from './GarmentPicker.jsx'
+import GarmentTagEditor from './GarmentTagEditor.jsx'
+import { garmentTagSummary, tagCompleteness } from './garmentTag.js'
 
 const REASONS = [
   ['missing', 'Eksik', '🔎'],
@@ -27,6 +30,35 @@ export default function IroningWorkView({ kioskApi, focusedBag, onConsumeFocus }
   const [exceptionGarment, setExceptionGarment] = useState(null)
   const [exception, setException] = useState({ reason: '', note: '', photo: null })
   const [undo, setUndo] = useState(null)
+  const [tagGarmentId, setTagGarmentId] = useState(null) // künyesi açık olan parça
+  const [brandSuggestions, setBrandSuggestions] = useState([])
+
+  // Arşivde geçen markalar — künye alanında öneri olarak çıkar.
+  useEffect(() => {
+    let cancelled = false
+    kioskApi.get('/self-service/laundry-kiosk/brands')
+      .then(response => { if (!cancelled) setBrandSuggestions(response.data || []) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Künye kaydı: parçayı yerinde günceller, listeyi baştan çekmeye gerek yok.
+  async function saveGarmentTag(garment, changes) {
+    const response = await kioskApi.put(
+      `/self-service/laundry-kiosk/bags/${detail.bag.id}/garments/${garment.id}/details`,
+      changes,
+    )
+    setDetail(current => (current ? {
+      ...current,
+      garments: current.garments.map(row => (row.id === garment.id ? response.data.garment : row)),
+    } : current))
+    setTagGarmentId(null)
+    if (changes.brand) {
+      setBrandSuggestions(current => (
+        current.includes(changes.brand) ? current : [changes.brand, ...current]
+      ))
+    }
+  }
 
   async function loadBags() {
     setLoading(true)
@@ -255,17 +287,21 @@ export default function IroningWorkView({ kioskApi, focusedBag, onConsumeFocus }
               const completed = ['ready', 'lost', 'damaged'].includes(garment.status)
               const busy = savingIds.has(garment.id)
               const disabled = garment.requires_ironing !== 1 || ['lost', 'damaged'].includes(garment.status)
+              const tagSummary = garmentTagSummary(garment, PATTERNS)
+              const tag = tagCompleteness(garment)
+              const tagOpen = tagGarmentId === garment.id
               return (
                 <div key={garment.id} style={{
                   minHeight: 68,
                   padding: 10,
                   borderRadius: 13,
                   background: completed ? 'rgba(22,101,52,.18)' : '#1e293b',
-                  border: `1px solid ${completed ? '#166534' : '#334155'}`,
+                  border: `1px solid ${tagOpen ? '#3b82f6' : completed ? '#166534' : '#334155'}`,
                   display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
+                  flexDirection: 'column',
+                  gap: 8,
                 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <button type="button"
                     disabled={busy || disabled}
                     onClick={() => setIroned(garment, garment.status !== 'ready')}
@@ -287,6 +323,18 @@ export default function IroningWorkView({ kioskApi, focusedBag, onConsumeFocus }
                     <div style={{ color: '#f1f5f9', fontSize: 14, fontWeight: 900 }}>
                       {garment.emoji || '👕'} {garment.garment_type}
                     </div>
+                    {/* Künye: operatör kıyafeti elinde tutarken doğru parçayı
+                        ayırt edebilsin diye marka/beden/renk burada görünür. */}
+                    {tagSummary ? (
+                      <div style={{ color: '#93c5fd', fontSize: 12, fontWeight: 700, marginTop: 2 }}>
+                        🏷️ {tagSummary}
+                      </div>
+                    ) : (
+                      <div style={{ color: '#64748b', fontSize: 11, marginTop: 2 }}>🏷️ Künye girilmemiş</div>
+                    )}
+                    {garment.condition_notes && (
+                      <div style={{ color: '#fbbf24', fontSize: 11, marginTop: 2 }}>⚠ {garment.condition_notes}</div>
+                    )}
                     <div style={{ color: '#94a3b8', fontFamily: 'monospace', fontSize: 12, marginTop: 3 }}>
                       {garment.garment_code}
                       {garment.status === 'lost' ? ' · EKSİK' : ''}
@@ -294,14 +342,40 @@ export default function IroningWorkView({ kioskApi, focusedBag, onConsumeFocus }
                       {garment.requires_ironing !== 1 ? ' · ÜTÜ YOK' : ''}
                     </div>
                   </div>
-                  {garment.status === 'ironing' && (
-                    <button type="button" onClick={() => {
-                      setExceptionGarment(garment)
-                      setException({ reason: '', note: '', photo: null })
-                    }} style={exceptionButton}>
-                      İstisna
-                    </button>
-                  )}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
+                    {garment.status !== 'delivered' && (
+                      <button type="button"
+                        onClick={() => setTagGarmentId(tagOpen ? null : garment.id)}
+                        aria-label={`${garment.garment_code} künye düzenle`}
+                        style={{
+                          minHeight: 38, padding: '0 10px', borderRadius: 9, cursor: 'pointer',
+                          border: `1px solid ${tag.complete ? '#334155' : '#3b82f6'}`,
+                          background: tagOpen ? 'rgba(29,78,216,0.25)' : '#0f172a',
+                          color: tag.complete ? '#94a3b8' : '#93c5fd',
+                          fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap',
+                        }}>
+                        🏷️ Künye {tag.filled}/{tag.total} {tagOpen ? '▲' : '▾'}
+                      </button>
+                    )}
+                    {garment.status === 'ironing' && (
+                      <button type="button" onClick={() => {
+                        setExceptionGarment(garment)
+                        setException({ reason: '', note: '', photo: null })
+                      }} style={exceptionButton}>
+                        İstisna
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {tagOpen && (
+                  <GarmentTagEditor
+                    garment={garment}
+                    brandSuggestions={brandSuggestions}
+                    onSave={changes => saveGarmentTag(garment, changes)}
+                    onCancel={() => setTagGarmentId(null)}
+                  />
+                )}
                 </div>
               )
             })}

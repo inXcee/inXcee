@@ -230,6 +230,7 @@ vi.mock('../../shared/api/client.js', () => ({
 import WaterPage from './WaterPage.jsx'
 import api from '../../shared/api/client.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
+import { freezeDate } from '../../test/freezeDate.js'
 
 describe('WaterPage tek-ekran pano smoke', () => {
   beforeEach(() => {
@@ -626,6 +627,8 @@ describe('WaterPage tek-ekran pano smoke', () => {
 })
 
 describe('WaterPage gunluk defter smoke', () => {
+  // Mock hareketler 2026-07-01'de; ekran ayı bugünden türetiyor.
+  freezeDate('2026-07-09T09:00:00Z')
   beforeEach(() => vi.clearAllMocks())
 
   it('gun karti tiklaninca gunluk dagitim defteri acilir', async () => {

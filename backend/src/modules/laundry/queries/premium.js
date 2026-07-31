@@ -607,3 +607,53 @@ export function exportPremiumGarmentsQuery({ from_date, to_date } = {}) {
 // SUPPLIES
 // ═══════════════════════════════════════════════════════════════════════════
 
+
+// Ütü/teslim sırasında parçanın künyesini (marka, model, beden, renk, desen,
+// durum notu) düzeltmek için. YALNIZCA gönderilen alanlar değişir; gönderilmeyen
+// alan olduğu gibi kalır. Boş string gönderilirse alan temizlenir (NULL).
+// Torba eşleşmesi çağıran tarafta doğrulanır.
+const GARMENT_TEXT_LIMITS = { brand: 60, model: 60, size: 30, color: 40, pattern: 30, condition_notes: 300 }
+
+export function updateGarmentDetailsQuery(garmentId, patch = {}) {
+  const db = getDB()
+  const sets = []
+  const values = []
+
+  const clean = (field, value) => {
+    const trimmed = String(value ?? '').trim()
+    return trimmed ? trimmed.slice(0, GARMENT_TEXT_LIMITS[field]) : null
+  }
+
+  for (const field of ['brand', 'model', 'size', 'pattern', 'condition_notes']) {
+    if (patch[field] === undefined) continue
+    sets.push(`${field} = ?`)
+    values.push(clean(field, patch[field]))
+  }
+
+  // colors dizisi verilirse colors_json ve tekil color alanı birlikte tazelenir
+  // (tekil color eski ekranların okuduğu alan — ikisi ayrışmasın).
+  if (Array.isArray(patch.colors)) {
+    const colors = patch.colors
+      .filter(entry => entry && (entry.key || entry.label))
+      .slice(0, 3)
+      .map(entry => ({ key: entry.key || null, label: entry.label || entry.key }))
+    sets.push('colors_json = ?')
+    values.push(JSON.stringify(colors))
+    if (patch.color === undefined) {
+      sets.push('color = ?')
+      values.push(colors[0]?.label ?? null)
+    }
+  }
+  if (patch.color !== undefined) {
+    sets.push('color = ?')
+    values.push(clean('color', patch.color))
+  }
+
+  if (sets.length === 0) return db.prepare('SELECT * FROM premium_garments WHERE id=?').get(garmentId)
+
+  sets.push("updated_at = datetime('now')")
+  const changed = db.prepare(`UPDATE premium_garments SET ${sets.join(', ')} WHERE id = ?`)
+    .run(...values, garmentId).changes
+  if (!changed) return null
+  return db.prepare('SELECT * FROM premium_garments WHERE id=?').get(garmentId)
+}

@@ -20,8 +20,12 @@ import SwapTab from './SwapTab.jsx'
 import SettingsTab from './SettingsTab.jsx'
 import PuantajTab from './PuantajTab.jsx'
 import api from '../../../shared/api/client.js'
+import { freezeDate } from '../../../test/freezeDate.js'
 
 describe('shifts tabs smoke', () => {
+  // Mock yanıtlar 2026-07 dönemine sabit; ekran ayı bugünden türetiyor.
+  freezeDate('2026-07-09T09:00:00Z')
+
   beforeEach(() => vi.clearAllMocks())
 
   it('LeaveTab çökmeden render olur', () => {

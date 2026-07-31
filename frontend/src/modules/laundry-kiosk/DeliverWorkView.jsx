@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { blockNeedsSignature } from './constants.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
+import { PATTERNS } from './GarmentPicker.jsx'
+import { garmentTagSummary } from './garmentTag.js'
 
 function SignaturePad({ signatureRef }) {
   const canvasRef = useRef(null)
@@ -525,6 +527,13 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
                     <strong style={{ display: 'block', color: '#f8fafc' }}>
                       {garment.emoji || '👕'} {garment.garment_type}
                     </strong>
+                    {/* Künye teslimde de görünür — sakin "benim değil" derse
+                        marka/beden/renk üzerinden hemen ayırt edilir. */}
+                    {garmentTagSummary(garment, PATTERNS) && (
+                      <span style={{ display: 'block', color: '#93c5fd', fontSize: 12, fontWeight: 700 }}>
+                        🏷️ {garmentTagSummary(garment, PATTERNS)}
+                      </span>
+                    )}
                     <span style={{ color: '#94a3b8', fontFamily: 'monospace', fontSize: 12 }}>
                       {garment.garment_code}
                     </span>

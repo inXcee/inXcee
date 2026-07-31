@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import mobileApi from '../auth/mobileApi.js'
 import { downscalePhotoFile } from '../../../shared/photo.js'
+import { PATTERNS } from '../../laundry-kiosk/GarmentPicker.jsx'
+import { garmentTagSummary } from '../../laundry-kiosk/garmentTag.js'
 
 const REASONS = [
   ['missing', 'Eksik'],
@@ -160,6 +162,15 @@ export default function GarmentChecklist({ item, onClose, onChanged }) {
                     <div style={{ fontSize: 13, color: '#4b5563' }}>
                       {garment.emoji || '👕'} {garment.garment_type}
                     </div>
+                    {/* Künye: elde tutulan kıyafeti listedeki satırla eşleştirmek için */}
+                    {garmentTagSummary(garment, PATTERNS) && (
+                      <div style={{ fontSize: 12, color: '#2563eb', fontWeight: 600 }}>
+                        🏷️ {garmentTagSummary(garment, PATTERNS)}
+                      </div>
+                    )}
+                    {garment.condition_notes && (
+                      <div style={{ fontSize: 11, color: '#b45309' }}>⚠ {garment.condition_notes}</div>
+                    )}
                     <div style={{ fontSize: 11, color: '#9ca3af' }}>
                       {garment.requires_ironing ? 'Ütü gerekli' : 'Ütü gerekmiyor'} · {garment.status}
                     </div>

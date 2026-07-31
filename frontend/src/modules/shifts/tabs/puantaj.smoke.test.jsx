@@ -17,8 +17,12 @@ vi.mock('../../../shared/api/client.js', () => ({
 }))
 
 import PuantajTab from './PuantajTab.jsx'
+import { freezeDate } from '../../../test/freezeDate.js'
 
 describe('PuantajTab smoke', () => {
+  // Mock yanıtlar 2026-07 dönemine sabit; ekran ayı bugünden türetiyor.
+  freezeDate('2026-07-09T09:00:00Z')
+
   beforeEach(() => {
     vi.clearAllMocks()
     useAuthStore.setState({ token: null, user: null })
