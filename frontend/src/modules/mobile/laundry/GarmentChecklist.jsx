@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import mobileApi from '../auth/mobileApi.js'
 import { downscalePhotoFile } from '../../../shared/photo.js'
-import { PATTERNS } from '../../laundry-kiosk/GarmentPicker.jsx'
+import { PATTERNS } from '../../laundry-kiosk/garmentPalette.js'
 import { garmentTagSummary } from '../../laundry-kiosk/garmentTag.js'
 
 const REASONS = [

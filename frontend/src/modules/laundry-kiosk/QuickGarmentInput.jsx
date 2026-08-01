@@ -1,7 +1,9 @@
 import { useState, useRef, useMemo } from 'react'
-import GarmentPicker from './GarmentPicker.jsx'
+import GarmentDetailSheet from './GarmentDetailSheet.jsx'
 import { parseGarmentLine } from './quickParse.js'
-import { ironingDefaultFor, needsIroningReview, SIZE_OPTIONS } from './ironing.js'
+import { ironingDefaultFor, needsIroningReview } from './ironing.js'
+import { brandOptions, sizeGroupsWith } from './garmentOptions.js'
+import { COLORS } from './garmentPalette.js'
 
 const EMPTY_VALUE = { garments: [], freeText: '', itemCount: 0 }
 
@@ -22,6 +24,7 @@ export default function QuickGarmentInput({
   const [quickText, setQuickText] = useState('')
   const [focusIdx, setFocusIdx] = useState(0)
   const [openTag, setOpenTag] = useState(null) // künye açık olan satır indeksi
+  const [sheetType, setSheetType] = useState(null) // ayrıntı paneli açık olan tür
   const quickRef = useRef(null)
 
   const typeById = useMemo(
@@ -111,22 +114,14 @@ export default function QuickGarmentInput({
     }
   }
 
-  function incrementType(type) {
-    const index = garments.findIndex(garment =>
-      garment.type_id === type.id &&
-      (garment.colors?.length || 0) === 0 &&
-      (!garment.pattern || garment.pattern === 'solid')
-    )
-    if (index === -1) {
-      addStructured(type)
-      return
-    }
-    onChange({
-      ...value,
-      garments: garments.map((garment, garmentIndex) => garmentIndex === index
-        ? { ...garment, count: (garment.count || 1) + 1 }
-        : garment),
-    })
+  // Karta dokunmak ayrıntı panelini açar: renk/desen/marka/beden varsayılan akış.
+  function openType(type) {
+    setSheetType(current => (current?.id === type.id && current?.name === type.name ? null : type))
+  }
+
+  function addFromSheet(entry) {
+    onChange({ ...value, garments: [...garments, entry] })
+    setSheetType(null)
   }
 
   function decrementGarment(index) {
@@ -156,7 +151,7 @@ export default function QuickGarmentInput({
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div>
         <div style={{ fontSize: 11, color: '#64748b', letterSpacing: 1, marginBottom: 8 }}>
-          ⚡ TEK DOKUNUŞLA ADET ARTIR
+          ⚡ KIYAFETE DOKUN → RENK, DESEN, MARKA, BEDEN
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 7 }}>
           {garmentTypes.map(type => {
@@ -164,7 +159,7 @@ export default function QuickGarmentInput({
               .filter(garment => garment.type_id === type.id)
               .reduce((total, garment) => total + (garment.count || 1), 0)
             return (
-              <button type="button" key={type.id} onClick={() => incrementType(type)}
+              <button type="button" key={type.id} onClick={() => openType(type)}
                 style={{
                   position: 'relative',
                   minHeight: 72,
@@ -203,6 +198,15 @@ export default function QuickGarmentInput({
             )
           })}
         </div>
+        {sheetType && (
+          <GarmentDetailSheet
+            key={`${sheetType.id ?? sheetType.name}`}
+            type={sheetType}
+            brandSuggestions={brandSuggestions}
+            onAdd={addFromSheet}
+            onCancel={() => setSheetType(null)}
+          />
+        )}
       </div>
 
       {garments.length > 0 && (
@@ -279,41 +283,71 @@ export default function QuickGarmentInput({
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 2 }}>
                     <div>
                       <label style={tagLabel}>Marka</label>
-                      <input
-                        list={`kiosk-brands-${index}`}
-                        value={garment.brand || ''}
-                        onChange={e => patchGarment(index, { brand: e.target.value })}
-                        placeholder="ör. Nike"
-                        style={tagInput}
-                      />
-                      {/* Arşivde geçen markalar — operatör baştan yazmasın */}
-                      <datalist id={`kiosk-brands-${index}`}>
-                        {brandSuggestions.map(brand => <option key={brand} value={brand} />)}
-                      </datalist>
-                    </div>
-                    <div>
-                      <label style={tagLabel}>Beden</label>
+                      {/* Ayrıntı panelindeki paletle aynı: dokunarak seç, gerekirse yaz */}
                       <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 6 }}>
-                        {SIZE_OPTIONS.map(size => (
-                          <button key={size} type="button"
-                            onClick={() => patchGarment(index, { size: garment.size === size ? '' : size })}
-                            style={{
-                              minWidth: 44, minHeight: 38, borderRadius: 9, cursor: 'pointer',
-                              border: `1px solid ${garment.size === size ? '#3b82f6' : '#334155'}`,
-                              background: garment.size === size ? 'rgba(29,78,216,0.22)' : '#1e293b',
-                              color: garment.size === size ? '#93c5fd' : '#94a3b8',
-                              fontSize: 12, fontWeight: 800,
-                            }}>
-                            {size}
+                        {brandOptions(brandSuggestions, { limit: 10 }).map(option => (
+                          <button key={option} type="button"
+                            onClick={() => patchGarment(index, { brand: garment.brand === option ? '' : option })}
+                            style={tagChip(garment.brand === option)}>
+                            {option}
                           </button>
                         ))}
                       </div>
                       <input
-                        value={garment.size || ''}
-                        onChange={e => patchGarment(index, { size: e.target.value })}
-                        placeholder="veya sayısal beden — ör. 42"
+                        value={garment.brand || ''}
+                        onChange={e => patchGarment(index, { brand: e.target.value })}
+                        placeholder="listede yoksa yazın"
                         style={tagInput}
                       />
+                    </div>
+                    <div>
+                      <label style={tagLabel}>Beden</label>
+                      {sizeGroupsWith(garment.size).map(group => (
+                        <div key={group.key} style={{ marginBottom: 6 }}>
+                          <div style={{ fontSize: 9, color: '#475569', marginBottom: 4 }}>{group.label}</div>
+                          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                            {group.options.map(option => (
+                              <button key={option} type="button"
+                                onClick={() => patchGarment(index, { size: garment.size === option ? '' : option })}
+                                style={tagChip(garment.size === option)}>
+                                {option}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                      <input
+                        value={garment.size || ''}
+                        onChange={e => patchGarment(index, { size: e.target.value })}
+                        placeholder="veya serbest yazın — ör. 104 cm"
+                        style={tagInput}
+                      />
+                    </div>
+                    <div>
+                      <label style={tagLabel}>Renk</label>
+                      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                        {COLORS.map(color => {
+                          const selected = (garment.colors || []).some(item => item.key === color.key)
+                          return (
+                            <button key={color.key} type="button" aria-pressed={selected} aria-label={`${color.label} rengi`}
+                              onClick={() => {
+                                const current = garment.colors || []
+                                if (selected) {
+                                  patchGarment(index, { colors: current.filter(item => item.key !== color.key) })
+                                } else if (current.length < 3) {
+                                  patchGarment(index, { colors: [...current, { key: color.key, label: color.label }] })
+                                }
+                              }}
+                              style={{ ...tagChip(selected), display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{
+                                width: 12, height: 12, borderRadius: '50%', flexShrink: 0,
+                                background: color.hex, border: '1px solid #475569',
+                              }} />
+                              {color.label}
+                            </button>
+                          )
+                        })}
+                      </div>
                     </div>
                     <div>
                       <label style={tagLabel}>Durum notu</label>
@@ -331,27 +365,6 @@ export default function QuickGarmentInput({
           })}
         </div>
       )}
-
-      <details style={{
-        border: '1px solid #273449',
-        borderRadius: 12,
-        background: '#0b1220',
-        padding: '10px 12px',
-      }}>
-        <summary style={{ minHeight: 42, color: '#94a3b8', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
-          Renk, desen ve ayrıntılı kıyafet girişi
-        </summary>
-        <div style={{ marginTop: 10 }}>
-          <GarmentPicker
-            garmentTypes={garmentTypes}
-            value={garments}
-            onChange={(next) => onChange({
-              ...value,
-              garments: next.map(withIroningDefault),
-            })}
-          />
-        </div>
-      </details>
 
       {/* Yazıyla bölümü — hem hızlı ekleme hem not, aynı blokta */}
       <div style={{ background: '#0f172a', borderRadius: 12, padding: 14, border: '1px solid #1e293b', display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -485,6 +498,14 @@ const tagLabel = {
   display: 'block', fontSize: 10, color: '#64748b',
   letterSpacing: 1, marginBottom: 5, textTransform: 'uppercase',
 }
+
+const tagChip = selected => ({
+  minHeight: 38, padding: '0 10px', borderRadius: 9, cursor: 'pointer',
+  border: `1px solid ${selected ? '#3b82f6' : '#334155'}`,
+  background: selected ? 'rgba(29,78,216,0.22)' : '#1e293b',
+  color: selected ? '#93c5fd' : '#94a3b8',
+  fontSize: 12, fontWeight: 800,
+})
 
 const tagInput = {
   width: '100%', boxSizing: 'border-box', background: '#1e293b',

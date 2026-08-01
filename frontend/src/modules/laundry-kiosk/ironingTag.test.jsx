@@ -106,7 +106,7 @@ describe('ütü ekranında parça künyesi', () => {
     await openBag(api)
     fireEvent.click(screen.getByRole('button', { name: /G10-02 künye düzenle/ }))
 
-    const colorNames = ['Beyaz', 'Siyah', 'Gri', 'Lacivert']
+    const colorNames = ['Beyaz rengi', 'Siyah rengi', 'Gri rengi', 'Lacivert rengi']
     colorNames.forEach(name => fireEvent.click(screen.getByRole('button', { name })))
 
     const pressed = colorNames.filter(name =>

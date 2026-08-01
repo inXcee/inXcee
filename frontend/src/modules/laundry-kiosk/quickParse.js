@@ -1,7 +1,7 @@
 // Kiosk hızlı giriş ayrıştırıcıları — saf fonksiyonlar.
 // normTR/fuzzyFind ana laundry modülünden reuse edilir (newItem/parse.js).
 import { fuzzyFind } from '../laundry/components/newItem/parse.js'
-import { COLORS, PATTERNS } from './GarmentPicker.jsx'
+import { COLORS, PATTERNS } from './garmentPalette.js'
 import { BLOCK_BY_NAME, expectedRoomNos } from '../../shared/blocks.js'
 
 function allRoomNos(blockName) {

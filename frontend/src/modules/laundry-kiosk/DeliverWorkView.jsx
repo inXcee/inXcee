@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { blockNeedsSignature } from './constants.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
-import { PATTERNS } from './GarmentPicker.jsx'
+import { PATTERNS } from './garmentPalette.js'
 import { garmentTagSummary } from './garmentTag.js'
 
 function SignaturePad({ signatureRef }) {

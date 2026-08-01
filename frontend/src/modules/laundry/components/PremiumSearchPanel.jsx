@@ -4,7 +4,7 @@ import { laundryApi } from '../api.js'
 import { ColorPatternDisplay } from './ColorPatternPicker.jsx'
 import GarmentTagEditor from '../../laundry-kiosk/GarmentTagEditor.jsx'
 import { garmentTagSummary } from '../../laundry-kiosk/garmentTag.js'
-import { PATTERNS } from '../../laundry-kiosk/GarmentPicker.jsx'
+import { PATTERNS } from '../../laundry-kiosk/garmentPalette.js'
 
 const STATUS_LABELS = {
   received: 'Teslim Alındı', ironing: 'Ütüde',

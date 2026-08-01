@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { COLORS, PATTERNS } from './GarmentPicker.jsx'
+import { COLORS, PATTERNS } from './garmentPalette.js'
 import { SIZE_OPTIONS } from './ironing.js'
 import { garmentColors, tagPatch } from './garmentTag.js'
 
@@ -93,7 +93,7 @@ export default function GarmentTagEditor({ garment, brandSuggestions = [], onSav
               const selected = draft.colors.some(item => item.key === color.key)
               return (
                 <button key={color.key} type="button" onClick={() => toggleColor(color)}
-                  aria-pressed={selected}
+                  aria-pressed={selected} aria-label={`${color.label} rengi`}
                   style={{
                     ...chip(selected),
                     display: 'inline-flex', alignItems: 'center', gap: 6,

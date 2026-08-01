@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { downscalePhotoFile } from '../../shared/photo.js'
-import { PATTERNS } from './GarmentPicker.jsx'
+import { PATTERNS } from './garmentPalette.js'
 import GarmentTagEditor from './GarmentTagEditor.jsx'
 import { garmentTagSummary, tagCompleteness } from './garmentTag.js'
 
