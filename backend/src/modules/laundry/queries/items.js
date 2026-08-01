@@ -1,5 +1,23 @@
 import { getDB } from '../../../shared/db/index.js'
 
+// Odanın sakini — TEK satır döndüren alt sorgu. Eskiden LEFT JOIN ile
+// alınıyordu; oda kapasitesi 6 olduğu için aynı torba 6 kez tekrarlanıp
+// kanban'da mükerrer kart ve React "aynı key" uyarısı üretiyordu.
+// Birden çok sakin varsa deterministik olarak en düşük personel id seçilir.
+export const OCCUPANT_NAME_SQL = `(
+  SELECT p.full_name FROM room_assignments ra
+  JOIN personnel p ON p.id = ra.personnel_id
+  WHERE ra.room_id = li.room_id AND ra.check_out_at IS NULL
+  ORDER BY p.id LIMIT 1
+)`
+export const OCCUPANT_PHONE_SQL = `(
+  SELECT p.phone_number FROM room_assignments ra
+  JOIN personnel p ON p.id = ra.personnel_id
+  WHERE ra.room_id = li.room_id AND ra.check_out_at IS NULL
+  ORDER BY p.id LIMIT 1
+)`
+
+
 // ═══════════════════════════════════════════════════════════════════════════
 // ITEMS
 // ═══════════════════════════════════════════════════════════════════════════
@@ -112,8 +130,8 @@ export function getItemQuery(id) {
            u.full_name as created_by_name,
            m.name as machine_name,
            (SELECT COUNT(*) FROM laundry_damages WHERE item_id = li.id) as damage_count,
-           COALESCE(li.phone_override, p.phone_number) as phone_number,
-           p.full_name as occupant_name,
+           COALESCE(li.phone_override, ${OCCUPANT_PHONE_SQL}) as phone_number,
+           ${OCCUPANT_NAME_SQL} as occupant_name,
            li.intake_name,
            li.clothing_items,
            (SELECT COUNT(*) FROM laundry_items li2
@@ -125,8 +143,6 @@ export function getItemQuery(id) {
     LEFT JOIN rooms r ON r.id = li.room_id
     LEFT JOIN users u ON u.id = li.created_by
     LEFT JOIN laundry_machines m ON m.id = li.machine_id
-    LEFT JOIN room_assignments ra ON ra.room_id = li.room_id AND ra.check_out_at IS NULL
-    LEFT JOIN personnel p ON p.id = ra.personnel_id
     LEFT JOIN laundry_verifications lv ON lv.item_id = li.id
       AND lv.stage IN ('washing_to_ready','ironing_to_ready')
       AND lv.rowid = (
@@ -194,8 +210,8 @@ export function listItemsQuery({ status, urgent, sla_only, search } = {}) {
              ELSE NULL
            END as hours_in_status,
            (SELECT COUNT(*) FROM laundry_damages WHERE item_id = li.id) as damage_count,
-           COALESCE(li.phone_override, p.phone_number) as phone_number,
-           p.full_name as occupant_name,
+           COALESCE(li.phone_override, ${OCCUPANT_PHONE_SQL}) as phone_number,
+           ${OCCUPANT_NAME_SQL} as occupant_name,
            li.intake_name,
            li.clothing_items,
            (SELECT COUNT(*) FROM premium_garments WHERE item_id = li.id) as premium_garment_count,
@@ -214,8 +230,6 @@ export function listItemsQuery({ status, urgent, sla_only, search } = {}) {
     LEFT JOIN rooms r ON r.id = li.room_id
     LEFT JOIN users u ON u.id = li.created_by
     LEFT JOIN laundry_machines m ON m.id = li.machine_id
-    LEFT JOIN room_assignments ra ON ra.room_id = li.room_id AND ra.check_out_at IS NULL
-    LEFT JOIN personnel p ON p.id = ra.personnel_id
     WHERE ${where}
     ORDER BY li.urgent DESC, li.updated_at ASC
   `).all(...params)

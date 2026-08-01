@@ -135,6 +135,40 @@ describe('ütüde parça künyesi', () => {
     expect(res.status).toBe(404)
   })
 
+  it('yönetim paneli ucu da aynı servisi kullanır (arşiv + geçmiş dahil)', async () => {
+    const adminToken = (await request(app).post('/api/auth/login')
+      .send({ username: 'mudur', password: 'admin123' })).body.token
+    const { garment } = makeIroningGarment()
+
+    const res = await request(app)
+      .put(`/api/laundry/garments/${garment.id}/details`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ brand: 'Panelden', size: 'S' })
+
+    expect(res.status).toBe(200)
+    expect(res.body.garment).toMatchObject({ brand: 'Panelden', size: 'S' })
+    // Geçmişe iz düştü
+    const history = getDB().prepare(
+      'SELECT notes, action_by FROM premium_garment_history WHERE garment_id=? ORDER BY id DESC'
+    ).get(garment.id)
+    expect(history.notes).toContain('Marka: — → Panelden')
+    expect(history.action_by).toBeTruthy()
+    // Dolaba da işlendi
+    expect(getRoomWardrobeQuery(block, roomNo).some(row => row.brand === 'Panelden')).toBe(true)
+  })
+
+  it('panel ucu teslim edilmiş parçayı reddeder', async () => {
+    const adminToken = (await request(app).post('/api/auth/login')
+      .send({ username: 'mudur', password: 'admin123' })).body.token
+    const { garment } = makeIroningGarment()
+    getDB().prepare("UPDATE premium_garments SET status='delivered' WHERE id=?").run(garment.id)
+    const res = await request(app)
+      .put(`/api/laundry/garments/${garment.id}/details`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ brand: 'X' })
+    expect(res.status).toBe(409)
+  })
+
   it('colors dizi değilse 400 döner', async () => {
     const { itemId, garment } = makeIroningGarment()
     const res = await put(itemId, garment.id, { colors: 'mavi' })

@@ -1,11 +1,12 @@
 import { getDB } from '../../../shared/db/index.js'
+import { OCCUPANT_NAME_SQL, OCCUPANT_PHONE_SQL } from './items.js'
 export function getPersonHistoryQuery(name) {
   const db = getDB()
   return db.prepare(`
     SELECT li.*,
            r.block, r.room_no,
-           COALESCE(li.phone_override, p.phone_number) as phone_number,
-           p.full_name as occupant_name,
+           COALESCE(li.phone_override, ${OCCUPANT_PHONE_SQL}) as phone_number,
+           ${OCCUPANT_NAME_SQL} as occupant_name,
            ld.delivered_at,
            CASE WHEN ld.delivered_at IS NOT NULL
              THEN ROUND((julianday(ld.delivered_at) - julianday(li.created_at)) * 24, 1)
@@ -13,12 +14,15 @@ export function getPersonHistoryQuery(name) {
            END as total_hours
     FROM laundry_items li
     LEFT JOIN rooms r ON r.id = li.room_id
-    LEFT JOIN room_assignments ra ON ra.room_id = li.room_id AND ra.check_out_at IS NULL
-    LEFT JOIN personnel p ON p.id = ra.personnel_id
     LEFT JOIN laundry_deliveries ld ON ld.item_id = li.id
     WHERE (
       li.intake_name = ?
-      OR ((li.intake_name IS NULL OR li.intake_name = '') AND p.full_name = ?)
+      OR ((li.intake_name IS NULL OR li.intake_name = '') AND EXISTS (
+        SELECT 1 FROM room_assignments ra
+        JOIN personnel p ON p.id = ra.personnel_id
+        WHERE ra.room_id = li.room_id AND ra.check_out_at IS NULL
+          AND p.full_name = ?
+      ))
     )
     GROUP BY li.id
     ORDER BY li.created_at DESC

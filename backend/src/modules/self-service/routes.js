@@ -15,11 +15,11 @@ import {
   getBlockRoomActiveCountsQuery, getSlaConfigQuery, isBlockPremiumQuery,
   insertTrackedGarmentsQuery, getPremiumGarmentsQuery,
   getGarmentProgressQuery, getGarmentWithItemQuery, setGarmentIroningQuery,
-  insertGarmentExceptionQuery, updateGarmentDetailsQuery, MISSING_TAG_SQL,
+  insertGarmentExceptionQuery, MISSING_TAG_SQL,
   upsertArchiveGarmentsQuery, getRoomWardrobeQuery, listArchiveBrandsQuery,
   deleteArchiveGarmentQuery,
 } from '../laundry/queries.js'
-import { advanceItemService, batchAssignService, lostItemService, deleteItemService, deliverItemService, maintenanceDoneService, markFoundService, getItemService, getMachineDailyRunsService, getOperatorSummaryService } from '../laundry/service.js'
+import { advanceItemService, batchAssignService, lostItemService, deleteItemService, deliverItemService, maintenanceDoneService, markFoundService, getItemService, getMachineDailyRunsService, getOperatorSummaryService, updateGarmentTagService } from '../laundry/service.js'
 import { sendFoundMessage } from '../laundry/whatsapp.js'
 import { createImageUpload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { logger } from '../../shared/logger.js'
@@ -873,8 +873,8 @@ selfServiceRouter.put(
 )
 
 // Parça künyesi — marka/model/beden/renk/desen/durum notu. Operatör kıyafeti
-// ütülerken etiketini görüyor; eksik künyeyi burada tamamlar. Kaydedilen künye
-// odanın dolabına da işlenir, bir dahaki girişte hazır gelir.
+// ütülerken etiketini görüyor; eksik künyeyi burada tamamlar. Yazma mantığı
+// yönetim paneliyle ORTAK servistedir (updateGarmentTagService).
 selfServiceRouter.put(
   '/laundry-kiosk/bags/:bagId/garments/:garmentId/details',
   requireLaundryKioskOperator,
@@ -888,63 +888,27 @@ selfServiceRouter.put(
       return res.status(400).json({ error: 'colors dizi olmalı' })
     }
     try {
-      const db = getDB()
-      const result = db.transaction(() => {
-        const existing = getGarmentWithItemQuery(bagId, garmentId)
-        if (!existing) return { notFound: true }
-        if (existing.status === 'delivered') {
-          return { conflict: 'Teslim edilmiş parçanın künyesi değiştirilemez' }
-        }
-        const actor = laundryActor(req)
-        const garment = updateGarmentDetailsQuery(garmentId, {
-          brand: req.body?.brand,
-          model: req.body?.model,
-          size: req.body?.size,
-          color: req.body?.color,
-          colors: req.body?.colors,
-          pattern: req.body?.pattern,
-          condition_notes: req.body?.condition_notes,
-        }, { userId: actor.userId, workerId: actor.workerId })
-        if (!garment) return { notFound: true }
-        auditLaundryKiosk(db, req, 'laundry_kiosk_garment_details', garmentId, {
-          itemId: bagId,
-          brand: garment.brand,
-          size: garment.size,
-          model: garment.model,
-        })
-        return { garment }
-      }).immediate()
-
-      if (result.notFound) return res.status(404).json({ error: 'Kıyafet bulunamadı' })
-      if (result.conflict) return res.status(409).json({ error: result.conflict })
-
-      // Arşiv yan üründür: hatası künye kaydını düşürmemeli.
-      try {
-        const room = getDB().prepare(`
-          SELECT li.room_id, li.intake_name FROM laundry_items li WHERE li.id=?
-        `).get(bagId)
-        if (room?.room_id) {
-          upsertArchiveGarmentsQuery(room.room_id, room.intake_name || null, [{
-            type_id: result.garment.garment_type_id,
-            type_name: result.garment.garment_type,
-            emoji: result.garment.emoji,
-            brand: result.garment.brand,
-            model: result.garment.model,
-            size: result.garment.size,
-            color: result.garment.color,
-            colors: safeJsonArray(result.garment.colors_json),
-            pattern: result.garment.pattern,
-            requires_ironing: result.garment.requires_ironing,
-            condition_notes: result.garment.condition_notes,
-          }])
-        }
-      } catch (archiveError) {
-        logger.warn('[kiosk garment details] arşiv güncellenemedi: ' + archiveError.message)
+      // Parça gerçekten bu torbaya mı ait — kiosk uçları torba bağlamıyla çalışır.
+      if (!getGarmentWithItemQuery(bagId, garmentId)) {
+        return res.status(404).json({ error: 'Kıyafet bulunamadı' })
       }
+      const actor = laundryActor(req)
+      const garment = updateGarmentTagService(garmentId, {
+        brand: req.body?.brand,
+        model: req.body?.model,
+        size: req.body?.size,
+        color: req.body?.color,
+        colors: req.body?.colors,
+        pattern: req.body?.pattern,
+        condition_notes: req.body?.condition_notes,
+      }, { userId: actor.userId, workerId: actor.workerId })
 
-      return res.json({ garment: result.garment })
+      auditLaundryKiosk(getDB(), req, 'laundry_kiosk_garment_details', garmentId, {
+        itemId: bagId, brand: garment.brand, size: garment.size, model: garment.model,
+      })
+      return res.json({ garment })
     } catch (e) {
-      logger.error('[kiosk garment details]', e)
+      if (!e.status) logger.error('[kiosk garment details]', e)
       return res.status(e.status || 500).json({ error: e.message || 'Sunucu hatası' })
     }
   }

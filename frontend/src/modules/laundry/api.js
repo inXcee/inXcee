@@ -72,6 +72,7 @@ export const laundryApi = {
   // ── Premium Garments ───────────────────────────────────────────────────
   getPremiumGarments: (item_id) => api.get(`/laundry/items/${item_id}/garments`).then(r => r.data),
   getGarmentDetail: (id) => api.get(`/laundry/garments/${id}/detail`).then(r => r.data),
+  updateGarmentDetails: (id, patch) => api.put(`/laundry/garments/${id}/details`, patch).then(r => r.data),
   setGarmentIroning: (itemId, garmentId, data) =>
     api.put(`/laundry/items/${itemId}/garments/${garmentId}/ironing`, data).then(r => r.data),
   addGarmentException: (itemId, garmentId, data) =>

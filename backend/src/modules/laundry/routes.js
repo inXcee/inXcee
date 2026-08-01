@@ -7,6 +7,7 @@ import * as svc from './service.js'
 import { collectItemQuery, listGarmentTypesQuery, insertGarmentTypeQuery, updateGarmentTypeQuery, reorderGarmentTypesQuery, markReadyNotifiedQuery } from './queries.js'
 import { notifyItemReady, sendFoundMessage, notifyRoomPersonReady, sendWhatsApp } from './whatsapp.js'
 import { logger } from '../../shared/logger.js'
+import { logAudit } from '../../shared/audit.js'
 import { validate } from '../../shared/middleware/validate.js'
 import { createGarmentTypeSchema, updateGarmentTypeSchema, createBagSchema } from './schemas.js'
 
@@ -631,6 +632,28 @@ laundryRouter.get('/items/:id/garments', ...laundryRead, (req, res) => {
 laundryRouter.get('/garments/:id/detail', ...laundryRead, (req, res) => {
   try { res.json(svc.getGarmentDetailService(+req.params.id)) }
   catch (e) { res.status(e.status || 500).json({ error: e.message }) }
+})
+
+// Künye düzeltme — yönetici yanlış marka/beden gördüğünde kioska gitmesin.
+// Kiosk ucuyla ORTAK servis; arşiv senkronu ve teslim kontrolü orada.
+laundryRouter.put('/garments/:id/details', ...laundryFull, (req, res) => {
+  if (req.body?.colors !== undefined && !Array.isArray(req.body.colors)) {
+    return res.status(400).json({ error: 'colors dizi olmalı' })
+  }
+  try {
+    const garment = svc.updateGarmentTagService(+req.params.id, {
+      brand: req.body?.brand,
+      model: req.body?.model,
+      size: req.body?.size,
+      color: req.body?.color,
+      colors: req.body?.colors,
+      pattern: req.body?.pattern,
+      condition_notes: req.body?.condition_notes,
+    }, { userId: req.user.id })
+    logAudit(req.user.id, 'laundry_garment_details', 'laundry', +req.params.id,
+      [garment.brand, garment.model, garment.size].filter(Boolean).join(' · ') || 'temizlendi')
+    res.json({ garment })
+  } catch (e) { res.status(e.status || 500).json({ error: e.message }) }
 })
 
 laundryRouter.put(

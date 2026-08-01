@@ -1,7 +1,10 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from '../api.js'
 import { ColorPatternDisplay } from './ColorPatternPicker.jsx'
+import GarmentTagEditor from '../../laundry-kiosk/GarmentTagEditor.jsx'
+import { garmentTagSummary } from '../../laundry-kiosk/garmentTag.js'
+import { PATTERNS } from '../../laundry-kiosk/GarmentPicker.jsx'
 
 const STATUS_LABELS = {
   received: 'Teslim Alındı', ironing: 'Ütüde',
@@ -40,6 +43,8 @@ export default function PremiumSearchPanel() {
   const [page, setPage] = useState(1)
   const [activeFilters, setActiveFilters] = useState({})
   const [selectedId, setSelectedId] = useState(null)
+  const [tagEditing, setTagEditing] = useState(false)
+  const qc = useQueryClient()
   const isFirstRender = useRef(true)
   const debounceRef = useRef(null)
 
@@ -48,6 +53,8 @@ export default function PremiumSearchPanel() {
     queryFn: () => laundryApi.searchPremiumGarments({ ...activeFilters, page }),
     enabled: true,
   })
+  useEffect(() => { setTagEditing(false) }, [selectedId])
+
   const { data: detail, isLoading: detailLoading } = useQuery({
     queryKey: ['garment-detail', selectedId],
     queryFn: () => laundryApi.getGarmentDetail(selectedId),
@@ -344,6 +351,42 @@ export default function PremiumSearchPanel() {
                     </div>
                   ))}
                 </div>
+
+                {/* Künye — yanlış marka/beden görülünce kioska gitmeden düzeltilir */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                  <h3 style={{ fontSize: 12, letterSpacing: 1, margin: 0, flex: 1 }}>KÜNYE</h3>
+                  {detail.garment.status !== 'delivered' && (
+                    <button type="button" onClick={() => setTagEditing(current => !current)}
+                      style={{
+                        padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
+                        border: '1px solid var(--border)', background: 'var(--surface2)',
+                        color: 'var(--accent)', fontSize: 10, fontWeight: 700,
+                      }}>
+                      {tagEditing ? 'Vazgeç' : '✎ Düzenle'}
+                    </button>
+                  )}
+                </div>
+                {tagEditing ? (
+                  <GarmentTagEditor
+                    garment={detail.garment}
+                    onSave={async changes => {
+                      await laundryApi.updateGarmentDetails(detail.garment.id, changes)
+                      setTagEditing(false)
+                      qc.invalidateQueries({ queryKey: ['garment-detail', detail.garment.id] })
+                      qc.invalidateQueries({ queryKey: ['premium-search'] })
+                    }}
+                    onCancel={() => setTagEditing(false)}
+                  />
+                ) : (
+                  <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 18 }}>
+                    {garmentTagSummary(detail.garment, PATTERNS) || (
+                      <span style={{ color: 'var(--text3)' }}>Künye girilmemiş</span>
+                    )}
+                    {detail.garment.condition_notes && (
+                      <div style={{ color: 'var(--accent)', marginTop: 4 }}>⚠ {detail.garment.condition_notes}</div>
+                    )}
+                  </div>
+                )}
 
                 <h3 style={{ fontSize: 12, letterSpacing: 1 }}>İSTİSNALAR</h3>
                 {detail.exceptions.length === 0 ? (

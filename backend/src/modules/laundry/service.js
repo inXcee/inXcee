@@ -945,3 +945,52 @@ export function getSupplyLogService(supply_id) {
 export function getAlertSuppliesService() {
   return q.getAlertSuppliesQuery()
 }
+
+// Parça künyesi güncelleme — kiosk ve yönetim panelinin ORTAK yolu.
+// Ayrı ayrı yazılırsa biri arşivi güncellemeyi ya da teslim kontrolünü atlar
+// (bkz. iki insert yolunun ayrışmasından çıkan hata, migration 069 notu).
+export function updateGarmentTagService(garmentId, patch, { userId = null, workerId = null } = {}) {
+  const db = getDB()
+  const row = db.prepare(`
+    SELECT pg.id, pg.status, pg.item_id, li.room_id, li.intake_name
+    FROM premium_garments pg
+    JOIN laundry_items li ON li.id = pg.item_id
+    WHERE pg.id = ?
+  `).get(garmentId)
+  if (!row) throw Object.assign(new Error('Kıyafet bulunamadı'), { status: 404 })
+  if (row.status === 'delivered') {
+    throw Object.assign(new Error('Teslim edilmiş parçanın künyesi değiştirilemez'), { status: 409 })
+  }
+
+  const garment = db.transaction(
+    () => q.updateGarmentDetailsQuery(garmentId, patch, { userId, workerId })
+  ).immediate()
+  if (!garment) throw Object.assign(new Error('Kıyafet bulunamadı'), { status: 404 })
+
+  // Arşiv yan üründür: hatası künye kaydını düşürmemeli.
+  if (row.room_id) {
+    try {
+      q.upsertArchiveGarmentsQuery(row.room_id, row.intake_name || null, [{
+        type_id: garment.garment_type_id,
+        type_name: garment.garment_type,
+        emoji: garment.emoji,
+        brand: garment.brand,
+        model: garment.model,
+        size: garment.size,
+        color: garment.color,
+        colors: safeColors(garment.colors_json),
+        pattern: garment.pattern,
+        requires_ironing: garment.requires_ironing,
+        condition_notes: garment.condition_notes,
+      }])
+    } catch { /* arşiv güncellenemedi — künye yazıldı, akış devam eder */ }
+  }
+  return garment
+}
+
+function safeColors(raw) {
+  try {
+    const parsed = JSON.parse(raw || '[]')
+    return Array.isArray(parsed) ? parsed : []
+  } catch { return [] }
+}
