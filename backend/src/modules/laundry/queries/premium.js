@@ -634,9 +634,29 @@ export function exportPremiumGarmentsQuery({ from_date, to_date } = {}) {
 // alan olduğu gibi kalır. Boş string gönderilirse alan temizlenir (NULL).
 // Torba eşleşmesi çağıran tarafta doğrulanır.
 const GARMENT_TEXT_LIMITS = { brand: 60, model: 60, size: 30, color: 40, pattern: 30, condition_notes: 300 }
+const GARMENT_TAG_LABELS = {
+  brand: 'Marka', model: 'Model', size: 'Beden',
+  color: 'Renk', pattern: 'Desen', condition_notes: 'Durum notu',
+}
 
-export function updateGarmentDetailsQuery(garmentId, patch = {}) {
+// "marka Nike → Lacoste" gibi okunur fark satırı. Parçanın kendi zaman
+// çizelgesinde ne değiştiği görünsün diye (audit_log yalnız yöneticide).
+function describeTagChange(before, after) {
+  const parts = []
+  for (const [field, label] of Object.entries(GARMENT_TAG_LABELS)) {
+    const from = before?.[field] ?? null
+    const to = after?.[field] ?? null
+    if (String(from ?? '') === String(to ?? '')) continue
+    parts.push(`${label}: ${from || '—'} → ${to || '—'}`)
+  }
+  return parts.length ? `Künye güncellendi · ${parts.join(' · ')}` : null
+}
+
+export function updateGarmentDetailsQuery(garmentId, patch = {}, { userId = null, workerId = null } = {}) {
   const db = getDB()
+  const before = db.prepare('SELECT * FROM premium_garments WHERE id=?').get(garmentId)
+  if (!before) return null
+
   const sets = []
   const values = []
 
@@ -670,11 +690,21 @@ export function updateGarmentDetailsQuery(garmentId, patch = {}) {
     values.push(clean('color', patch.color))
   }
 
-  if (sets.length === 0) return db.prepare('SELECT * FROM premium_garments WHERE id=?').get(garmentId)
+  if (sets.length === 0) return before
 
   sets.push("updated_at = datetime('now')")
-  const changed = db.prepare(`UPDATE premium_garments SET ${sets.join(', ')} WHERE id = ?`)
-    .run(...values, garmentId).changes
-  if (!changed) return null
-  return db.prepare('SELECT * FROM premium_garments WHERE id=?').get(garmentId)
+  db.prepare(`UPDATE premium_garments SET ${sets.join(', ')} WHERE id = ?`).run(...values, garmentId)
+  const after = db.prepare('SELECT * FROM premium_garments WHERE id=?').get(garmentId)
+
+  // Gerçekten bir şey değiştiyse parçanın geçmişine düş. Durum değişmediği
+  // için from/to aynı; satır yalnızca künye izini tutar.
+  const note = describeTagChange(before, after)
+  if (note) {
+    db.prepare(`
+      INSERT INTO premium_garment_history(
+        garment_id, from_status, to_status, action_by, action_by_worker_id, notes
+      ) VALUES(?,?,?,?,?,?)
+    `).run(garmentId, after.status, after.status, userId, workerId, note.slice(0, 500))
+  }
+  return after
 }

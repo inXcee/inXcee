@@ -895,6 +895,7 @@ selfServiceRouter.put(
         if (existing.status === 'delivered') {
           return { conflict: 'Teslim edilmiş parçanın künyesi değiştirilemez' }
         }
+        const actor = laundryActor(req)
         const garment = updateGarmentDetailsQuery(garmentId, {
           brand: req.body?.brand,
           model: req.body?.model,
@@ -903,7 +904,7 @@ selfServiceRouter.put(
           colors: req.body?.colors,
           pattern: req.body?.pattern,
           condition_notes: req.body?.condition_notes,
-        })
+        }, { userId: actor.userId, workerId: actor.workerId })
         if (!garment) return { notFound: true }
         auditLaundryKiosk(db, req, 'laundry_kiosk_garment_details', garmentId, {
           itemId: bagId,

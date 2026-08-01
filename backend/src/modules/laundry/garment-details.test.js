@@ -98,6 +98,29 @@ describe('ütüde parça künyesi', () => {
     expect(JSON.parse(audit.detail).brand).toBe('Zara')
   })
 
+  it('künye değişikliği parçanın geçmişine okunur şekilde düşer', async () => {
+    const { itemId, garment } = makeIroningGarment({ brand: 'Nike' })
+    await put(itemId, garment.id, { brand: 'Lacoste', size: 'XL' })
+
+    const history = getDB().prepare(
+      'SELECT from_status, to_status, notes, action_by_worker_id FROM premium_garment_history WHERE garment_id=? ORDER BY id DESC'
+    ).get(garment.id)
+    expect(history.notes).toContain('Künye güncellendi')
+    expect(history.notes).toContain('Marka: Nike → Lacoste')
+    expect(history.notes).toContain('Beden: — → XL')
+    // Durum değişmedi; satır yalnız künye izini tutar
+    expect(history.from_status).toBe(history.to_status)
+    expect(history.action_by_worker_id).toBeTruthy()
+  })
+
+  it('hiçbir alan değişmediyse geçmişe satır düşmez', async () => {
+    const { itemId, garment } = makeIroningGarment({ brand: 'Nike' })
+    const before = getDB().prepare('SELECT COUNT(*) c FROM premium_garment_history WHERE garment_id=?').get(garment.id).c
+    await put(itemId, garment.id, { brand: 'Nike' })
+    const after = getDB().prepare('SELECT COUNT(*) c FROM premium_garment_history WHERE garment_id=?').get(garment.id).c
+    expect(after).toBe(before)
+  })
+
   it('teslim edilmiş parçanın künyesi değiştirilemez', async () => {
     const { itemId, garment } = makeIroningGarment()
     getDB().prepare("UPDATE premium_garments SET status='delivered' WHERE id=?").run(garment.id)
