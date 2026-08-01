@@ -36,6 +36,7 @@ export default function PremiumSearchPanel() {
     block: '', room_no: '', type: '', brand: '', size: '', color: '', pattern: '', intake_name: '', status: '', from: '', to: '',
   })
   const [lostOnly, setLostOnly] = useState(false)
+  const [missingTagOnly, setMissingTagOnly] = useState(false)
   const [page, setPage] = useState(1)
   const [activeFilters, setActiveFilters] = useState({})
   const [selectedId, setSelectedId] = useState(null)
@@ -53,9 +54,16 @@ export default function PremiumSearchPanel() {
     enabled: !!selectedId,
   })
 
+  // Onay kutulari filtre nesnesine burada karisir; iki yerde tekrarlanmasin.
+  const composeFilters = useCallback(() => ({
+    ...filters,
+    ...(lostOnly ? { status: 'lost' } : {}),
+    ...(missingTagOnly ? { missing_tag: 1 } : {}),
+  }), [filters, lostOnly, missingTagOnly])
+
   const search = () => {
     setPage(1)
-    setActiveFilters(lostOnly ? { ...filters, status: 'lost' } : filters)
+    setActiveFilters(composeFilters())
   }
 
   const reset = () => {
@@ -63,6 +71,7 @@ export default function PremiumSearchPanel() {
     isFirstRender.current = true
     setFilters({ block: '', room_no: '', type: '', brand: '', size: '', color: '', pattern: '', intake_name: '', status: '', from: '', to: '' })
     setLostOnly(false)
+    setMissingTagOnly(false)
     setActiveFilters({})
     setPage(1)
   }
@@ -73,10 +82,10 @@ export default function PremiumSearchPanel() {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
       setPage(1)
-      setActiveFilters(lostOnly ? { ...filters, status: 'lost' } : filters)
+      setActiveFilters(composeFilters())
     }, 400)
     return () => clearTimeout(debounceRef.current)
-  }, [filters, lostOnly])
+  }, [composeFilters])
 
   const exportCsv = () => {
     if (!data?.rows?.length) return
@@ -103,16 +112,28 @@ export default function PremiumSearchPanel() {
             Tüm tekil kıyafetler · kod, oda, ütü, istisna ve operatör geçmişi
           </p>
         </div>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-          <input type="checkbox" checked={lostOnly} onChange={e => {
-              setLostOnly(e.target.checked)
-              if (!e.target.checked) set('status', '')
-            }}
-            style={{ accentColor: 'var(--red)', width: 14, height: 14 }} />
-          <span style={{ fontSize: 10, color: 'var(--red)', fontFamily: 'var(--mono)', fontWeight: 700 }}>
-            Kayıp Araştırması
-          </span>
-        </label>
+        <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* Künyesi hiç girilmemiş parçalar — tamamlama kuyruğu.
+              Marka/beden/renk üçü de boşsa parça künyesiz sayılır. */}
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+            <input type="checkbox" checked={missingTagOnly}
+              onChange={e => setMissingTagOnly(e.target.checked)}
+              style={{ accentColor: 'var(--accent)', width: 14, height: 14 }} />
+            <span style={{ fontSize: 10, color: 'var(--accent)', fontFamily: 'var(--mono)', fontWeight: 700 }}>
+              Künyesi Eksik
+            </span>
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+            <input type="checkbox" checked={lostOnly} onChange={e => {
+                setLostOnly(e.target.checked)
+                if (!e.target.checked) set('status', '')
+              }}
+              style={{ accentColor: 'var(--red)', width: 14, height: 14 }} />
+            <span style={{ fontSize: 10, color: 'var(--red)', fontFamily: 'var(--mono)', fontWeight: 700 }}>
+              Kayıp Araştırması
+            </span>
+          </label>
+        </div>
       </div>
 
       {/* Filter grid */}

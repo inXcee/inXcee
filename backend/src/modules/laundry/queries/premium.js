@@ -1,5 +1,19 @@
 import { getDB } from '../../../shared/db/index.js'
 
+// "Künyesi girilmemiş parça" tanımı — marka, beden ve renk üçü de boş.
+// Tek yerde tutulur: hem kıyafet araması hem kiosk torba rozeti bunu kullanır,
+// ikisi ayrışırsa aynı parça bir ekranda eksik, ötekinde dolu görünürdü.
+// colors_json da kontrol edilir: eski kayıtlarda renk yalnız orada olabiliyor.
+export const MISSING_TAG_SQL = `
+  COALESCE(
+    NULLIF(TRIM(pg.brand), ''),
+    NULLIF(TRIM(pg.size), ''),
+    NULLIF(TRIM(pg.color), ''),
+    CASE WHEN json_valid(pg.colors_json) AND json_array_length(pg.colors_json) > 0
+         THEN 'renk' END
+  ) IS NULL
+`
+
 // Tür politikasından ütü varsayılanı. 'never' dışındaki her şey ütü açıktır:
 // 'ask' türler için sessizce "ütü gerekmiyor" demek, ütülenmesi gereken
 // kıyafetin ütüsüz teslim edilmesine yol açıyordu (bkz. migration 072).
@@ -40,6 +54,11 @@ export function insertTrackedGarmentsQuery(item_id, garmentGroups, {
     const requiresIroning = group.requires_ironing === undefined
       ? resolveIroningPolicy(policies.get(typeId))
       : Boolean(group.requires_ironing)
+    const colors = Array.isArray(group.colors) ? group.colors : []
+    // Tekil `color` alanı colors_json'ın özeti olmalı — güncelleme yolu
+    // (updateGarmentDetailsQuery) bunu böyle yazıyor. Insert'te boş bırakılınca
+    // renk girilmiş parça "künyesiz" görünüyordu.
+    const primaryColor = group.color || colors[0]?.label || colors[0]?.key || null
     for (let copy = 0; copy < count; copy++) {
       sequence += 1
       const code = `G${item_id}-${String(sequence).padStart(2, '0')}`
@@ -49,8 +68,8 @@ export function insertTrackedGarmentsQuery(item_id, garmentGroups, {
         group.type_name || group.garment_type || 'Parça',
         typeId,
         group.emoji || '👕',
-        JSON.stringify(Array.isArray(group.colors) ? group.colors : []),
-        group.color || null,
+        JSON.stringify(colors),
+        primaryColor,
         group.pattern || 'solid',
         sequence,
         requiresIroning ? 1 : 0,
@@ -360,7 +379,7 @@ export function getPremiumDeliveryReceiptQuery(item_id) {
 // PREMIUM GARMENT SEARCH
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function searchPremiumGarmentsQuery({ block, room_no, garment_type, brand, size, color, pattern, intake_name, status, from_date, to_date, page = 1, limit = 50 } = {}) {
+export function searchPremiumGarmentsQuery({ block, room_no, garment_type, brand, size, color, pattern, intake_name, status, missing_tag, from_date, to_date, page = 1, limit = 50 } = {}) {
   const db = getDB()
   const conditions = []
   const params = []
@@ -373,6 +392,8 @@ export function searchPremiumGarmentsQuery({ block, room_no, garment_type, brand
   if (color)        { conditions.push('pg.color LIKE ?');        params.push(`%${color}%`) }
   if (pattern)      { conditions.push('pg.pattern LIKE ?');      params.push(`%${pattern}%`) }
   if (intake_name)  { conditions.push('li.intake_name LIKE ?');  params.push(`%${intake_name}%`) }
+  // Künyesi hiç girilmemiş parçalar — tamamlama kuyruğu.
+  if (missing_tag) conditions.push(MISSING_TAG_SQL)
   if (status)       { conditions.push('pg.status = ?');          params.push(status) }
   if (from_date)    { conditions.push("li.created_at >= ?");     params.push(from_date) }
   if (to_date)      { conditions.push("li.created_at <= ?");     params.push(to_date + ' 23:59:59') }

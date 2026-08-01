@@ -15,7 +15,7 @@ import {
   getBlockRoomActiveCountsQuery, getSlaConfigQuery, isBlockPremiumQuery,
   insertTrackedGarmentsQuery, getPremiumGarmentsQuery,
   getGarmentProgressQuery, getGarmentWithItemQuery, setGarmentIroningQuery,
-  insertGarmentExceptionQuery, updateGarmentDetailsQuery,
+  insertGarmentExceptionQuery, updateGarmentDetailsQuery, MISSING_TAG_SQL,
   upsertArchiveGarmentsQuery, getRoomWardrobeQuery, listArchiveBrandsQuery,
   deleteArchiveGarmentQuery,
 } from '../laundry/queries.js'
@@ -688,6 +688,13 @@ selfServiceRouter.get('/laundry-kiosk/bags', requireLaundryKioskOperator, (req, 
                     (SELECT COUNT(*) FROM premium_garments pg WHERE pg.item_id=li.id AND pg.status='ironing') AS garment_ironing,
                     (SELECT COUNT(*) FROM premium_garments pg WHERE pg.item_id=li.id AND pg.status='lost') AS garment_missing,
                     (SELECT COUNT(*) FROM premium_garments pg WHERE pg.item_id=li.id AND pg.status='damaged') AS garment_damaged,
+                    -- Künyesi hiç girilmemiş parçalar: operatör kıyafeti elinde
+                    -- tutarken tamamlasın diye torba listesinde rozetlenir.
+                    -- Koşul kıyafet aramasıyla ORTAK (MISSING_TAG_SQL) — iki
+                    -- ekran aynı parçayı farklı sınıflandırmasın.
+                    (SELECT COUNT(*) FROM premium_garments pg
+                     WHERE pg.item_id=li.id AND ${MISSING_TAG_SQL}
+                    ) AS garment_untagged,
                     r.block, r.room_no,
                     li.machine_id, lm.name AS machine_name, lm.timer_end AS machine_timer_end
              FROM laundry_items li JOIN rooms r ON r.id = li.room_id

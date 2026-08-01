@@ -233,6 +233,13 @@ export default function IroningWorkView({ kioskApi, focusedBag, onConsumeFocus }
                 <div style={{ color: '#64748b', fontSize: 12, marginTop: 3 }}>
                   {bag.garment_total || bag.item_count} parça · {bag.garment_ready || 0} hazır
                 </div>
+                {/* Künye yalnız kıyafet elde iken ucuz doldurulur — ütü
+                    kuyruğunda hangi torbada eksik olduğu burada görünür. */}
+                {bag.garment_untagged > 0 && (
+                  <div style={{ color: '#93c5fd', fontSize: 11, fontWeight: 700, marginTop: 2 }}>
+                    🏷️ {bag.garment_untagged} parçanın künyesi eksik
+                  </div>
+                )}
               </div>
               <span style={{ color: '#c4b5fd', fontWeight: 900 }}>Aç →</span>
             </button>
