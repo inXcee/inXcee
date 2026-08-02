@@ -87,10 +87,12 @@ function isBlacklisted(jti) {
 export function login(username, password) {
   const db = getDB()
   const user = db.prepare(
-    'SELECT id, username, role, full_name, password_hash, totp_enabled FROM users WHERE username=?'
+    'SELECT id, username, role, full_name, password_hash, totp_enabled, is_active FROM users WHERE username=?'
   ).get(username)
   if (!user) return null
   if (!bcrypt.compareSync(password, user.password_hash)) return null
+  // Askıya alınmış hesap: şifre doğru olsa da giriş yok.
+  if (user.is_active === 0) return null
   if (user.totp_enabled) {
     return { require_2fa: true, challenge_token: makeTotpChallengeToken(user.id) }
   }
@@ -253,9 +255,10 @@ function assertPrincipalActive(payload) {
     row = db.prepare('SELECT sessions_valid_from FROM personnel WHERE id=? AND check_out_date IS NULL').get(payload.personnelId)
     if (!row) throw new Error('Personel çıkış yapmış')
   } else if (payload.id) {
-    // Web ve mobil oturumlar: users satırı silinmişse token da ölmeli.
-    row = db.prepare('SELECT sessions_valid_from FROM users WHERE id=?').get(payload.id)
+    // Web ve mobil oturumlar: satır silinmiş VEYA hesap askıya alınmışsa token ölmeli.
+    row = db.prepare('SELECT sessions_valid_from, is_active FROM users WHERE id=?').get(payload.id)
     if (!row) throw new Error('Kullanıcı bulunamadı')
+    if (row.is_active === 0) throw new Error('Hesap askıya alındı')
   } else {
     return
   }
@@ -297,6 +300,48 @@ export function issuePersonnelKioskSession(personnelId) {
   if (!p) return null
   const { token } = makeKioskToken({ personnelId: p.id, role: 'kiosk', full_name: p.full_name })
   return { token, personnel: { id: p.id, full_name: p.full_name } }
+}
+
+// "Şu an kim içeride" — oturum değil KİŞİ bazında. last_seen_at ~5 dakikada bir
+// yazıldığı için varsayılan pencere ondan geniş tutuluyor (bkz. touchSession).
+export function listActiveUsers({ withinMinutes = 15 } = {}) {
+  const esik = new Date(Date.now() - withinMinutes * 60_000).toISOString().replace('T', ' ').slice(0, 19)
+  return getDB().prepare(`
+    SELECT principal_kind, principal_id,
+           MAX(full_name) AS full_name,
+           MAX(role) AS role,
+           COUNT(*) AS session_count,
+           MAX(COALESCE(last_seen_at, created_at)) AS last_seen_at
+    FROM auth_sessions
+    WHERE revoked_at IS NULL AND expires_at > ?
+      AND COALESCE(last_seen_at, created_at) >= ?
+    GROUP BY principal_kind, principal_id
+    ORDER BY last_seen_at DESC
+  `).all(Math.floor(Date.now() / 1000), esik)
+}
+
+// Hesabı askıya al: girişi kapatır ve mevcut token'ları anında geçersizler.
+// Silmek yerine bu — audit ve atamalar korunur, geri alınabilir.
+export function suspendUser(userId, { reason = null, byUserId = null } = {}) {
+  const db = getDB()
+  const user = db.prepare('SELECT id, role FROM users WHERE id=?').get(userId)
+  if (!user) return { error: 'Kullanıcı bulunamadı', status: 404 }
+  if (byUserId && Number(byUserId) === Number(userId)) {
+    return { error: 'Kendi hesabınızı askıya alamazsınız', status: 400 }
+  }
+  db.prepare("UPDATE users SET is_active=0, suspended_at=datetime('now'), suspended_reason=? WHERE id=?")
+    .run(reason, userId)
+  revokeSessionsFor('user', userId)
+  return { ok: true }
+}
+
+export function unsuspendUser(userId) {
+  const db = getDB()
+  if (!db.prepare('SELECT 1 FROM users WHERE id=?').get(userId)) {
+    return { error: 'Kullanıcı bulunamadı', status: 404 }
+  }
+  db.prepare('UPDATE users SET is_active=1, suspended_at=NULL, suspended_reason=NULL WHERE id=?').run(userId)
+  return { ok: true }
 }
 
 // Açık oturumlar — yöneticiye "hangi cihazda kim açık" görünümü.
@@ -345,8 +390,17 @@ export function revokeSessionsFor(kind, id) {
   if (!table || !id) return
   // table sabit whitelist'ten gelir (kullanıcı girdisi değil); id parametreli.
   const db = getDB()
+  // Kayıtlı her oturumu jti bazında iptal et. Zaman damgası tek başına yetmiyordu:
+  // iptal, token'ın üretildiği milisaniyeye denk gelirse o token hayatta kalıyordu.
+  // jti kesin; ayrıca iptalden sonra üretilen yeni token yeni jti aldığı için
+  // "kendini dışarı atma" sorunu da doğmuyor.
+  const acik = db.prepare(
+    'SELECT jti, expires_at FROM auth_sessions WHERE principal_kind=? AND principal_id=? AND revoked_at IS NULL'
+  ).all(kind, id)
+  for (const oturum of acik) blacklistJti(oturum.jti, oturum.expires_at)
+
+  // Damga, auth_sessions'tan önce üretilmiş (kaydı olmayan) eski token'lar için kalıyor.
   db.prepare(`UPDATE ${table} SET sessions_valid_from=? WHERE id=?`).run(Date.now(), id)
-  // Liste görünümü de tutarlı kalsın: bu kişinin açık oturumları kapandı.
   db.prepare("UPDATE auth_sessions SET revoked_at=datetime('now') WHERE principal_kind=? AND principal_id=? AND revoked_at IS NULL")
     .run(kind, id)
 }

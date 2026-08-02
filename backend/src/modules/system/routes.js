@@ -5,7 +5,7 @@ import { logger } from '../../shared/logger.js'
 import { register } from '../../shared/metrics.js'
 import { getStats, listFailed, retryFailed } from '../../shared/jobs/index.js'
 import { logAudit } from '../../shared/audit.js'
-import { listActiveSessions, revokeSession } from '../../shared/auth/service.js'
+import { listActiveSessions, revokeSession, listActiveUsers, revokeSessionsFor, suspendUser, unsuspendUser } from '../../shared/auth/service.js'
 
 export const systemRouter = Router()
 const adminOnly = requireRole('campus_manager')
@@ -38,6 +38,49 @@ systemRouter.post('/jobs/retry', ...adminOnly, (req, res) => {
 systemRouter.get('/sessions', ...adminOnly, (req, res) => {
   try { res.json(listActiveSessions()) }
   catch (e) { logger.error('[System]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Şu an içeride kim var — oturum değil kişi bazında.
+systemRouter.get('/active-users', ...adminOnly, (req, res) => {
+  try {
+    const dakika = Math.min(1440, Math.max(1, parseInt(req.query.within) || 15))
+    res.json(listActiveUsers({ withinMinutes: dakika }))
+  } catch (e) { logger.error('[System]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Bir kişinin bütün cihazlarını tek hamlede düşür.
+systemRouter.post('/sessions/revoke-all', ...adminOnly, (req, res) => {
+  try {
+    const { kind, id } = req.body || {}
+    if (!['user', 'staff', 'personnel'].includes(kind) || !Number.isInteger(Number(id))) {
+      return res.status(400).json({ error: 'kind (user/staff/personnel) ve id gerekli' })
+    }
+    revokeSessionsFor(kind, Number(id))
+    logAudit(req.user.id, 'sessions_revoke_all', 'system', Number(id), `${kind} #${id} tüm oturumları kapatıldı`)
+    res.json({ ok: true })
+  } catch (e) { logger.error('[System]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Hesabı askıya al / geri aç — silmeden erişimi kesmenin yolu.
+systemRouter.post('/users/:id/suspend', ...adminOnly, (req, res) => {
+  try {
+    const result = suspendUser(Number(req.params.id), {
+      reason: req.body?.reason ? String(req.body.reason).slice(0, 200) : null,
+      byUserId: req.user.id,
+    })
+    if (result.error) return res.status(result.status).json({ error: result.error })
+    logAudit(req.user.id, 'user_suspend', 'system', Number(req.params.id), req.body?.reason || 'Sebep belirtilmedi')
+    res.json(result)
+  } catch (e) { logger.error('[System]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+systemRouter.post('/users/:id/unsuspend', ...adminOnly, (req, res) => {
+  try {
+    const result = unsuspendUser(Number(req.params.id))
+    if (result.error) return res.status(result.status).json({ error: result.error })
+    logAudit(req.user.id, 'user_unsuspend', 'system', Number(req.params.id), 'Askı kaldırıldı')
+    res.json(result)
+  } catch (e) { logger.error('[System]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 systemRouter.delete('/sessions/:jti', ...adminOnly, (req, res) => {

@@ -59,6 +59,61 @@ export default function SessionsPage() {
     refetchInterval: 60_000,
   })
 
+  // "Şu an içeride kim var" — oturum değil kişi bazında, daha sık tazelenir.
+  const activeQuery = useQuery({
+    queryKey: ['active-users'],
+    queryFn: () => api.get('/system/active-users?within=15').then(r => r.data),
+    refetchInterval: 30_000,
+  })
+
+  function tazele() {
+    refetch()
+    activeQuery.refetch()
+    queryClient.invalidateQueries({ queryKey: ['active-users'] })
+  }
+
+  const revokeAll = useMutation({
+    mutationFn: ({ kind, id }) => api.post('/system/sessions/revoke-all', { kind, id }),
+    onSuccess: () => {
+      useToastStore.getState().addToast('Kişinin tüm cihazları kapatıldı', 'success')
+      tazele()
+    },
+    onError: (err) => useToastStore.getState().addToast(
+      err.response?.data?.error || 'Cihazlar kapatılamadı', 'error',
+    ),
+  })
+
+  const suspend = useMutation({
+    mutationFn: ({ id, reason }) => api.post(`/system/users/${id}/suspend`, { reason }),
+    onSuccess: () => {
+      useToastStore.getState().addToast('Hesap askıya alındı', 'success')
+      tazele()
+    },
+    onError: (err) => useToastStore.getState().addToast(
+      err.response?.data?.error || 'Hesap askıya alınamadı', 'error',
+    ),
+  })
+
+  async function handleRevokeAll(person) {
+    const ok = await confirmDialog({
+      title: 'Tüm cihazları kapat',
+      body: `${person.full_name || 'Bu kişi'} adına açık ${person.session_count} oturumun tamamı kapatılacak. Hesap açık kalır, yeniden giriş yapabilir.`,
+      confirmLabel: 'Hepsini kapat',
+      danger: true,
+    })
+    if (ok) revokeAll.mutate({ kind: person.principal_kind, id: person.principal_id })
+  }
+
+  async function handleSuspend(person) {
+    const ok = await confirmDialog({
+      title: 'Hesabı askıya al',
+      body: `${person.full_name || 'Bu kullanıcı'} artık giriş yapamayacak ve açık oturumları anında kapanacak. Hesap silinmez, istediğinizde geri açabilirsiniz.`,
+      confirmLabel: 'Askıya al',
+      danger: true,
+    })
+    if (ok) suspend.mutate({ id: person.principal_id, reason: 'Yönetici kararı' })
+  }
+
   const revoke = useMutation({
     mutationFn: (jti) => api.delete(`/system/sessions/${encodeURIComponent(jti)}`),
     onSuccess: () => {
@@ -106,15 +161,48 @@ export default function SessionsPage() {
     <div>
       <header style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
         <div>
-          <h2 style={{ margin: 0, fontFamily: 'var(--display)', letterSpacing: 1, color: 'var(--text)' }}>AÇIK OTURUMLAR</h2>
+          <h2 style={{ margin: 0, fontFamily: 'var(--display)', letterSpacing: 1, color: 'var(--text)' }}>ERİŞİM MERKEZİ</h2>
           <p style={{ margin: '4px 0 0', color: 'var(--text2)', fontSize: 13 }}>
-            Oturumlar çıkış yapılana kadar açık kalır. Kaybolan bir cihazın oturumunu buradan kapatabilirsiniz.
+            Şu an kimin içeride olduğunu görün; bir cihazı, kişinin tüm cihazlarını ya da hesabın kendisini kapatın.
           </p>
         </div>
-        <button style={linkBtn} onClick={() => refetch()} disabled={isFetching}>
+        <button style={linkBtn} onClick={tazele} disabled={isFetching}>
           {isFetching ? 'Yenileniyor…' : '↻ Yenile'}
         </button>
       </header>
+
+      <section style={{ marginBottom: 18 }} aria-label="Şu an içeride olanlar">
+        <h3 style={sectionTitle}>ŞU AN İÇERİDE <span style={{ color: 'var(--text2)', fontWeight: 400 }}>· son 15 dakika</span></h3>
+        {(activeQuery.data || []).length === 0 ? (
+          <div style={box}>Son 15 dakikada istek yapan kimse yok.</div>
+        ) : (
+          <div style={{ display: 'grid', gap: 8 }}>
+            {(activeQuery.data || []).map(person => (
+              <article key={`${person.principal_kind}-${person.principal_id}`} style={row}>
+                <div style={{ minWidth: 0 }}>
+                  <strong style={{ color: 'var(--text)', display: 'block' }}>
+                    <span aria-hidden="true" style={{ color: 'var(--green)' }}>● </span>
+                    {person.full_name || 'Adı kayıtlı değil'}
+                  </strong>
+                  <small style={{ color: 'var(--text2)' }}>
+                    {ROLE_LABELS[person.role] || person.role || '—'} · {person.session_count} cihaz · {sinceLabel(person.last_seen_at)}
+                  </small>
+                </div>
+                <button type="button" style={linkBtn} onClick={() => handleRevokeAll(person)} disabled={revokeAll.isPending}>
+                  Tüm cihazları kapat
+                </button>
+                {person.principal_kind === 'user' && (
+                  <button type="button" style={dangerBtn} onClick={() => handleSuspend(person)} disabled={suspend.isPending}>
+                    Hesabı askıya al
+                  </button>
+                )}
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <h3 style={sectionTitle}>AÇIK OTURUMLAR</h3>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginBottom: 14 }}>
         <Stat label="Açık oturum" value={sessions.length} />
@@ -185,6 +273,7 @@ function Stat({ label, value, warn }) {
 }
 
 const box = { background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 10, padding: 14, color: 'var(--text2)' }
+const sectionTitle = { margin: '0 0 8px', fontSize: 12, letterSpacing: 1.2, color: 'var(--text2)', fontWeight: 700 }
 // borderColor satır bazında değiştiği için kısayol `border` yerine uzun yazım:
 // ikisi bir arada olursa React yeniden çizimde çakışma uyarısı veriyor.
 const row = {

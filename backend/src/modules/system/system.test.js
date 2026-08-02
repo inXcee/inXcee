@@ -163,3 +163,67 @@ describe('Açık oturumlar', () => {
     expect((await request(app).get('/api/system/sessions')).status).toBe(401)
   })
 })
+
+describe('Yönetici erişim merkezi', () => {
+  it('aktif kullanıcıları kişi bazında döndürür', async () => {
+    const res = await request(app).get('/api/system/active-users')
+      .set('Authorization', `Bearer ${adminToken}`)
+    expect(res.status).toBe(200)
+    const kayit = res.body.find(u => u.role === 'campus_manager')
+    expect(kayit).toBeTruthy()
+    expect(kayit.session_count).toBeGreaterThan(0)
+  })
+
+  it('bir kişinin tüm cihazlarını kapatır', async () => {
+    const a = (await request(app).post('/api/auth/login')
+      .send({ username: 'teknik', password: 'admin123' })).body.token
+    const b = (await request(app).post('/api/auth/login')
+      .send({ username: 'teknik', password: 'admin123' })).body.token
+    const userId = jwt.decode(a).id
+
+    const kapat = await request(app).post('/api/system/sessions/revoke-all')
+      .set('Authorization', `Bearer ${adminToken}`).send({ kind: 'user', id: userId })
+    expect(kapat.status).toBe(200)
+
+    for (const t of [a, b]) {
+      expect((await request(app).get('/api/dashboard/kpi')
+        .set('Authorization', `Bearer ${t}`)).status).toBe(401)
+    }
+  })
+
+  it('hesabı askıya alır, giriş ve mevcut token kapanır; geri açılır', async () => {
+    const token = (await request(app).post('/api/auth/login')
+      .send({ username: 'camasir', password: 'admin123' })).body.token
+    const userId = jwt.decode(token).id
+
+    const askiya = await request(app).post(`/api/system/users/${userId}/suspend`)
+      .set('Authorization', `Bearer ${adminToken}`).send({ reason: 'Test' })
+    expect(askiya.status).toBe(200)
+
+    expect((await request(app).get('/api/dashboard/kpi')
+      .set('Authorization', `Bearer ${token}`)).status).toBe(401)
+    expect((await request(app).post('/api/auth/login')
+      .send({ username: 'camasir', password: 'admin123' })).status).toBe(401)
+
+    expect((await request(app).post(`/api/system/users/${userId}/unsuspend`)
+      .set('Authorization', `Bearer ${adminToken}`)).status).toBe(200)
+    expect((await request(app).post('/api/auth/login')
+      .send({ username: 'camasir', password: 'admin123' })).status).toBe(200)
+  })
+
+  it('yönetici kendi hesabını askıya alamaz', async () => {
+    const benimId = jwt.decode(adminToken).id
+    const res = await request(app).post(`/api/system/users/${benimId}/suspend`)
+      .set('Authorization', `Bearer ${adminToken}`).send({ reason: 'kaza' })
+    expect(res.status).toBe(400)
+  })
+
+  it('yetkisiz rol erişim merkezini kullanamaz', async () => {
+    expect((await request(app).get('/api/system/active-users')
+      .set('Authorization', `Bearer ${userToken}`)).status).toBe(403)
+    expect((await request(app).post('/api/system/sessions/revoke-all')
+      .set('Authorization', `Bearer ${userToken}`).send({ kind: 'user', id: 1 })).status).toBe(403)
+    expect((await request(app).post('/api/system/users/1/suspend')
+      .set('Authorization', `Bearer ${userToken}`).send({})).status).toBe(403)
+  })
+})

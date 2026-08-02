@@ -3,7 +3,7 @@ import request from 'supertest'
 import app from '../../app.js'
 import { initDB, getDB } from '../db/index.js'
 import { seedDev } from '../db/seed.js'
-import { login, verifyToken, loginKioskById, loginKiosk, refreshToken, loginAvsKiosk, logoutToken, changeStaffKioskPin, changeOwnPassword, listActiveSessions, revokeSession } from './service.js'
+import { login, verifyToken, loginKioskById, loginKiosk, refreshToken, loginAvsKiosk, logoutToken, changeStaffKioskPin, changeOwnPassword, listActiveSessions, revokeSession, listActiveUsers, suspendUser, unsuspendUser, revokeSessionsFor } from './service.js'
 import { setWorkerPin } from '../../modules/avs-workers/queries.js'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
@@ -379,6 +379,64 @@ describe('Desktop passkey (webauthn) uçları', () => {
     const res = await request(app).post('/api/auth/passkey/login')
       .send({ credentialId: 'boyle-bir-cihaz-yok', response: {} })
     expect(res.status).toBe(404)
+  })
+})
+
+describe('Yönetici erişim kontrolü', () => {
+  function makeUser(username) {
+    const db = getDB()
+    db.prepare("INSERT INTO users(username, password_hash, role, full_name) VALUES(?,?,?,?)")
+      .run(username, bcrypt.hashSync('Guclu!Sifre123', 10), 'technical', `Test ${username}`)
+    return db.prepare('SELECT id FROM users WHERE username=?').get(username).id
+  }
+
+  it('askıya alınan kullanıcı giriş yapamaz', () => {
+    const id = makeUser('askiya_alinan')
+    expect(login('askiya_alinan', 'Guclu!Sifre123').token).toBeTruthy()
+
+    suspendUser(id, { reason: 'İşten ayrıldı' })
+    expect(login('askiya_alinan', 'Guclu!Sifre123')).toBeNull()
+  })
+
+  it('askıya alma mevcut token’ı da anında keser', () => {
+    const id = makeUser('token_kesilen')
+    const { token } = login('token_kesilen', 'Guclu!Sifre123')
+    expect(verifyToken(token).id).toBe(id)
+
+    suspendUser(id, { reason: 'Şüpheli hareket' })
+    expect(() => verifyToken(token)).toThrow()
+  })
+
+  it('askıdan indirilince tekrar giriş yapabilir', () => {
+    const id = makeUser('geri_alinan')
+    suspendUser(id, { reason: 'Geçici' })
+    expect(login('geri_alinan', 'Guclu!Sifre123')).toBeNull()
+
+    unsuspendUser(id)
+    expect(login('geri_alinan', 'Guclu!Sifre123').token).toBeTruthy()
+  })
+
+  it('bir kişinin bütün cihazları tek hamlede düşer', () => {
+    const id = makeUser('cok_cihazli')
+    const birinci = login('cok_cihazli', 'Guclu!Sifre123').token
+    const ikinci = login('cok_cihazli', 'Guclu!Sifre123').token
+    expect(verifyToken(birinci).id).toBe(id)
+    expect(verifyToken(ikinci).id).toBe(id)
+
+    revokeSessionsFor('user', id)
+    expect(() => verifyToken(birinci)).toThrow()
+    expect(() => verifyToken(ikinci)).toThrow()
+  })
+
+  it('aktif kullanıcılar kişi bazında toplanır', () => {
+    const id = makeUser('aktif_kisi')
+    login('aktif_kisi', 'Guclu!Sifre123')
+    login('aktif_kisi', 'Guclu!Sifre123')
+
+    const kayit = listActiveUsers({ withinMinutes: 60 }).find(u => u.principal_id === id && u.principal_kind === 'user')
+    expect(kayit).toBeTruthy()
+    expect(kayit.session_count).toBe(2)
+    expect(kayit.full_name).toBe('Test aktif_kisi')
   })
 })
 
