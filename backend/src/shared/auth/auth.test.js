@@ -295,11 +295,13 @@ describe('PIN lockout — loginKioskById', () => {
     db.prepare("INSERT OR IGNORE INTO personnel(id, full_name, tc_no, kiosk_pin, pin_attempts) VALUES(9001, 'Test Kiosk', '98765432100', ?, 0)").run(hash)
   })
 
-  it('5 hatalı denemede hesap kilitlenir', () => {
-    for (let i = 0; i < 5; i++) loginKioskById(9001, '0000')
-    const result = loginKioskById(9001, '1234')
-    expect(result.status).toBe(429)
-    expect(result.error).toMatch(/kilitlendi/)
+  it('5 hatalı denemeden sonra doğru PIN beklemeden çalışır', () => {
+    for (let i = 0; i < 5; i++) {
+      const hata = loginKioskById(9001, '0000')
+      expect(hata.status).toBe(401)
+      expect(hata.error).toBe('PIN hatalı')
+    }
+    expect(loginKioskById(9001, '1234').token).toBeDefined()
   })
 
   it('doğru PIN ile giriş başarılı ve attempts sıfırlanır', () => {
@@ -333,11 +335,13 @@ describe('PIN lockout — loginKiosk (TC no)', () => {
     db.prepare("INSERT OR IGNORE INTO personnel(id, full_name, tc_no, kiosk_pin, pin_attempts) VALUES(9002, 'TC Kiosk', '11122233344', ?, 0)").run(hash)
   })
 
-  it('5 hatalı denemede hesap kilitlenir', () => {
-    for (let i = 0; i < 5; i++) loginKiosk('11122233344', '0000')
-    const result = loginKiosk('11122233344', '5678')
-    expect(result.status).toBe(429)
-    expect(result.error).toMatch(/kilitlendi/)
+  it('5 hatalı denemeden sonra doğru PIN beklemeden çalışır', () => {
+    for (let i = 0; i < 5; i++) {
+      const hata = loginKiosk('11122233344', '0000')
+      expect(hata.status).toBe(401)
+      expect(hata.error).toBe('PIN hatalı')
+    }
+    expect(loginKiosk('11122233344', '5678').token).toBeDefined()
   })
 
   it('doğru PIN ile giriş başarılı', () => {
@@ -375,6 +379,49 @@ describe('Desktop passkey (webauthn) uçları', () => {
     const res = await request(app).post('/api/auth/passkey/login')
       .send({ credentialId: 'boyle-bir-cihaz-yok', response: {} })
     expect(res.status).toBe(404)
+  })
+})
+
+// Yanlış PIN kullanıcıyı bekletmemeli: kiosk paylaşımlı bir cihaz, kilitlenen
+// hesap vardiyayı durduruyordu. Yanlışsa yalnızca "yanlış" denir.
+describe('Yanlış PIN bekletmez', () => {
+  function makeWorker(pin = '1357') {
+    const info = getDB().prepare(
+      "INSERT INTO staff(full_name, role_label, is_active, kiosk_pin) VALUES(?,?,1,?)"
+    ).run('Kilit Testi Personeli', 'Çamaşırhane Personeli', bcrypt.hashSync(pin, 10))
+    return Number(info.lastInsertRowid)
+  }
+
+  it('art arda 10 yanlış denemeden sonra doğru PIN anında çalışır', () => {
+    const workerId = makeWorker()
+    for (let i = 0; i < 10; i++) {
+      const hata = loginAvsKiosk(workerId, '0000')
+      expect(hata.status).toBe(401)
+      expect(hata.error).toBe('PIN hatalı')
+    }
+    expect(loginAvsKiosk(workerId, '1357').token).toBeTruthy()
+  })
+
+  it('hiçbir denemede kilit/bekleme mesajı dönmez', () => {
+    const workerId = makeWorker()
+    for (let i = 0; i < 8; i++) {
+      const hata = loginAvsKiosk(workerId, '9999')
+      expect(hata.status).not.toBe(429)
+      expect(hata.error).not.toMatch(/kilit|dakika|bekle/i)
+    }
+  })
+
+  it('personel PIN kiosku da kilitlenmez', () => {
+    const db = getDB()
+    const p = db.prepare('SELECT id FROM personnel WHERE check_out_date IS NULL LIMIT 1').get()
+    db.prepare('UPDATE personnel SET kiosk_pin=?, pin_attempts=0, pin_locked_until=NULL WHERE id=?')
+      .run(bcrypt.hashSync('2468', 10), p.id)
+    for (let i = 0; i < 8; i++) {
+      const hata = loginKioskById(p.id, '1111')
+      expect(hata.status).toBe(401)
+      expect(hata.error).toBe('PIN hatalı')
+    }
+    expect(loginKioskById(p.id, '2468').token).toBeTruthy()
   })
 })
 

@@ -36,13 +36,13 @@ function clearSessionCookie(res) {
   res.clearCookie(COOKIE_NAME, { path: '/', httpOnly: true, secure: COOKIE_OPTS.secure, sameSite: COOKIE_OPTS.sameSite })
 }
 
-// Kiosk / AVS PIN endpoint'lerine özel sıkı rate limit — 4 haneli PIN brute-force riski
-// authLimiter 30/15dk şu an, kiosk-PIN için yetersiz (5dkdaki 30 attempt 4-hane uzayını
-// günlerle gezer). Buraya 10/15dk per IP daha gerçekçi.
+// Kiosk PIN uçları. ÖNEMLİ: kiosk paylaşımlı bir cihaz — bütün personel aynı
+// IP'den giriyor. Eski 10/15dk sınırı yoğun vardiyada meşru girişleri kesiyordu.
+// Eşik yalnız otomatik deneme trafiğini durduracak kadar yüksek tutuluyor.
 const pinLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-  message: { error: 'Çok fazla PIN denemesi. 15 dakika sonra tekrar deneyin.' },
+  windowMs: 5 * 60 * 1000,
+  max: 200,
+  message: { error: 'Şu an çok fazla istek var, birazdan tekrar deneyin.' },
   standardHeaders: true,
   legacyHeaders: false,
   skip: () => process.env.NODE_ENV === 'test',

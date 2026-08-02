@@ -59,6 +59,7 @@ export default function LaundryKioskPage() {
   const [isOnline, setIsOnline] = useState(navigator.onLine)
   const [now, setNow] = useState(() => new Date())
   const searchTimer = useRef(null)
+  const pinFieldRef = useRef(null)
 
   useEffect(() => {
     const updateOnline = () => setIsOnline(navigator.onLine)
@@ -184,8 +185,11 @@ export default function LaundryKioskPage() {
       setWorkerInfo(response.data.worker)
       setActiveTab('home')
     } catch (error) {
+      // Yanlış PIN artık hesabı kilitlemiyor: alan temizlenip odak geri veriliyor
+      // ki personel beklemeden yeniden yazabilsin.
       setPinInput('')
-      setLoginError(error.response?.data?.error || 'Giriş başarısız. PIN kodunu kontrol edin.')
+      setLoginError(error.response?.data?.error || 'PIN hatalı. Tekrar deneyin.')
+      window.requestAnimationFrame(() => pinFieldRef.current?.focus())
     } finally {
       setLoginBusy(false)
     }
@@ -289,6 +293,7 @@ export default function LaundryKioskPage() {
                 <label htmlFor="kiosk-pin">4 haneli PIN</label>
                 <input
                   id="kiosk-pin"
+                  ref={pinFieldRef}
                   className="kiosk-pin-input"
                   type="password"
                   inputMode="numeric"

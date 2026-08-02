@@ -94,23 +94,32 @@ export function verify2faChallenge(challengeToken, code) {
   return { token, jti, user: { id: user.id, role: user.role, username: user.username, full_name: user.full_name } }
 }
 
+// Yanlış PIN kullanıcıyı bekletmez. Kiosk paylaşımlı bir cihaz ve tek kişinin
+// yanlış yazması bütün vardiyayı durduruyordu; kilit kaldırıldı.
+//
+// Engellemek yerine görünür kılıyoruz: deneme sayacı artar ve eşiği aşınca log'a
+// uyarı düşer. Otomatik deneme trafiği IP limitinde durur (bkz. auth/routes.js).
+const FAILED_PIN_WARN_AT = 10
+
+function noteFailedPin(table, id, fullName) {
+  const db = getDB()
+  try {
+    db.prepare(`UPDATE ${table === 'staff' ? 'staff' : 'personnel'} SET pin_attempts=COALESCE(pin_attempts,0)+1 WHERE id=?`).run(id)
+    const row = db.prepare(`SELECT pin_attempts FROM ${table === 'staff' ? 'staff' : 'personnel'} WHERE id=?`).get(id)
+    if (row?.pin_attempts && row.pin_attempts % FAILED_PIN_WARN_AT === 0) {
+      logger.warn({ table, id, attempts: row.pin_attempts, fullName }, '[Auth] Üst üste hatalı PIN denemesi')
+    }
+  } catch { /* sayaç tutulamazsa giriş akışı bozulmasın */ }
+  return { error: 'PIN hatalı', status: 401 }
+}
+
 export function loginKiosk(tcNo, pin) {
   const db = getDB()
   const p = db.prepare('SELECT * FROM personnel WHERE tc_no=? AND check_out_date IS NULL').get(tcNo)
   if (!p) return { error: 'TC No bulunamadı veya çıkış yapılmış', status: 401 }
   if (!p.kiosk_pin) return { error: 'PIN tanımlı değil. Yöneticinizden PIN alın.', status: 403 }
-  if (p.pin_locked_until && new Date(p.pin_locked_until) > new Date()) {
-    return { error: 'Çok fazla hatalı deneme. Hesap 15 dakika kilitlendi.', status: 429 }
-  }
   if (!bcrypt.compareSync(pin, p.kiosk_pin)) {
-    const attempts = (p.pin_attempts || 0) + 1
-    if (attempts >= 5) {
-      const lockedUntil = new Date(Date.now() + 15 * 60 * 1000).toISOString()
-      db.prepare('UPDATE personnel SET pin_attempts=?, pin_locked_until=? WHERE id=?').run(attempts, lockedUntil, p.id)
-      return { error: 'Çok fazla hatalı deneme. Hesap 15 dakika kilitlendi.', status: 429 }
-    }
-    db.prepare('UPDATE personnel SET pin_attempts=? WHERE id=?').run(attempts, p.id)
-    return { error: 'PIN hatalı', status: 401 }
+    return noteFailedPin('personnel', p.id, p.full_name)
   }
   db.prepare('UPDATE personnel SET pin_attempts=0, pin_locked_until=NULL WHERE id=?').run(p.id)
   const { token } = makeKioskToken({ personnelId: p.id, role: 'kiosk', full_name: p.full_name })
@@ -132,18 +141,8 @@ export function loginKioskById(personnelId, pin) {
   const p = db.prepare('SELECT * FROM personnel WHERE id=? AND check_out_date IS NULL').get(personnelId)
   if (!p) return { error: 'Personel bulunamadı veya çıkış yapılmış', status: 401 }
   if (!p.kiosk_pin) return { error: 'PIN tanımlı değil. Yöneticinizden PIN alın.', status: 403 }
-  if (p.pin_locked_until && new Date(p.pin_locked_until) > new Date()) {
-    return { error: 'Çok fazla hatalı deneme. Hesap 15 dakika kilitlendi.', status: 429 }
-  }
   if (!bcrypt.compareSync(pin, p.kiosk_pin)) {
-    const attempts = (p.pin_attempts || 0) + 1
-    if (attempts >= 5) {
-      const lockedUntil = new Date(Date.now() + 15 * 60 * 1000).toISOString()
-      db.prepare('UPDATE personnel SET pin_attempts=?, pin_locked_until=? WHERE id=?').run(attempts, lockedUntil, p.id)
-      return { error: 'Çok fazla hatalı deneme. Hesap 15 dakika kilitlendi.', status: 429 }
-    }
-    db.prepare('UPDATE personnel SET pin_attempts=? WHERE id=?').run(attempts, p.id)
-    return { error: 'PIN hatalı', status: 401 }
+    return noteFailedPin('personnel', p.id, p.full_name)
   }
   db.prepare('UPDATE personnel SET pin_attempts=0, pin_locked_until=NULL WHERE id=?').run(p.id)
   const { token } = makeKioskToken({ personnelId: p.id, role: 'kiosk', full_name: p.full_name })
@@ -165,18 +164,8 @@ export function loginAvsKiosk(workerId, pin) {
   const w = db.prepare('SELECT * FROM staff WHERE id=? AND is_active=1').get(workerId)
   if (!w) return { error: 'Çalışan bulunamadı veya pasif', status: 401 }
   if (!w.kiosk_pin) return { error: 'PIN tanımlı değil. Yöneticinizden PIN alın.', status: 403 }
-  if (w.pin_locked_until && new Date(w.pin_locked_until) > new Date()) {
-    return { error: 'Çok fazla hatalı deneme. Hesap 15 dakika kilitlendi.', status: 429 }
-  }
   if (!bcrypt.compareSync(pin, w.kiosk_pin)) {
-    const attempts = (w.pin_attempts || 0) + 1
-    if (attempts >= 5) {
-      const lockedUntil = new Date(Date.now() + 15 * 60 * 1000).toISOString()
-      db.prepare('UPDATE staff SET pin_attempts=?, pin_locked_until=? WHERE id=?').run(attempts, lockedUntil, w.id)
-      return { error: 'Çok fazla hatalı deneme. Hesap 15 dakika kilitlendi.', status: 429 }
-    }
-    db.prepare('UPDATE staff SET pin_attempts=? WHERE id=?').run(attempts, w.id)
-    return { error: 'PIN hatalı', status: 401 }
+    return noteFailedPin('staff', w.id, w.full_name)
   }
   db.prepare('UPDATE staff SET pin_attempts=0, pin_locked_until=NULL WHERE id=?').run(w.id)
   const { token } = makeKioskToken({ workerId: w.id, role: 'avs_kiosk', full_name: w.full_name })

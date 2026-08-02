@@ -89,8 +89,8 @@ describe('Mobile Auth — PIN login', () => {
   })
 })
 
-describe('Mobile Auth — PIN brute-force lockout (Y9)', () => {
-  it('5 hatali denemeden sonra dogru PIN bile reddedilir', async () => {
+describe('Mobile Auth — hatalı PIN bekletmez', () => {
+  it('5 hatali denemeden sonra dogru PIN anında çalışır', async () => {
     // Yeni housekeeper user yarat (izolasyon icin)
     const hash = bcrypt.hashSync('7777', 10)
     const r = db.prepare(`
@@ -106,16 +106,18 @@ describe('Mobile Auth — PIN brute-force lockout (Y9)', () => {
         .send({ pin: '0000', role: 'housekeeper' })
     }
 
-    // Test ettigimiz user kilitlenmis olmali
+    // Hesap kilitlenmez — sayaç yalnızca izleme için tutulur.
     const u = db.prepare('SELECT pin_attempts, pin_locked_until FROM users WHERE id=?').get(userId)
-    expect(u.pin_locked_until).toBeTruthy()
-    expect(new Date(u.pin_locked_until).getTime()).toBeGreaterThan(Date.now())
+    expect(u.pin_locked_until).toBeNull()
+    expect(u.pin_attempts).toBeGreaterThan(0)
 
-    // Dogru PIN bile artik calismaz (kilitli)
+    // Doğru PIN beklemeden çalışır ve sayaç sıfırlanır.
     const res = await request(app)
       .post('/api/mobile/auth/login')
       .send({ pin: '7777', role: 'housekeeper' })
-    expect(res.status).toBe(401)
+    expect(res.status).toBe(200)
+    expect(res.body.token).toBeTruthy()
+    expect(db.prepare('SELECT pin_attempts FROM users WHERE id=?').get(userId).pin_attempts).toBe(0)
 
     // Cleanup
     db.prepare('DELETE FROM users WHERE id=?').run(userId)

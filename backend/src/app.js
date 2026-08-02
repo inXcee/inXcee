@@ -280,21 +280,22 @@ const rateLimitKey = (req, _res) => {
   return `ip:${ipKeyGenerator(req.ip)}`
 }
 
-// Login endpoint — brute-force koruması için per-IP, window başına 30 deneme
+// Login endpoint — tavan yalnız otomatik deneme trafiği için. Ofis ve kiosk tek
+// IP'nin arkasında olduğundan eşik yüksek: elle şifre deneyen kimse görmemeli.
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 30,
-  message: { error: 'Çok fazla giriş denemesi. 15 dakika sonra tekrar deneyin.' },
+  windowMs: 5 * 60 * 1000,
+  max: 120,
+  message: { error: 'Şu an çok fazla istek var, birazdan tekrar deneyin.' },
   standardHeaders: true,
   legacyHeaders: false,
   skip: () => process.env.NODE_ENV === 'test',
 })
 
-// Mobile PIN login — 4 haneli PIN brute-force riski; per-IP sıkı
+// Mobil PIN girişi — aynı mantık: insan hızındaki deneme engellenmez.
 const mobileAuthLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
-  message: { error: 'Çok fazla PIN denemesi. 15 dakika sonra tekrar deneyin.' },
+  windowMs: 5 * 60 * 1000,
+  max: 120,
+  message: { error: 'Şu an çok fazla istek var, birazdan tekrar deneyin.' },
   standardHeaders: true,
   legacyHeaders: false,
   skip: () => process.env.NODE_ENV === 'test',

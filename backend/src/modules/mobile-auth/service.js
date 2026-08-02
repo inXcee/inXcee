@@ -6,8 +6,6 @@ import { WEB_TOKEN_TTL_MS } from '../../shared/auth/service.js'
 const SECRET = process.env.JWT_SECRET
 
 const MOBILE_ROLES = new Set(['housekeeper', 'technical', 'laundry', 'shift_supervisor', 'campus_manager'])
-const MAX_PIN_ATTEMPTS = 5
-const LOCKOUT_MS = 15 * 60 * 1000
 
 export function loginMobile(pin, role) {
   if (!MOBILE_ROLES.has(role)) return { error: 'Geçersiz rol', status: 400 }
@@ -18,25 +16,12 @@ export function loginMobile(pin, role) {
     'SELECT * FROM users WHERE role=? AND mobile_pin IS NOT NULL'
   ).all(role)
 
-  // Kilitli kullaniciyi PIN denemelerinden tamamen cikar — onun PIN'ini denemek bile riskli
-  const now = Date.now()
-  const eligible = users.filter(u => !u.pin_locked_until || new Date(u.pin_locked_until).getTime() <= now)
-
-  const matched = eligible.find(u => bcrypt.compareSync(pin, u.mobile_pin))
+  const matched = users.find(u => bcrypt.compareSync(pin, u.mobile_pin))
   if (!matched) {
-    // Hangi user'a saldiri yapildi bilemiyoruz (PIN pool model). Yine de
-    // her uygun kullanicinin attempts sayacini artirip, esige varan herkesi
-    // 15dk kilitle. Bu PIN kombinasyonlarinin tamamini exhaust etmeyi
-    // pratikte imkansiz kilar.
+    // Kilit yok: yanlış PIN kullanıcıyı bekletmez, yalnızca "yanlış" denir.
+    // Sayaç izleme için tutulur; otomatik deneme trafiği IP limitinde durur.
     const incr = db.prepare('UPDATE users SET pin_attempts = COALESCE(pin_attempts,0) + 1 WHERE id = ?')
-    const lock = db.prepare('UPDATE users SET pin_attempts = 0, pin_locked_until = ? WHERE id = ?')
-    const lockedUntil = new Date(now + LOCKOUT_MS).toISOString()
-    db.transaction(() => {
-      for (const u of eligible) {
-        incr.run(u.id)
-        if ((u.pin_attempts || 0) + 1 >= MAX_PIN_ATTEMPTS) lock.run(lockedUntil, u.id)
-      }
-    })()
+    db.transaction(() => { for (const u of users) incr.run(u.id) })()
     return { error: 'PIN hatalı veya mobil erişim tanımlı değil', status: 401 }
   }
 
