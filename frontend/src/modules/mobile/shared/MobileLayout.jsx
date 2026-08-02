@@ -6,7 +6,6 @@ import { useMobileSSE } from '../../../shared/hooks/useMobileSSE.js'
 import { getQueue, dequeue, updateRetries, getBlob } from '../../../shared/utils/offlineDB.js'
 import { useToastStore } from '../../../shared/store/toastStore.js'
 import { useMobilePrefs } from '../../../shared/store/mobilePrefsStore.js'
-import { useIdleTimeout } from '../../../shared/hooks/useIdleTimeout.js'
 import PushBanner from './PushBanner.jsx'
 import { unsubscribePush } from '../../../shared/utils/pushSubscribe.js'
 import { RouteErrorBoundary } from '../../../shared/components/ErrorBoundary.jsx'
@@ -30,7 +29,7 @@ export default function MobileLayout({ tabs }) {
     try { await unsubscribePush() } catch {}
     rawLogout()
   }, [rawLogout])
-  useIdleTimeout({ timeoutMs: 15 * 60 * 1000, warnBeforeMs: 2 * 60 * 1000, token: mobileToken, onLogout: logout })
+  // Otomatik çıkış yok — oturum yalnızca çıkış düğmesiyle kapanır.
   const { darkMode, toggleDarkMode } = useMobilePrefs()
   const qc = useQueryClient()
   const { addToast } = useToastStore()
@@ -134,6 +133,11 @@ export default function MobileLayout({ tabs }) {
       const payload = JSON.parse(atob(mobileToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
       const msUntilRefresh = payload.exp * 1000 - Date.now() - 60 * 60 * 1000
       if (msUntilRefresh <= 0) return
+      // setTimeout gecikmesi 32-bit int'te tutulur: ~24.8 günü aşan değer taşar ve
+      // zamanlayıcı ANINDA tetiklenir. Token ömrü 30 gün olduğu için bu, açılışta
+      // sonsuz yenileme döngüsü demek olurdu. Uzaksa hiç kurma — uygulama tekrar
+      // açıldığında bu effect yeniden değerlendirilir.
+      if (msUntilRefresh > 2 ** 31 - 1) return
       timer = setTimeout(async () => {
         try {
           const r = await fetch('/api/mobile/auth/refresh', {

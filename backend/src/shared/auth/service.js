@@ -12,11 +12,30 @@ if (!SECRET) {
   process.exit(1)
 }
 
-const TOKEN_TTL_MS = 12 * 60 * 60 * 1000 // 12 saat
+// Oturum, kullanıcı çıkış yapana kadar açık kalır. Web tarafında 30 gün sonra
+// yeniden giriş istenir; kiosk cihazları vardiya boyunca (ve gece boyunca) açık
+// kaldığı için pratikte süresizdir.
+//
+// "Süresiz" yerine çok uzun ama SONLU bir süre kullanıyoruz: exp'siz token'da
+// logoutToken blacklist satırını yazamaz (aşağıda exp gerekiyor) ve
+// pruneTokenBlacklist neyi ne zaman sileceğini bilemez — yani çıkış düğmesi
+// sessizce işlevsiz kalırdı.
+export const WEB_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000 // 30 gün
+export const KIOSK_TOKEN_TTL_MS = 10 * 365 * 24 * 60 * 60 * 1000 // ~10 yıl
+
+const asSeconds = (ms) => Math.floor(ms / 1000)
 
 function makeToken(payload) {
   const jti = crypto.randomUUID()
-  const token = jwt.sign({ ...payload, jti }, SECRET, { expiresIn: '12h' })
+  const token = jwt.sign({ ...payload, jti }, SECRET, { expiresIn: asSeconds(WEB_TOKEN_TTL_MS) })
+  return { token, jti }
+}
+
+// Kiosk token'ı da jti taşır — süresiz bir token ancak iptal edilebiliyorsa
+// güvenlidir; çıkış düğmesi bu jti'yi blacklist'e yazarak oturumu gerçekten kapatır.
+function makeKioskToken(payload) {
+  const jti = crypto.randomUUID()
+  const token = jwt.sign({ ...payload, jti }, SECRET, { expiresIn: asSeconds(KIOSK_TOKEN_TTL_MS) })
   return { token, jti }
 }
 
@@ -91,11 +110,7 @@ export function loginKiosk(tcNo, pin) {
     return { error: 'PIN hatalı', status: 401 }
   }
   db.prepare('UPDATE personnel SET pin_attempts=0, pin_locked_until=NULL WHERE id=?').run(p.id)
-  const token = jwt.sign(
-    { personnelId: p.id, role: 'kiosk', full_name: p.full_name },
-    SECRET,
-    { expiresIn: '1h' }
-  )
+  const { token } = makeKioskToken({ personnelId: p.id, role: 'kiosk', full_name: p.full_name })
   return { token, personnel: { id: p.id, full_name: p.full_name } }
 }
 
@@ -128,11 +143,7 @@ export function loginKioskById(personnelId, pin) {
     return { error: 'PIN hatalı', status: 401 }
   }
   db.prepare('UPDATE personnel SET pin_attempts=0, pin_locked_until=NULL WHERE id=?').run(p.id)
-  const token = jwt.sign(
-    { personnelId: p.id, role: 'kiosk', full_name: p.full_name },
-    SECRET,
-    { expiresIn: '1h' }
-  )
+  const { token } = makeKioskToken({ personnelId: p.id, role: 'kiosk', full_name: p.full_name })
   return { token, personnel: { id: p.id, full_name: p.full_name } }
 }
 
@@ -165,11 +176,7 @@ export function loginAvsKiosk(workerId, pin) {
     return { error: 'PIN hatalı', status: 401 }
   }
   db.prepare('UPDATE staff SET pin_attempts=0, pin_locked_until=NULL WHERE id=?').run(w.id)
-  const token = jwt.sign(
-    { workerId: w.id, role: 'avs_kiosk', full_name: w.full_name },
-    SECRET,
-    { expiresIn: '4h' }
-  )
+  const { token } = makeKioskToken({ workerId: w.id, role: 'avs_kiosk', full_name: w.full_name })
   return { token, worker: { id: w.id, full_name: w.full_name, role_label: w.role_label } }
 }
 
@@ -268,7 +275,12 @@ export function refreshToken(oldToken) {
     }
   }
   if (!payload) return { error: 'Token payload boş', status: 401 }
-  if (payload.role === 'kiosk') return { error: 'Kiosk token yenilenemiyor', status: 403 }
+  // Kiosk token'ları zaten süresiz; yenilemeye gerek yok. Buraya düşerlerse net
+  // 403 dönmeli — aksi halde aşağıdaki users sorgusu boş döner ve 401 ile
+  // frontend oturumu gereksiz yere kapatır.
+  if (payload.role === 'kiosk' || payload.role === 'avs_kiosk') {
+    return { error: 'Kiosk oturumu yenilenmez, çıkış yapılana dek geçerlidir', status: 403 }
+  }
   const db = getDB()
   const user = db.prepare('SELECT id, role, username, full_name FROM users WHERE id=?').get(payload.id)
   if (!user) return { error: 'Kullanıcı bulunamadı', status: 401 }

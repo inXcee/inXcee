@@ -6,6 +6,7 @@ import {
 } from '@simplewebauthn/server'
 import jwt from 'jsonwebtoken'
 import { getDB } from '../../shared/db/index.js'
+import { WEB_TOKEN_TTL_MS } from '../../shared/auth/service.js'
 
 const RP_NAME = 'YYS'
 // Prod'da .env'e gerek kalmasın diye NODE_ENV'e göre makul varsayılanlar;
@@ -119,10 +120,11 @@ export async function verifyAuthentication(credentialId, response, { allowedRole
   db.prepare('UPDATE users SET webauthn_counter=?, webauthn_challenge=NULL WHERE id=?')
     .run(verification.authenticationInfo.newCounter, user.id)
 
+  // Oturum çıkış yapılana kadar açık kalır — web paneliyle aynı süre.
   const token = jwt.sign(
     { id: user.id, role: user.role, full_name: user.full_name },
     process.env.JWT_SECRET,
-    { expiresIn: '8h' }
+    { expiresIn: Math.floor(WEB_TOKEN_TTL_MS / 1000) }
   )
   return { token, user: { id: user.id, role: user.role, full_name: user.full_name } }
 }

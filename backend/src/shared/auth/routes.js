@@ -3,7 +3,7 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
 import { z } from 'zod'
 import crypto from 'node:crypto'
 import bcrypt from 'bcryptjs'
-import { login, loginKiosk, loginKioskById, searchKioskPersonnel, loginAvsKiosk, searchAvsWorkers, changeOwnPassword, refreshToken, verify2faChallenge, logoutToken, getMe } from './service.js'
+import { login, loginKiosk, loginKioskById, searchKioskPersonnel, loginAvsKiosk, searchAvsWorkers, changeOwnPassword, refreshToken, verify2faChallenge, logoutToken, getMe, WEB_TOKEN_TTL_MS } from './service.js'
 import { get2faStatus, start2faSetupWithQr, enable2fa, disable2fa, getBackupCodeStatus, regenerateBackupCodes } from './totp.js'
 import { getSetting } from '../../modules/email/queries.js'
 import { sendPasswordResetEmail } from '../../modules/email/service.js'
@@ -22,7 +22,9 @@ const COOKIE_OPTS = {
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
   sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
-  maxAge: 12 * 60 * 60 * 1000, // 12 saat — token expiry ile eşleşir
+  // Tek kaynak: JWT ile aynı süre. İkisi ayrı yazılırsa cookie erken ölüp
+  // oturumu token hâlâ geçerliyken düşürür.
+  maxAge: WEB_TOKEN_TTL_MS,
   path: '/',
 }
 

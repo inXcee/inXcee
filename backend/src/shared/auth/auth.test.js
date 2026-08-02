@@ -3,7 +3,7 @@ import request from 'supertest'
 import app from '../../app.js'
 import { initDB, getDB } from '../db/index.js'
 import { seedDev } from '../db/seed.js'
-import { login, verifyToken, loginKioskById, loginKiosk, refreshToken } from './service.js'
+import { login, verifyToken, loginKioskById, loginKiosk, refreshToken, loginAvsKiosk, logoutToken } from './service.js'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 
@@ -364,5 +364,64 @@ describe('Desktop passkey (webauthn) uçları', () => {
     const res = await request(app).post('/api/auth/passkey/login')
       .send({ credentialId: 'boyle-bir-cihaz-yok', response: {} })
     expect(res.status).toBe(404)
+  })
+})
+
+// Kiosk cihazları vardiya boyunca açık kalıyor; oturumu yalnızca çıkış düğmesi
+// kapatmalı. Süresiz token ancak iptal edilebiliyorsa güvenli — bu yüzden jti şart.
+describe('Oturum ömrü — çıkış yapılmadıkça açık kalır', () => {
+  function makeAvsWorker(pin = '4321') {
+    const db = getDB()
+    const info = db.prepare(
+      "INSERT INTO staff(full_name, role_label, is_active, kiosk_pin) VALUES(?,?,1,?)"
+    ).run('Oturum Test Personeli', 'Çamaşırhane Personeli', bcrypt.hashSync(pin, 10))
+    return info.lastInsertRowid
+  }
+
+  it('kiosk token pratikte süresizdir (bir yıldan uzun)', () => {
+    const workerId = makeAvsWorker()
+    const { token } = loginAvsKiosk(workerId, '4321')
+    const payload = jwt.decode(token)
+    const yil = 365 * 24 * 60 * 60
+    expect(payload.exp - payload.iat).toBeGreaterThan(yil)
+  })
+
+  it('kiosk token jti taşır — iptal edilebilsin diye', () => {
+    const workerId = makeAvsWorker()
+    const { token } = loginAvsKiosk(workerId, '4321')
+    expect(jwt.decode(token).jti).toBeTruthy()
+  })
+
+  it('çıkış yapılınca kiosk token gerçekten geçersizleşir', () => {
+    const workerId = makeAvsWorker()
+    const { token } = loginAvsKiosk(workerId, '4321')
+    expect(verifyToken(token).workerId).toBe(workerId)
+    logoutToken(token)
+    expect(() => verifyToken(token)).toThrow()
+  })
+
+  it('personel PIN kiosku da aynı kuralı izler', () => {
+    const db = getDB()
+    const p = db.prepare('SELECT id FROM personnel WHERE check_out_date IS NULL LIMIT 1').get()
+    db.prepare('UPDATE personnel SET kiosk_pin=?, pin_attempts=0, pin_locked_until=NULL WHERE id=?')
+      .run(bcrypt.hashSync('4321', 10), p.id)
+    const { token } = loginKioskById(p.id, '4321')
+    expect(jwt.decode(token).jti).toBeTruthy()
+    logoutToken(token)
+    expect(() => verifyToken(token)).toThrow()
+  })
+
+  it('web oturumu 30 gün sürer', () => {
+    const { token } = login('mudur', 'admin123')
+    const payload = jwt.decode(token)
+    const gun = 24 * 60 * 60
+    expect(Math.round((payload.exp - payload.iat) / gun)).toBe(30)
+  })
+
+  it('kiosk token yenileme ucuna düşerse net 403 alır, oturumu düşürmez', () => {
+    const workerId = makeAvsWorker()
+    const { token } = loginAvsKiosk(workerId, '4321')
+    const result = refreshToken(token)
+    expect(result.status).toBe(403)
   })
 })

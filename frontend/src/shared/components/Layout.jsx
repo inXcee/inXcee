@@ -6,7 +6,6 @@ import MobileBottomNav from './MobileBottomNav.jsx'
 import NotificationBell from './NotificationBell.jsx'
 import CommandPalette from './CommandPalette.jsx'
 import { useCommandPalette } from '../hooks/useCommandPalette.js'
-import { useIdleTimeout } from '../hooks/useIdleTimeout.js'
 import { GlobalShortcuts } from '../hooks/useGlobalShortcuts.jsx'
 
 const PAGE_TITLES = {
@@ -39,7 +38,6 @@ export default function Layout() {
   const location = useLocation()
   const pageTitle = PAGE_TITLES[location.pathname] || 'YYS'
   const { open, close, query, setQuery } = useCommandPalette()
-  useIdleTimeout()
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>

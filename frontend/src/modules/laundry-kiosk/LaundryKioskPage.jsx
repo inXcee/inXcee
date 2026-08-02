@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import api from '../../shared/api/client.js'
+import { readKioskSession, writeKioskSession, clearKioskSession } from '../../shared/kioskSession.js'
 import DashboardView from './DashboardView.jsx'
 import BurstBagCenterView from './BurstBagCenterView.jsx'
 import DeliverWorkView from './DeliverWorkView.jsx'
@@ -30,12 +31,7 @@ const ALL_TABS = [...TABS, ...MORE_TABS]
 const VALID_TABS = ALL_TABS.map(tab => tab.key)
 
 function readStoredSession() {
-  try {
-    const stored = JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null')
-    return stored?.token ? stored : null
-  } catch {
-    return null
-  }
+  return readKioskSession(SESSION_KEY)
 }
 
 function initials(name = '') {
@@ -95,10 +91,10 @@ export default function LaundryKioskPage() {
           role_label: 'Çamaşırhane Personeli',
         }
         setWorkerInfo(restoredWorker)
-        sessionStorage.setItem(SESSION_KEY, JSON.stringify({ token: avsToken, worker: restoredWorker }))
+        writeKioskSession(SESSION_KEY, { token: avsToken, worker: restoredWorker })
       }
     }).catch(() => {
-      sessionStorage.removeItem(SESSION_KEY)
+      clearKioskSession(SESSION_KEY)
       setAvsToken(null)
       setWorkerInfo(null)
     })
@@ -180,10 +176,10 @@ export default function LaundryKioskPage() {
       await api.get('/self-service/laundry-kiosk/session', {
         headers: { Authorization: `Bearer ${response.data.token}` },
       })
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify({
+      writeKioskSession(SESSION_KEY, {
         token: response.data.token,
         worker: response.data.worker,
-      }))
+      })
       setAvsToken(response.data.token)
       setWorkerInfo(response.data.worker)
       setActiveTab('home')
@@ -196,7 +192,7 @@ export default function LaundryKioskPage() {
   }
 
   const logout = () => {
-    sessionStorage.removeItem(SESSION_KEY)
+    clearKioskSession(SESSION_KEY)
     setAvsToken(null)
     setWorkerInfo(null)
     setSelectedWorker(null)

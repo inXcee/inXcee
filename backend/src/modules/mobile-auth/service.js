@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { getDB } from '../../shared/db/index.js'
+import { WEB_TOKEN_TTL_MS } from '../../shared/auth/service.js'
 
 const SECRET = process.env.JWT_SECRET
 
@@ -42,10 +43,11 @@ export function loginMobile(pin, role) {
   // Basarili giris — kullanicinin sayacini sifirla
   db.prepare('UPDATE users SET pin_attempts = 0, pin_locked_until = NULL WHERE id = ?').run(matched.id)
 
+  // Oturum çıkış yapılana kadar açık kalır — web paneliyle aynı süre.
   const token = jwt.sign(
     { id: matched.id, role: matched.role, full_name: matched.full_name },
     SECRET,
-    { expiresIn: '8h' }
+    { expiresIn: Math.floor(WEB_TOKEN_TTL_MS / 1000) }
   )
   return { token, user: { id: matched.id, role: matched.role, full_name: matched.full_name } }
 }

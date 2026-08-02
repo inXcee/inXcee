@@ -4,7 +4,6 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useTranslation } from '../../shared/i18n/index.js'
-import { useIdleTimeout } from '../../shared/hooks/useIdleTimeout.js'
 import LanguageSwitcher from '../../shared/components/LanguageSwitcher.jsx'
 import BottomNav from './components/BottomNav.jsx'
 import KioskHeader from './components/KioskHeader.jsx'
@@ -25,6 +24,9 @@ import MealsTab from './tabs/MealsTab.jsx'
 import InventoryTab from './tabs/InventoryTab.jsx'
 import HomeTab from './tabs/HomeTab.jsx'
 import { downscalePhoto, dataUrlToBlob } from '../../shared/photo.js'
+import { readKioskSession, writeKioskSession, clearKioskSession } from '../../shared/kioskSession.js'
+
+const SESSION_KEY = 'avs-kiosk-session'
 
 const TAB_KEYS = [
   { key: 'home',          icon: '🏠', i18n: 'avs_kiosk.nav.home' },
@@ -54,7 +56,8 @@ const EMPTY_FAULT_FORM = {
 export default function AvsSelfServicePage() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const [avsToken, setAvsToken] = useState(null)
+  // Oturum cihaz yeniden başlasa da durur; yalnızca çıkış düğmesi kapatır.
+  const [avsToken, setAvsToken] = useState(() => readKioskSession(SESSION_KEY)?.token || null)
   const [activeTab, setActiveTab] = useState('home')
 
   // İsimle giriş
@@ -105,6 +108,7 @@ export default function AvsSelfServicePage() {
   const hasSessionDrafts = taskDraftCount > 0 || faultHasDraft || maintenanceDraftCount > 0
 
   const handleLogout = useCallback(() => {
+    clearKioskSession(SESSION_KEY)
     setAvsToken(null)
     setSelected(null)
     setPin('')
@@ -153,13 +157,8 @@ export default function AvsSelfServicePage() {
     return () => window.removeEventListener('beforeunload', protectDrafts)
   }, [hasSessionDrafts])
 
-  // 5dk inaktivite → logout (son 30sn'de toast uyarısı)
-  useIdleTimeout({
-    timeoutMs: 5 * 60 * 1000,
-    warnBeforeMs: 30 * 1000,
-    token: avsToken,
-    onLogout: handleLogout,
-  })
+  // Otomatik çıkış yok: oturum yalnızca çıkış düğmesiyle kapanır. Kiosk cihazı
+  // vardiya boyunca açık kalıyor ve personel iş arasında ekrana dokunmayabiliyor.
 
   const avsApi = {
     get: (url) => api.get(url, { headers: { Authorization: `Bearer ${avsToken}` } }),
@@ -179,6 +178,14 @@ export default function AvsSelfServicePage() {
     enabled: !!avsToken,
   })
   const overview = overviewQuery.data
+
+  // Saklanan oturum artık geçersizse (başka cihazdan çıkış yapıldı, personel
+  // pasifleştirildi) token'ı temizleyip giriş ekranına dön — aksi halde ölü token
+  // localStorage'da kalır ve her açılışta aynı hatayı verir.
+  const overviewErrorStatus = overviewQuery.error?.response?.status
+  useEffect(() => {
+    if (overviewErrorStatus === 401 || overviewErrorStatus === 403) handleLogout()
+  }, [overviewErrorStatus, handleLogout])
 
   // Task 12 — Vardiyam
   const shiftsQuery = useQuery({
@@ -514,6 +521,7 @@ export default function AvsSelfServicePage() {
     const pinToUse = completedPin ?? pin
     try {
       const res = await api.post('/auth/avs-login', { worker_id: selected.id, pin: pinToUse })
+      writeKioskSession(SESSION_KEY, { token: res.data.token, worker: res.data.worker })
       setAvsToken(res.data.token)
       setActiveTab('home')
     } catch (err) { setLoginError(err.response?.data?.error || t('avs_kiosk.login_failed')) }
