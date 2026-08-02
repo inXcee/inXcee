@@ -4,7 +4,7 @@ import { BLOCKS, expectedRoomNos, getCapacity } from '../blocks.js'
 // Production-safe room seeding: AVSKAMP kampüsü blokları.
 //
 // Layout tek kaynaktan: backend/src/shared/blocks.js (frontend ile sync).
-// Toplam 814 oda — kapasite=1 olanlar Y blok placeholder.
+// Toplam 1054 oda: 814 M/S/Y + 240 Faz 2.
 //
 // INSERT OR IGNORE → idempotent: birden fazla çağırsan da var olan odalar korunur.
 export function seedProdRooms() {

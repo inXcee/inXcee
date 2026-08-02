@@ -135,14 +135,15 @@ describe('kiosk arşiv uçları', () => {
       .set('Authorization', `Bearer ${avsToken}`)
       .send({
         block, room_no: roomNo, item_count: 2,
+        intake_signature: 'data:image/png;base64,dGVzdA==',
         garments: [{
           type_name: 'Gömlek', emoji: '👔', count: 2,
           brand: 'Lacoste', size: 'XL', requires_ironing: true,
         }],
       })
     expect(res.status).toBe(201)
-    // Künye alanları tekil parçalara da yazıldı
-    expect(res.body.garments[0]).toMatchObject({ brand: 'Lacoste', size: 'XL', requires_ironing: 1 })
+    // Künye alanları tekil parçalara yazılır; M/S bloklarında ütü zorla kapalıdır.
+    expect(res.body.garments[0]).toMatchObject({ brand: 'Lacoste', size: 'XL', requires_ironing: 0 })
 
     const wardrobe = await request(app)
       .get(`/api/self-service/laundry-kiosk/room-wardrobe?block=${block}&room_no=${roomNo}`)

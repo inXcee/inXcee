@@ -15,7 +15,7 @@ const EMPTY_VALUE = { garments: [], freeText: '', itemCount: 0 }
 //   value: { garments: [...], freeText: '', itemCount: 0 }
 //   onChange: (next) => void
 export default function QuickGarmentInput({
-  garmentTypes = [], value = EMPTY_VALUE, onChange, brandSuggestions = [],
+  garmentTypes = [], value = EMPTY_VALUE, onChange, brandSuggestions = [], allowIroning = true,
 }) {
   const garments = value.garments || []
   const freeText = value.freeText || ''
@@ -40,6 +40,7 @@ export default function QuickGarmentInput({
   }
 
   function setAllIroning(next) {
+    if (!allowIroning) return
     onChange({
       ...value,
       garments: garments.map(garment => ({ ...garment, requires_ironing: next })),
@@ -63,7 +64,7 @@ export default function QuickGarmentInput({
     const type = garmentTypes.find(candidate => candidate.id === entry.type_id)
     return {
       ...entry,
-      requires_ironing: entry.requires_ironing ?? ironingDefaultFor(type),
+      requires_ironing: allowIroning && (entry.requires_ironing ?? ironingDefaultFor(type)),
     }
   }
 
@@ -84,7 +85,7 @@ export default function QuickGarmentInput({
       colors: [],
       pattern: 'solid',
       pattern_label: 'Düz',
-      requires_ironing: ironingDefaultFor(type),
+      requires_ironing: allowIroning && ironingDefaultFor(type),
     }
     onChange({ ...value, garments: [...garments, entry] })
     setQuickText('')
@@ -120,7 +121,10 @@ export default function QuickGarmentInput({
   }
 
   function addFromSheet(entry) {
-    onChange({ ...value, garments: [...garments, entry] })
+    onChange({
+      ...value,
+      garments: [...garments, { ...entry, requires_ironing: allowIroning && entry.requires_ironing }],
+    })
     setSheetType(null)
   }
 
@@ -139,6 +143,7 @@ export default function QuickGarmentInput({
   }
 
   function toggleIroning(index) {
+    if (!allowIroning) return
     onChange({
       ...value,
       garments: garments.map((garment, garmentIndex) => garmentIndex === index
@@ -203,6 +208,7 @@ export default function QuickGarmentInput({
             key={`${sheetType.id ?? sheetType.name}`}
             type={sheetType}
             brandSuggestions={brandSuggestions}
+            allowIroning={allowIroning}
             onAdd={addFromSheet}
             onCancel={() => setSheetType(null)}
           />
@@ -212,13 +218,13 @@ export default function QuickGarmentInput({
       {garments.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
           {/* Toplu ütü — 10 parçalı torbada tek tek dokunmak zaman kaybı */}
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          {allowIroning && <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <span style={{ fontSize: 10, color: '#64748b', letterSpacing: 1, flex: 1 }}>
               ♨️ ÜTÜ · {garments.filter(g => g.requires_ironing).length}/{garments.length} parça
             </span>
             <button type="button" onClick={() => setAllIroning(true)} style={bulkButton}>Tümüne aç</button>
             <button type="button" onClick={() => setAllIroning(false)} style={bulkButton}>Tümünü kapat</button>
-          </div>
+          </div>}
 
           {garments.map((garment, index) => {
             const type = typeById.get(garment.type_id)
@@ -245,7 +251,7 @@ export default function QuickGarmentInput({
                       <div style={{ color: '#93c5fd', fontSize: 11, fontWeight: 700 }}>🏷️ {tagSummary}</div>
                     )}
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                      <button type="button" onClick={() => toggleIroning(index)}
+                      {allowIroning && <button type="button" onClick={() => toggleIroning(index)}
                         style={{
                           minHeight: 32,
                           border: 0,
@@ -256,9 +262,9 @@ export default function QuickGarmentInput({
                           fontWeight: 800,
                         }}>
                         {garment.requires_ironing ? '♨️ Ütülenecek' : '↪️ Ütülenmeyecek'}
-                      </button>
+                      </button>}
                       {/* Tür ayarı yapılmamışsa operatör görsün — sessiz varsayılan bırakmıyoruz */}
-                      {unsetPolicy && (
+                      {allowIroning && unsetPolicy && (
                         <span style={{ fontSize: 9, color: '#fbbf24', fontWeight: 800, letterSpacing: 0.5 }}>
                           KONTROL ET
                         </span>

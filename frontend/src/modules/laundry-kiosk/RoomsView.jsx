@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BLOCKS_BY_TYPE, BLOCK_BY_NAME, expectedRoomNos } from '../../shared/blocks.js'
+import { BLOCKS_BY_TYPE, BLOCK_BY_NAME, blockDisplayName, expectedRoomNos } from '../../shared/blocks.js'
 
 const STATUS_LABEL = {
   dirty: 'Kirli',
@@ -38,12 +38,14 @@ export default function RoomsView({ kioskApi, onPickRoom }) {
     { label: 'M (Merkezi)', keys: BLOCKS_BY_TYPE.M },
     { label: 'S (Sosyal)',  keys: BLOCKS_BY_TYPE.S },
     { label: 'Y (Yeni)',    keys: BLOCKS_BY_TYPE.Y },
+    { label: 'Faz 2',       keys: BLOCKS_BY_TYPE.F2 },
   ]
 
   const [block, setBlock] = useState(blockGroups[0].keys[0])
   const [counts, setCounts] = useState({})  // room_no -> { active_count, total_count }
   const [loading, setLoading] = useState(false)
   const [selectedRoom, setSelectedRoom] = useState(null)  // string room_no
+  const [manualRoom, setManualRoom] = useState('')
 
   // Load active/total counts when block changes
   useEffect(() => {
@@ -63,6 +65,9 @@ export default function RoomsView({ kioskApi, onPickRoom }) {
   }, [block, kioskApi])
 
   const rooms = block ? allRoomNos(block) : []
+  const manualConfig = BLOCK_BY_NAME[block]
+  const manualNumber = /^\d+$/.test(manualRoom) ? Number(manualRoom) : null
+  const manualValid = Boolean(manualConfig?.manualRoomEntry && manualNumber >= 1 && manualNumber <= manualConfig.perFloor)
 
   return (
     <div style={card}>
@@ -75,14 +80,14 @@ export default function RoomsView({ kioskApi, onPickRoom }) {
             <div style={{ fontSize: 9, color: '#475569', letterSpacing: 1, marginBottom: 4 }}>{g.label}</div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {g.keys.map(k => (
-                <button key={k} type="button" onClick={() => { setBlock(k); setSelectedRoom(null) }}
+                <button key={k} type="button" onClick={() => { setBlock(k); setSelectedRoom(null); setManualRoom('') }}
                   style={{
                     padding: '6px 12px', borderRadius: 8, border: 'none', cursor: 'pointer',
                     background: block === k ? '#1d4ed8' : '#1e293b',
                     color: block === k ? '#fff' : '#94a3b8',
                     fontWeight: 700, fontSize: 13,
                   }}>
-                  {k}
+                  {blockDisplayName(k)}
                 </button>
               ))}
             </div>
@@ -90,8 +95,38 @@ export default function RoomsView({ kioskApi, onPickRoom }) {
         ))}
       </div>
 
+      {block && manualConfig?.manualRoomEntry && (
+        <div style={{ borderRadius: 12, padding: 12, background: 'rgba(249,115,22,.08)', border: '1px solid rgba(249,115,22,.3)' }}>
+          <div style={{ fontSize: 11, color: '#fdba74', letterSpacing: 1, marginBottom: 8 }}>
+            {blockDisplayName(block).toUpperCase()} · ODA ARA
+          </div>
+          <div style={{ display: 'flex', gap: 7 }}>
+            <input type="number" inputMode="numeric" min="1" max="80" value={manualRoom}
+              aria-label={`${blockDisplayName(block)} oda numarası`}
+              onChange={event => setManualRoom(event.target.value.replace(/\D/g, '').slice(0, 2))}
+              onKeyDown={event => {
+                if (event.key === 'Enter' && manualValid) { event.preventDefault(); setSelectedRoom(String(manualNumber)) }
+              }}
+              placeholder="1-80 oda numarası"
+              style={{ flex: 1, minWidth: 0, borderRadius: 10, border: `1px solid ${manualRoom ? (manualValid ? '#16a34a' : '#dc2626') : '#475569'}`, background: '#111827', color: '#fff', padding: '11px 13px', fontSize: 16, fontWeight: 800 }} />
+            <button type="button" disabled={!manualValid} onClick={() => setSelectedRoom(String(manualNumber))}
+              style={{ border: 0, borderRadius: 10, padding: '0 16px', background: manualValid ? '#ea580c' : '#1e293b', color: manualValid ? '#fff' : '#64748b', fontWeight: 800 }}>
+              Odayı aç
+            </button>
+          </div>
+          {manualValid && counts[String(manualNumber)]?.active_count > 0 && (
+            <div style={{ color: '#fca5a5', fontSize: 11, marginTop: 7 }}>
+              Bu odada {counts[String(manualNumber)].active_count} aktif torba var.
+            </div>
+          )}
+          <div style={{ color: '#94a3b8', fontSize: 11, marginTop: 7 }}>
+            Faz 2 odaları düzensiz olduğu için 80 odanın tamamı listelenmez; numarayı doğrudan yazın.
+          </div>
+        </div>
+      )}
+
       {/* Room grid */}
-      {block && (
+      {block && !manualConfig?.manualRoomEntry && (
         <div>
           <div style={{ fontSize: 11, color: '#64748b', letterSpacing: 1, marginBottom: 8 }}>
             {block} ODALARI {loading && <span style={{ color: '#475569' }}>· yükleniyor…</span>}

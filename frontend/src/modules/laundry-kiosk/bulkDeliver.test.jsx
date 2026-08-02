@@ -5,9 +5,9 @@ import DeliverWorkView from './DeliverWorkView.jsx'
 
 // A (Y tipi) imza istemez; M1 (standart blok) imza ister — constants.js SIGN_BLOCKS.
 const READY_BAGS = [
-  { id: 1, bag_no: 'BG-1', block: 'A', room_no: '101', item_count: 3, intake_name: 'Ali Veli', shelf_location: 'A-1' },
-  { id: 2, bag_no: 'BG-2', block: 'A', room_no: '101', item_count: 2, intake_name: 'Ali Veli' },
-  { id: 3, bag_no: 'BG-3', block: 'A', room_no: '205', item_count: 1 },
+  { id: 1, bag_no: 'BG-1', block: 'A', room_no: '101', item_count: 3, intake_name: 'Ali Veli', garment_names: 'Gömlek,Pantolon' },
+  { id: 2, bag_no: 'BG-2', block: 'A', room_no: '101', item_count: 2, intake_name: 'Ali Veli', garment_names: 'Havlu' },
+  { id: 3, bag_no: 'BG-3', block: 'A', room_no: '205', item_count: 1, garment_names: 'Çorap' },
 ]
 
 function makeApi(overrides = {}) {
@@ -24,19 +24,26 @@ function makeApi(overrides = {}) {
 
 async function openBulk(api) {
   renderWithProviders(<DeliverWorkView kioskApi={api} />)
-  await waitFor(() => expect(screen.getByText('TOPLU TESLİM')).toBeInTheDocument())
+  await waitFor(() => expect(screen.getByText('ODAYA DOKUNARAK TESLİM')).toBeInTheDocument())
   fireEvent.click(screen.getByRole('button', { name: /📦 A-101/ }))
   await waitFor(() => expect(screen.getByText('TESLİM EDİLECEK TORBALAR')).toBeInTheDocument())
 }
 
 describe('oda bazlı toplu teslim', () => {
-  it('yalnızca birden çok hazır torbası olan oda toplu teslim satırı gösterir', async () => {
+  it('tek veya birden çok torbası olan her oda doğrudan teslim satırı gösterir', async () => {
     renderWithProviders(<DeliverWorkView kioskApi={makeApi()} />)
-    await waitFor(() => expect(screen.getByText('TOPLU TESLİM')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('ODAYA DOKUNARAK TESLİM')).toBeInTheDocument())
 
     expect(screen.getByRole('button', { name: /📦 A-101/ })).toBeInTheDocument()
-    // Tek torbalı oda (A-205) toplu listede yok
-    expect(screen.queryByRole('button', { name: /📦 A-205/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /📦 A-205/ })).toBeInTheDocument()
+  })
+
+  it('oda, torba, kişi ve kıyafet adına göre arar', async () => {
+    renderWithProviders(<DeliverWorkView kioskApi={makeApi()} />)
+    await waitFor(() => expect(screen.getByLabelText('Teslimatlarda ara')).toBeInTheDocument())
+    fireEvent.change(screen.getByLabelText('Teslimatlarda ara'), { target: { value: 'Çorap' } })
+    expect(screen.getByText('BG-3')).toBeInTheDocument()
+    expect(screen.queryByText('BG-1')).not.toBeInTheDocument()
   })
 
   it('toplu teslim tek isim ile deliver-room ucuna gider', async () => {
@@ -77,7 +84,7 @@ describe('oda bazlı toplu teslim', () => {
       }),
     })
     renderWithProviders(<DeliverWorkView kioskApi={api} />)
-    await waitFor(() => expect(screen.getByText('TOPLU TESLİM')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('ODAYA DOKUNARAK TESLİM')).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: /📦 M1-101/ }))
     await waitFor(() => expect(screen.getByText('TESLİM EDİLECEK TORBALAR')).toBeInTheDocument())
 

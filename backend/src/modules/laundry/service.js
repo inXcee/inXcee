@@ -988,6 +988,31 @@ export function updateGarmentTagService(garmentId, patch, { userId = null, worke
   return garment
 }
 
+// Kiosk akışında fiziksel makine seçimi tutulmadan yıkamayı başlatır. Makine
+// yönetimi bakım/kapasite ekranlarına ait kalır; kiosk operatörü için yalnızca
+// torbanın yıkamaya giriş zamanı ve işlemi yapan personel kaydedilir.
+export function startManualWashService(id, userId, workerId = null) {
+  const item = q.getItemQuery(id)
+  if (!item) throw new Error('Kayıt bulunamadı')
+  if (item.status !== 'dirty') throw new Error('Sadece yıkama bekleyen torba yıkamaya alınabilir')
+
+  const db = getDB()
+  db.transaction(() => {
+    q.removeItemFromQueueQuery(id)
+    q.updateItemStatusQuery(id, 'washing', { machine_id: null, shelf_location: null })
+    q.insertHistoryQuery({
+      item_id: id,
+      from_status: 'dirty',
+      to_status: 'washing',
+      action_by: userId,
+      worker_id: workerId,
+      notes: 'Kiosk: yıkama başlatıldı',
+    })
+  }).immediate()
+
+  return q.getItemQuery(id)
+}
+
 function safeColors(raw) {
   try {
     const parsed = JSON.parse(raw || '[]')

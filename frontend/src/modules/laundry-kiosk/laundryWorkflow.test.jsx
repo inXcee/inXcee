@@ -89,6 +89,15 @@ describe('Laundry kiosk hızlı operasyon', () => {
     expect(state.current.garments[0].requires_ironing).toBe(false)
   })
 
+  it('standart blokta ütü seçeneği hiç gösterilmez ve parça ütüsüz eklenir', () => {
+    const state = renderInput(undefined, { allowIroning: false })
+    fireEvent.click(screen.getAllByRole('button', { name: /Gömlek/ })[0])
+    expect(screen.queryByRole('button', { name: /Ütülenecek/ })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Gömlek Ekle/ }))
+    expect(state.current.garments[0].requires_ironing).toBe(false)
+    expect(screen.queryByRole('button', { name: 'Tümüne aç' })).not.toBeInTheDocument()
+  })
+
   it('aynı karta tekrar dokunmak paneli kapatır', () => {
     renderInput()
     fireEvent.click(screen.getAllByRole('button', { name: /Gömlek/ })[0])

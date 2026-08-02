@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { downscalePhotoFile } from '../../shared/photo.js'
 import { PATTERNS } from './garmentPalette.js'
 import GarmentTagEditor from './GarmentTagEditor.jsx'
 import { garmentTagSummary, tagCompleteness } from './garmentTag.js'
+import PremiumBlockSettings from './PremiumBlockSettings.jsx'
 
 const REASONS = [
   ['missing', 'Eksik', '🔎'],
@@ -12,8 +12,6 @@ const REASONS = [
   ['rework', 'Yeniden İşlem', '🔁'],
   ['other', 'Diğer', '•••'],
 ]
-
-const SHELVES = ['A-01', 'A-02', 'B-01', 'B-02', 'C-01', 'C-02']
 
 function newActionId() {
   return globalThis.crypto?.randomUUID?.() || `iron-${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -25,7 +23,6 @@ export default function IroningWorkView({ kioskApi, focusedBag, onConsumeFocus }
   const [loading, setLoading] = useState(true)
   const [savingIds, setSavingIds] = useState(new Set())
   const [error, setError] = useState('')
-  const [shelf, setShelf] = useState('')
   const [verifiedCount, setVerifiedCount] = useState(0)
   const [exceptionGarment, setExceptionGarment] = useState(null)
   const [exception, setException] = useState({ reason: '', note: '', photo: null })
@@ -78,7 +75,6 @@ export default function IroningWorkView({ kioskApi, focusedBag, onConsumeFocus }
     try {
       const response = await kioskApi.get(`/self-service/laundry-kiosk/bags/${bag.id}`)
       setDetail(response.data)
-      setShelf(response.data.bag.shelf_location || '')
       setVerifiedCount(0)
     } catch (requestError) {
       setError(requestError.response?.data?.error || 'Torba ayrıntısı yüklenemedi')
@@ -184,22 +180,13 @@ export default function IroningWorkView({ kioskApi, focusedBag, onConsumeFocus }
 
   async function completeBag() {
     if (!detail) return
-    if (!shelf.trim()) {
-      const proceed = await confirmDialog({
-        title: 'Raf konumu boş',
-        body: 'Raf konumu girilmedi. Teslim sırasında torbayı bulmak zorlaşabilir. Yine de tamamla?',
-      })
-      if (!proceed) return
-    }
     setError('')
     try {
       await kioskApi.post(`/self-service/laundry-kiosk/bags/${detail.bag.id}/ironing-complete`, {
-        shelf_location: shelf.trim() || undefined,
         verified_count: trackIndividually ? undefined : verifiedCount,
       })
       setBags(current => current.filter(bag => bag.id !== detail.bag.id))
       setDetail(null)
-      setShelf('')
       setUndo(null)
     } catch (requestError) {
       setError(requestError.response?.data?.error || 'Ütü tamamlanamadı')
@@ -218,6 +205,7 @@ export default function IroningWorkView({ kioskApi, focusedBag, onConsumeFocus }
             {loading ? '…' : '↻'}
           </button>
         </header>
+        <PremiumBlockSettings kioskApi={kioskApi} />
         {error && <ErrorBox message={error} />}
         {!loading && bags.length === 0 && <div style={empty}>✓ Ütü bekleyen torba yok</div>}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
@@ -401,28 +389,6 @@ export default function IroningWorkView({ kioskApi, focusedBag, onConsumeFocus }
           </div>
         </div>
       )}
-
-      <div>
-        <div style={eyebrow}>RAF KONUMU</div>
-        <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', margin: '8px 0' }}>
-          {SHELVES.map(value => (
-            <button type="button" key={value} onClick={() => setShelf(value)}
-              style={{
-                minHeight: 48,
-                borderRadius: 10,
-                border: `1px solid ${shelf === value ? '#22c55e' : '#334155'}`,
-                background: shelf === value ? '#14532d' : '#1e293b',
-                color: shelf === value ? '#dcfce7' : '#94a3b8',
-                fontWeight: 800,
-                padding: '0 13px',
-              }}>
-              {value}
-            </button>
-          ))}
-        </div>
-        <input value={shelf} onChange={event => setShelf(event.target.value)}
-          placeholder="Başka raf konumu…" style={textInput} />
-      </div>
 
       <button type="button" onClick={completeBag} disabled={!canComplete}
         style={{

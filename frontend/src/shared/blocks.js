@@ -32,6 +32,12 @@ export const BLOCKS = [
   { block: 'D',  type: 'Y', floors: 1, perFloor: 20, startNo: { 1: 101 }, hasPrivateBath: true, defaultCapacity: 6, isPlaceholder: true },
   { block: 'H',  type: 'Y', floors: 1, perFloor: 20, startNo: { 1: 1   }, hasPrivateBath: true, defaultCapacity: 6, isPlaceholder: true },
   { block: 'J',  type: 'Y', floors: 1, perFloor: 20, startNo: { 1: 1   }, hasPrivateBath: true, defaultCapacity: 6, isPlaceholder: true },
+
+  // Faz 2 — oda numaraları 1-80 aralığında ve sahada düzensiz kullanılabiliyor.
+  // Kiosk bu bloklarda 80 düğme çizmek yerine doğrudan oda numarası girişi açar.
+  { block: 'F2A', type: 'F2', displayName: 'Faz 2 A', floors: 1, perFloor: 80, startNo: { 1: 1 }, hasPrivateBath: true, defaultCapacity: 6, manualRoomEntry: true },
+  { block: 'F2B', type: 'F2', displayName: 'Faz 2 B', floors: 1, perFloor: 80, startNo: { 1: 1 }, hasPrivateBath: true, defaultCapacity: 6, manualRoomEntry: true },
+  { block: 'F2C', type: 'F2', displayName: 'Faz 2 C', floors: 1, perFloor: 80, startNo: { 1: 1 }, hasPrivateBath: true, defaultCapacity: 6, manualRoomEntry: true },
 ]
 
 export const BLOCK_BY_NAME = Object.fromEntries(BLOCKS.map(b => [b.block, b]))
@@ -40,6 +46,11 @@ export const BLOCKS_BY_TYPE = {
   M: BLOCKS.filter(b => b.type === 'M').map(b => b.block),
   S: BLOCKS.filter(b => b.type === 'S').map(b => b.block),
   Y: BLOCKS.filter(b => b.type === 'Y').map(b => b.block),
+  F2: BLOCKS.filter(b => b.type === 'F2').map(b => b.block),
+}
+
+export function blockDisplayName(name) {
+  return BLOCK_BY_NAME[name]?.displayName || name
 }
 
 export function getBlockConfig(name) {
@@ -76,5 +87,6 @@ export function blockColor(blockName) {
   if (t === 'M') return 'var(--blue)'
   if (t === 'S') return 'var(--purple)'
   if (t === 'Y') return 'var(--green)'
+  if (t === 'F2') return 'var(--orange)'
   return 'var(--text2)'
 }

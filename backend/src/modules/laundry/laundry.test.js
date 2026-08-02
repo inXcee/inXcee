@@ -987,14 +987,15 @@ describe('premium blok altyapısı', () => {
     expect(m.is_premium).toBe(0)
   })
 
-  test('upsertBlockConfigQuery premium değerini günceller', () => {
+  test('M/S blokları premium yapılamaz; diğer bloklar güncellenebilir', () => {
     const db = getDB()
     const admin = db.prepare("SELECT id FROM users WHERE role='campus_manager' LIMIT 1").get()
     upsertBlockConfigService('M', 1, admin.id)
     const blocks = getBlockConfigService()
-    expect(blocks.find(b => b.block === 'M').is_premium).toBe(1)
-    // Geri al
-    upsertBlockConfigService('M', 0, admin.id)
+    expect(blocks.find(b => b.block === 'M').is_premium).toBe(0)
+    upsertBlockConfigService('A1', 0, admin.id)
+    expect(getBlockConfigService().find(b => b.block === 'A1').is_premium).toBe(0)
+    upsertBlockConfigService('A1', 1, admin.id)
   })
 
   test('createItemService — premium odada is_premium=1 set edilir', () => {
@@ -1297,17 +1298,16 @@ describe('premium raporlar', () => {
     }
   })
 
-  test('blok config PUT → GET güncel gelir', () => {
+  test('blok config PUT → GET güncel gelir ve M2 kilitli kalır', () => {
     const db = getDB()
     const admin = db.prepare("SELECT id FROM users WHERE role='campus_manager' LIMIT 1").get()
-    // M2'yi premium yap
+    // M2 premium yapılamaz
     upsertBlockConfigService('M2', 1, admin.id)
     const blocks = getBlockConfigService()
-    expect(blocks.find(b => b.block === 'M2')?.is_premium).toBe(1)
-    // Geri al
-    upsertBlockConfigService('M2', 0, admin.id)
-    const blocks2 = getBlockConfigService()
-    expect(blocks2.find(b => b.block === 'M2')?.is_premium).toBe(0)
+    expect(blocks.find(b => b.block === 'M2')?.is_premium).toBe(0)
+    upsertBlockConfigService('A2', 0, admin.id)
+    expect(getBlockConfigService().find(b => b.block === 'A2')?.is_premium).toBe(0)
+    upsertBlockConfigService('A2', 1, admin.id)
   })
 })
 

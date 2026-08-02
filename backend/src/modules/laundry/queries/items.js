@@ -103,6 +103,8 @@ export function getBlockConfigQuery() {
 
 export function upsertBlockConfigQuery(block, is_premium, userId) {
   const db = getDB()
+  const normalizedBlock = String(block || '').trim().toUpperCase()
+  const premiumValue = /^[MS](?:\d+)?$/i.test(normalizedBlock) ? 0 : (is_premium ? 1 : 0)
   db.prepare(`
     INSERT INTO laundry_block_config(block, is_premium, updated_by, updated_at)
     VALUES(?, ?, ?, datetime('now'))
@@ -110,16 +112,20 @@ export function upsertBlockConfigQuery(block, is_premium, userId) {
       is_premium=excluded.is_premium,
       updated_by=excluded.updated_by,
       updated_at=excluded.updated_at
-  `).run(block, is_premium ? 1 : 0, userId || null)
-  return db.prepare(`SELECT * FROM laundry_block_config WHERE block=?`).get(block)
+  `).run(normalizedBlock, premiumValue, userId || null)
+  return db.prepare(`SELECT * FROM laundry_block_config WHERE block=?`).get(normalizedBlock)
 }
 
 export function isBlockPremiumQuery(block) {
   const db = getDB()
-  const row = db.prepare(`SELECT is_premium FROM laundry_block_config WHERE block=?`).get(block)
+  const normalizedBlock = String(block || '').trim().toUpperCase()
+  // M ve S blokları işçi konaklamasıdır; eski bir ayar satırı premium olsa bile
+  // ütü hizmeti bu bloklarda hiçbir zaman açılamaz.
+  if (/^[MS](?:\d+)?$/i.test(normalizedBlock)) return false
+  const row = db.prepare(`SELECT is_premium FROM laundry_block_config WHERE block=?`).get(normalizedBlock)
   if (row) return row.is_premium === 1
   // Konfigürasyonda yoksa: M* ve S* blokları değilse premium kabul et
-  return !block.startsWith('M') && !block.startsWith('S')
+  return true
 }
 
 export function getItemQuery(id) {

@@ -10,14 +10,16 @@ const MAX_COLORS = 3
 // duruyordu — operatör oraya inmediği için parçalar renksiz kaydediliyordu.
 // Artık varsayılan akış bu: renk, desen, marka ve beden tek ekranda,
 // hepsi dokunmatik palet.
-export default function GarmentDetailSheet({ type, brandSuggestions = [], onAdd, onCancel }) {
+export default function GarmentDetailSheet({
+  type, brandSuggestions = [], onAdd, onCancel, allowIroning = true,
+}) {
   const [count, setCount] = useState(1)
   const [colors, setColors] = useState([])
   const [pattern, setPattern] = useState('solid')
   const [brand, setBrand] = useState('')
   const [size, setSize] = useState('')
   const [notes, setNotes] = useState('')
-  const [requiresIroning, setRequiresIroning] = useState(() => ironingDefaultFor(type))
+  const [requiresIroning, setRequiresIroning] = useState(() => allowIroning && ironingDefaultFor(type))
 
   const brands = brandOptions(brandSuggestions)
   const sizeGroups = sizeGroupsWith(size)
@@ -43,7 +45,7 @@ export default function GarmentDetailSheet({ type, brandSuggestions = [], onAdd,
       colors,
       pattern,
       pattern_label: patternMeta?.label || 'Düz',
-      requires_ironing: requiresIroning,
+      requires_ironing: allowIroning && requiresIroning,
       brand: brand.trim() || null,
       size: size.trim() || null,
       condition_notes: notes.trim() || null,
@@ -165,7 +167,7 @@ export default function GarmentDetailSheet({ type, brandSuggestions = [], onAdd,
           placeholder="ör. yakasında leke var" style={input} />
       </div>
 
-      <button type="button" onClick={() => setRequiresIroning(value => !value)}
+      {allowIroning && <button type="button" onClick={() => setRequiresIroning(value => !value)}
         style={{
           ...chip(requiresIroning), minHeight: 44, justifyContent: 'center',
           color: requiresIroning ? '#c4b5fd' : '#94a3b8',
@@ -173,7 +175,7 @@ export default function GarmentDetailSheet({ type, brandSuggestions = [], onAdd,
         }}>
         {requiresIroning ? '♨️ Ütülenecek' : '↪️ Ütülenmeyecek'}
         {unsetPolicy && requiresIroning && ' · kontrol et'}
-      </button>
+      </button>}
 
       <button type="button" onClick={submit} style={addButton}>
         ✓ {count} {type.name} Ekle

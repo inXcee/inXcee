@@ -461,13 +461,11 @@ export function initDB() {
     ('E',1),('D',1),('C',1),('H',1),('J',1),('A',1),('B',1),
     ('M1',0),('M2',0),('M3',0),
     ('M',0),('S',0),('S1',0),('S2',0),('S3',0)`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) logger.error('[Migration]', e.message) }
-  // Mevcut non-M/S blokları premium yap (varolan kayıtları güncelle)
-  try { db.exec(`UPDATE laundry_block_config SET is_premium=1 WHERE block NOT LIKE 'M%' AND block NOT LIKE 'S%'`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) logger.error('[Migration]', e.message) }
+  // Varsayılanlar INSERT OR IGNORE ile yukarıda yalnızca ilk kurulumda yazılır.
+  // Kaydedilmiş blok tercihlerini her sunucu açılışında ezmeyiz.
   try { db.exec(`ALTER TABLE laundry_items ADD COLUMN is_premium INTEGER DEFAULT 0`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) logger.error('[Migration]', e.message) }
-  // Mevcut laundry_items'ı düzelt — non-M/S blok odalarındaki kayıtlar premium olmalı
-  try { db.exec(`UPDATE laundry_items SET is_premium=1 WHERE room_id IN (
-    SELECT r.id FROM rooms r WHERE r.block NOT LIKE 'M%' AND r.block NOT LIKE 'S%'
-  ) AND is_premium=0`) } catch(e) { if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) logger.error('[Migration]', e.message) }
+  // Torbanın hizmet tipi giriş anında blok konfigürasyonundan kaydedilir; eski
+  // torbaların tipini restart sırasında değiştirmek geçmiş kaydı bozar.
   try { db.exec(`CREATE TABLE IF NOT EXISTS premium_garments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     item_id INTEGER NOT NULL REFERENCES laundry_items(id) ON DELETE CASCADE,

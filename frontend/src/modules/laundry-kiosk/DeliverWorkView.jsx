@@ -1,8 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { blockNeedsSignature } from './constants.js'
-import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { PATTERNS } from './garmentPalette.js'
 import { garmentTagSummary } from './garmentTag.js'
+
+function recordNeedsSignature(record) {
+  if (record?.signature_required != null) return record.signature_required === 1
+  if (record?.is_premium != null) return record.is_premium !== 1
+  return blockNeedsSignature(record?.block)
+}
 
 function SignaturePad({ signatureRef }) {
   const canvasRef = useRef(null)
@@ -91,19 +96,36 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [preview, setPreview] = useState(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [bagLoss, setBagLoss] = useState(null)
+  const [missingGarment, setMissingGarment] = useState(null)
+  const [lossForm, setLossForm] = useState({ lastSeen: 'Teslim kontrolünde', note: '' })
   // Oda bazlı toplu teslim — aynı odanın birden çok torbası tek isim + tek imzayla
   const [roomBulk, setRoomBulk] = useState(null) // { block, room_no, bags, people }
 
-  // Hazır torbaları oda bazında grupla (liste ekranındaki toplu teslim rozeti için)
+  const filteredBags = useMemo(() => {
+    const query = searchQuery.trim().toLocaleLowerCase('tr-TR')
+    if (!query) return bags
+    return bags.filter(bag => [
+      bag.bag_no,
+      `${bag.block}-${bag.room_no}`,
+      bag.block,
+      bag.room_no,
+      bag.intake_name,
+      bag.garment_names,
+    ].some(value => String(value || '').toLocaleLowerCase('tr-TR').includes(query)))
+  }, [bags, searchQuery])
+
+  // Hazır torbaları oda bazında grupla; tek torbalı odalar da doğrudan teslim edilebilir.
   const roomGroups = useMemo(() => {
     const map = new Map()
-    for (const bag of bags) {
+    for (const bag of filteredBags) {
       const key = `${bag.block}-${bag.room_no}`
       if (!map.has(key)) map.set(key, { key, block: bag.block, room_no: bag.room_no, bags: [] })
       map.get(key).bags.push(bag)
     }
     return [...map.values()]
-  }, [bags])
+  }, [filteredBags])
 
   async function openRoomBulk(group) {
     setError('')
@@ -122,7 +144,7 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
     if (!roomBulk) return
     const name = deliveredName.trim()
     if (!name) return setError('Teslim alan kişiyi seçin veya yazın')
-    const needsSignature = blockNeedsSignature(roomBulk.block)
+    const needsSignature = recordNeedsSignature(roomBulk.bags[0])
     if (needsSignature && signatureRef.current?.isEmpty()) return setError('İmza gerekli')
     setSubmitting(true)
     setError('')
@@ -177,6 +199,9 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
       setDeliveredName(nextDetail.bag.intake_name || '')
       setVerifiedCount(0)
       setSelectedIds(new Set())
+      setBagLoss(null)
+      setMissingGarment(null)
+      setLossForm({ lastSeen: 'Teslim kontrolünde', note: '' })
       signatureRef.current?.clear()
     } catch (requestError) {
       setError(requestError.response?.data?.error || 'Torba ayrıntısı yüklenemedi')
@@ -222,7 +247,7 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
       return
     }
     let signature = null
-    if (blockNeedsSignature(detail.bag.block)) {
+    if (recordNeedsSignature(detail.bag)) {
       if (signatureRef.current?.isEmpty()) {
         setError('Bu blok için teslim imzası zorunludur')
         return
@@ -255,26 +280,59 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
   }
 
   async function markLost() {
-    if (!detail) return
-    const approved = await confirmDialog({
-      title: 'Torbayı kayıp işaretle',
-      body: `${detail.bag.bag_no || `#${detail.bag.id}`} kayıp olarak işaretlenecek ve yönetime bildirilecek.`,
-    })
-    if (!approved) return
+    if (!detail || !bagLoss) return
+    setSubmitting(true)
+    setError('')
     try {
       await kioskApi.post(`/self-service/laundry-kiosk/bags/${detail.bag.id}/lost`, {
-        notes: 'Kiosk: teslim sırasında rafta bulunamadı',
+        notes: `${lossForm.lastSeen}${lossForm.note.trim() ? ` · ${lossForm.note.trim()}` : ''}`,
       })
       setBags(current => current.filter(bag => bag.id !== detail.bag.id))
       setDetail(null)
+      setBagLoss(null)
     } catch (requestError) {
       setError(requestError.response?.data?.error || 'Kayıp kaydı oluşturulamadı')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function markGarmentMissing() {
+    if (!detail || !missingGarment) return
+    setSubmitting(true)
+    setError('')
+    try {
+      const response = await kioskApi.post(
+        `/self-service/laundry-kiosk/bags/${detail.bag.id}/garments/${missingGarment.id}/exception`,
+        {
+          reason: 'missing',
+          note: `${lossForm.lastSeen}${lossForm.note.trim() ? ` · ${lossForm.note.trim()}` : ''}`,
+        },
+      )
+      setDetail(current => ({
+        ...current,
+        garments: current.garments.map(garment => garment.id === missingGarment.id
+          ? response.data.garment
+          : garment),
+        progress: response.data.progress,
+      }))
+      setSelectedIds(current => {
+        const next = new Set(current)
+        next.delete(missingGarment.id)
+        return next
+      })
+      setMissingGarment(null)
+      setLossForm({ lastSeen: 'Teslim kontrolünde', note: '' })
+    } catch (requestError) {
+      setError(requestError.response?.data?.error || 'Kayıp kıyafet kaydedilemedi')
+    } finally {
+      setSubmitting(false)
     }
   }
 
   // ── Oda bazlı toplu teslim ─────────────────────────────────────────────────
   if (roomBulk) {
-    const needsSignature = blockNeedsSignature(roomBulk.block)
+    const needsSignature = recordNeedsSignature(roomBulk.bags[0])
     return (
       <section style={panel}>
         <header style={headerRow}>
@@ -311,7 +369,6 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
                   {bag.bag_no || `#${bag.id}`}
                 </span>
                 {' · '}{bag.item_count} parça
-                {bag.shelf_location ? ` · Raf ${bag.shelf_location}` : ''}
                 {bag.intake_name ? ` · ${bag.intake_name}` : ''}
               </div>
             ))}
@@ -381,11 +438,25 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
         {error && <Message text={error} success={error.startsWith('✓')} />}
         {!loading && bags.length === 0 && <div style={empty}>📦 Teslim bekleyen torba yok</div>}
 
-        {/* Aynı odada birden çok hazır torba varsa tek imzayla toplu teslim */}
-        {roomGroups.filter(group => group.bags.length > 1).length > 0 && (
+        {bags.length > 0 && (
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={event => setSearchQuery(event.target.value)}
+            placeholder="Oda, torba, kişi veya kıyafet ara…"
+            aria-label="Teslimatlarda ara"
+            style={{ ...textInput, borderColor: '#0ea5e9' }}
+          />
+        )}
+        {!loading && bags.length > 0 && filteredBags.length === 0 && (
+          <div style={empty}>Aramaya uygun teslimat bulunamadı</div>
+        )}
+
+        {/* Her oda doğrudan seçilebilir; tek ya da çok torba aynı hızlı akışta. */}
+        {roomGroups.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <div style={eyebrow}>TOPLU TESLİM</div>
-            {roomGroups.filter(group => group.bags.length > 1).map(group => (
+            <div style={eyebrow}>ODAYA DOKUNARAK TESLİM</div>
+            {roomGroups.map(group => (
               <button type="button" key={group.key} onClick={() => openRoomBulk(group)}
                 style={{
                   ...bagButton, borderLeftColor: '#f59e0b', minHeight: 56,
@@ -395,17 +466,19 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
                     📦 {group.block}-{group.room_no}
                   </div>
                   <div style={{ color: '#64748b', fontSize: 12 }}>
-                    {group.bags.length} torba · {group.bags.reduce((sum, b) => sum + (b.item_count || 0), 0)} parça — tek imza
+                    {group.bags.length} torba · {group.bags.reduce((sum, b) => sum + (b.item_count || 0), 0)} parça
+                    {group.bags.length > 1 ? ' · tek imza' : ' · hızlı teslim'}
                   </div>
                 </div>
-                <span style={{ color: '#fbbf24', fontWeight: 900 }}>Hepsini →</span>
+                <span style={{ color: '#fbbf24', fontWeight: 900 }}>Odayı aç →</span>
               </button>
             ))}
           </div>
         )}
 
+        {filteredBags.length > 0 && <div style={eyebrow}>TORBA / KIYAFET BAZINDA</div>}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-          {bags.map(bag => (
+          {filteredBags.map(bag => (
             <button type="button" key={bag.id} onClick={() => selectBag(bag)} style={bagButton}>
               {bag.photo_url && (
                 <img src={bag.photo_url} alt="" style={thumbnail} />
@@ -420,8 +493,12 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
                 <div style={{ color: '#64748b', fontSize: 12, marginTop: 3 }}>
                   {bag.item_count} parça
                   {bag.intake_name ? ` · ${bag.intake_name}` : ''}
-                  {bag.shelf_location ? ` · Raf ${bag.shelf_location}` : ''}
                 </div>
+                {bag.garment_names && (
+                  <div style={{ color: '#93c5fd', fontSize: 11, marginTop: 2 }}>
+                    👕 {bag.garment_names.split(',').join(', ')}
+                  </div>
+                )}
               </div>
               <span style={{ color: '#86efac', fontWeight: 900 }}>Teslim →</span>
             </button>
@@ -441,7 +518,6 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
           </div>
           <div style={{ color: '#94a3b8', fontSize: 12 }}>
             {detail.bag.block}-{detail.bag.room_no}
-            {detail.bag.shelf_location ? ` · Raf ${detail.bag.shelf_location}` : ''}
           </div>
         </div>
       </header>
@@ -497,7 +573,7 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
             {readyGarments.map(garment => {
               const checked = selectedIds.has(garment.id)
               return (
-                <button type="button" key={garment.id} onClick={() => toggleGarment(garment.id)}
+                <div key={garment.id}
                   style={{
                     minHeight: 60,
                     borderRadius: 12,
@@ -509,20 +585,16 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
                     gap: 10,
                     textAlign: 'left',
                   }}>
-                  <span style={{
-                    width: 42,
-                    height: 42,
-                    borderRadius: 10,
-                    background: checked ? '#15803d' : '#0f172a',
-                    border: `2px solid ${checked ? '#22c55e' : '#64748b'}`,
-                    display: 'grid',
-                    placeItems: 'center',
-                    color: '#fff',
-                    fontSize: 20,
-                    flexShrink: 0,
-                  }}>
+                  <button type="button" onClick={() => toggleGarment(garment.id)}
+                    aria-label={`${garment.garment_type} ${garment.garment_code} teslim seçimi`}
+                    style={{
+                      width: 42, height: 42, flexShrink: 0, borderRadius: 10,
+                      background: checked ? '#15803d' : '#0f172a',
+                      border: `2px solid ${checked ? '#22c55e' : '#64748b'}`,
+                      display: 'grid', placeItems: 'center', color: '#fff', fontSize: 20,
+                    }}>
                     {checked ? '✓' : ''}
-                  </span>
+                  </button>
                   <span style={{ flex: 1 }}>
                     <strong style={{ display: 'block', color: '#f8fafc' }}>
                       {garment.emoji || '👕'} {garment.garment_type}
@@ -538,7 +610,14 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
                       {garment.garment_code}
                     </span>
                   </span>
-                </button>
+                  <button type="button" onClick={() => {
+                    setMissingGarment(garment)
+                    setBagLoss(null)
+                    setLossForm({ lastSeen: 'Teslim kontrolünde', note: '' })
+                  }} style={garmentLostButton}>
+                    Kayıp
+                  </button>
+                </div>
               )
             })}
           </div>
@@ -557,7 +636,52 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
         </div>
       )}
 
-      {blockNeedsSignature(detail.bag.block) && (
+      {missingGarment && (
+        <div style={lossPanel}>
+          <div style={{ ...headerRow, alignItems: 'flex-start' }}>
+            <div>
+              <div style={{ ...eyebrow, color: '#fca5a5' }}>KAYIP KIYAFET BİLDİRİMİ</div>
+              <strong style={{ display: 'block', color: '#fff', marginTop: 4 }}>
+                {missingGarment.garment_code} · {missingGarment.garment_type}
+              </strong>
+              <small style={{ color: '#94a3b8' }}>
+                Torba girişi: {formatDateTime(detail.bag.created_at)}
+              </small>
+            </div>
+            <button type="button" onClick={() => setMissingGarment(null)} style={smallButton}>✕</button>
+          </div>
+          <LossFields value={lossForm} onChange={setLossForm} />
+          <button type="button" onClick={markGarmentMissing} disabled={submitting} style={confirmLostButton}>
+            {submitting ? 'Kaydediliyor…' : 'Kıyafeti kayıp olarak kaydet'}
+          </button>
+        </div>
+      )}
+
+      {bagLoss && (
+        <div style={lossPanel}>
+          <div style={{ ...headerRow, alignItems: 'flex-start' }}>
+            <div>
+              <div style={{ ...eyebrow, color: '#fca5a5' }}>KAYIP TORBA BİLDİRİMİ</div>
+              <strong style={{ display: 'block', color: '#fff', marginTop: 4 }}>
+                {detail.bag.bag_no || `#${detail.bag.id}`}
+              </strong>
+              <small style={{ color: '#94a3b8' }}>
+                Giriş: {formatDateTime(detail.bag.created_at)} · {detail.bag.item_count} parça
+              </small>
+            </div>
+            <button type="button" onClick={() => setBagLoss(null)} style={smallButton}>✕</button>
+          </div>
+          <div style={{ color: '#fecaca', fontSize: 12 }}>
+            Bildirim zamanı ve işlemi yapan personel otomatik kaydedilir.
+          </div>
+          <LossFields value={lossForm} onChange={setLossForm} />
+          <button type="button" onClick={markLost} disabled={submitting} style={confirmLostButton}>
+            {submitting ? 'Kaydediliyor…' : 'Torbayı kayıp olarak kaydet'}
+          </button>
+        </div>
+      )}
+
+      {recordNeedsSignature(detail.bag) && (
         <div>
           <div style={{ ...eyebrow, marginBottom: 8 }}>TESLİM İMZASI</div>
           <SignaturePad signatureRef={signatureRef} />
@@ -579,8 +703,12 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
           : `✓ ${trackIndividually ? selectedIds.size : verifiedCount} Parçayı Teslim Et`}
       </button>
 
-      <button type="button" onClick={markLost} style={lostButton}>
-        ⚠ Torba rafta bulunamadı
+      <button type="button" onClick={() => {
+        setBagLoss({ openedAt: Date.now() })
+        setMissingGarment(null)
+        setLossForm({ lastSeen: 'Teslim kontrolünde', note: '' })
+      }} style={lostButton}>
+        ⚠ Torba teslim alanında bulunamadı
       </button>
 
       {preview && (
@@ -592,6 +720,39 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
       )}
     </section>
   )
+}
+
+function LossFields({ value, onChange }) {
+  return (
+    <>
+      <label style={{ color: '#cbd5e1', fontSize: 11, fontWeight: 800 }}>
+        En son nerede görüldü?
+        <select value={value.lastSeen}
+          onChange={event => onChange(current => ({ ...current, lastSeen: event.target.value }))}
+          style={{ ...textInput, display: 'block', marginTop: 6 }}>
+          <option>Teslim kontrolünde</option>
+          <option>Ütü çıkışında</option>
+          <option>Yıkama sonrasında</option>
+          <option>Torba girişinde</option>
+          <option>Bilinmiyor</option>
+        </select>
+      </label>
+      <textarea value={value.note}
+        onChange={event => onChange(current => ({ ...current, note: event.target.value }))}
+        placeholder="Aranan yer, kimin fark ettiği veya ayırt edici bilgi…"
+        rows={3} maxLength={420}
+        style={{ ...textInput, minHeight: 80, resize: 'vertical', fontFamily: 'inherit' }} />
+    </>
+  )
+}
+
+function formatDateTime(value) {
+  if (!value) return 'Bilinmiyor'
+  const normalized = String(value).includes('T') ? value : `${value.replace(' ', 'T')}Z`
+  const date = new Date(normalized)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('tr-TR', {
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  })
 }
 
 function Message({ text, success = false }) {
@@ -624,4 +785,7 @@ const textInput = { width: '100%', boxSizing: 'border-box', minHeight: 48, borde
 const linkButton = { minHeight: 48, border: 0, background: 'transparent', color: '#60a5fa', fontWeight: 800, cursor: 'pointer' }
 const countCard = { borderRadius: 14, padding: 18, background: '#111827', border: '1px solid #334155', display: 'flex', flexDirection: 'column', gap: 14, textAlign: 'center' }
 const lostButton = { minHeight: 48, borderRadius: 12, border: '1px dashed #7f1d1d', background: '#1f1015', color: '#fca5a5', fontWeight: 800 }
+const garmentLostButton = { minHeight: 42, borderRadius: 9, border: '1px solid #7f1d1d', background: '#1f1015', color: '#fca5a5', fontSize: 11, fontWeight: 900, padding: '0 10px' }
+const lossPanel = { borderRadius: 14, padding: 13, background: '#1f1015', border: '1px solid #7f1d1d', display: 'flex', flexDirection: 'column', gap: 11 }
+const confirmLostButton = { minHeight: 50, borderRadius: 11, border: 0, background: '#b91c1c', color: '#fff', fontWeight: 900 }
 const previewBackdrop = { position: 'fixed', inset: 0, zIndex: 60, border: 0, background: 'rgba(2,6,23,.94)', display: 'grid', placeItems: 'center', padding: 10 }

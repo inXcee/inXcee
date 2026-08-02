@@ -43,11 +43,12 @@ describe('laundry photo retention', () => {
     expect(fs.existsSync(orphanNew)).toBe(true)
   })
 
-  it('referansli dosyalara dokunmaz (torba / istisna / hasar)', () => {
+  it('referansli dosyalara dokunmaz (torba / istisna / hasar / patlayan file)', () => {
     const db = getDB()
     const bagPhoto = touch('laundry-bag.jpg', OLD)
     const exceptionPhoto = touch('laundry-exception.jpg', OLD)
     const damagePhoto = touch('laundry-damage.jpg', OLD)
+    const burstPhoto = touch('laundry-burst-piece.jpg', OLD)
 
     const itemId = db.prepare(
       "INSERT INTO laundry_items(item_count, photo_url) VALUES(1, '/uploads/laundry-bag.jpg')"
@@ -63,6 +64,14 @@ describe('laundry photo retention', () => {
       INSERT INTO laundry_damages(item_id, description, photo_url)
       VALUES(?, 'yirtik', '/uploads/laundry-damage.jpg')
     `).run(itemId)
+    const incidentId = db.prepare(`
+      INSERT INTO laundry_burst_bag_incidents(item_id, found_location, estimated_piece_count)
+      VALUES(?, 'Ayırma masası', 1)
+    `).run(itemId).lastInsertRowid
+    db.prepare(`
+      INSERT INTO laundry_burst_bag_pieces(incident_id, garment_type, photo_url)
+      VALUES(?, 'Gömlek', '/uploads/laundry-burst-piece.jpg')
+    `).run(incidentId)
 
     const result = cleanupLaundryPhotos({ uploadsDir, now: NOW, retentionDays: 7 })
 
@@ -70,6 +79,7 @@ describe('laundry photo retention', () => {
     expect(fs.existsSync(bagPhoto)).toBe(true)
     expect(fs.existsSync(exceptionPhoto)).toBe(true)
     expect(fs.existsSync(damagePhoto)).toBe(true)
+    expect(fs.existsSync(burstPhoto)).toBe(true)
   })
 
   it('baska modulun dosyalarina dokunmaz', () => {

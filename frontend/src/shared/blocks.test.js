@@ -10,11 +10,12 @@ import {
 } from './blocks.js'
 
 describe('blocks config', () => {
-  it('19 blok tanimli (3 M + 3 S + 13 Y)', () => {
-    expect(BLOCKS.length).toBe(19)
+  it('22 blok tanimli (3 M + 3 S + 13 Y + 3 Faz 2)', () => {
+    expect(BLOCKS.length).toBe(22)
     expect(BLOCKS_BY_TYPE.M.length).toBe(3)
     expect(BLOCKS_BY_TYPE.S.length).toBe(3)
     expect(BLOCKS_BY_TYPE.Y.length).toBe(13)
+    expect(BLOCKS_BY_TYPE.F2).toEqual(['F2A', 'F2B', 'F2C'])
   })
 
   it('BLOCK_BY_NAME tum bloklara erisim saglar', () => {
@@ -39,6 +40,11 @@ describe('blocks config', () => {
 
   it('expectedRoomNos F kat 3 → [301..310]', () => {
     expect(expectedRoomNos('F', 3)).toEqual(Array.from({ length: 10 }, (_, i) => 301 + i))
+  })
+
+  it('Faz 2 odaları 1-80 aralığındadır ve manuel seçim kullanır', () => {
+    expect(expectedRoomNos('F2A', 1)).toEqual(Array.from({ length: 80 }, (_, i) => i + 1))
+    expect(BLOCK_BY_NAME.F2A.manualRoomEntry).toBe(true)
   })
 
   it('expectedRoomNos D kat 2 → [] (D tek katli)', () => {

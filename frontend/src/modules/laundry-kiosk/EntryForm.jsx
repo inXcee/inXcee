@@ -2,7 +2,6 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import RoomGridPicker from './RoomGridPicker.jsx'
 import QuickGarmentInput from './QuickGarmentInput.jsx'
-import { blockNeedsSignature } from './constants.js'
 import { listQueued, enqueueBag, flushQueue, buildBagFormData } from './offlineQueue.js'
 import { listRecentRooms, rememberRoom } from './recentRooms.js'
 import { downscalePhoto } from '../../shared/photo.js'
@@ -199,6 +198,17 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
     staleTime: 300000,
   }).data ?? []
 
+  const blockConfigResult = useQuery({
+    queryKey: ['laundry-kiosk-block-config'],
+    queryFn: () => kioskApi
+      .get('/self-service/laundry-kiosk/block-config')
+      .then(response => response.data),
+    staleTime: 60000,
+  }).data
+  const blockConfig = Array.isArray(blockConfigResult) ? blockConfigResult : []
+  const selectedBlockConfig = blockConfig.find(item => item.block === selection.block)
+  const isPremiumBlock = selectedBlockConfig?.is_premium === 1
+
   // Arşivde geçen markalar — künye alanında öneri olarak çıkar.
   const brandSuggestions = useQuery({
     queryKey: ['kiosk-brands'],
@@ -249,7 +259,7 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
           colors: Array.isArray(item.colors) ? item.colors : [],
           pattern: item.pattern || 'solid',
           pattern_label: 'Düz',
-          requires_ironing: item.requires_ironing === 1,
+          requires_ironing: isPremiumBlock && item.requires_ironing === 1,
           brand: item.brand || null,
           size: item.size || null,
           condition_notes: item.notes || null,
@@ -258,7 +268,9 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
     })
   }
 
-  const needsSig = selection.block ? blockNeedsSignature(selection.block) : false
+  // İmza hizmet tipine bağlıdır: standart blokta zorunlu, premium blokta isteğe bağlıdır.
+  // Config henüz yüklenmediyse güvenli tarafta kalıp imzayı isteriz.
+  const needsSig = Boolean(selection.block) && !isPremiumBlock
 
   // Derived: effective item_count — fotoğraflı eklendiyse onların toplamı,
   // yoksa kullanıcının seçtiği parça sayısı.
@@ -321,20 +333,23 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
       sig = sigRef.current?.toDataURL()
     }
 
-    const isPremium = garmentState.garments.length > 0
+    const normalizedGarments = garmentState.garments.map(garment => ({
+      ...garment,
+      requires_ironing: isPremiumBlock && Boolean(garment.requires_ironing),
+    }))
     const freeText = (garmentState.freeText || '').trim()
     const payload = {
       block: selection.block,
       room_no: selection.room_no,
       personnel_id: selection.person?.id || null,
       item_count: derivedItemCount,
-      is_premium: isPremium,
-      garments: isPremium ? garmentState.garments : null,
+      is_premium: isPremiumBlock,
+      garments: normalizedGarments.length > 0 ? normalizedGarments : null,
       notes: freeText || null,
       urgent,
       intake_signature: sig,
       client_request_id: clientRequestId,
-      tracking_mode: isPremium ? 'individual' : 'count_only',
+      tracking_mode: normalizedGarments.length > 0 ? 'individual' : 'count_only',
     }
 
     setSubmitting(true)
@@ -347,7 +362,11 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
         idempotent: res.data.idempotent,
       })
     } catch (e) {
-      if (!e.response) {
+      if (!e.response && needsSig) {
+        // İmzayı paylaşımlı cihazın şifresiz localStorage alanına yazmıyoruz.
+        // Bu nedenle standart blok girişi bağlantı gelmeden güvenle kuyruğa alınamaz.
+        setError('Standart blok girişi imza nedeniyle çevrimiçi kaydedilmelidir. Bağlantıyı kontrol edip tekrar deneyin.')
+      } else if (!e.response) {
         // Ağ yok — kuyruğa al, bağlantı gelince otomatik gönderilir.
         // Fotoğraf ve imza kuyruğa GİRMEZ (localStorage şifresiz, cihaz paylaşımlı);
         // kuyruk dolu/kota hatasında enqueueBag throw eder — form sıfırlanmaz, hata gösterilir.
@@ -516,6 +535,14 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
         <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 10 }}>
           📍 {selection.block}-{selection.room_no}{selection.person?.full_name ? ` · ${selection.person.full_name}` : ''}
         </div>
+        <div style={{
+          marginBottom: 10, padding: '9px 12px', borderRadius: 10,
+          background: isPremiumBlock ? 'rgba(124,58,237,0.12)' : 'rgba(15,118,110,0.12)',
+          border: `1px solid ${isPremiumBlock ? 'rgba(167,139,250,0.4)' : 'rgba(45,212,191,0.35)'}`,
+          color: isPremiumBlock ? '#c4b5fd' : '#99f6e4', fontSize: 12, fontWeight: 800,
+        }}>
+          {isPremiumBlock ? '♨️ Premium blok · kıyafet bazında ütü seçilebilir' : '✓ Standart blok · ütü hizmeti uygulanmaz'}
+        </div>
         {/* Odanın dolabı — arşivdeki kıyafetler. Marka/beden dahil geri gelir. */}
         {wardrobe.length > 0 && (
           <div style={{
@@ -558,7 +585,13 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
 
         {lastBagGarments && garmentState.garments.length === 0 && (
           <button type="button"
-            onClick={() => setGarmentState(s => ({ ...s, garments: lastBagGarments.garments }))}
+            onClick={() => setGarmentState(s => ({
+              ...s,
+              garments: lastBagGarments.garments.map(garment => ({
+                ...garment,
+                requires_ironing: isPremiumBlock && Boolean(garment.requires_ironing),
+              })),
+            }))}
             style={{
               width: '100%', marginBottom: 10, padding: '10px 14px', borderRadius: 10,
               border: '1px dashed #3b82f6', background: 'rgba(29,78,216,0.08)',
@@ -572,6 +605,7 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
           value={garmentState}
           onChange={setGarmentState}
           brandSuggestions={brandSuggestions}
+          allowIroning={isPremiumBlock}
         />
       </div>
       )}
@@ -589,8 +623,9 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
           background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)',
           borderRadius: 10, padding: '10px 14px', color: '#fbbf24', fontSize: 12,
         }}>
-          📡 Çevrimdışısınız — fotoğraf ve imza kuyruğa alınamaz. Giriş kaydedilir,
-          bağlantı gelince fotoğraf/imzayı torbaya ekleyebilirsiniz.
+          {needsSig
+            ? '📡 Çevrimdışısınız — standart blokta imza zorunlu olduğu için bağlantı gelmeden kayıt yapılamaz.'
+            : '📡 Çevrimdışısınız — premium giriş fotoğraf olmadan kuyruğa alınabilir.'}
         </div>
       )}
       <div>
@@ -626,7 +661,10 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
       {/* İmza (blok kuralına göre) */}
       {needsSig && (
         <div>
-          <label style={lbl}>İmza</label>
+          <label style={lbl}>Giriş imzası · zorunlu</label>
+          <div style={{ color: '#94a3b8', fontSize: 11, marginBottom: 7 }}>
+            Standart blok teslim zinciri için çamaşırı veren kişi imzalar.
+          </div>
           <SigPad sigRef={sigRef} />
         </div>
       )}

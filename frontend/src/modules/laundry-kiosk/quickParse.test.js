@@ -21,6 +21,11 @@ describe('parseRoomShortcut', () => {
   it('"a 105" tek harfli Y blok', () => {
     expect(parseRoomShortcut('a 105')).toEqual({ block: 'A', room_no: '105' })
   })
+  it('Faz 2 bloklarında 1-80 oda numarasını kabul eder', () => {
+    expect(parseRoomShortcut('F2A 80')).toEqual({ block: 'F2A', room_no: '80' })
+    expect(parseRoomShortcut('f2b 1')).toEqual({ block: 'F2B', room_no: '1' })
+    expect(parseRoomShortcut('F2C 81')).toBe(null)
+  })
   it('blokta olmayan oda null döner', () => {
     expect(parseRoomShortcut('M1 999')).toBe(null)
   })

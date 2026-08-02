@@ -9,11 +9,11 @@ beforeEach(() => {
 })
 
 describe('seedProdRooms', () => {
-  it('M1-M3 + S1-S3 + yeni 13 blok toplam 814 oda olusturur', () => {
+  it('M/S/Y seed odaları ile migration Faz 2 odaları toplam 1054 oda oluşturur', () => {
     const stats = seedProdRooms()
     expect(stats.inserted).toBe(814)
-    expect(stats.skipped).toBe(0)
-    expect(stats.total_in_db).toBe(814)
+    expect(stats.skipped).toBe(240)
+    expect(stats.total_in_db).toBe(1054)
   })
 
   it('her M blogu 60 oda (2 kat x 30), tumu kapasite 6', () => {
@@ -51,8 +51,15 @@ describe('seedProdRooms', () => {
     seedProdRooms()
     const stats = seedProdRooms()
     expect(stats.inserted).toBe(0)
-    expect(stats.skipped).toBe(814)
-    expect(stats.total_in_db).toBe(814)
+    expect(stats.skipped).toBe(1054)
+    expect(stats.total_in_db).toBe(1054)
+  })
+
+  it('Faz 2 A/B/C blokları migration ile 80er oda olarak hazırdır', () => {
+    const db = getDB()
+    for (const block of ['F2A', 'F2B', 'F2C']) {
+      expect(db.prepare('SELECT COUNT(*) AS count FROM rooms WHERE block=?').get(block).count).toBe(80)
+    }
   })
 
   it('butun odalar status=active baslar', () => {

@@ -33,7 +33,8 @@ export function removeLaundryPhotoFile(photoUrl, uploadsDir = process.env.UPLOAD
   return false
 }
 
-// Referans kaynakları: torba giriş fotosu, kıyafet istisnası, hasar kaydı.
+// Referans kaynakları: torba giriş fotosu, kıyafet istisnası, hasar kaydı ve
+// patlayan file ayırma alanındaki parça fotoğrafı.
 function referencedFileNames(db) {
   const names = new Set()
   const collect = (rows) => {
@@ -44,6 +45,7 @@ function referencedFileNames(db) {
   collect(db.prepare('SELECT photo_url FROM laundry_items WHERE photo_url IS NOT NULL').all())
   collect(db.prepare('SELECT photo_url FROM laundry_garment_exceptions WHERE photo_url IS NOT NULL').all())
   collect(db.prepare('SELECT photo_url FROM laundry_damages WHERE photo_url IS NOT NULL').all())
+  collect(db.prepare('SELECT photo_url FROM laundry_burst_bag_pieces WHERE photo_url IS NOT NULL').all())
   return names
 }
 
