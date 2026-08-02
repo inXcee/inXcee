@@ -25,9 +25,12 @@ export const KIOSK_TOKEN_TTL_MS = 10 * 365 * 24 * 60 * 60 * 1000 // ~10 yıl
 
 const asSeconds = (ms) => Math.floor(ms / 1000)
 
+// `ims` = milisaniye hassasiyetli üretim damgası. Standart `iat` saniye
+// çözünürlüğünde olduğu için, PIN'ini değiştirip hemen tekrar giren kullanıcı
+// kendi yeni oturumunu kaybedebiliyordu (bkz. assertPrincipalActive).
 function makeToken(payload) {
   const jti = crypto.randomUUID()
-  const token = jwt.sign({ ...payload, jti }, SECRET, { expiresIn: asSeconds(WEB_TOKEN_TTL_MS) })
+  const token = jwt.sign({ ...payload, jti, ims: Date.now() }, SECRET, { expiresIn: asSeconds(WEB_TOKEN_TTL_MS) })
   return { token, jti }
 }
 
@@ -35,7 +38,7 @@ function makeToken(payload) {
 // güvenlidir; çıkış düğmesi bu jti'yi blacklist'e yazarak oturumu gerçekten kapatır.
 function makeKioskToken(payload) {
   const jti = crypto.randomUUID()
-  const token = jwt.sign({ ...payload, jti }, SECRET, { expiresIn: asSeconds(KIOSK_TOKEN_TTL_MS) })
+  const token = jwt.sign({ ...payload, jti, ims: Date.now() }, SECRET, { expiresIn: asSeconds(KIOSK_TOKEN_TTL_MS) })
   return { token, jti }
 }
 
@@ -187,6 +190,7 @@ export function setKioskPin(personnelId, newPin) {
   if (!p) return { error: 'Personel bulunamadı', status: 404 }
   const hash = bcrypt.hashSync(newPin, 10)
   db.prepare('UPDATE personnel SET kiosk_pin=? WHERE id=?').run(hash, personnelId)
+  revokeSessionsFor('personnel', personnelId)
   return { ok: true }
 }
 
@@ -199,6 +203,7 @@ export function changeKioskPin(personnelId, currentPin, newPin) {
   if (!bcrypt.compareSync(currentPin, p.kiosk_pin)) return { error: 'Mevcut PIN hatalı', status: 401 }
   const hash = bcrypt.hashSync(newPin, 10)
   db.prepare('UPDATE personnel SET kiosk_pin=? WHERE id=?').run(hash, personnelId)
+  revokeSessionsFor('personnel', personnelId)
   return { ok: true }
 }
 
@@ -213,12 +218,83 @@ export function changeStaffKioskPin(staffId, currentPin, newPin) {
   if (!bcrypt.compareSync(currentPin, s.kiosk_pin)) return { error: 'Mevcut PIN hatalı', status: 401 }
   const hash = bcrypt.hashSync(newPin, 10)
   db.prepare('UPDATE staff SET kiosk_pin=? WHERE id=?').run(hash, staffId)
+  revokeSessionsFor('staff', staffId)
   return { ok: true }
+}
+
+// Token'ın imzası geçerli olsa bile arkasındaki hesap hâlâ geçerli mi?
+//
+// Kiosk token'ları pratikte süresiz olduğu için "nasılsa süresi dolar" artık bir
+// güvenlik ağı değil: işten ayrılan personelin veya çıkış yapan sakinin erişimi
+// yalnızca bu kontrolle kapanır. verifyToken tek geçiş noktası olduğundan kontrol
+// burada duruyor — dört ayrı middleware'e dağıtılsa biri unutulurdu.
+function assertPrincipalActive(payload) {
+  const db = getDB()
+  let row
+  if (payload.role === 'avs_kiosk') {
+    row = db.prepare('SELECT sessions_valid_from FROM staff WHERE id=? AND is_active=1').get(payload.workerId)
+    if (!row) throw new Error('Personel kaydı pasif')
+  } else if (payload.role === 'kiosk') {
+    row = db.prepare('SELECT sessions_valid_from FROM personnel WHERE id=? AND check_out_date IS NULL').get(payload.personnelId)
+    if (!row) throw new Error('Personel çıkış yapmış')
+  } else if (payload.id) {
+    // Web ve mobil oturumlar: users satırı silinmişse token da ölmeli.
+    row = db.prepare('SELECT sessions_valid_from FROM users WHERE id=?').get(payload.id)
+    if (!row) throw new Error('Kullanıcı bulunamadı')
+  } else {
+    return
+  }
+  // PIN/şifre değişikliği bu damgayı ileri alır; damgadan önce üretilmiş her
+  // token ölür. Karşılaştırma milisaniye üzerinden — `ims` taşımayan eski
+  // token'lar için `iat`e düşeriz (onlar zaten iptal edilecek olanlar).
+  if (row.sessions_valid_from) {
+    const issuedMs = payload.ims ?? (payload.iat ? payload.iat * 1000 : null)
+    if (issuedMs !== null && issuedMs < row.sessions_valid_from) {
+      throw new Error('Oturum iptal edildi, tekrar giriş yapın')
+    }
+  }
+}
+
+// Kimlik bilgisi değiştiğinde çağrılır: o kişinin bütün açık oturumlarını kapatır.
+// jti listesi tutmaya gerek yok — tek damga tüm eski token'ları geçersizler.
+const REVOCABLE_TABLES = { user: 'users', staff: 'staff', personnel: 'personnel' }
+
+// Kimlik bilgisini değiştiren kullanıcıya, iptalden SONRA geçerli yeni bir oturum
+// verir; böylece "diğer cihazlarımı kapat" işlemi kendi ekranını düşürmez.
+export function issueSessionFor(userId) {
+  const user = getDB().prepare('SELECT id, role, username, full_name FROM users WHERE id=?').get(userId)
+  if (!user) return null
+  const { token, jti } = makeToken({ id: user.id, role: user.role, username: user.username, full_name: user.full_name })
+  return { token, jti, user }
+}
+
+// Kiosk karşılıkları: PIN'ini değiştiren personel, önünde durduğu kiosktan
+// atılmasın. PIN doğrulaması çağıran tarafta zaten yapıldı.
+export function issueAvsKioskSession(workerId) {
+  const w = getDB().prepare('SELECT id, full_name, role_label FROM staff WHERE id=? AND is_active=1').get(workerId)
+  if (!w) return null
+  const { token } = makeKioskToken({ workerId: w.id, role: 'avs_kiosk', full_name: w.full_name })
+  return { token, worker: { id: w.id, full_name: w.full_name, role_label: w.role_label } }
+}
+
+export function issuePersonnelKioskSession(personnelId) {
+  const p = getDB().prepare('SELECT id, full_name FROM personnel WHERE id=? AND check_out_date IS NULL').get(personnelId)
+  if (!p) return null
+  const { token } = makeKioskToken({ personnelId: p.id, role: 'kiosk', full_name: p.full_name })
+  return { token, personnel: { id: p.id, full_name: p.full_name } }
+}
+
+export function revokeSessionsFor(kind, id) {
+  const table = REVOCABLE_TABLES[kind]
+  if (!table || !id) return
+  // table sabit whitelist'ten gelir (kullanıcı girdisi değil); id parametreli.
+  getDB().prepare(`UPDATE ${table} SET sessions_valid_from=? WHERE id=?`).run(Date.now(), id)
 }
 
 export function verifyToken(token) {
   const payload = jwt.verify(token, SECRET)
   if (isBlacklisted(payload.jti)) throw new Error('Token iptal edildi')
+  assertPrincipalActive(payload)
   return payload
 }
 
@@ -301,5 +377,6 @@ export function changeOwnPassword(userId, currentPassword, newPassword) {
   }
   const hash = bcrypt.hashSync(newPassword, 10)
   db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(hash, userId)
+  revokeSessionsFor('user', userId)
   return { ok: true }
 }

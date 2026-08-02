@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { upload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
-import { setKioskPin } from '../../shared/auth/service.js'
+import { setKioskPin, revokeSessionsFor } from '../../shared/auth/service.js'
 import { getDB } from '../../shared/db/index.js'
 import * as svc from './service.js'
 import { insertPlaceholderBatch } from './queries.js'
@@ -168,6 +168,8 @@ checkinRouter.patch('/:id/kiosk-pin', ...requireRole('campus_manager'), (req, re
 checkinRouter.delete('/:id/kiosk-pin', ...requireRole('campus_manager'), (req, res) => {
   try {
     getDB().prepare('UPDATE personnel SET kiosk_pin=NULL WHERE id=?').run(+req.params.id)
+    // PIN kaldırıldı: açık kiosk oturumları da kapansın, yoksa erişim sürer.
+    revokeSessionsFor('personnel', +req.params.id)
     res.json({ ok: true })
   } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })

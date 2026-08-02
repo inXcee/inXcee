@@ -658,6 +658,19 @@ describe('AVS Self-Service — change-pin', () => {
       .send({ current_pin: '0000', new_pin: '4321' })
     expect(res.status).toBe(200)
     expect(res.body.ok).toBe(true)
+
+    // PIN değişikliği personelin bütün oturumlarını iptal eder — eski token ölür.
+    const eskiyle = await request(app).get('/api/avs-self-service/my-info')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(eskiyle.status).toBe(401)
+
+    // Ama önündeki kiosktan atılmaz: yanıtla taze token gelir ve çalışır.
+    expect(res.body.token).toBeTruthy()
+    avsToken = res.body.token
+    const yeniyle = await request(app).get('/api/avs-self-service/my-info')
+      .set('Authorization', `Bearer ${avsToken}`)
+    expect(yeniyle.status).toBe(200)
+
     const relog = await request(app).post('/api/auth/avs-login')
       .send({ worker_id: workerId, pin: '4321' })
     expect(relog.status).toBe(200)

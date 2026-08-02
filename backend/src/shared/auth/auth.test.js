@@ -3,7 +3,8 @@ import request from 'supertest'
 import app from '../../app.js'
 import { initDB, getDB } from '../db/index.js'
 import { seedDev } from '../db/seed.js'
-import { login, verifyToken, loginKioskById, loginKiosk, refreshToken, loginAvsKiosk, logoutToken } from './service.js'
+import { login, verifyToken, loginKioskById, loginKiosk, refreshToken, loginAvsKiosk, logoutToken, changeStaffKioskPin, changeOwnPassword } from './service.js'
+import { setWorkerPin } from '../../modules/avs-workers/queries.js'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 
@@ -47,18 +48,28 @@ describe('JWT_SECRET zorunlu', () => {
 })
 
 describe('PATCH /api/auth/password', () => {
-  it('geçerli mevcut şifre ile değiştirir', async () => {
+  it('geçerli mevcut şifre ile değiştirir ve oturumu düşürmez', async () => {
     const res = await request(app)
       .patch('/api/auth/password')
       .set('Authorization', `Bearer ${managerToken}`)
       .send({ currentPassword: 'admin123', newPassword: 'yeniSifre123' })
     expect(res.status).toBe(200)
     expect(res.body.ok).toBe(true)
-    // geri al — sonraki testler için
-    await request(app)
-      .patch('/api/auth/password')
+    // Şifre değişikliği diğer oturumları iptal eder; bu isteği yapan kullanıcıya
+    // yerine taze bir oturum verilir, yoksa kendini dışarı atmış olurdu.
+    expect(res.body.token).toBeTruthy()
+
+    // Eski token gerçekten öldü, yenisi çalışıyor.
+    const eskiyle = await request(app)
+      .get('/api/dashboard/kpi')
       .set('Authorization', `Bearer ${managerToken}`)
-      .send({ currentPassword: 'yeniSifre123', newPassword: 'admin123' })
+    expect(eskiyle.status).toBe(401)
+
+    managerToken = res.body.token
+    const yeniyle = await request(app)
+      .get('/api/dashboard/kpi')
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(yeniyle.status).toBe(200)
   })
 
   it('yanlış mevcut şifre ile reddeder', async () => {
@@ -423,5 +434,75 @@ describe('Oturum ömrü — çıkış yapılmadıkça açık kalır', () => {
     const { token } = loginAvsKiosk(workerId, '4321')
     const result = refreshToken(token)
     expect(result.status).toBe(403)
+  })
+
+  // Token süresiz olduğu için erişim yalnızca hesap kontrolüyle kapanabilir;
+  // "süresi nasılsa dolar" varsayımı artık geçerli değil.
+  it('pasifleştirilen personelin kiosk token’ı anında geçersizleşir', () => {
+    const workerId = makeAvsWorker()
+    const { token } = loginAvsKiosk(workerId, '4321')
+    expect(verifyToken(token).workerId).toBe(workerId)
+
+    getDB().prepare('UPDATE staff SET is_active=0 WHERE id=?').run(workerId)
+    expect(() => verifyToken(token)).toThrow()
+  })
+
+  it('çıkış yapan sakinin PIN kiosk token’ı geçersizleşir', () => {
+    const db = getDB()
+    const p = db.prepare('SELECT id FROM personnel WHERE check_out_date IS NULL LIMIT 1').get()
+    db.prepare('UPDATE personnel SET kiosk_pin=?, pin_attempts=0, pin_locked_until=NULL WHERE id=?')
+      .run(bcrypt.hashSync('4321', 10), p.id)
+    const { token } = loginKioskById(p.id, '4321')
+    expect(verifyToken(token).personnelId).toBe(p.id)
+
+    db.prepare("UPDATE personnel SET check_out_date='2026-08-01' WHERE id=?").run(p.id)
+    expect(() => verifyToken(token)).toThrow()
+    db.prepare('UPDATE personnel SET check_out_date=NULL WHERE id=?').run(p.id)
+  })
+
+  it('PIN değişince o personelin eski kiosk oturumları kapanır', () => {
+    const workerId = makeAvsWorker()
+    const eski = loginAvsKiosk(workerId, '4321').token
+    expect(verifyToken(eski).workerId).toBe(workerId)
+
+    changeStaffKioskPin(workerId, '4321', '9876')
+    expect(() => verifyToken(eski)).toThrow()
+
+    // Yeni PIN ile alınan oturum çalışmaya devam eder.
+    expect(verifyToken(loginAvsKiosk(workerId, '9876').token).workerId).toBe(workerId)
+  })
+
+  it('yönetici PIN sıfırlayınca da eski kiosk oturumu kapanır', () => {
+    const workerId = makeAvsWorker()
+    const eski = loginAvsKiosk(workerId, '4321').token
+    expect(verifyToken(eski).workerId).toBe(workerId)
+
+    setWorkerPin(workerId, '1122')
+    expect(() => verifyToken(eski)).toThrow()
+  })
+
+  it('şifre değişince eski web oturumu kapanır', () => {
+    const db = getDB()
+    db.prepare("INSERT INTO users(username, password_hash, role, full_name) VALUES(?,?,?,?)")
+      .run('sifre_degisen', bcrypt.hashSync('Eski!Sifre123', 10), 'technical', 'Şifre Değişen')
+    const eski = login('sifre_degisen', 'Eski!Sifre123').token
+    expect(verifyToken(eski).username).toBe('sifre_degisen')
+
+    const u = db.prepare("SELECT id FROM users WHERE username='sifre_degisen'").get()
+    changeOwnPassword(u.id, 'Eski!Sifre123', 'Yeni!Sifre456')
+    expect(() => verifyToken(eski)).toThrow()
+    expect(verifyToken(login('sifre_degisen', 'Yeni!Sifre456').token).id).toBe(u.id)
+  })
+
+  it('silinen kullanıcının web token’ı geçersizleşir', () => {
+    const db = getDB()
+    const info = db.prepare(
+      "INSERT INTO users(username, password_hash, role, full_name) VALUES(?,?,?,?)"
+    ).run('silinecek_kullanici', bcrypt.hashSync('Gecici!Sifre123', 10), 'technical', 'Silinecek Kullanıcı')
+    const { token } = login('silinecek_kullanici', 'Gecici!Sifre123')
+    expect(verifyToken(token).id).toBe(Number(info.lastInsertRowid))
+
+    db.prepare('DELETE FROM users WHERE id=?').run(info.lastInsertRowid)
+    expect(() => verifyToken(token)).toThrow()
   })
 })

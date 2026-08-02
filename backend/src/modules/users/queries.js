@@ -1,4 +1,5 @@
 import { getDB } from '../../shared/db/index.js'
+import { revokeSessionsFor } from '../../shared/auth/service.js'
 
 export function getAllUsers() {
   const db = getDB()
@@ -36,6 +37,7 @@ export function updateUser(id, { role, full_name, assigned_block, assigned_floor
 export function updatePassword(id, password_hash) {
   const db = getDB()
   db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(password_hash, id)
+  revokeSessionsFor('user', id)
 }
 
 export function deleteUser(id) {

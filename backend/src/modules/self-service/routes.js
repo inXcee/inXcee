@@ -3,7 +3,7 @@ import { unlinkSync } from 'node:fs'
 import { requireKioskOrStaff, requireLaundryKioskOperator } from '../../shared/auth/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import { createRequest } from '../maintenance/queries.js'
-import { changeKioskPin } from '../../shared/auth/service.js'
+import { changeKioskPin, issuePersonnelKioskSession } from '../../shared/auth/service.js'
 import { createLeaveService } from '../shifts/service.js'
 import { getLeaveBalance } from '../shifts/queries.js'
 import { createNotification } from '../../shared/notifications/service.js'
@@ -415,7 +415,9 @@ selfServiceRouter.post('/set-pin', requireKioskOrStaff, (req, res) => {
   if (!currentPin || !newPin) return res.status(400).json({ error: 'Mevcut ve yeni PIN gerekli' })
   const result = changeKioskPin(req.user.personnelId, currentPin, newPin)
   if (result.error) return res.status(result.status).json({ error: result.error })
-  res.json(result)
+  // Eski oturumlar iptal oldu; bu cihaz açık kalsın diye yeni token veriyoruz.
+  const fresh = issuePersonnelKioskSession(req.user.personnelId)
+  res.json(fresh ? { ...result, token: fresh.token } : result)
 })
 
 selfServiceRouter.get('/my-maintenance', requireKioskOrStaff, (req, res) => {

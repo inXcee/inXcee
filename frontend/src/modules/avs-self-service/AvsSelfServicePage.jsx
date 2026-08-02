@@ -390,7 +390,16 @@ export default function AvsSelfServicePage() {
 
   const submitPin = useMutation({
     mutationFn: () => avsApi.post('/avs-self-service/change-pin', { current_pin: pinForm.current_pin, new_pin: pinForm.new_pin }),
-    onSuccess: () => { setPinMsg({ type: 'ok', text: t('avs_kiosk.profile.pin_success') }); setPinForm({ current_pin: '', new_pin: '', new_pin2: '' }) },
+    onSuccess: (res) => {
+      // PIN değişikliği bu personelin tüm oturumlarını iptal eder; sunucu yerine
+      // taze bir token döner. Saklamazsak bu cihaz da bir sonraki istekte düşer.
+      if (res?.data?.token) {
+        writeKioskSession(SESSION_KEY, { token: res.data.token })
+        setAvsToken(res.data.token)
+      }
+      setPinMsg({ type: 'ok', text: t('avs_kiosk.profile.pin_success') })
+      setPinForm({ current_pin: '', new_pin: '', new_pin2: '' })
+    },
     onError: (err) => setPinMsg({ type: 'err', text: err.response?.data?.error || t('avs_kiosk.login_failed') }),
   })
 

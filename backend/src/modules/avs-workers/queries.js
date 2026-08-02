@@ -1,5 +1,6 @@
 import { getDB } from '../../shared/db/index.js'
 import bcrypt from 'bcryptjs'
+import { revokeSessionsFor } from '../../shared/auth/service.js'
 
 // AVS workers artık staff tablosundan okunur — tek kaynak (single source of truth)
 // Geriye dönük API uyumluluğu için bu modül staff sorgularını wrap eder.
@@ -71,6 +72,8 @@ export function updateWorker(id, { full_name, role_label, pickup_point_id, phone
 export function setWorkerPin(id, pin) {
   const hash = bcrypt.hashSync(pin, 10)
   getDB().prepare('UPDATE staff SET kiosk_pin=? WHERE id=?').run(hash, id)
+  // PIN sıfırlandı: eski kiosk oturumları artık geçersiz.
+  revokeSessionsFor('staff', id)
 }
 
 export function toggleWorker(id) {

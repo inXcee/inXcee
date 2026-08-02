@@ -3,7 +3,7 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
 import { z } from 'zod'
 import crypto from 'node:crypto'
 import bcrypt from 'bcryptjs'
-import { login, loginKiosk, loginKioskById, searchKioskPersonnel, loginAvsKiosk, searchAvsWorkers, changeOwnPassword, refreshToken, verify2faChallenge, logoutToken, getMe, WEB_TOKEN_TTL_MS } from './service.js'
+import { login, loginKiosk, loginKioskById, searchKioskPersonnel, loginAvsKiosk, searchAvsWorkers, changeOwnPassword, refreshToken, verify2faChallenge, logoutToken, getMe, WEB_TOKEN_TTL_MS, revokeSessionsFor, issueSessionFor } from './service.js'
 import { get2faStatus, start2faSetupWithQr, enable2fa, disable2fa, getBackupCodeStatus, regenerateBackupCodes } from './totp.js'
 import { getSetting } from '../../modules/email/queries.js'
 import { sendPasswordResetEmail } from '../../modules/email/service.js'
@@ -262,7 +262,12 @@ authRouter.patch('/password', requireAuth, (req, res) => {
   }
   const result = changeOwnPassword(req.user.id, currentPassword, newPassword)
   if (result.error) return res.status(result.status).json({ error: result.error })
-  res.json(result)
+  // Şifre değişikliği kullanıcının BÜTÜN oturumlarını iptal eder — şu an
+  // kullandığı da dahil. Kendini dışarı atmasın diye taze bir oturum veriyoruz;
+  // diğer cihazlar kapalı kalır.
+  const fresh = issueSessionFor(req.user.id)
+  if (fresh) setSessionCookie(res, fresh.token)
+  res.json(process.env.NODE_ENV === 'test' && fresh ? { ...result, token: fresh.token } : result)
 })
 
 const resetLimiter = rateLimit({
@@ -335,6 +340,9 @@ authRouter.post('/reset-password/:token', resetLimiter, (req, res) => {
   db.transaction(() => {
     db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(hash, row.user_id)
     db.prepare('UPDATE password_reset_tokens SET used=1 WHERE token_hash=?').run(tokenHash)
+    // Şifreyi unutup sıfırlayan kullanıcının eski oturumları da kapanmalı —
+    // hesabı ele geçiren biri varsa sıfırlama onu da dışarı atsın.
+    revokeSessionsFor('user', row.user_id)
   })()
   logger.info({ userId: row.user_id }, '[Auth] Şifre sıfırlama tamamlandı')
   res.json({ ok: true })

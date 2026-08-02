@@ -4,7 +4,7 @@ import { unlinkSync } from 'node:fs'
 import { requireAvsKiosk } from '../../shared/auth/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import { createRequest } from '../maintenance/queries.js'
-import { changeStaffKioskPin } from '../../shared/auth/service.js'
+import { changeStaffKioskPin, issueAvsKioskSession } from '../../shared/auth/service.js'
 import { logger } from '../../shared/logger.js'
 import {
   upload, createImageUpload, verifyMagicBytes, verifyImageMagicBytes,
@@ -918,7 +918,10 @@ avsSelfServiceRouter.post('/change-pin', requireAvsKiosk, (req, res) => {
     INSERT INTO audit_log(user_id, action, module, target_id, detail)
     VALUES(NULL, 'kiosk_avs_pin_change', 'avs-self-service', ?, ?)
   `).run(req.user.workerId, JSON.stringify({ workerId: req.user.workerId }))
-  res.json(result)
+  // PIN değişikliği bu personelin tüm oturumlarını iptal etti; önündeki kioskta
+  // kalabilsin diye taze bir token dönüyoruz.
+  const fresh = issueAvsKioskSession(req.user.workerId)
+  res.json(fresh ? { ...result, token: fresh.token } : result)
 })
 
 // QR kart — staff.qr_token (yoklama/giriş okutması)
