@@ -29,17 +29,43 @@ const asSeconds = (ms) => Math.floor(ms / 1000)
 // çözünürlüğünde olduğu için, PIN'ini değiştirip hemen tekrar giren kullanıcı
 // kendi yeni oturumunu kaybedebiliyordu (bkz. assertPrincipalActive).
 function makeToken(payload) {
-  const jti = crypto.randomUUID()
-  const token = jwt.sign({ ...payload, jti, ims: Date.now() }, SECRET, { expiresIn: asSeconds(WEB_TOKEN_TTL_MS) })
-  return { token, jti }
+  return signSession(payload, WEB_TOKEN_TTL_MS)
 }
 
 // Kiosk token'ı da jti taşır — süresiz bir token ancak iptal edilebiliyorsa
 // güvenlidir; çıkış düğmesi bu jti'yi blacklist'e yazarak oturumu gerçekten kapatır.
 function makeKioskToken(payload) {
+  return signSession(payload, KIOSK_TOKEN_TTL_MS)
+}
+
+// Token üretiminin tek noktası: jti + ims verir ve oturumu kaydeder. Kayıt
+// burada olduğu için hiçbir giriş yolu listeden düşmez.
+function signSession(payload, ttlMs) {
   const jti = crypto.randomUUID()
-  const token = jwt.sign({ ...payload, jti, ims: Date.now() }, SECRET, { expiresIn: asSeconds(KIOSK_TOKEN_TTL_MS) })
+  const expiresAt = Math.floor((Date.now() + ttlMs) / 1000)
+  const token = jwt.sign({ ...payload, jti, ims: Date.now() }, SECRET, { expiresIn: asSeconds(ttlMs) })
+  recordSession(jti, payload, expiresAt)
   return { token, jti }
+}
+
+// Rolden hangi tabloya ait olduğunu türetiyoruz; payload alan adları da role göre
+// değişiyor (workerId / personnelId / id).
+function principalOf(payload) {
+  if (payload.role === 'avs_kiosk') return { kind: 'staff', id: payload.workerId }
+  if (payload.role === 'kiosk') return { kind: 'personnel', id: payload.personnelId }
+  if (payload.id) return { kind: 'user', id: payload.id }
+  return null
+}
+
+function recordSession(jti, payload, expiresAt) {
+  const principal = principalOf(payload)
+  if (!principal?.id) return
+  try {
+    getDB().prepare(`
+      INSERT INTO auth_sessions(jti, principal_kind, principal_id, full_name, role, expires_at)
+      VALUES(?,?,?,?,?,?)
+    `).run(jti, principal.kind, principal.id, payload.full_name || null, payload.role || null, expiresAt)
+  } catch { /* kayıt tutulamazsa giriş akışı bozulmasın */ }
 }
 
 // Token jti'sini blacklist'e ekle (logout, refresh sonrası eski token)
@@ -273,17 +299,63 @@ export function issuePersonnelKioskSession(personnelId) {
   return { token, personnel: { id: p.id, full_name: p.full_name } }
 }
 
+// Açık oturumlar — yöneticiye "hangi cihazda kim açık" görünümü.
+export function listActiveSessions({ limit = 200 } = {}) {
+  return getDB().prepare(`
+    SELECT jti, principal_kind, principal_id, full_name, role, created_at, last_seen_at
+    FROM auth_sessions
+    WHERE revoked_at IS NULL AND expires_at > ?
+    ORDER BY COALESCE(last_seen_at, created_at) DESC
+    LIMIT ?
+  `).all(Math.floor(Date.now() / 1000), limit)
+}
+
+// Tek bir oturumu kapatır. Zorlama blacklist üzerinden yürür; auth_sessions
+// yalnızca listede görünmemesi için işaretlenir.
+export function revokeSession(jti) {
+  if (!jti) return false
+  const db = getDB()
+  const row = db.prepare('SELECT expires_at FROM auth_sessions WHERE jti=? AND revoked_at IS NULL').get(jti)
+  if (!row) return false
+  blacklistJti(jti, row.expires_at)
+  db.prepare("UPDATE auth_sessions SET revoked_at=datetime('now') WHERE jti=?").run(jti)
+  return true
+}
+
+// Son görülme damgası. Her istekte yazmamak için süreç içi bir eşik tutuyoruz
+// (PM2 tek instance); böylece oturum başına ~5 dakikada bir yazım oluyor.
+const TOUCH_INTERVAL_MS = 5 * 60 * 1000
+const lastTouched = new Map()
+
+export function touchSession(jti) {
+  if (!jti) return
+  const now = Date.now()
+  const previous = lastTouched.get(jti)
+  if (previous && now - previous < TOUCH_INTERVAL_MS) return
+  lastTouched.set(jti, now)
+  // Harita sınırsız büyümesin — kapanan oturumlar burada birikmesin.
+  if (lastTouched.size > 5000) lastTouched.clear()
+  try {
+    getDB().prepare("UPDATE auth_sessions SET last_seen_at=datetime('now') WHERE jti=?").run(jti)
+  } catch { /* istek akışını bozma */ }
+}
+
 export function revokeSessionsFor(kind, id) {
   const table = REVOCABLE_TABLES[kind]
   if (!table || !id) return
   // table sabit whitelist'ten gelir (kullanıcı girdisi değil); id parametreli.
-  getDB().prepare(`UPDATE ${table} SET sessions_valid_from=? WHERE id=?`).run(Date.now(), id)
+  const db = getDB()
+  db.prepare(`UPDATE ${table} SET sessions_valid_from=? WHERE id=?`).run(Date.now(), id)
+  // Liste görünümü de tutarlı kalsın: bu kişinin açık oturumları kapandı.
+  db.prepare("UPDATE auth_sessions SET revoked_at=datetime('now') WHERE principal_kind=? AND principal_id=? AND revoked_at IS NULL")
+    .run(kind, id)
 }
 
 export function verifyToken(token) {
   const payload = jwt.verify(token, SECRET)
   if (isBlacklisted(payload.jti)) throw new Error('Token iptal edildi')
   assertPrincipalActive(payload)
+  touchSession(payload.jti)
   return payload
 }
 
@@ -307,6 +379,7 @@ export function logoutToken(token) {
     const payload = jwt.decode(token)
     if (payload?.jti && payload?.exp) {
       blacklistJti(payload.jti, payload.exp)
+      getDB().prepare("UPDATE auth_sessions SET revoked_at=datetime('now') WHERE jti=?").run(payload.jti)
     }
   } catch { /* token parse edilemezse sessizce geç */ }
 }

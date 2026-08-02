@@ -5,6 +5,7 @@ import { logger } from '../../shared/logger.js'
 import { register } from '../../shared/metrics.js'
 import { getStats, listFailed, retryFailed } from '../../shared/jobs/index.js'
 import { logAudit } from '../../shared/audit.js'
+import { listActiveSessions, revokeSession } from '../../shared/auth/service.js'
 
 export const systemRouter = Router()
 const adminOnly = requireRole('campus_manager')
@@ -29,6 +30,22 @@ systemRouter.post('/jobs/retry', ...adminOnly, (req, res) => {
     const requeued = retryFailed({ ids, type })
     logAudit(req.user.id, 'jobs_retry', 'system', null, `${requeued} iş kuyruğa alındı${type ? ` (${type})` : ''}`)
     res.json({ requeued })
+  } catch (e) { logger.error('[System]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Açık oturumlar — oturumlar çıkış yapılana kadar sürdüğü için yöneticinin
+// hangi cihazda kimin açık olduğunu görüp tek tek kapatabilmesi gerekiyor.
+systemRouter.get('/sessions', ...adminOnly, (req, res) => {
+  try { res.json(listActiveSessions()) }
+  catch (e) { logger.error('[System]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+systemRouter.delete('/sessions/:jti', ...adminOnly, (req, res) => {
+  try {
+    const kapandi = revokeSession(String(req.params.jti))
+    if (!kapandi) return res.status(404).json({ error: 'Açık oturum bulunamadı' })
+    logAudit(req.user.id, 'session_revoke', 'system', null, `Oturum kapatıldı: ${req.params.jti}`)
+    res.json({ ok: true })
   } catch (e) { logger.error('[System]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 

@@ -3,7 +3,7 @@ import request from 'supertest'
 import app from '../../app.js'
 import { initDB, getDB } from '../db/index.js'
 import { seedDev } from '../db/seed.js'
-import { login, verifyToken, loginKioskById, loginKiosk, refreshToken, loginAvsKiosk, logoutToken, changeStaffKioskPin, changeOwnPassword } from './service.js'
+import { login, verifyToken, loginKioskById, loginKiosk, refreshToken, loginAvsKiosk, logoutToken, changeStaffKioskPin, changeOwnPassword, listActiveSessions, revokeSession } from './service.js'
 import { setWorkerPin } from '../../modules/avs-workers/queries.js'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
@@ -379,6 +379,62 @@ describe('Desktop passkey (webauthn) uçları', () => {
     const res = await request(app).post('/api/auth/passkey/login')
       .send({ credentialId: 'boyle-bir-cihaz-yok', response: {} })
     expect(res.status).toBe(404)
+  })
+})
+
+describe('Açık oturum kaydı ve tek oturum kapatma', () => {
+  function makeWorker(pin = '2233') {
+    const info = getDB().prepare(
+      "INSERT INTO staff(full_name, role_label, is_active, kiosk_pin) VALUES(?,?,1,?)"
+    ).run('Oturum Listesi Personeli', 'Çamaşırhane Personeli', bcrypt.hashSync(pin, 10))
+    return Number(info.lastInsertRowid)
+  }
+
+  it('giriş yapınca oturum listeye kaydolur', () => {
+    const workerId = makeWorker()
+    const { token } = loginAvsKiosk(workerId, '2233')
+    const jti = jwt.decode(token).jti
+    const kayit = listActiveSessions().find(s => s.jti === jti)
+    expect(kayit).toBeTruthy()
+    expect(kayit.full_name).toBe('Oturum Listesi Personeli')
+    expect(kayit.role).toBe('avs_kiosk')
+    expect(kayit.principal_kind).toBe('staff')
+  })
+
+  it('tek oturum kapatılınca yalnız o token ölür', () => {
+    const workerId = makeWorker()
+    const birinci = loginAvsKiosk(workerId, '2233').token
+    const ikinci = loginAvsKiosk(workerId, '2233').token
+    expect(verifyToken(birinci).workerId).toBe(workerId)
+    expect(verifyToken(ikinci).workerId).toBe(workerId)
+
+    revokeSession(jwt.decode(birinci).jti)
+    expect(() => verifyToken(birinci)).toThrow()
+    // Aynı personelin diğer cihazı etkilenmez.
+    expect(verifyToken(ikinci).workerId).toBe(workerId)
+  })
+
+  it('kapatılan oturum açık listesinde görünmez', () => {
+    const workerId = makeWorker()
+    const { token } = loginAvsKiosk(workerId, '2233')
+    const jti = jwt.decode(token).jti
+    revokeSession(jti)
+    expect(listActiveSessions().some(s => s.jti === jti)).toBe(false)
+  })
+
+  it('çıkış yapılınca oturum listeden düşer', () => {
+    const workerId = makeWorker()
+    const { token } = loginAvsKiosk(workerId, '2233')
+    const jti = jwt.decode(token).jti
+    logoutToken(token)
+    expect(listActiveSessions().some(s => s.jti === jti)).toBe(false)
+  })
+
+  it('web girişi de kaydolur', () => {
+    const { token } = login('mudur', 'admin123')
+    const jti = jwt.decode(token).jti
+    const kayit = listActiveSessions().find(s => s.jti === jti)
+    expect(kayit?.principal_kind).toBe('user')
   })
 })
 

@@ -48,6 +48,7 @@ const TAB_GROUPS = [
       { to: '/settings/kiosk-pins',    label: 'Kiosk PIN',        icon: '⌖',  roles: ADMIN },
       { to: '/settings/announcements', label: 'Duyurular',        icon: '📢', roles: ADMIN },
       { to: '/settings/avs-workers',   label: 'AVS Calisanlari',  icon: '👷', roles: ADMIN },
+      { to: '/settings/sessions',      label: 'Açık Oturumlar',   icon: '🔑', roles: ADMIN },
       { to: '/settings/audit',         label: 'Audit Log',        icon: '☷',  roles: ADMIN },
       { to: '/settings/error-log',     label: 'Hata Loglari',     icon: '⚠',  roles: ADMIN },
       { to: '/settings/backup',        label: 'Yedekleme',        icon: '⛁',  roles: ADMIN },

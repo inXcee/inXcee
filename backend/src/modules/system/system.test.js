@@ -3,6 +3,7 @@ import request from 'supertest'
 import app from '../../app.js'
 import { initDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
+import jwt from 'jsonwebtoken'
 
 let adminToken, userToken
 
@@ -114,5 +115,51 @@ describe('Job kuyruğu — başarısız işleri görme ve yeniden deneme', () =>
     expect((await request(app).post('/api/system/jobs/retry')
       .set('Authorization', `Bearer ${userToken}`).send({})).status).toBe(403)
     expect((await request(app).post('/api/system/jobs/retry').send({})).status).toBe(401)
+  })
+})
+
+describe('Açık oturumlar', () => {
+  it('admin açık oturumları görür ve kendi oturumu listede olur', async () => {
+    const res = await request(app).get('/api/system/sessions')
+      .set('Authorization', `Bearer ${adminToken}`)
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body)).toBe(true)
+    expect(res.body.some(s => s.role === 'campus_manager')).toBe(true)
+  })
+
+  it('admin bir oturumu kapatır, o token artık geçmez', async () => {
+    // Kapatılacak ayrı bir oturum aç — admin kendi oturumunu kesmesin.
+    const kurban = (await request(app).post('/api/auth/login')
+      .send({ username: 'vardiya', password: 'admin123' })).body.token
+    expect((await request(app).get('/api/dashboard/kpi')
+      .set('Authorization', `Bearer ${kurban}`)).status).toBe(200)
+
+    // Hedefi rolle değil, token'ın kendi jti'siyle bul — aynı rolden başka
+    // oturumlar da açık ve yanlışını kapatmak testi sessizce yanıltır.
+    const kurbanJti = jwt.decode(kurban).jti
+    const liste = (await request(app).get('/api/system/sessions')
+      .set('Authorization', `Bearer ${adminToken}`)).body
+    expect(liste.some(s => s.jti === kurbanJti)).toBe(true)
+
+    const sil = await request(app).delete(`/api/system/sessions/${kurbanJti}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+    expect(sil.status).toBe(200)
+
+    expect((await request(app).get('/api/dashboard/kpi')
+      .set('Authorization', `Bearer ${kurban}`)).status).toBe(401)
+  })
+
+  it('olmayan oturumu kapatmak 404 döner', async () => {
+    const res = await request(app).delete('/api/system/sessions/boyle-bir-jti-yok')
+      .set('Authorization', `Bearer ${adminToken}`)
+    expect(res.status).toBe(404)
+  })
+
+  it('yetkisiz rol oturumları göremez ve kapatamaz', async () => {
+    expect((await request(app).get('/api/system/sessions')
+      .set('Authorization', `Bearer ${userToken}`)).status).toBe(403)
+    expect((await request(app).delete('/api/system/sessions/xyz')
+      .set('Authorization', `Bearer ${userToken}`)).status).toBe(403)
+    expect((await request(app).get('/api/system/sessions')).status).toBe(401)
   })
 })
