@@ -129,6 +129,14 @@ Y blokları **özel banyolu, kapasite=1 placeholder** olarak gelir; gerçek yata
 - Deploy sonrası: `BACKEND_URL=https://... bash scripts/deploy/post-deploy-smoke.sh`
 - Cold start timeout olasılığına karşı smoke test 30sn bekler ve tekrar dener
 
+## Yedekleme (canlı)
+
+- **Yedekler `/var/data/backups`'tadır** — `BACKUP_DIR` env'i oraya işaret eder. `/opt/avskamp/backups` **eski konumdur**, Mayıs 2026'da donmuştur; oraya bakıp "yedek alınmıyor" sonucuna varma. (Mayıs dosyaları o dönemin tek kalan kopyası olduğu için silinmedi.)
+- İki mekanizma birlikte çalışır: PM2 `yys-backup` (gece 03:00, `cron_restart`) ve uygulama içi cron. Günde ~4 yedek oluşur.
+- **PM2'de `yys-backup` durumunun `stopped` görünmesi normaldir** — `autorestart: false` olduğu için işini yapıp çıkar, bir sonraki 03:00'e kadar öyle durur. Arıza sanma.
+- Yedeğin gerçekten geri yüklenebilir olduğunu doğrulamak için:
+  `sqlite3 -readonly <yedek> 'PRAGMA integrity_check;'` + tablo sayımlarını canlıyla karşılaştır.
+
 ## Kod Kurallari (Zorunlu)
 
 - **Test olmadan commit yok** — backend dosyasi degistiyse `npx vitest run` gecmeli, test yoksa once yaz
