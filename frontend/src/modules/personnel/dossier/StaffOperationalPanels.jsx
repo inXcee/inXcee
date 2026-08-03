@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
+import { asArray } from '../../../shared/asArray.js'
 import { useToastStore } from '../../../shared/store/toastStore.js'
 import { confirmDialog } from '../../../shared/components/ConfirmDialog.jsx'
 import { DossierSection, DossierMetric, DossierField, formatDossierDate } from './StaffDossierShared.jsx'
@@ -108,7 +109,7 @@ function LegacyStaffPerformancePanel({ staffId, canManage }) {
         ) : <Empty label="Tanımlı hedef yok." />}
       </DossierSection>
 
-      <DossierSection title="POZİTİF PUANLAR" subtitle={positive.isLoading ? 'Yükleniyor…' : `Toplam ${(positive.data || []).reduce((sum, p) => sum + (p.points || 0), 0)} puan`}>
+      <DossierSection title="POZİTİF PUANLAR" subtitle={positive.isLoading ? 'Yükleniyor…' : `Toplam ${asArray(positive.data).reduce((sum, p) => sum + (p.points || 0), 0)} puan`}>
         {canManage && (
           <form onSubmit={(e) => { e.preventDefault(); if (pointForm.reason.trim()) pointMutation.mutate() }} style={{ display: 'flex', gap: 6, marginBottom: 9 }}>
             <input className="input" placeholder="Gerekçe" value={pointForm.reason} onChange={(e) => setPointForm(f => ({ ...f, reason: e.target.value }))} style={{ flex: 1 }} />

@@ -6,8 +6,11 @@ export default function TransportTab({ query, data }) {
   return (
     <TabState query={query}
       isEmpty={!data?.pickup && !data?.upcoming?.length} emptyText={t('avs_kiosk.transport.none')}>
+      {/* JSX çocukları önden değerlendirilir: TabState boş/hata durumuna karar
+          vermeden ÖNCE buradaki ifadeler çalışır. Bu yüzden `data` erişimleri
+          `?.` ile korunmak zorunda — canlıda "reading 'pickup'" böyle düştü. */}
       <div className="space-y-4">
-        {data.pickup && <div className="bg-slate-900 rounded-2xl p-5">
+        {data?.pickup && <div className="bg-slate-900 rounded-2xl p-5">
           {data.schedule?.time && (
             <div className="text-3xl font-bold text-blue-400 mb-1">🕐 {data.schedule.time}</div>
           )}
@@ -35,7 +38,7 @@ export default function TransportTab({ query, data }) {
             </button>
           )}
         </div>}
-        {data.upcoming?.length > 0 && (
+        {data?.upcoming?.length > 0 && (
           <div className="bg-slate-900 rounded-2xl p-5">
             <h2 className="font-medium text-slate-300 mb-3">Yaklaşan gidiş ve dönüşler</h2>
             <div className="space-y-3">

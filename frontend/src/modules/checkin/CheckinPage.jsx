@@ -5,6 +5,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
+import { asArray } from '../../shared/asArray.js'
 import HelpHint from '../../shared/components/HelpHint.jsx'
 import BlacklistAlert from './BlacklistAlert.jsx'
 import { useDraft } from '../../shared/hooks/useDraft.js'
@@ -62,16 +63,19 @@ export default function CheckinPage() {
   })
 
   // Kayitli firmalar + hicbiri eslesmeyen serbest stringler birlestirilir.
+  // asArray: uc dizi yerine nesne donerse `= []` varsayilani devreye girmiyor
+  // ve sayfa "map is not a function" ile dusuyordu.
+  const firmalar = asArray(registeredCompanies)
   const companyNames = [
-    ...registeredCompanies.map(c => c.name),
-    ...companySugg.map(c => c.company).filter(n => !registeredCompanies.some(rc => rc.name === n)),
+    ...firmalar.map(c => c.name),
+    ...asArray(companySugg).map(c => c.company).filter(n => !firmalar.some(rc => rc.name === n)),
   ]
-  const jobNames = jobSugg.map(j => j.job_title)
+  const jobNames = asArray(jobSugg).map(j => j.job_title)
 
   // Form'da company string seciliyse, kayitli firmalarda esleserse company_id'yi otomatik set et.
   const formCompanyId = (() => {
     if (!formData.company) return null
-    const match = registeredCompanies.find(c => c.name === formData.company)
+    const match = asArray(registeredCompanies).find(c => c.name === formData.company)
     return match ? match.id : null
   })()
 
