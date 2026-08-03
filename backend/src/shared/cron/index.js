@@ -3,6 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import { generateDailyTasks } from '../../modules/housekeeping/queries.js'
 import { createNotification } from '../notifications/service.js'
+import { alertBucket } from '../notifications/cadence.js'
 import { getDB } from '../db/index.js'
 import { checkSlaViolations, checkMachineTimers, checkSlaPreWarnings, checkMachineMaintenanceAlerts, checkStuckWashingItems } from '../../modules/laundry/sla.js'
 import { checkMaintenanceSla } from '../../modules/maintenance/sla.js'
@@ -53,7 +54,9 @@ function withLock(name, fn) {
             message: `⚠️ Cron görevi "${name}" başarısız: ${e.message?.slice(0, 200)}`,
             event_kind: 'system_alert',
             target_role: 'campus_manager',
-            dedup_key: `cron_fail_${name}_${new Date().toISOString().slice(0, 13)}`,
+            // Günlük kova: aynı cron her gece patlıyorsa günde bir haber yeter,
+            // saat kovası aynı arızayı 24 kez bildiriyordu.
+            dedup_key: `cron_fail_${name}_${alertBucket(null)}`,
           })
         } catch { /* notification gönderimi başarısızsa sessizce devam */ }
       }
@@ -265,8 +268,13 @@ export function startCronJobs() {
       const db = getDB()
       const cutoff90 = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString()
       const cutoff30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+      const cutoff180 = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString()
       db.prepare('DELETE FROM audit_log WHERE created_at < ?').run(cutoff90)
       db.prepare('DELETE FROM notifications WHERE is_read=1 AND created_at < ?').run(cutoff90)
+      // Okunmamışlar da birikmemeli: eskiden yalnız okunmuşlar siliniyordu ve
+      // kimsenin açmadığı uyarılar sonsuza dek kalıyordu (canlıda 4963 adet).
+      // 180 günlük bir uyarı artık eyleme dönüşmez, yalnız zili kullanılmaz kılar.
+      db.prepare('DELETE FROM notifications WHERE created_at < ?').run(cutoff180)
       try { db.prepare('DELETE FROM error_log WHERE created_at < ?').run(cutoff30) } catch { /* tablo yoksa atla */ }
       // Süresi dolmuş token blacklist kayıtlarını temizle
       const pruned = pruneTokenBlacklist()
