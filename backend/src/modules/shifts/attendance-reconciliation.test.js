@@ -147,18 +147,39 @@ describe('Kart/kiosk puantaj uzlastirmasi (045)', () => {
     expect(getDB().prepare('SELECT status FROM shift_schedule WHERE id = ?').get(scheduleId).status).toBe('scheduled')
   })
 
-  it('okutma yoksa devamsiz yazmaz, kontrol bekleyen istisna acar', async () => {
+  // Uzlastirma plani KART GERCEGIYLE karsilastirir. O gun hicbir okutma yoksa
+  // gun gozlemsizdir; kimse icin "okutmadi" denemez. Canlida kart sistemi hic
+  // kullanilmadigi icin bu kural olmadan her gun ~180 kritik istisna aciliyordu.
+  it('o gun hic okutma yoksa istisna acmaz, gunu gozlemsiz sayar', async () => {
     const date = '2025-10-08'
     const { staffId, scheduleId } = createScheduledStaff('Eksik Okutma Personeli', date)
 
     const result = await reconcile(date, staffId)
-    expect(result.body).toMatchObject({ processed: 1, exceptions: 1 })
-    expect(result.body.results[0].reason_code).toBe('missing_scan')
+    expect(result.body).toMatchObject({ processed: 1, exceptions: 0 })
+    expect(result.body.results[0].reason_code).toBe('no_card_activity')
     expect(getDB().prepare('SELECT status FROM shift_schedule WHERE id = ?').get(scheduleId).status).toBe('scheduled')
+    const acik = getDB().prepare(`
+      SELECT COUNT(*) n FROM attendance_exceptions
+      WHERE staff_id = ? AND work_date = ? AND status = 'open'
+    `).get(staffId, date)
+    expect(acik.n).toBe(0)
+  })
+
+  // Ayni gun BASKASI okuttuysa kart sistemi o gun kullanimdadir; bu kisinin
+  // okutmamasi artik gercek ve uzerinde islem yapilabilir bir bulgudur.
+  it('o gun baska biri okuttuysa okutmayan icin istisna acar', async () => {
+    const date = '2025-10-21'
+    const okutan = createScheduledStaff('Okutan Personel', date)
+    const okutmayan = createScheduledStaff('Okutmayan Personel', date)
+    await addEvent(okutan.staffId, 'aktif-in', 'check_in', `${date}T06:05:00+03:00`)
+    await addEvent(okutan.staffId, 'aktif-out', 'check_out', `${date}T15:05:00+03:00`)
+
+    const result = await reconcile(date, okutmayan.staffId)
+    expect(result.body.results[0].reason_code).toBe('missing_scan')
     const exception = getDB().prepare(`
       SELECT * FROM attendance_exceptions
       WHERE staff_id = ? AND work_date = ? AND status = 'open'
-    `).get(staffId, date)
+    `).get(okutmayan.staffId, date)
     expect(exception.exception_type).toBe('missing_scan')
   })
 

@@ -29,7 +29,7 @@ import {
   getStaffDayBreakdown, getPuantajDayRows, listDeductions,
   findAttendanceIdentity, insertAttendanceEvent, listAttendanceEvents,
   listStationAttendanceSourceEvents, getAttendanceCandidateStaffIds,
-  getAttendanceReconciliationContext, findAttendanceReconciliation,
+  getAttendanceReconciliationContext, findAttendanceReconciliation, dayHasAttendanceEvents,
   insertAttendanceReconciliation, markScheduleWorkedFromAttendance,
   resolveStaleAttendanceExceptions, upsertAttendanceException,
   listAttendanceExceptions, getAttendanceException, updateAttendanceExceptionStatus,
@@ -1652,6 +1652,10 @@ function reconcileAttendanceDecision(context) {
     return { ...base, reasonCode: 'manual_final_status' }
   }
   if (!events.length) {
+    // O gün kampüste hiç okutma yoksa kart sistemi kullanılmamıştır: gün
+    // gözlemsizdir, kişi bazında "okutmadı" demek yanlış olur. Aksi halde
+    // planlı herkes için her gün kritik istisna açılıyordu (canlıda 1365 adet).
+    if (!context.dayHasEvents) return { ...base, reasonCode: 'no_card_activity' }
     return {
       ...base,
       resultStatus: 'no_events',
@@ -1746,10 +1750,10 @@ function reconciliationFingerprint(staffId, workDate, context, decision) {
   })).digest('hex')
 }
 
-function reconcileAttendanceDayForStaff(staffId, workDate, userId, runSource) {
+function reconcileAttendanceDayForStaff(staffId, workDate, userId, runSource, dayHasEvents) {
   const db = getDB()
   return db.transaction(() => {
-    const context = getAttendanceReconciliationContext(staffId, workDate)
+    const context = { ...getAttendanceReconciliationContext(staffId, workDate), dayHasEvents }
     if (!context.staff) return { staff_id: staffId, work_date: workDate, skipped: true, reason_code: 'staff_not_found' }
     const decision = reconcileAttendanceDecision(context)
     const fingerprint = reconciliationFingerprint(staffId, workDate, context, decision)
@@ -1832,9 +1836,11 @@ export function reconcileAttendanceService(data = {}, userId = null, runSource =
   let notDue = 0
   dates.forEach(workDate => {
     if (workDate > today) { notDue += 1; return }
+    // Gün başına tek sorgu; kişi başına tekrarlamıyoruz.
+    const dayHasEvents = dayHasAttendanceEvents(workDate)
     const candidateIds = getAttendanceCandidateStaffIds(workDate, staffId)
     candidateIds.forEach(candidateId => {
-      results.push(reconcileAttendanceDayForStaff(candidateId, workDate, userId, runSource))
+      results.push(reconcileAttendanceDayForStaff(candidateId, workDate, userId, runSource, dayHasEvents))
     })
   })
   return {

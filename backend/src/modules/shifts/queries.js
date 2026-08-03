@@ -1526,6 +1526,15 @@ export function getAttendanceReconciliationContext(staffId, workDate) {
   return { staff, schedule, leave, periodLock, dailyApproval, latestReconciliation, events }
 }
 
+// O gün kart sistemi kullanılmış mı? Uzlaştırma planı kart gerçeğiyle
+// karşılaştırır; hiç okutma yoksa gün gözlemsizdir ve kimse hakkında
+// "okutmadı" sonucuna varılamaz. Gün başına tek sorgu (kişi başına değil).
+export function dayHasAttendanceEvents(workDate) {
+  return !!getDB()
+    .prepare('SELECT 1 FROM attendance_events WHERE work_date = ? LIMIT 1')
+    .get(workDate)
+}
+
 export function findAttendanceReconciliation(fingerprint) {
   return getDB().prepare('SELECT * FROM attendance_daily_reconciliations WHERE fingerprint = ?').get(fingerprint)
 }
