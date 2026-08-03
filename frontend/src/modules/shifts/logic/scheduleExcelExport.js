@@ -210,26 +210,40 @@ function buildDeptSummary(rows, weekDays) {
   return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'tr'))
 }
 
-function inferWorkArea(person) {
-  const text = [person.dept_name, person.position, person.full_name]
+// \u00c7al\u0131\u015fma alan\u0131 tahmini \u2014 yaln\u0131zca G\u00d6REVDEN \u00e7\u0131kar\u0131l\u0131r, isimden de\u011fil.
+//
+// Eskiden ki\u015finin ADI da metne kat\u0131l\u0131yordu ve "yemek/mutfak/a\u015f\u00e7\u0131" ge\u00e7en her \u015fey
+// Yemekhane say\u0131l\u0131yordu; "A\u015f\u00e7\u0131" yayg\u0131n bir soyad\u0131 oldu\u011fu i\u00e7in alakas\u0131z ki\u015filer
+// yemekhaneye yaz\u0131l\u0131yordu. Ayr\u0131ca hi\u00e7bir \u015fey e\u015fle\u015fmedi\u011finde "Genel" uyduruluyordu.
+//
+// Yemekhaneyle ili\u015fkili say\u0131lan tek grup: ikram ve bula\u015f\u0131khane. Lokaller kendi
+// ad\u0131yla g\u00f6r\u00fcn\u00fcr (daha spesifik ve ger\u00e7ek lokasyon adlar\u0131yla tutarl\u0131).
+// Hi\u00e7biri e\u015fle\u015fmiyorsa bo\u015f b\u0131rak\u0131l\u0131r \u2014 bilinmeyen bir yeri uydurmay\u0131z.
+const CANTEEN_KEYWORDS = ['ikram', 'bulasik']
+
+export function inferWorkArea(person) {
+  const plain = [person.dept_name, person.position]
     .filter(Boolean)
     .join(' ')
     .toLocaleLowerCase('tr')
-  const plain = text.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    // Noktas\u0131z \u0131 NFD ile ayr\u0131\u015fmaz, yani yukar\u0131daki aksan temizli\u011fi onu \u0131skalar:
+    // "bula\u015f\u0131khane" \u2192 "bulas\u0131khane" kal\u0131r ve 'bulasik' anahtar\u0131 tutmaz.
+    .replace(/\u0131/g, 'i')
   const site = plain.includes('otc')
     ? 'OTC'
     : plain.includes('fpu')
     ? 'FPU'
     : plain.includes('kamp')
     ? 'Kamp'
-    : 'Genel'
+    : ''
   const service = plain.includes('lokal')
     ? 'Lokal'
-    : plain.includes('yemekhane') || plain.includes('yemek') || plain.includes('mutfak') || plain.includes('asci') || plain.includes('ikram')
+    : CANTEEN_KEYWORDS.some(keyword => plain.includes(keyword))
     ? 'Yemekhane'
     : ''
-  if (service) return site === 'Genel' ? service : `${site} ${service}`
-  return site
+  return [site, service].filter(Boolean).join(' ')
 }
 
 // Çalışma noktası seçilmemiş vardiya → nötr grup (backend DEFAULT_LOCATION ile aynı;

@@ -4,7 +4,11 @@
 
 import { leaveTypeLabel } from '../shared.jsx'
 
-const DEFAULT_AREA = 'Yemekhane'
+// Çalışma noktası girilmemişse UYDURMA. Eskiden burası 'Yemekhane' idi ve
+// noktası boş olan herkes imza çıktısında (PDF/PNG/Excel) yemekhanede
+// çalışıyormuş gibi görünüyordu. Nokta bilinmiyorsa hücre boş kalır —
+// yemekhanede kimlerin olduğu zaten bilinir, satır satır yazmaya gerek yok.
+const DEFAULT_AREA = ''
 
 // İmza alınmayacak personel kategorileri (sıra sabit).
 export const NON_SIGNATURE_CATEGORIES = [

@@ -85,8 +85,10 @@ function isWorking(cell) {
   return ['scheduled', 'worked', 'overtime'].includes(cell?.status)
 }
 
-// Çalışma noktası seçilmemiş → "Yemekhane" (kadro kapsamasıyla tutarlı).
-const SHARE_DEFAULT_AREA = 'Yemekhane'
+// Çalışma noktası seçilmemiş → nötr kova. Eskiden "Yemekhane" idi ve noktası
+// girilmemiş herkes bu özette yemekhaneye sayılıyordu. Burası bir SAYIM tablosu
+// olduğu için boş etiket yerine backend'deki DEFAULT_LOCATION ile aynı ad kullanılır.
+const SHARE_DEFAULT_AREA = 'Konum belirtilmemiş'
 const SHARE_ROLE_ORDER = { 'Yemek/İkram': 0, 'Bulaşıkhane': 1, 'Diğer': 2 }
 function shareRoleGroup(roleName) {
   const name = String(roleName || '')

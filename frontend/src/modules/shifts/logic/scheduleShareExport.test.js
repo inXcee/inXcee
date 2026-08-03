@@ -16,10 +16,11 @@ describe('scheduleCoverageDigest', () => {
     ],
   }]
 
-  it('buckets unassigned cells into Yemekhane and separates role groups', () => {
+  it('buckets unassigned cells into a neutral area and separates role groups', () => {
     const digest = scheduleCoverageDigest(groups, week)
     const areaNames = digest.areaRows.map(([n]) => n)
-    expect(areaNames).toContain('Yemekhane') // atanmamış hücreler
+    // Atanmamış hücreler nötr kovaya gider — yemekhaneye sayılmaz.
+    expect(areaNames).toContain('Konum belirtilmemiş')
     expect(areaNames).toContain('İşçi Lokali')
     const roleNames = digest.roleRows.map(([n]) => n)
     expect(roleNames).toContain('Yemek/İkram')
@@ -204,5 +205,30 @@ describe('scheduleShareExport', () => {
     expect(layout.height).toBeGreaterThan(200)
     expect(layout.dayW).toBeGreaterThan(0)
     expect(layout.nameW).toBeGreaterThan(0)
+  })
+})
+
+// Canlı şikâyet: noktası girilmemiş herkes özet tabloda "Yemekhane" altında
+// toplanıyordu. Sayım tablosu olduğu için boş etiket yerine nötr kova kullanılır.
+describe('noktasız vardiya yemekhaneye sayılmaz', () => {
+  const week = ['2026-07-06']
+  const groups = [{
+    name: 'Teknik',
+    people: [
+      { role_name: 'Teknisyen', days: { '2026-07-06': { status: 'worked' } } },
+      { role_name: 'Ikramci', days: { '2026-07-06': { status: 'worked', work_location_name: 'İşçi Lokali' } } },
+    ],
+  }]
+
+  it('nokta kovası "Yemekhane" değil nötr addır', () => {
+    const { areaRows } = scheduleCoverageDigest(groups, week)
+    const adlar = areaRows.map(([name]) => name)
+    expect(adlar).toContain('Konum belirtilmemiş')
+    expect(adlar).not.toContain('Yemekhane')
+  })
+
+  it('gerçek nokta girilmişse aynen sayılır', () => {
+    const { areaRows } = scheduleCoverageDigest(groups, week)
+    expect(areaRows.find(([name]) => name === 'İşçi Lokali')?.[1]).toBe(1)
   })
 })

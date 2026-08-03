@@ -39,7 +39,8 @@ export default function LiveOccupancyBoard({ onPersonClick }) {
   const bySite = useMemo(() => {
     const m = new Map()
     rows.forEach(r => {
-      const k = r.site || 'Yemekhane'
+      // Site girilmemişse yemekhaneye saymayız — nötr başlık altında toplanır.
+      const k = r.site || 'Site belirtilmemiş'
       if (!m.has(k)) m.set(k, [])
       m.get(k).push(r)
     })

@@ -203,3 +203,40 @@ describe('weekly signature sheet', () => {
     expect(model.pages[1].show_blank_rows).toBe(true)
   })
 })
+
+// Canlı şikâyet: çalışma noktası girilmemiş herkes imza çıktısında (PDF/PNG/Excel)
+// "Yemekhane" olarak yazılıyordu. Nokta bilinmiyorsa uydurulmaz — boş bırakılır.
+describe('çalışma noktası girilmemişse uydurulmaz', () => {
+  const NOKTASIZ = [
+    person('Noktasiz Kisi', 'Teknik', { status: 'worked', shift_name: 'Gündüz', start_hour: 8, end_hour: 17 }),
+    person('Parcali Noktasiz', 'Teknik', { status: 'scheduled', start_hour: 6, end_hour: 15, segments: [
+      { start_time: '06:00', end_time: '10:00', status: 'planned' },
+      { start_time: '10:00', end_time: '15:00', status: 'planned' },
+    ] }),
+  ]
+
+  it('düz vardiyada nokta boş kalır, Yemekhane yazılmaz', () => {
+    const model = buildDailySignatureModel({ people: NOKTASIZ, date: DATE })
+    const kisi = model.groups.flatMap(g => g.rows).find(row => row.full_name === 'Noktasiz Kisi')
+    expect(kisi.work_location).toBe('')
+  })
+
+  it('parçalı vardiyada da nokta boş kalır', () => {
+    const model = buildDailySignatureModel({ people: NOKTASIZ, date: DATE })
+    const kisi = model.groups.flatMap(g => g.rows).find(row => row.full_name === 'Parcali Noktasiz')
+    expect(kisi.work_location).toBe('')
+    kisi.segments?.forEach(segment => expect(segment.location).toBe(''))
+  })
+
+  it('PDF/PNG çıktısında "Yemekhane" kelimesi geçmez', () => {
+    const model = buildDailySignatureModel({ people: NOKTASIZ, date: DATE })
+    const html = renderSignaturePageHtml(model)
+    expect(html).not.toMatch(/Yemekhane/i)
+  })
+
+  it('gerçek nokta girilmişse aynen korunur', () => {
+    const model = buildDailySignatureModel({ people: PEOPLE, date: DATE })
+    const ahmet = model.groups.flatMap(g => g.rows).find(row => row.full_name === 'Ahmet')
+    expect(ahmet.work_location).toBe('İşçi Lokali')
+  })
+})
