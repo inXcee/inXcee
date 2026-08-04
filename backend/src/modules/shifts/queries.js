@@ -150,16 +150,21 @@ export function getStaffList(filters = {}) {
       wl.site as primary_work_location_site,
       wl.color_class as primary_work_location_color,
       wl.dept_id as primary_work_location_dept_id,
-      wl.is_active as primary_work_location_active
+      wl.is_active as primary_work_location_active,
+      pr.name as project_name, pr.code as project_code, pr.color_class as project_color
     FROM staff s
     ${CURRENT_ASSIGNMENT_JOIN}
     LEFT JOIN departments d ON d.id = ${CURRENT_DEPARTMENT_SQL}
     LEFT JOIN staff_roles sr ON sr.id = ${CURRENT_ROLE_SQL}
     LEFT JOIN departments expected_dept ON expected_dept.id = sr.expected_dept_id
     LEFT JOIN work_locations wl ON wl.id = sa.work_location_id
+    LEFT JOIN projects pr ON pr.id = s.project_id
     WHERE 1=1
   `
   const params = []
+  // 'none' = kadrosu atanmamis olanlar; sayisal id = o proje.
+  if (filters.project_id === 'none') { query += ' AND s.project_id IS NULL' }
+  else if (filters.project_id) { query += ' AND s.project_id = ?'; params.push(Number(filters.project_id)) }
   if (filters.dept_id) { query += ` AND ${CURRENT_DEPARTMENT_SQL} = ?`; params.push(filters.dept_id) }
   if (filters.role_id) { query += ` AND ${CURRENT_ROLE_SQL} = ?`; params.push(filters.role_id) }
   if (filters.is_active !== undefined) { query += ' AND s.is_active = ?'; params.push(filters.is_active) }
@@ -469,7 +474,7 @@ export function searchStaff(term) {
 }
 
 // ── Schedule ──
-export function getSchedule(weekStart, weekEnd, deptId) {
+export function getSchedule(weekStart, weekEnd, deptId, projectId = null) {
   const db = getDB()
   let query = `
     SELECT
@@ -489,7 +494,8 @@ export function getSchedule(weekStart, weekEnd, deptId) {
         ORDER BY lr.id DESC LIMIT 1
       )) END as leave_type,
       pc.code as puantaj_code, pc.label as puantaj_code_label,
-      pc.requires_document, pc.requires_reason
+      pc.requires_document, pc.requires_reason,
+      s.project_id, pr.name as project_name, pr.code as project_code
     FROM shift_schedule ss
     JOIN staff s ON s.id = ss.staff_id
     LEFT JOIN departments d ON d.id = COALESCE(ss.dept_id, s.department_id)
@@ -497,9 +503,12 @@ export function getSchedule(weekStart, weekEnd, deptId) {
     LEFT JOIN work_locations wl ON wl.id = ss.work_location_id
     LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id
     LEFT JOIN puantaj_codes pc ON pc.id = ss.puantaj_code_id
+    LEFT JOIN projects pr ON pr.id = s.project_id
     WHERE ss.work_date BETWEEN ? AND ?
   `
   const params = [weekStart, weekEnd]
+  if (projectId === 'none') { query += ' AND s.project_id IS NULL' }
+  else if (projectId) { query += ' AND s.project_id = ?'; params.push(Number(projectId)) }
   if (deptId) {
     query += ' AND COALESCE(ss.dept_id, s.department_id) = ?'
     params.push(deptId)
@@ -3979,4 +3988,25 @@ export function getPuantaj(monthStart, monthEnd, deptId) {
   }
   query += ' ORDER BY d.name, s.full_name'
   return db.prepare(query).all(...params)
+}
+
+// Kadrosu bir projede olup fiilen BAŞKA projenin noktasında çalışanlar.
+// İki alan bilerek ayrı tutuluyor (bkz. migration 084) — bu sorgu o ayrımın
+// karşılığı: "FPU listesinde ama Kamp'ta çalışanlar".
+export function getProjectMismatch(from, to) {
+  return getDB().prepare(`
+    SELECT ss.work_date, s.id AS staff_id, s.full_name,
+           s.project_id AS roster_project_id, rp.name AS roster_project_name,
+           wl.project_id AS worked_project_id, wp.name AS worked_project_name,
+           wl.id AS work_location_id, wl.name AS work_location_name,
+           ss.status
+    FROM shift_schedule ss
+    JOIN staff s ON s.id = ss.staff_id
+    JOIN work_locations wl ON wl.id = ss.work_location_id
+    JOIN projects rp ON rp.id = s.project_id
+    JOIN projects wp ON wp.id = wl.project_id
+    WHERE ss.work_date BETWEEN ? AND ?
+      AND s.project_id <> wl.project_id
+    ORDER BY ss.work_date, s.full_name
+  `).all(from, to)
 }

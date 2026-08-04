@@ -30,6 +30,7 @@ import {
   findAttendanceIdentity, insertAttendanceEvent, listAttendanceEvents,
   listStationAttendanceSourceEvents, getAttendanceCandidateStaffIds,
   getAttendanceReconciliationContext, findAttendanceReconciliation, dayHasAttendanceEvents,
+  getProjectMismatch,
   insertAttendanceReconciliation, markScheduleWorkedFromAttendance,
   resolveStaleAttendanceExceptions, upsertAttendanceException,
   listAttendanceExceptions, getAttendanceException, updateAttendanceExceptionStatus,
@@ -248,8 +249,16 @@ export function deleteStaffRoleService(id) {
   deleteStaffRole(id)
 }
 
-export function scheduleService(weekStart, weekEnd, deptId) {
-  return getSchedule(weekStart, weekEnd, deptId)
+export function scheduleService(weekStart, weekEnd, deptId, projectId = null) {
+  return getSchedule(weekStart, weekEnd, deptId, projectId)
+}
+
+// Kadro projesi ile fiilen çalışılan noktanın projesi farklı olan vardiyalar.
+export function projectMismatchService({ from, to }) {
+  if (!from || !to) {
+    throw Object.assign(new Error('from ve to tarihleri gerekli (YYYY-MM-DD)'), { statusCode: 400 })
+  }
+  return getProjectMismatch(from, to)
 }
 
 export function scheduleBreakdownService({ from, to } = {}) {

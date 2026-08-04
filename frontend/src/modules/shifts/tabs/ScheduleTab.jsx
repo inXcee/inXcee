@@ -30,6 +30,8 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
 
   const [weekStart, setWeekStart] = useState(getWeekStart(new Date()))
   const [deptFilter, setDeptFilter] = useState('')
+  // Iki proje ayri yurudugu icin kadro filtresi: '' = hepsi, 'none' = kadrosuz.
+  const [projectFilter, setProjectFilter] = useState('')
   const [scheduleView, setScheduleView] = useState('weekly') // 'weekly' | 'daily'
   const [dailyDate, setDailyDate] = useState(todayStr())
   const [toolsOpen, setToolsOpen] = useState(false)
@@ -76,15 +78,22 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
   const DAY_LABELS = ['Pzt', 'Sal', 'Car', 'Per', 'Cum', 'Cmt', 'Paz']
 
   const { data: rows = [], isLoading } = useQuery({
-    queryKey: ['schedule', weekStart],
+    queryKey: ['schedule', weekStart, projectFilter],
     queryFn: () => api.get('/shifts/schedule', {
-      params: { week: weekStart, week_end: weekEnd }
+      params: { week: weekStart, week_end: weekEnd, ...(projectFilter ? { project_id: projectFilter } : {}) }
     }).then(r => r.data),
   })
 
   const { data: allStaff = [] } = useQuery({
-    queryKey: ['staff-list-active'],
-    queryFn: () => api.get('/shifts/staff', { params: { is_active: '1' } }).then(r => r.data),
+    queryKey: ['staff-list-active', projectFilter],
+    queryFn: () => api.get('/shifts/staff', {
+      params: { is_active: '1', ...(projectFilter ? { project_id: projectFilter } : {}) },
+    }).then(r => r.data),
+  })
+
+  const { data: projects = [] } = useQuery({
+    queryKey: ['projects'],
+    queryFn: () => api.get('/projects').then(r => r.data),
   })
 
   const { data: workLocations = [] } = useQuery({
@@ -827,6 +836,15 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
             title="Şu an hangi noktada kim var, hangi lokal boş/eksik"
           >ŞU AN</button>
         </div>
+
+        {/* Proje (kadro) filtresi — iki proje ayri yurutuluyor */}
+        <select className="form-select" aria-label="Proje filtresi" value={projectFilter}
+          onChange={e => setProjectFilter(e.target.value)}
+          style={{ width: 'auto', minWidth: '150px' }}>
+          <option value="">Tüm Projeler</option>
+          {projects.map(p => <option key={p.id} value={p.id}>{p.name} ({p.staff_count})</option>)}
+          <option value="none">Kadrosu belirsiz</option>
+        </select>
 
         {/* Dept filter */}
         <select className="form-select" value={deptFilter} onChange={e => setDeptFilter(e.target.value)}

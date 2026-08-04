@@ -9,6 +9,7 @@ const TAB_GROUPS = [
   {
     label: 'OPERASYON',
     tabs: [
+      { to: '/settings/projects',           label: 'Projeler',           icon: '🏗', roles: MGMT },
       { to: '/settings/personnel',          label: 'Personel',           icon: '👤', roles: MGMT },
       { to: '/settings/risk',               label: 'Risk Listesi',       icon: '⚠',  roles: MGMT },
       { to: '/settings/hr',                 label: 'İK Akışları',        icon: '📋', roles: MGMT },

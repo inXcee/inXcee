@@ -33,7 +33,7 @@ import {
   staffAssignmentsService, createStaffAssignmentService, staffDataQualityService,
   bulkStaffAssignmentService, bulkStaffDeactivateService,
   puantajCsvService, puantajDaysService, staffDayBreakdownService, payslipService, bankTransferCsvService,
-  attendanceEventService, attendanceEventsService, reconcileAttendanceService,
+  attendanceEventService, attendanceEventsService, reconcileAttendanceService, projectMismatchService,
   attendanceExceptionsService, updateAttendanceExceptionService,
   operationsDashboardService, puantajClosingPackageService
 } from './service.js'
@@ -250,8 +250,15 @@ shiftsRouter.delete('/roles/:id', ...managerOrSupervisor, (req, res) => {
 })
 
 // ── Schedule ──
+// Kadrosu bir projede olup fiilen başka projede çalışanlar.
+shiftsRouter.get('/project-mismatch', ...managerOrSupervisor, (req, res) => {
+  try {
+    res.json(projectMismatchService({ from: req.query.from, to: req.query.to }))
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }) }
+})
+
 shiftsRouter.get('/schedule', ...managerOrSupervisor, (req, res) => {
-  const { week, week_end, dept_id } = req.query
+  const { week, week_end, dept_id, project_id } = req.query
   if (!week) return res.status(400).json({ error: 'week parametresi gerekli (YYYY-MM-DD)' })
   const weekStart = week
   const weekEnd = week_end || (() => {
@@ -259,7 +266,7 @@ shiftsRouter.get('/schedule', ...managerOrSupervisor, (req, res) => {
     d.setDate(d.getDate() + 6)
     return d.toISOString().split('T')[0]
   })()
-  res.json(scheduleService(weekStart, weekEnd, dept_id || null))
+  res.json(scheduleService(weekStart, weekEnd, dept_id || null, project_id || null))
 })
 
 shiftsRouter.post('/schedule', ...managerOrSupervisor, (req, res) => {

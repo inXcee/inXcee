@@ -100,6 +100,7 @@ const BackupPage = lazy(() => import('./modules/admin/BackupPage.jsx'))
 const KvkkAdminPage = lazy(() => import('./modules/admin/KvkkAdminPage.jsx'))
 const SystemHealthPage = lazy(() => import('./modules/admin/SystemHealthPage.jsx'))
 const SessionsPage = lazy(() => import('./modules/admin/SessionsPage.jsx'))
+const ProjectsPage = lazy(() => import('./modules/admin/ProjectsPage.jsx'))
 const NotificationPrefsPage = lazy(() => import('./modules/notification-prefs/NotificationPrefsPage.jsx'))
 const NotificationsCenterPage = lazy(() => import('./modules/notifications/NotificationsCenterPage.jsx'))
 const KvkkPage = lazy(() => import('./modules/kvkk/KvkkPage.jsx'))
@@ -346,6 +347,7 @@ export default function App() {
             <Route path="kvkk-admin" element={<RoleRoute roles={['campus_manager']}><KvkkAdminPage /></RoleRoute>} />
             <Route path="system" element={<RoleRoute roles={['campus_manager']}><SystemHealthPage /></RoleRoute>} />
             <Route path="sessions" element={<RoleRoute roles={['campus_manager']}><SessionsPage /></RoleRoute>} />
+            <Route path="projects" element={<RoleRoute roles={['campus_manager']}><ProjectsPage /></RoleRoute>} />
             <Route path="notifications" element={<NotificationsCenterPage />} />
             <Route path="notifications/preferences" element={<NotificationPrefsPage />} />
             <Route path="users" element={<RoleRoute roles={['campus_manager']}><UsersPage /></RoleRoute>} />
@@ -371,6 +373,7 @@ export default function App() {
               <Route path="kvkk-admin" element={<RoleRoute roles={['campus_manager']}><KvkkAdminPage /></RoleRoute>} />
               <Route path="system" element={<RoleRoute roles={['campus_manager']}><SystemHealthPage /></RoleRoute>} />
               <Route path="sessions" element={<RoleRoute roles={['campus_manager']}><SessionsPage /></RoleRoute>} />
+              <Route path="projects" element={<RoleRoute roles={['campus_manager']}><ProjectsPage /></RoleRoute>} />
               {/* Yonetim modulleri sekmeler olarak */}
               <Route path="companies" element={<CompaniesPage />} />
               <Route path="visitors" element={<VisitorsPage />} />
