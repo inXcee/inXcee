@@ -52,6 +52,7 @@ import { waterRouter } from './modules/water/routes.js'
 import { checkoutRouter } from './modules/checkout/routes.js'
 import { bulkActionsRouter } from './modules/bulk-actions/routes.js'
 import { companiesRouter } from './modules/companies/routes.js'
+import { projectsRouter } from './modules/projects/routes.js'
 import { visitorsRouter } from './modules/visitors/routes.js'
 import { surveysRouter } from './modules/surveys/routes.js'
 import { drillsRouter } from './modules/drills/routes.js'
@@ -374,6 +375,7 @@ app.use('/api/water', writeLimiter, waterRouter)
 app.use('/api/checkout', writeLimiter, checkoutRouter)
 app.use('/api/bulk-actions', writeLimiter, bulkActionsRouter)
 app.use('/api/companies', writeLimiter, companiesRouter)
+app.use('/api/projects', writeLimiter, projectsRouter)
 app.use('/api/visitors', writeLimiter, visitorsRouter)
 app.use('/api/surveys', writeLimiter, surveysRouter)
 app.use('/api/feedback', writeLimiter, feedbackRouter)
