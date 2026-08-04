@@ -58,3 +58,21 @@ export function assignStaffToProject(staffIds, projectId) {
   })()
   return updated
 }
+
+export function activeStaffForMatching() {
+  return getDB().prepare('SELECT id, full_name, project_id FROM staff WHERE is_active = 1').all()
+}
+
+// Atama ve yeni kayıt tek transaction — yarım uygulanmış kadro bırakmayız.
+export function applyRoster({ projectId, assignIds, createNames }) {
+  const db = getDB()
+  const ata = db.prepare('UPDATE staff SET project_id=? WHERE id=?')
+  const ac = db.prepare('INSERT INTO staff(full_name, is_active, project_id) VALUES(?,1,?)')
+  let assigned = 0
+  let created = 0
+  db.transaction(() => {
+    assignIds.forEach(id => { assigned += ata.run(projectId, id).changes })
+    createNames.forEach(name => { ac.run(name, projectId); created += 1 })
+  })()
+  return { assigned, created }
+}

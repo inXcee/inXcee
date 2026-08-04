@@ -33,6 +33,26 @@ projectsRouter.post('/assign', ...mgmt, (req, res) => {
   } catch (e) { logger.error('[Projects]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
+// İmza listesi aktarımı: önizle → kullanıcı onaylar → uygula.
+// İki adım ayrı, çünkü yakın eşleşmeler otomatik bağlanmamalı.
+projectsRouter.post('/:id/roster/preview', ...mgmt, (req, res) => {
+  try {
+    const result = svc.rosterPreviewService(Number(req.params.id), req.body?.names)
+    if (result.error) return res.status(result.status).json({ error: result.error })
+    res.json(result.preview)
+  } catch (e) { logger.error('[Projects]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+projectsRouter.post('/:id/roster/apply', ...mgmt, (req, res) => {
+  try {
+    const result = svc.rosterApplyService(Number(req.params.id), req.body || {}, req.user.id)
+    if (result.error) return res.status(result.status).json({ error: result.error })
+    logAudit(req.user.id, 'project_roster_apply', 'projects', Number(req.params.id),
+      `${result.assigned} atandı, ${result.created} yeni kayıt`)
+    res.json(result)
+  } catch (e) { logger.error('[Projects]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
 projectsRouter.put('/:id', ...mgmt, (req, res) => {
   try {
     const result = svc.updateService(Number(req.params.id), req.body || {})

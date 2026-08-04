@@ -92,3 +92,62 @@ describe('Projeler', () => {
     expect((await request(app).get('/api/projects')).status).toBe(401)
   })
 })
+
+describe('Kadro aktarımı (imza listesinden)', () => {
+  let fpuId
+  beforeAll(async () => {
+    const db = getDB()
+    db.prepare("INSERT INTO staff(full_name, is_active) VALUES('AKTARIM TAM EŞLEŞEN',1)").run()
+    db.prepare("INSERT INTO staff(full_name, is_active) VALUES('AKTARIM YAZIM FARKI',1)").run()
+    fpuId = (await request(app).get('/api/projects').set(auth(adminToken))).body.find(p => p.code === 'FPU').id
+  })
+
+  it('önizleme birebir / öneri / yeni olarak ayırır, hiçbir şeyi yazmaz', async () => {
+    const db = getDB()
+    const oncekiSayi = db.prepare('SELECT COUNT(*) n FROM staff').get().n
+    const res = await request(app).post(`/api/projects/${fpuId}/roster/preview`).set(auth(adminToken))
+      .send({ names: ['AKTARIM TAM EŞLEŞEN', 'AKTARIM YAZIM FARKl', 'BAMBAŞKA BİRİ'] })
+
+    expect(res.status).toBe(200)
+    expect(res.body.exact.map(x => x.name)).toContain('AKTARIM TAM EŞLEŞEN')
+    expect(res.body.near[0]?.staff_name).toBe('AKTARIM YAZIM FARKI')
+    expect(res.body.unknown).toContain('BAMBAŞKA BİRİ')
+    // Önizleme yan etkisiz olmalı.
+    expect(db.prepare('SELECT COUNT(*) n FROM staff').get().n).toBe(oncekiSayi)
+  })
+
+  it('uygula: seçilenleri atar ve yeni isimleri açar', async () => {
+    const db = getDB()
+    const mevcut = db.prepare("SELECT id FROM staff WHERE full_name='AKTARIM TAM EŞLEŞEN'").get()
+    const res = await request(app).post(`/api/projects/${fpuId}/roster/apply`).set(auth(adminToken))
+      .send({ assign_staff_ids: [mevcut.id], create_names: ['AKTARIM YENİ KİŞİ'] })
+
+    expect(res.status).toBe(200)
+    expect(res.body).toMatchObject({ assigned: 1, created: 1 })
+    expect(db.prepare('SELECT project_id FROM staff WHERE id=?').get(mevcut.id).project_id).toBe(fpuId)
+    const yeni = db.prepare("SELECT * FROM staff WHERE full_name='AKTARIM YENİ KİŞİ'").get()
+    expect(yeni.project_id).toBe(fpuId)
+    expect(yeni.is_active).toBe(1)
+  })
+
+  it('aynı ismi ikinci kez açmaz, mevcut kaydı kullanır', async () => {
+    const db = getDB()
+    const res = await request(app).post(`/api/projects/${fpuId}/roster/apply`).set(auth(adminToken))
+      .send({ create_names: ['AKTARIM YENİ KİŞİ'] })
+    expect(res.status).toBe(200)
+    expect(res.body.created).toBe(0)
+    expect(db.prepare("SELECT COUNT(*) n FROM staff WHERE full_name='AKTARIM YENİ KİŞİ'").get().n).toBe(1)
+  })
+
+  it('olmayan proje 404', async () => {
+    expect((await request(app).post('/api/projects/999999/roster/preview').set(auth(adminToken))
+      .send({ names: ['X'] })).status).toBe(404)
+  })
+
+  it('yetkisiz rol aktarım yapamaz', async () => {
+    expect((await request(app).post(`/api/projects/${fpuId}/roster/preview`).set(auth(userToken))
+      .send({ names: [] })).status).toBe(403)
+    expect((await request(app).post(`/api/projects/${fpuId}/roster/apply`).set(auth(userToken))
+      .send({})).status).toBe(403)
+  })
+})

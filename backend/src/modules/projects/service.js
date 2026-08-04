@@ -1,4 +1,5 @@
 import * as q from './queries.js'
+import { matchRoster, normalizeName } from './nameMatch.js'
 
 function normalizeCode(value) {
   // Kod ekranlarda ve dışa aktarımda kullanılıyor; boşluksuz ve büyük harf tutulur.
@@ -58,4 +59,38 @@ export function assignService({ staff_ids, project_id }) {
     return { error: 'Proje bulunamadı', status: 404 }
   }
   return { updated: q.assignStaffToProject(ids, project_id == null ? null : Number(project_id)) }
+}
+
+// İmza listesindeki isimleri mevcut kadroyla karşılaştırır. HİÇBİR ŞEY YAZMAZ —
+// yakın eşleşmeler yalnız öneridir, çünkü gevşek eşleştirme canlı veride farklı
+// iki kişiyi birbirine bağlayabiliyordu (SİNEM KAÇAR ↔ EMİNE ACAR).
+export function rosterPreviewService(projectId, names) {
+  if (!q.getProject(projectId)) return { error: 'Proje bulunamadı', status: 404 }
+  const liste = Array.isArray(names) ? names : []
+  return { preview: matchRoster(liste, q.activeStaffForMatching()) }
+}
+
+// Önizlemede kullanıcının onayladıkları uygulanır: seçilenler kadroya atanır,
+// yeni isimler personel olarak açılır. Aynı isim zaten varsa ikinci kayıt açılmaz.
+export function rosterApplyService(projectId, { assign_staff_ids, create_names }, userId) {
+  if (!q.getProject(projectId)) return { error: 'Proje bulunamadı', status: 404 }
+  const ids = Array.isArray(assign_staff_ids) ? assign_staff_ids.map(Number).filter(Number.isInteger) : []
+  const isimler = (Array.isArray(create_names) ? create_names : [])
+    .map(n => String(n || '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+
+  const mevcutlar = new Map(q.activeStaffForMatching().map(s => [normalizeName(s.full_name), s]))
+  const acilacak = []
+  const zatenVar = []
+  const gorulen = new Set()
+  isimler.forEach(name => {
+    const key = normalizeName(name)
+    if (!key || gorulen.has(key)) return
+    gorulen.add(key)
+    const bulunan = mevcutlar.get(key)
+    if (bulunan) zatenVar.push(bulunan.id)
+    else acilacak.push(name)
+  })
+
+  return q.applyRoster({ projectId, assignIds: [...ids, ...zatenVar], createNames: acilacak })
 }
