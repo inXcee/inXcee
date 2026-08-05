@@ -67,7 +67,7 @@ export function assignService({ staff_ids, project_id }) {
 export function rosterPreviewService(projectId, names) {
   if (!q.getProject(projectId)) return { error: 'Proje bulunamadı', status: 404 }
   const liste = Array.isArray(names) ? names : []
-  return { preview: matchRoster(liste, q.activeStaffForMatching()) }
+  return { preview: matchRoster(liste, q.staffForMatching()) }
 }
 
 // Önizlemede kullanıcının onayladıkları uygulanır: seçilenler kadroya atanır,
@@ -79,7 +79,7 @@ export function rosterApplyService(projectId, { assign_staff_ids, create_names }
     .map(n => String(n || '').replace(/\s+/g, ' ').trim())
     .filter(Boolean)
 
-  const mevcutlar = new Map(q.activeStaffForMatching().map(s => [normalizeName(s.full_name), s]))
+  const mevcutlar = new Map(q.staffForMatching().map(s => [normalizeName(s.full_name), s]))
   const acilacak = []
   const zatenVar = []
   const gorulen = new Set()

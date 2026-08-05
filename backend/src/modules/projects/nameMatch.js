@@ -76,7 +76,7 @@ export function matchRoster(names, staff) {
 
     const tam = byNorm.get(key)
     if (tam) {
-      exact.push({ name, staff_id: tam.id, staff_name: tam.full_name })
+      exact.push({ name, staff_id: tam.id, staff_name: tam.full_name, is_active: tam.is_active ?? 1 })
       return
     }
 
@@ -84,7 +84,7 @@ export function matchRoster(names, staff) {
     for (const [, person] of byNorm) {
       const score = similarity(key, person.full_name)
       if (score >= NEAR_THRESHOLD && (!enIyi || score > enIyi.score)) {
-        enIyi = { name, staff_id: person.id, staff_name: person.full_name, score }
+        enIyi = { name, staff_id: person.id, staff_name: person.full_name, score, is_active: person.is_active ?? 1 }
       }
     }
     if (enIyi) nearAdaylari.push(enIyi)

@@ -43,7 +43,9 @@ describe('matchRoster', () => {
 
   it('birebir eşleşmeyi bulur', () => {
     const sonuc = matchRoster(['AYŞE YAĞLI'], staff)
-    expect(sonuc.exact).toEqual([{ name: 'AYŞE YAĞLI', staff_id: 3, staff_name: 'AYŞE YAĞLI' }])
+    expect(sonuc.exact).toEqual([
+      { name: 'AYŞE YAĞLI', staff_id: 3, staff_name: 'AYŞE YAĞLI', is_active: 1 },
+    ])
     expect(sonuc.near).toHaveLength(0)
     expect(sonuc.unknown).toHaveLength(0)
   })

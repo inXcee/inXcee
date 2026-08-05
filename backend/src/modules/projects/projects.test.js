@@ -150,4 +150,39 @@ describe('Kadro aktarımı (imza listesinden)', () => {
     expect((await request(app).post(`/api/projects/${fpuId}/roster/apply`).set(auth(userToken))
       .send({})).status).toBe(403)
   })
+
+  // Gerçek aktarımda yakalandı: eşleştirme yalnız aktif personeli tarıyordu.
+  // İşten ayrılmış (veya sehven pasife alınmış) biri listede geçtiğinde
+  // "sistemde yok" sanılıp AYNI İSİMDE ikinci bir personel açılıyordu.
+  it('pasif personel de eşleşir, mükerrer kayıt açılmaz', async () => {
+    const db = getDB()
+    const { lastInsertRowid: pasifId } = db
+      .prepare("INSERT INTO staff(full_name, is_active) VALUES('SILA ÖNER', 0)").run()
+    const fpu = db.prepare("SELECT id FROM projects WHERE code='FPU'").get().id
+
+    const on = await request(app).post(`/api/projects/${fpu}/roster/preview`)
+      .set(auth(adminToken)).send({ names: ['SILA ÖNER'] })
+    expect(on.status).toBe(200)
+    expect(on.body.unknown).not.toContain('SILA ÖNER')
+    expect(on.body.exact[0]).toMatchObject({ staff_id: pasifId, is_active: 0 })
+
+    await request(app).post(`/api/projects/${fpu}/roster/apply`)
+      .set(auth(adminToken)).send({ assign_staff_ids: [], create_names: ['SILA ÖNER'] })
+    const adet = db.prepare("SELECT COUNT(*) n FROM staff WHERE full_name='SILA ÖNER'").get().n
+    expect(adet).toBe(1)
+    expect(db.prepare('SELECT project_id FROM staff WHERE id=?').get(pasifId).project_id).toBe(fpu)
+  })
+
+  // Aktif kayıt varken pasif adaş gelmemeli — puantaj yanlış kişiye yazılır.
+  it('aynı isimde aktif ve pasif varsa aktif olan eşleşir', async () => {
+    const db = getDB()
+    db.prepare("INSERT INTO staff(full_name, is_active) VALUES('ADAŞ KİŞİ', 0)").run()
+    const { lastInsertRowid: aktifId } = db
+      .prepare("INSERT INTO staff(full_name, is_active) VALUES('ADAŞ KİŞİ', 1)").run()
+    const fpu = db.prepare("SELECT id FROM projects WHERE code='FPU'").get().id
+
+    const on = await request(app).post(`/api/projects/${fpu}/roster/preview`)
+      .set(auth(adminToken)).send({ names: ['ADAŞ KİŞİ'] })
+    expect(on.body.exact[0]).toMatchObject({ staff_id: aktifId, is_active: 1 })
+  })
 })

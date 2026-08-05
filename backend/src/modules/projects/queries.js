@@ -59,8 +59,13 @@ export function assignStaffToProject(staffIds, projectId) {
   return updated
 }
 
-export function activeStaffForMatching() {
-  return getDB().prepare('SELECT id, full_name, project_id FROM staff WHERE is_active = 1').all()
+// Pasifler de taranır: işten ayrılmış/sehven pasife alınmış biri listede geçtiğinde
+// "sistemde yok" sanılıp aynı isimde ikinci personel açılmasın. Aynı isimde aktif ve
+// pasif kayıt varsa aktif olan kazanır (ORDER BY) — puantaj arşiv kaydına yazılmasın.
+export function staffForMatching() {
+  return getDB().prepare(
+    'SELECT id, full_name, project_id, is_active FROM staff ORDER BY is_active DESC, id',
+  ).all()
 }
 
 // Atama ve yeni kayıt tek transaction — yarım uygulanmış kadro bırakmayız.
