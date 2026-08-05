@@ -5,6 +5,7 @@ import { useAuthStore } from '../../../shared/store/authStore.js'
 import { useDebounce } from '../../../shared/hooks/useDebounce.js'
 import { useProjects, NO_PROJECT } from '../../../shared/hooks/useProjects.js'
 import { groupPuantajRows, GROUP_MODES } from '../logic/puantajSummary.js'
+import ProjectCrossoverBoard from './ProjectCrossoverBoard.jsx'
 import ProjectBadge from '../../../shared/components/ProjectBadge.jsx'
 import { SkeletonTable, SkeletonGrid } from '../../../shared/components/Skeleton.jsx'
 import { BottomSheet, ModalOverlay, formatShiftHours, LEAVE_TYPES, leaveTypeLabel, toastErr, toastOk } from '../shared.jsx'
@@ -4083,7 +4084,10 @@ export default function PuantajTab({ departments, shiftDefs = [], onPersonClick 
         />
       )}
       {viewMode === 'summary' && (
-        <PuantajSummaryView filtered={filtered} formatMoney={formatMoney} />
+        <>
+          <ProjectCrossoverBoard from={`${month}-01`} to={monthEndDate} onPersonClick={onPersonClick} />
+          <PuantajSummaryView filtered={filtered} formatMoney={formatMoney} />
+        </>
       )}
       {viewMode === 'operations' && roleCanEdit && (
         <PuantajOperationsView month={month} deptFilter={deptFilter} shiftDefs={shiftDefs} onPersonClick={onPersonClick} />
