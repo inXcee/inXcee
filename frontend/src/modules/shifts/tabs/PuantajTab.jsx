@@ -3,6 +3,9 @@ import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/
 import api from '../../../shared/api/client.js'
 import { useAuthStore } from '../../../shared/store/authStore.js'
 import { useDebounce } from '../../../shared/hooks/useDebounce.js'
+import { useProjects, NO_PROJECT } from '../../../shared/hooks/useProjects.js'
+import { groupPuantajRows, GROUP_MODES } from '../logic/puantajSummary.js'
+import ProjectBadge from '../../../shared/components/ProjectBadge.jsx'
 import { SkeletonTable, SkeletonGrid } from '../../../shared/components/Skeleton.jsx'
 import { BottomSheet, ModalOverlay, formatShiftHours, LEAVE_TYPES, leaveTypeLabel, toastErr, toastOk } from '../shared.jsx'
 import { confirmDialog } from '../../../shared/components/ConfirmDialog.jsx'
@@ -712,23 +715,8 @@ function PuantajApprovalView({
 }
 
 function PuantajSummaryView({ filtered, formatMoney }) {
-  const byDept = useMemo(() => {
-    const map = {}
-    filtered.forEach(r => {
-      const key = r.dept_name || 'Departmansız'
-      if (!map[key]) map[key] = { name: key, staff: 0, worked: 0, absent: 0, overtime: 0, leave: 0, gross: 0, net: 0, employer: 0 }
-      const d = map[key]
-      d.staff++
-      d.worked += r.worked_days || 0
-      d.absent += r.absent_days || 0
-      d.overtime += r.overtime_hours || 0
-      d.leave += r.leave_days || 0
-      d.gross += r.gross || 0
-      d.net += r.net || 0
-      d.employer += r.employer_total_cost || 0
-    })
-    return Object.values(map)
-  }, [filtered])
+  const [groupMode, setGroupMode] = useState('dept')
+  const byDept = useMemo(() => groupPuantajRows(filtered, groupMode), [filtered, groupMode])
 
   if (byDept.length === 0) return (
     <div className="empty-state">
@@ -738,6 +726,15 @@ function PuantajSummaryView({ filtered, formatMoney }) {
   )
 
   return (
+    <>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 12 }}>
+        <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', letterSpacing: 1 }}>KIRILIM</span>
+        {GROUP_MODES.map(([id, label]) => (
+          <button key={id} type="button" onClick={() => setGroupMode(id)}
+            className={`btn btn-sm ${groupMode === id ? 'btn-primary' : 'btn-ghost'}`}
+            style={{ fontSize: 10 }}>{label}</button>
+        ))}
+      </div>
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '12px' }}>
       {byDept.map(d => (
         <div key={d.name} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '12px', padding: '16px' }}>
@@ -775,6 +772,7 @@ function PuantajSummaryView({ filtered, formatMoney }) {
         </div>
       ))}
     </div>
+    </>
   )
 }
 
@@ -1453,7 +1451,7 @@ const PuantajRow = memo(function PuantajRow({
   // handler prop'ları KASITLI karşılaştırılmıyor — hepsi ref-tabanlı zamansız closure
 )
 
-function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, canEdit, selectedAction, setSelectedAction, onApplyStatus, updatingKeys, onPersonClick, approval, onOpenApprovalDay, writesPendingRef, codesVersion }) {
+function PuantajCalendarView({ filtered, month, deptFilter, projectFilter, y, m, isLoading, canEdit, selectedAction, setSelectedAction, onApplyStatus, updatingKeys, onPersonClick, approval, onOpenApprovalDay, writesPendingRef, codesVersion }) {
   const [dayData, setDayData] = useState({}) // staffId → days array
   const [failedSaves, setFailedSaves] = useState({})
   const failedSavesRef = useRef({})
@@ -1531,10 +1529,11 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
   const dayNumbers = useMemo(() => Array.from({ length: daysInMonth }, (_, i) => i + 1), [daysInMonth])
 
   const { data: monthDayData, isFetching: daysFetching } = useQuery({
-    queryKey: ['puantaj-days-month', month, deptFilter],
+    queryKey: ['puantaj-days-month', month, deptFilter, projectFilter],
     queryFn: () => {
       const params = { month }
       if (deptFilter) params.dept_id = deptFilter
+      if (projectFilter) params.project_id = projectFilter
       return api.get('/shifts/puantaj/days', { params }).then(res => normalizePuantajDaysPayload(res.data))
     },
     enabled: !isLoading,
@@ -1544,7 +1543,7 @@ function PuantajCalendarView({ filtered, month, deptFilter, y, m, isLoading, can
     setDayData({})
     failedSavesRef.current = {}
     setFailedSaves({})
-  }, [month, deptFilter])
+  }, [month, deptFilter, projectFilter])
 
   useEffect(() => {
     // Yazım uçuştayken (writesPendingRef) sunucu yanıtı local girişleri EZMESİN —
@@ -2705,6 +2704,7 @@ function PuantajListView({ filtered, totals, isLoading, month, monthLabel, showE
                 onMouseLeave={e => e.currentTarget.style.background = ''}>
                 <td style={{ position: 'sticky', left: 0, background: 'var(--surface)', fontWeight: '600', zIndex: 1 }}>
                   {r.full_name}
+                  <div style={{ marginTop: 2 }}><ProjectBadge project={r} /></div>
                   {r.position && <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginTop: '1px' }}>{r.position}</div>}
                 </td>
                 <td>
@@ -3373,6 +3373,7 @@ export default function PuantajTab({ departments, shiftDefs = [], onPersonClick 
   const today = new Date()
   const [month, setMonth] = useState(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`)
   const [deptFilter, setDeptFilter] = useState('')
+  const [projectFilter, setProjectFilter] = useState('')
   const [search, setSearch] = useState('')
   const debouncedPuantajSearch = useDebounce(search, 250)
   const [viewMode, setViewMode] = useState('list') // list | calendar | summary | operations | control | approval
@@ -3403,20 +3404,22 @@ export default function PuantajTab({ departments, shiftDefs = [], onPersonClick 
   })
 
   const { data: puantajPayload = { rows: [] }, isLoading } = useQuery({
-    queryKey: ['puantaj', month, deptFilter],
+    queryKey: ['puantaj', month, deptFilter, projectFilter],
     queryFn: () => {
       const params = { month, meta: '1' }
       if (deptFilter) params.dept_id = deptFilter
+      if (projectFilter) params.project_id = projectFilter
       return api.get('/shifts/puantaj', { params }).then(r => normalizePuantajPayload(r.data))
     },
   })
   const rows = puantajPayload.rows
 
   const { data: auditDaysByStaff = {} } = useQuery({
-    queryKey: ['puantaj-days-month', month, deptFilter],
+    queryKey: ['puantaj-days-month', month, deptFilter, projectFilter],
     queryFn: () => {
       const params = { month }
       if (deptFilter) params.dept_id = deptFilter
+      if (projectFilter) params.project_id = projectFilter
       return api.get('/shifts/puantaj/days', { params }).then(res => normalizePuantajDaysPayload(res.data))
     },
     enabled: !isLoading,
@@ -3430,6 +3433,9 @@ export default function PuantajTab({ departments, shiftDefs = [], onPersonClick 
   const { data: approvalPayload = null, isFetching: approvalFetching } = useQuery({
     queryKey: ['puantaj-approval', month, deptFilter],
     queryFn: () => {
+      // Onay kapsamı DEPARTMAN bazlı saklanıyor (puantaj_period_approvals.dept_scope).
+      // Proje filtresi bilerek geçilmiyor: projeye göre süzülmüş bir onay durumu,
+      // aslında o projeye ait olmayan bir onayı o projenin durumu gibi gösterirdi.
       const params = { month }
       if (deptFilter) params.dept_id = deptFilter
       return api.get('/shifts/puantaj/approval', { params }).then(res => res.data)
@@ -3450,10 +3456,11 @@ export default function PuantajTab({ departments, shiftDefs = [], onPersonClick 
   const monthEndDate = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`
 
   const { data: attendanceExceptionPayload = { rows: [], summary: { total: 0, by_type: {}, by_severity: {} } }, isFetching: attendanceExceptionsLoading } = useQuery({
-    queryKey: ['attendance-exceptions', month, deptFilter],
+    queryKey: ['attendance-exceptions', month, deptFilter, projectFilter],
     queryFn: () => {
       const params = { from: `${month}-01`, to: monthEndDate, status: 'open' }
       if (deptFilter) params.dept_id = deptFilter
+      if (projectFilter) params.project_id = projectFilter
       return api.get('/shifts/attendance/exceptions', { params }).then(res => res.data)
     },
     enabled: roleCanEdit,
@@ -3767,6 +3774,8 @@ export default function PuantajTab({ departments, shiftDefs = [], onPersonClick 
     setMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
   }
 
+  const { projects } = useProjects()
+  const kadrosuzSayisi = useMemo(() => rows.filter(r => !r.project_id).length, [rows])
   const selectDepartment = (value) => {
     if (!writesBusy) setDeptFilter(String(value ?? ''))
   }
@@ -3775,6 +3784,7 @@ export default function PuantajTab({ departments, shiftDefs = [], onPersonClick 
     try {
       const params = { month }
       if (deptFilter) params.dept_id = deptFilter
+      if (projectFilter) params.project_id = projectFilter
       const res = await api.get('/shifts/puantaj/export/csv', { params, responseType: 'blob' })
       const url = URL.createObjectURL(res.data)
       const a = document.createElement('a')
@@ -3795,6 +3805,7 @@ export default function PuantajTab({ departments, shiftDefs = [], onPersonClick 
     try {
       const params = { month }
       if (deptFilter) params.dept_id = deptFilter
+      if (projectFilter) params.project_id = projectFilter
       const approvalRequest = roleCanEdit
         ? api.get('/shifts/puantaj/approval', { params }).then(res => res.data).catch(() => approvalPayload)
         : Promise.resolve(null)
@@ -3808,7 +3819,13 @@ export default function PuantajTab({ departments, shiftDefs = [], onPersonClick 
         closingPackageRequest,
         import('exceljs').then(mod => mod.default),
       ])
-      const deptName = deptFilter ? (departments.find(d => String(d.id) === String(deptFilter))?.name || '—') : 'Tüm Departmanlar'
+      const deptBase = deptFilter ? (departments.find(d => String(d.id) === String(deptFilter))?.name || '—') : 'Tüm Departmanlar'
+      // İmzalık föyde hangi kadronun dökümü olduğu görünmeli; yoksa iki projenin
+      // föyü birbirinin aynısı gibi durur.
+      const projeAdi = projectFilter === NO_PROJECT
+        ? 'Kadrosu belirsiz'
+        : (projects.find(pr => String(pr.id) === String(projectFilter))?.name || null)
+      const deptName = projeAdi ? `${projeAdi} — ${deptBase}` : deptBase
       const { workbook } = buildPuantajFoyuWorkbook(ExcelJS, {
         staffRows: filtered,
         daysByStaff: daysRes,
@@ -3845,6 +3862,13 @@ export default function PuantajTab({ departments, shiftDefs = [], onPersonClick 
         <button aria-label="Sonraki puantaj ayı" className="btn btn-ghost btn-sm" disabled={writesBusy} onClick={nextMonth}>→</button>
         <button aria-label="Güncel puantaj ayı" className="btn btn-ghost btn-sm" disabled={writesBusy} onClick={() => setMonth(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`)}>Bu Ay</button>
 
+        <select aria-label="Puantaj projesi" className="form-select" value={projectFilter} disabled={writesBusy}
+          onChange={e => { if (!writesBusy) setProjectFilter(e.target.value) }}
+          style={{ width: 'auto', minWidth: '150px', fontSize: '11px', padding: '5px 11px' }}>
+          <option value="">Tüm Projeler</option>
+          {projects.map(pr => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
+          <option value={NO_PROJECT}>Kadrosu belirsiz{kadrosuzSayisi ? ` (${kadrosuzSayisi})` : ''}</option>
+        </select>
         <select aria-label="Puantaj departmanı" className="form-select" value={deptFilter} disabled={writesBusy} onChange={e => selectDepartment(e.target.value)}
           style={{ width: 'auto', minWidth: '150px', fontSize: '11px', padding: '5px 11px' }}>
           <option value="">Tüm Departmanlar</option>
@@ -4042,6 +4066,7 @@ export default function PuantajTab({ departments, shiftDefs = [], onPersonClick 
           filtered={filtered}
           month={month}
           deptFilter={deptFilter}
+          projectFilter={projectFilter}
           y={y}
           m={m}
           isLoading={isLoading}

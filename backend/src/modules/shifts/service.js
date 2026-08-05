@@ -2757,7 +2757,7 @@ export function puantajCsvService(month, deptId, projectId = null) {
   const rows = puantajService(month, deptId, { projectId })
 
   const headers = [
-    'TC No', 'Ad Soyad', 'Departman',
+    'TC No', 'Ad Soyad', 'Proje', 'Departman',
     'İş Günü', 'Çalıştı', 'Hafta Tatili', 'İzin(Yıllık)', 'İzin(Acil)', 'İzin(Hastalık)', 'İzin(Diğer)',
     'Devamsız', 'Mesai(s)',
     'Brüt', 'SGK İşçi', 'İşsizlik İşçi', 'Gelir Vergisi', 'Damga Vergisi', 'Net',
@@ -2774,6 +2774,7 @@ export function puantajCsvService(month, deptId, projectId = null) {
     ...rows.map(r => [
       r.tc_no || '—',
       r.full_name,
+      r.project_name || 'Kadrosu belirsiz',
       r.dept_name || '—',
       r.work_days_in_month,
       r.worked_days,
