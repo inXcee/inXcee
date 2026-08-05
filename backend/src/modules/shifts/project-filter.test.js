@@ -161,3 +161,53 @@ describe('Personel dosyası kadroyu döner', () => {
     expect(res.body.project_name ?? null).toBeNull()
   })
 })
+
+// Puantaj proje filtresi. Onay AKIŞINA dokunulmuyor: puantaj_period_approvals
+// dept_scope ile saklanıyor, oraya proje karıştırmak mevcut onay kayıtlarını
+// bozar. Filtre yalnız VERİ görünümlerine uygulanır.
+describe('Puantaj proje filtresi', () => {
+  const AY = '2026-09'
+
+  it('puantaj satırları projeye göre süzülür', async () => {
+    const res = await request(app).get(`/api/shifts/puantaj?month=${AY}&project_id=${fpuId}`).set(auth())
+    expect(res.status).toBe(200)
+    const idler = (res.body.rows || res.body).map(r => r.id)
+    expect(idler).toContain(fpuStaff)
+    expect(idler).not.toContain(kampStaff)
+  })
+
+  it('puantaj satırı proje adını taşır', async () => {
+    const res = await request(app).get(`/api/shifts/puantaj?month=${AY}`).set(auth())
+    const kayit = (res.body.rows || res.body).find(r => r.id === kampStaff)
+    expect(kayit.project_name).toBe('Kamp Alanı')
+    expect(kayit.project_id).toBe(kampId)
+  })
+
+  it('kadrosu belirsiz olanlar ayrıca süzülür', async () => {
+    const res = await request(app).get(`/api/shifts/puantaj?month=${AY}&project_id=none`).set(auth())
+    const idler = (res.body.rows || res.body).map(r => r.id)
+    expect(idler).toContain(kadrosuzStaff)
+    expect(idler).not.toContain(fpuStaff)
+  })
+
+  it('takvim (gün) verisi de projeye göre süzülür', async () => {
+    const res = await request(app).get(`/api/shifts/puantaj/days?month=${AY}&project_id=${kampId}`).set(auth())
+    expect(res.status).toBe(200)
+    const anahtarlar = Object.keys(res.body.days).map(Number)
+    expect(anahtarlar).toContain(kampStaff)
+    expect(anahtarlar).not.toContain(fpuStaff)
+  })
+
+  it('CSV dışa aktarımı projeye göre süzülür', async () => {
+    const res = await request(app).get(`/api/shifts/puantaj/export/csv?month=${AY}&project_id=${fpuId}`).set(auth())
+    expect(res.status).toBe(200)
+    expect(res.text).toContain('PROJE FPU PERSONELI')
+    expect(res.text).not.toContain('PROJE KAMP PERSONELI')
+  })
+
+  it('geçersiz proje id süzmeyi sessizce atlamaz', async () => {
+    const res = await request(app).get(`/api/shifts/puantaj?month=${AY}&project_id=999999`).set(auth())
+    expect(res.status).toBe(200)
+    expect((res.body.rows || res.body).length).toBe(0)
+  })
+})

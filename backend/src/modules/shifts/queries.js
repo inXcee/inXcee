@@ -3814,7 +3814,7 @@ export function getStaffDayBreakdown(staffId, monthStart, monthEnd) {
 }
 
 // ── Puantaj (Timesheet) ──
-export function getPuantajDayRows(monthStart, monthEnd, deptId) {
+export function getPuantajDayRows(monthStart, monthEnd, deptId, projectId = null) {
   const db = getDB()
   let query = `
     SELECT
@@ -3890,6 +3890,9 @@ export function getPuantajDayRows(monthStart, monthEnd, deptId) {
     query += ' AND COALESCE(ss.dept_id, CASE WHEN day_sa.id IS NOT NULL THEN day_sa.department_id ELSE s.department_id END) = ?'
     params.push(deptId)
   }
+  const projeGun = projectFilterSql(projectId)
+  query += projeGun.sql
+  params.push(...projeGun.params)
   query += ' ORDER BY ss.staff_id, ss.work_date'
   return db.prepare(query).all(...params)
 }
@@ -3935,7 +3938,16 @@ export function puantajUnitsSubquery() {
     GROUP BY ss.staff_id`
 }
 
-export function getPuantaj(monthStart, monthEnd, deptId) {
+// Proje (kadro) süzme kuralı — TEK NOKTA. 'none' = kadrosu atanmamış.
+// Boş/null verilirse süzme yapılmaz. Kolon adı çağırana göre değişir
+// (s.project_id / staff tablosunun takma adı).
+export function projectFilterSql(projectId, column = 's.project_id') {
+  if (projectId === 'none') return { sql: ` AND ${column} IS NULL`, params: [] }
+  if (projectId === undefined || projectId === null || projectId === '') return { sql: '', params: [] }
+  return { sql: ` AND ${column} = ?`, params: [Number(projectId)] }
+}
+
+export function getPuantaj(monthStart, monthEnd, deptId, projectId = null) {
   const db = getDB()
   let query = `
     SELECT
@@ -3943,6 +3955,7 @@ export function getPuantaj(monthStart, monthEnd, deptId) {
       CASE WHEN period_sa.id IS NOT NULL THEN period_sa.department_id ELSE COALESCE(sch.snapshot_dept_id, s.department_id) END as department_id,
       CASE WHEN period_sa.id IS NOT NULL THEN period_sa.role_id ELSE s.role_id END as role_id,
       d.name as dept_name, d.color_class as dept_color,
+      s.project_id, pr.name as project_name, pr.code as project_code, pr.color_class as project_color,
       sr.name as role_name,
       COALESCE(sch.worked_days, 0) as worked_days,
       COALESCE(sch.scheduled_days, 0) as scheduled_days,
@@ -3982,6 +3995,7 @@ export function getPuantaj(monthStart, monthEnd, deptId) {
     ) ot ON ot.staff_id = s.id
     LEFT JOIN departments d ON d.id = CASE WHEN period_sa.id IS NOT NULL THEN period_sa.department_id ELSE COALESCE(sch.snapshot_dept_id, s.department_id) END
     LEFT JOIN staff_roles sr ON sr.id = CASE WHEN period_sa.id IS NOT NULL THEN period_sa.role_id ELSE s.role_id END
+    LEFT JOIN projects pr ON pr.id = s.project_id
     WHERE (s.is_active = 1 OR COALESCE(sch.total_days, 0) > 0 OR COALESCE(ot.overtime_count, 0) > 0)
   `
   const params = [monthEnd, monthEnd, monthStart, monthEnd, monthStart, monthEnd]
@@ -3989,6 +4003,9 @@ export function getPuantaj(monthStart, monthEnd, deptId) {
     query += ' AND CASE WHEN period_sa.id IS NOT NULL THEN period_sa.department_id ELSE COALESCE(sch.snapshot_dept_id, s.department_id) END = ?'
     params.push(deptId)
   }
+  const proje = projectFilterSql(projectId)
+  query += proje.sql
+  params.push(...proje.params)
   query += ' ORDER BY d.name, s.full_name'
   return db.prepare(query).all(...params)
 }

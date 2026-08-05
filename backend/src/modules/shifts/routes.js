@@ -854,9 +854,9 @@ shiftsRouter.post('/attendance/checkout', ...managerOrSupervisor, (req, res) => 
 // ── Puantaj (Timesheet) ──
 shiftsRouter.get('/puantaj', ...managerOrSupervisor, (req, res) => {
   try {
-    const { month, dept_id } = req.query
+    const { month, dept_id, project_id } = req.query
     if (!month) return res.status(400).json({ error: 'month parametresi YYYY-MM formatında gereklidir' })
-    res.json(puantajService(month, dept_id || null, { includeMeta: req.query.meta === '1' }))
+    res.json(puantajService(month, dept_id || null, { includeMeta: req.query.meta === '1', projectId: project_id || null }))
   } catch (e) {
     res.status(e.statusCode || 400).json({ error: e.message })
   }
@@ -865,9 +865,9 @@ shiftsRouter.get('/puantaj', ...managerOrSupervisor, (req, res) => {
 // ── Puantaj CSV Export (must be before /:staffId routes) ──
 shiftsRouter.get('/puantaj/export/csv', ...managerOrSupervisor, (req, res) => {
   try {
-    const { month, dept_id } = req.query
+    const { month, dept_id, project_id } = req.query
     if (!month) return res.status(400).json({ error: 'month parametresi YYYY-MM formatında gereklidir' })
-    const csv = puantajCsvService(month, dept_id || null)
+    const csv = puantajCsvService(month, dept_id || null, project_id || null)
     res.setHeader('Content-Type', 'text/csv; charset=utf-8')
     res.setHeader('Content-Disposition', `attachment; filename="puantaj-${month}.csv"`)
     res.send(csv)
@@ -1009,9 +1009,9 @@ shiftsRouter.post('/puantaj/day-detail', ...managerOrSupervisor, documentUpload.
 // Puantaj day breakdown (after approval routes to avoid staffId collisions)
 shiftsRouter.get('/puantaj/days', ...managerOrSupervisor, (req, res) => {
   try {
-    const { month, dept_id } = req.query
+    const { month, dept_id, project_id } = req.query
     if (!month) return res.status(400).json({ error: 'month parametresi YYYY-MM formatÄ±nda gereklidir' })
-    res.json(puantajDaysService(month, dept_id || null))
+    res.json(puantajDaysService(month, dept_id || null, project_id || null))
   } catch (e) {
     res.status(e.statusCode || 400).json({ error: e.message })
   }

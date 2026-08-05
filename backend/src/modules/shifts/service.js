@@ -2750,11 +2750,11 @@ export function staffDetailService(staffId) {
   return getStaffDetail(staffId)
 }
 
-export function puantajCsvService(month, deptId) {
+export function puantajCsvService(month, deptId, projectId = null) {
   if (!isIsoMonth(month)) {
     throw Object.assign(new Error('month parametresi YYYY-MM formatında gereklidir'), { statusCode: 400 })
   }
-  const rows = puantajService(month, deptId)
+  const rows = puantajService(month, deptId, { projectId })
 
   const headers = [
     'TC No', 'Ad Soyad', 'Departman',
@@ -2924,10 +2924,10 @@ function buildMonthDays(rows, year, mon, lastDay) {
   return result
 }
 
-export function puantajDaysService(month, deptId) {
+export function puantajDaysService(month, deptId, projectId = null) {
   const { year, mon, monthStart, monthEnd, lastDay } = parsePuantajMonth(month)
-  const staffRows = getPuantaj(monthStart, monthEnd, deptId)
-  const dayRows = getPuantajDayRows(monthStart, monthEnd, deptId)
+  const staffRows = getPuantaj(monthStart, monthEnd, deptId, projectId)
+  const dayRows = getPuantajDayRows(monthStart, monthEnd, deptId, projectId)
   const rowsByStaff = {}
   dayRows.forEach(row => {
     if (!rowsByStaff[row.staff_id]) rowsByStaff[row.staff_id] = []
@@ -2998,7 +2998,7 @@ function staffDayBreakdownServiceLegacy(staffId, month) {
   return result
 }
 
-export function puantajService(month, deptId, { includeMeta = false } = {}) {
+export function puantajService(month, deptId, { includeMeta = false, projectId = null } = {}) {
   if (!isIsoMonth(month)) {
     throw Object.assign(new Error('month parametresi YYYY-MM formatında gereklidir'), { statusCode: 400 })
   }
@@ -3009,7 +3009,7 @@ export function puantajService(month, deptId, { includeMeta = false } = {}) {
   const wdm = workDaysInMonth(year, mon)
   const db = getDB()
 
-  const rows = getPuantaj(monthStart, monthEnd, deptId)
+  const rows = getPuantaj(monthStart, monthEnd, deptId, projectId)
   const ytdMap = getYtdGrossBulk(db, year, mon)
   const attendanceByStaff = new Map(
     getAttendanceMonthSummary(monthStart, monthEnd, deptId).map(row => [Number(row.staff_id), row])
