@@ -37,9 +37,11 @@ export function getShiftDefinitions() {
 // ── Work locations / staff roles ──
 export function getWorkLocations({ includeInactive = false } = {}) {
   let sql = `
-    SELECT wl.*, d.name AS dept_name, d.color_class AS dept_color
+    SELECT wl.*, d.name AS dept_name, d.color_class AS dept_color,
+      pr.name AS project_name, pr.code AS project_code, pr.color_class AS project_color
     FROM work_locations wl
     LEFT JOIN departments d ON d.id = wl.dept_id
+    LEFT JOIN projects pr ON pr.id = wl.project_id
     WHERE 1=1
   `
   if (!includeInactive) sql += ' AND wl.is_active = 1'
@@ -63,7 +65,7 @@ export function createWorkLocation(data) {
 
 export function updateWorkLocation(id, data) {
   const db = getDB()
-  const fields = ['name', 'dept_id', 'site', 'color_class', 'sort_order', 'is_active']
+  const fields = ['name', 'dept_id', 'site', 'color_class', 'sort_order', 'is_active', 'project_id']
   const sets = []
   const params = []
   fields.forEach(f => {

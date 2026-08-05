@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
+import { useProjects } from '../../../shared/hooks/useProjects.js'
+import ProjectBadge from '../../../shared/components/ProjectBadge.jsx'
 import { confirmDialog } from '../../../shared/components/ConfirmDialog.jsx'
 import { toastErr, shiftColor, ModalOverlay, formatShiftHour } from '../shared.jsx'
 import RotationPanel from './RotationPanel.jsx'
@@ -10,7 +12,8 @@ export default function SettingsTab({ departments, shiftDefs }) {
   const [defModal, setDefModal] = useState(null)
   const [defForm, setDefForm] = useState({ name: '', start_hour: '', end_hour: '', color_class: 'bg-blue-400' })
   const [locModal, setLocModal] = useState(null)
-  const [locForm, setLocForm] = useState({ name: '', dept_id: '', site: '', color_class: 'bg-blue-400', sort_order: '' })
+  const { projects } = useProjects()
+  const [locForm, setLocForm] = useState({ name: '', dept_id: '', site: '', project_id: '', color_class: 'bg-blue-400', sort_order: '' })
   const [roleModal, setRoleModal] = useState(null)
   const [roleForm, setRoleForm] = useState({ name: '', sort_order: '', expected_dept_id: '' })
 
@@ -89,7 +92,7 @@ export default function SettingsTab({ departments, shiftDefs }) {
       <div className="panel" style={{ marginBottom: '28px' }}>
         <div className="panel-header">
           <div><div className="panel-title">CALISMA NOKTALARI</div><div className="panel-subtitle">{workLocations.length} NOKTA</div></div>
-          <button className="btn btn-primary btn-sm" onClick={() => { setLocForm({ name: '', dept_id: '', site: '', color_class: 'bg-blue-400', sort_order: '' }); setLocModal({}) }}>+ Yeni Nokta</button>
+          <button className="btn btn-primary btn-sm" onClick={() => { setLocForm({ name: '', dept_id: '', site: '', project_id: '', color_class: 'bg-blue-400', sort_order: '' }); setLocModal({}) }}>+ Yeni Nokta</button>
         </div>
         <div className="panel-body" style={{ padding: 0 }}>
           <table className="data-table responsive-stack">
@@ -106,7 +109,7 @@ export default function SettingsTab({ departments, shiftDefs }) {
                     <td data-label="Sira" style={{ fontFamily: 'var(--mono)' }}>{loc.sort_order ?? 0}</td>
                     <td data-label="Islem">
                       <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                        <button className="btn btn-ghost btn-sm" onClick={() => { setLocForm({ name: loc.name, dept_id: loc.dept_id?.toString() || '', site: loc.site || '', color_class: loc.color_class || 'bg-blue-400', sort_order: loc.sort_order?.toString() || '' }); setLocModal(loc) }}>Duzenle</button>
+                        <ProjectBadge project={loc} /> <button className="btn btn-ghost btn-sm" onClick={() => { setLocForm({ name: loc.name, dept_id: loc.dept_id?.toString() || '', site: loc.site || '', project_id: loc.project_id?.toString() || '', color_class: loc.color_class || 'bg-blue-400', sort_order: loc.sort_order?.toString() || '' }); setLocModal(loc) }}>Duzenle</button>
                         <button className="btn btn-danger btn-sm" onClick={async () => { if (await confirmDialog({ title: 'Noktayi Pasiflestir', body: `${loc.name} pasif yapilsin mi?`, danger: true })) deleteLoc.mutate(loc.id) }}>Pasif</button>
                       </div>
                     </td>
@@ -197,6 +200,16 @@ export default function SettingsTab({ departments, shiftDefs }) {
                 {[...new Set(workLocations.map(l => l.site).filter(Boolean))].map(s => <option key={s} value={s} />)}
               </datalist>
             </div>
+            <div><label className="form-label">Proje</label>
+              <select className="form-select" aria-label="Nokta projesi" value={locForm.project_id}
+                onChange={e => setLocForm(p => ({ ...p, project_id: e.target.value }))}>
+                <option value="">Projeye bagli degil</option>
+                {projects.map(pr => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
+              </select>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text4)', marginTop: 3 }}>
+                Burada calisan, kadrosu baska projede olan kisiler "capraz calisma" olarak gorunur.
+              </div>
+            </div>
             <div><label className="form-label">Sira</label><input type="number" className="form-input" value={locForm.sort_order} onChange={e => setLocForm(p => ({ ...p, sort_order: e.target.value }))} /></div>
             <div><label className="form-label">Renk</label>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -208,7 +221,7 @@ export default function SettingsTab({ departments, shiftDefs }) {
             <button className="btn btn-primary" style={{ flex: 1, opacity: !locForm.name ? 0.5 : 1 }}
               disabled={!locForm.name}
               onClick={() => {
-                const payload = { name: locForm.name, dept_id: locForm.dept_id ? parseInt(locForm.dept_id) : null, site: locForm.site?.trim() || null, color_class: locForm.color_class, sort_order: parseInt(locForm.sort_order) || 0 }
+                const payload = { name: locForm.name, dept_id: locForm.dept_id ? parseInt(locForm.dept_id) : null, site: locForm.site?.trim() || null, project_id: locForm.project_id ? parseInt(locForm.project_id) : null, color_class: locForm.color_class, sort_order: parseInt(locForm.sort_order) || 0 }
                 if (locModal.id) updateLoc.mutate({ id: locModal.id, ...payload }); else createLoc.mutate(payload)
               }}>
               {locModal.id ? 'Guncelle' : 'Olustur'}

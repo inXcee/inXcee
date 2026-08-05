@@ -211,3 +211,34 @@ describe('Puantaj proje filtresi', () => {
     expect((res.body.rows || res.body).length).toBe(0)
   })
 })
+
+// Çapraz çalışma görünümü (kadrosu bir projede, fiilen başkasında) ancak
+// çalışma noktaları projelere bağlıysa dolu gelir. Site'dan türetilemiyor
+// (canlıda FPU diye bir site yok), o yüzden ekrandan bağlanabilmeli.
+describe('Çalışma noktası — proje eşlemesi', () => {
+  it('nokta listesi proje bilgisini döner', async () => {
+    const res = await request(app).get('/api/shifts/work-locations').set(auth())
+    expect(res.status).toBe(200)
+    const kayit = res.body.find(r => r.id === kampLokasyon)
+    expect(kayit.project_id).toBe(kampId)
+    expect(kayit.project_name).toBe('Kamp Alanı')
+  })
+
+  it('noktanın projesi güncellenebilir', async () => {
+    const res = await request(app).put(`/api/shifts/work-locations/${fpuLokasyon}`)
+      .set(auth()).send({ project_id: fpuId })
+    expect(res.status).toBe(200)
+    expect(getDB().prepare('SELECT project_id FROM work_locations WHERE id=?')
+      .get(fpuLokasyon).project_id).toBe(fpuId)
+  })
+
+  it('boş değer noktayı projesiz bırakır', async () => {
+    await request(app).put(`/api/shifts/work-locations/${fpuLokasyon}`)
+      .set(auth()).send({ project_id: '' })
+    expect(getDB().prepare('SELECT project_id FROM work_locations WHERE id=?')
+      .get(fpuLokasyon).project_id).toBeNull()
+    // testin geri kalanı icin geri yaz
+    await request(app).put(`/api/shifts/work-locations/${fpuLokasyon}`)
+      .set(auth()).send({ project_id: fpuId })
+  })
+})
