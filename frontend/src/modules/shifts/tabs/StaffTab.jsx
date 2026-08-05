@@ -1,6 +1,7 @@
 import { Fragment, useState, useEffect, useMemo, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
+import { useProjects } from '../../../shared/hooks/useProjects.js'
 import { useAuthStore } from '../../../shared/store/authStore.js'
 import { confirmDialog } from '../../../shared/components/ConfirmDialog.jsx'
 import { useDebounce } from '../../../shared/hooks/useDebounce.js'
@@ -91,6 +92,7 @@ function StaffQualityPanel({ quality, onEdit }) {
 
 export function StaffFormSheet({ editStaff, form, setForm, handleSubmit, createMut, updateMut, departments, staffRoles = [], workLocations = [], canViewSensitive, onClose }) {
   const [tab, setTab] = useState('temel')
+  const { projects } = useProjects()
   const [error, setError] = useState(null)
 
   useEffect(() => {
@@ -159,6 +161,18 @@ export function StaffFormSheet({ editStaff, form, setForm, handleSubmit, createM
               <label className="form-label">Pozisyon</label>
               <input className="form-input" value={form.position || ''} placeholder="Örneğin: Güvenlik Görevlisi"
                 onChange={e => setForm(p => ({ ...p, position: e.target.value }))} />
+            </div>
+            <div>
+              <label className="form-label">Kadro / Proje</label>
+              <select className="form-select" value={form.project_id || ''}
+                aria-label="Kadro projesi"
+                onChange={e => setForm(p => ({ ...p, project_id: e.target.value }))}>
+                <option value="">Kadrosu belirsiz</option>
+                {projects.map(pr => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
+              </select>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text4)', marginTop: 3 }}>
+                Kâğıt üzerinde bağlı olduğu proje. O gün fiilen nerede çalıştığı çizelgeden gelir.
+              </div>
             </div>
             <div>
               <label className="form-label">Departman</label>
@@ -727,6 +741,7 @@ export default function StaffTab({ departments, onPersonClick }) {
   const openNew = () => {
     setForm({
       full_name: '', tc_no: '', phone: '', email: '', position: '', department_id: '', role_id: '',
+      project_id: '',
       hire_date: '', contract_end: '', birth_date: '', address: '', emergency_contact: '', emergency_phone: '',
       blood_type: '', gender: 'male', salary: '', iban: '', notes: '', is_active: 1,
       primary_work_location_id: '', assignment_effective_from: localIsoDate(), assignment_note: '',
@@ -738,6 +753,7 @@ export default function StaffTab({ departments, onPersonClick }) {
     setForm({
       full_name: staff.full_name || '', tc_no: canViewSensitive ? staff.tc_no || '' : '', phone: staff.phone || '', email: staff.email || '',
       position: staff.position || '', department_id: staff.department_id?.toString() || '', role_id: staff.role_id?.toString() || '',
+      project_id: staff.project_id?.toString() || '',
       hire_date: staff.hire_date || '', contract_end: staff.contract_end || '', birth_date: staff.birth_date || '', address: staff.address || '',
       emergency_contact: staff.emergency_contact || '', emergency_phone: staff.emergency_phone || '',
       blood_type: staff.blood_type || '', gender: staff.gender || 'male',
@@ -752,6 +768,7 @@ export default function StaffTab({ departments, onPersonClick }) {
   const handleSubmit = () => {
     const payload = {
       ...form,
+      project_id: form.project_id ? Number(form.project_id) : null,
       department_id: form.department_id ? Number(form.department_id) : null,
       role_id: form.role_id ? Number(form.role_id) : null,
       primary_work_location_id: form.primary_work_location_id ? Number(form.primary_work_location_id) : null,

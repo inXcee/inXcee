@@ -65,6 +65,7 @@ function staffEditForm(person) {
     phone: person.phone || '',
     email: person.email || '',
     position: person.position || '',
+    project_id: person.project_id?.toString() || '',
     department_id: person.department_id?.toString() || '',
     role_id: person.role_id?.toString() || '',
     primary_work_location_id: person.primary_work_location_id?.toString() || '',
@@ -245,6 +246,7 @@ function IdentityTab({ dossier, detail, isLoading }) {
         )}
       </DossierSection>
       <DossierSection title="İŞ VE ARŞİV BİLGİLERİ">
+        <DossierField label="Kadro / proje" value={person.project_name || 'Kadrosu belirsiz'} />
         <DossierField label="Departman" value={person.dept_name} />
         <DossierField label="Görev / rol" value={person.role_name || person.position} />
         <DossierField label="Çalışma lokasyonu" value={person.primary_work_location_name} />
@@ -466,6 +468,7 @@ export default function StaffDossierPage() {
   const submitEdit = () => {
     const payload = {
       ...editForm,
+      project_id: editForm.project_id ? Number(editForm.project_id) : null,
       department_id: editForm.department_id ? Number(editForm.department_id) : null,
       role_id: editForm.role_id ? Number(editForm.role_id) : null,
       primary_work_location_id: editForm.primary_work_location_id ? Number(editForm.primary_work_location_id) : null,

@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import ProjectBadge from '../../../shared/components/ProjectBadge.jsx'
 import api from '../../../shared/api/client.js'
 
 export function useStaffDossier(staffId) {
@@ -122,6 +123,7 @@ export function DossierHeader({ dossier, actions }) {
           <h1 style={{ margin: 0, fontSize: 23, letterSpacing: 1.2 }}>{person.full_name}</h1>
           <span className={`badge ${person.is_active ? 'badge-green' : 'badge-gray'}`}>{person.is_active ? 'Aktif' : 'Pasif'}</span>
           {dossier.risk_score > 0 && <span className="badge badge-red">Risk {dossier.risk_score}</span>}
+          <ProjectBadge project={person} size="md" />
         </div>
         <div style={{ color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 10, marginTop: 5 }}>
           {person.position || 'Pozisyon yok'} · {person.dept_name || 'Departman yok'} · {person.role_name || 'Rol yok'}

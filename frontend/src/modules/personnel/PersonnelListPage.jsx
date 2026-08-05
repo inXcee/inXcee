@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import api from '../../shared/api/client.js'
 import { useDebounce } from '../../shared/hooks/useDebounce.js'
@@ -7,6 +7,10 @@ import { exportRowsToCsv, exportRowsToXlsx } from '../../shared/utils/exportData
 import { SkeletonGrid } from '../../shared/components/Skeleton.jsx'
 import { useSavedFilters, SavedFiltersBar } from '../../shared/hooks/useSavedFilters.jsx'
 import HelpHint from '../../shared/components/HelpHint.jsx'
+import ProjectBadge from '../../shared/components/ProjectBadge.jsx'
+import { useProjects, NO_PROJECT, PROJECTS_QUERY_KEY } from '../../shared/hooks/useProjects.js'
+import { classHex } from '../shifts/logic/shiftColors.js'
+import { useToastStore } from '../../shared/store/toastStore.js'
 
 const EXPORT_COLUMNS = [
   { key: 'full_name', label: 'Ad Soyad' },
@@ -15,18 +19,25 @@ const EXPORT_COLUMNS = [
   { key: 'position', label: 'Pozisyon' },
   { key: 'dept_name', label: 'Departman' },
   { key: 'role_label', label: 'Görev' },
+  { key: 'project_name', label: 'Kadro (Proje)' },
   { key: 'hire_date', label: 'İşe Giriş' },
 ]
 
 export default function PersonnelListPage() {
   const nav = useNavigate()
-  const [filters, setFilters] = useState({ q: '', deptId: '' })
-  const { q, deptId } = filters
+  const qc = useQueryClient()
+  const [filters, setFilters] = useState({ q: '', deptId: '', projectId: '' })
+  const { q, deptId, projectId } = filters
   const setQ = (v) => setFilters(f => ({ ...f, q: v }))
   const setDeptId = (v) => setFilters(f => ({ ...f, deptId: v }))
+  const setProjectId = (v) => setFilters(f => ({ ...f, projectId: v }))
   const debouncedQ = useDebounce(q, 250)
   const savedFilters = useSavedFilters('personnel-list', filters, setFilters)
-  const hasActiveFilter = !!(q || deptId)
+  const hasActiveFilter = !!(q || deptId || projectId)
+
+  // Kadro düzenleme modu: açıkken karta tıklamak 360° görünüm yerine seçim yapar.
+  const [selectMode, setSelectMode] = useState(false)
+  const [selected, setSelected] = useState(() => new Set())
 
   const { data: staff = [], isLoading } = useQuery({
     queryKey: ['personnel-list'],
@@ -36,11 +47,34 @@ export default function PersonnelListPage() {
     queryKey: ['departments'],
     queryFn: () => api.get('/shifts/departments').then(r => r.data),
   })
+  const { projects } = useProjects()
+
+  const assign = useMutation({
+    mutationFn: ({ staff_ids, project_id }) => api.post('/projects/assign', { staff_ids, project_id }),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: ['personnel-list'] })
+      qc.invalidateQueries({ queryKey: PROJECTS_QUERY_KEY })
+      qc.invalidateQueries({ queryKey: ['staff-list'] })
+      const hedef = projects.find(p => p.id === vars.project_id)
+      useToastStore.getState().addToast(
+        vars.project_id
+          ? `${vars.staff_ids.length} kişi ${hedef?.name || 'projeye'} kadrosuna alındı`
+          : `${vars.staff_ids.length} kişi kadrodan çıkarıldı`,
+        'success',
+      )
+      setSelected(new Set())
+    },
+    onError: e => useToastStore.getState().addToast(
+      e.response?.data?.error || 'Kadro güncellenemedi', 'error',
+    ),
+  })
 
   const filtered = useMemo(() => {
     const low = debouncedQ.trim().toLowerCase()
     return staff.filter(s => {
       if (deptId && String(s.department_id) !== String(deptId)) return false
+      if (projectId === NO_PROJECT) { if (s.project_id) return false }
+      else if (projectId && String(s.project_id) !== String(projectId)) return false
       if (!low) return true
       return (
         s.full_name?.toLowerCase().includes(low) ||
@@ -48,19 +82,46 @@ export default function PersonnelListPage() {
         s.phone?.includes(low) ||
         s.position?.toLowerCase().includes(low) ||
         s.dept_name?.toLowerCase().includes(low) ||
+        s.project_name?.toLowerCase().includes(low) ||
         s.role_label?.toLowerCase().includes(low)
       )
     })
-  }, [staff, debouncedQ, deptId])
+  }, [staff, debouncedQ, deptId, projectId])
+
+  // Kadrosu belirsiz sayısı her zaman TÜM personel üzerinden — filtre açıkken
+  // "0 eksik" gibi yanıltıcı bir sayı göstermemek için.
+  const kadrosuz = useMemo(() => staff.filter(s => !s.project_id && s.is_active).length, [staff])
+
+  const toggle = (id) => setSelected(prev => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id); else next.add(id)
+    return next
+  })
+  const tumunuSec = () => setSelected(new Set(filtered.map(s => s.id)))
+  const kartaTikla = (s) => { if (selectMode) toggle(s.id); else nav(`/personnel/${s.id}`) }
 
   return (
     <div style={{ maxWidth: 1280 }} className="fade-up">
       <div style={{ marginBottom: 16 }}>
         <h1 style={{ fontSize: 28, letterSpacing: 4, color: 'var(--text)', margin: 0 }}>PERSONEL<HelpHint topic="personnel" title="PERSONEL" /></h1>
         <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginTop: 4, letterSpacing: 1.5 }}>
-          {filtered.length} / {staff.length} KAYIT — TIKLAYINCA 360° GÖRÜNÜM
+          {filtered.length} / {staff.length} KAYIT — {selectMode ? 'TIKLAYINCA SEÇİLİR' : 'TIKLAYINCA 360° GÖRÜNÜM'}
         </p>
       </div>
+
+      {kadrosuz > 0 && !selectMode && (
+        <div style={{
+          marginBottom: 12, padding: '9px 12px', borderRadius: 10, fontSize: 12,
+          background: 'rgba(245,158,11,.08)', border: '1px solid rgba(245,158,11,.3)',
+          display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+        }}>
+          <span>⚠ <strong>{kadrosuz} kişinin</strong> kadrosu belirlenmemiş — hangi projede çalıştığı bilinmiyor.</span>
+          <button type="button" className="btn btn-sm btn-ghost" style={{ fontSize: 11 }}
+            onClick={() => { setProjectId(NO_PROJECT); setSelectMode(true) }}>
+            Bunları göster ve kadroya al
+          </button>
+        </div>
+      )}
 
       <SavedFiltersBar
         presets={savedFilters.presets}
@@ -71,14 +132,28 @@ export default function PersonnelListPage() {
       />
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-        <input className="form-input" placeholder="🔍 Ad / TC / telefon / pozisyon ara…"
+        <input className="form-input" placeholder="🔍 Ad / TC / telefon / pozisyon / proje ara…"
           value={q} onChange={e => setQ(e.target.value)}
-          style={{ flex: 1, minWidth: 280, fontSize: 13, borderRadius: 10 }} autoFocus />
+          style={{ flex: 1, minWidth: 240, fontSize: 13, borderRadius: 10 }} autoFocus />
+        <select className="form-select" value={projectId} onChange={e => setProjectId(e.target.value)}
+          aria-label="Proje filtresi"
+          style={{ width: 'auto', minWidth: 165, fontSize: 12, borderRadius: 10 }}>
+          <option value="">Tüm projeler</option>
+          {projects.map(p => (
+            <option key={p.id} value={p.id}>{p.name} ({p.staff_count ?? 0})</option>
+          ))}
+          <option value={NO_PROJECT}>Kadrosu belirsiz ({kadrosuz})</option>
+        </select>
         <select className="form-select" value={deptId} onChange={e => setDeptId(e.target.value)}
-          style={{ width: 'auto', minWidth: 180, fontSize: 12, borderRadius: 10 }}>
+          aria-label="Departman filtresi"
+          style={{ width: 'auto', minWidth: 165, fontSize: 12, borderRadius: 10 }}>
           <option value="">Tüm departmanlar</option>
           {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
+        <button type="button" className={`btn btn-sm ${selectMode ? 'btn-primary' : 'btn-ghost'}`}
+          onClick={() => { setSelectMode(m => !m); setSelected(new Set()) }}
+          title="Birden fazla kişiyi seçip toplu olarak proje kadrosuna al"
+          style={{ fontSize: 11 }}>☑ Kadro ata</button>
         <button type="button" className="btn btn-ghost btn-sm"
           onClick={() => exportRowsToCsv(EXPORT_COLUMNS, filtered, `personel-${new Date().toISOString().slice(0, 10)}.csv`)}
           disabled={!filtered.length}
@@ -91,6 +166,36 @@ export default function PersonnelListPage() {
           style={{ fontSize: 11 }}>📊 Excel</button>
       </div>
 
+      {selectMode && (
+        <div style={{
+          position: 'sticky', top: 0, zIndex: 5, marginBottom: 12,
+          padding: '10px 12px', borderRadius: 11,
+          background: 'var(--surface)', border: '1px solid var(--accent)',
+          display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+        }}>
+          <strong style={{ fontSize: 13 }}>{selected.size} kişi seçili</strong>
+          <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}
+            onClick={tumunuSec} disabled={!filtered.length}>Görünenlerin hepsi ({filtered.length})</button>
+          <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}
+            onClick={() => setSelected(new Set())} disabled={!selected.size}>Temizle</button>
+          <span style={{ flex: 1 }} />
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>KADROYA AL →</span>
+          {projects.map(p => (
+            <button key={p.id} type="button" className="btn btn-primary btn-sm" style={{ fontSize: 11 }}
+              disabled={!selected.size || assign.isPending}
+              onClick={() => assign.mutate({ staff_ids: [...selected], project_id: p.id })}>
+              {p.name}
+            </button>
+          ))}
+          <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}
+            disabled={!selected.size || assign.isPending}
+            title="Seçilenlerin kadro bağlantısını kaldırır — personel silinmez"
+            onClick={() => assign.mutate({ staff_ids: [...selected], project_id: null })}>
+            Kadrodan çıkar
+          </button>
+        </div>
+      )}
+
       {isLoading ? (
         <SkeletonGrid count={12} />
       ) : !filtered.length ? (
@@ -100,52 +205,69 @@ export default function PersonnelListPage() {
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
-          {filtered.map(s => (
-            <div key={s.id} onClick={() => nav(`/personnel/${s.id}`)} style={{
-              padding: 14, borderRadius: 12, cursor: 'pointer',
-              background: 'var(--surface)', border: '1px solid var(--border)',
-              borderLeft: `4px solid ${s.dept_color ? s.dept_color.replace('bg-', '#').replace('-400', '') : 'var(--accent)'}`,
-              transition: 'transform .15s',
-            }}
-              onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
-              onMouseLeave={e => e.currentTarget.style.transform = 'none'}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{
-                  width: 44, height: 44, borderRadius: '50%', flexShrink: 0,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: s.gender === 'female' ? 'rgba(244,114,182,.15)' : 'rgba(59,130,246,.15)',
-                  color: s.gender === 'female' ? '#f472b6' : 'var(--blue)',
-                  fontFamily: 'var(--display)', fontSize: 18, fontWeight: 700,
-                  border: `2px solid ${s.gender === 'female' ? '#f472b6' : 'var(--blue)'}`,
-                }}>
-                  {s.full_name?.charAt(0)?.toUpperCase() || '?'}
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {s.full_name}
+          {filtered.map(s => {
+            const secili = selected.has(s.id)
+            return (
+              <div key={s.id} onClick={() => kartaTikla(s)} style={{
+                padding: 14, borderRadius: 12, cursor: 'pointer',
+                background: secili ? 'rgba(240,165,0,.08)' : 'var(--surface)',
+                // Kısayol (border) ile uzun form (borderLeft) aynı nesnede
+                // karışmamalı: seçim rengi her değiştiğinde React uyarı veriyor.
+                borderStyle: 'solid',
+                borderWidth: '1px 1px 1px 4px',
+                borderColor: `${secili ? 'var(--accent)' : 'var(--border)'} `
+                  + `${secili ? 'var(--accent)' : 'var(--border)'} `
+                  + `${secili ? 'var(--accent)' : 'var(--border)'} `
+                  + `#${classHex(s.dept_color)}`,
+                transition: 'transform .15s',
+              }}
+                onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
+                onMouseLeave={e => e.currentTarget.style.transform = 'none'}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  {selectMode && (
+                    <input type="checkbox" checked={secili} readOnly
+                      aria-label={`${s.full_name} seç`}
+                      style={{ width: 17, height: 17, flexShrink: 0, accentColor: 'var(--accent)' }} />
+                  )}
+                  <div style={{
+                    width: 44, height: 44, borderRadius: '50%', flexShrink: 0,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: s.gender === 'female' ? 'rgba(244,114,182,.15)' : 'rgba(59,130,246,.15)',
+                    color: s.gender === 'female' ? '#f472b6' : 'var(--blue)',
+                    fontFamily: 'var(--display)', fontSize: 18, fontWeight: 700,
+                    border: `2px solid ${s.gender === 'female' ? '#f472b6' : 'var(--blue)'}`,
+                  }}>
+                    {s.full_name?.charAt(0)?.toUpperCase() || '?'}
                   </div>
-                  {s.dept_name && (
-                    <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', marginTop: 2 }}>
-                      {s.dept_name}{s.role_label ? ` · ${s.role_label}` : ''}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {s.full_name}
                     </div>
-                  )}
-                  {s.position && (
-                    <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text4)' }}>{s.position}</div>
-                  )}
+                    {s.dept_name && (
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', marginTop: 2 }}>
+                        {s.dept_name}{s.role_label ? ` · ${s.role_label}` : ''}
+                      </div>
+                    )}
+                    {s.position && (
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text4)' }}>{s.position}</div>
+                    )}
+                  </div>
+                  <ProjectBadge project={s} />
+                </div>
+                <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text3)' }}>
+                  {s.tc_no && <div>🆔 {s.tc_no}</div>}
+                  {s.phone && <div>📞 {s.phone}</div>}
+                  {!s.is_active && <div style={{ color: 'var(--amber)' }}>🗄 ARŞİV</div>}
                 </div>
               </div>
-              <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text3)' }}>
-                {s.tc_no && <div>🆔 {s.tc_no}</div>}
-                {s.phone && <div>📞 {s.phone}</div>}
-                {!s.is_active && <div style={{ color: 'var(--amber)' }}>🗄 ARŞİV</div>}
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
       <div style={{ marginTop: 14, fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text4)' }}>
         💡 Kart üzerine tıklayınca 9 sekmeli 360° görünüm açılır (Genel · Vardiya · Servis · Yatakhane · Disiplin · İzin/Mesai · Notlar · Acil · Timeline)
+        <br />💡 “Kadro ata” ile birden fazla kişiyi seçip tek seferde FPU veya Kamp Alanı kadrosuna alabilirsin.
       </div>
     </div>
   )

@@ -33,8 +33,10 @@ function currentPerson(db, staffId) {
       sa.role_id AS assignment_role_id,
       sa.work_location_id AS primary_work_location_id,
       sa.effective_from AS assignment_effective_from,
-      sa.effective_to AS assignment_effective_to
+      sa.effective_to AS assignment_effective_to,
+      pr.name AS project_name, pr.code AS project_code, pr.color_class AS project_color
     FROM staff s
+    LEFT JOIN projects pr ON pr.id = s.project_id
     LEFT JOIN staff_assignments sa ON sa.id = (
       SELECT current_sa.id
       FROM staff_assignments current_sa

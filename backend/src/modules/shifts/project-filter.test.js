@@ -107,3 +107,57 @@ describe('Çapraz çalışma — kadrosu bir projede, fiilen başka projede', ()
     expect((await request(app).get('/api/shifts/project-mismatch').set(auth())).status).toBe(400)
   })
 })
+
+// Kullanıcı kadroyu personel kartından da yönetebilmeli; kadro değişikliği için
+// ayrı bir ekrana gitmek zorunda kalmasın.
+describe('Personel kartından kadro değiştirme', () => {
+  it('project_id personel güncellemesiyle yazılır', async () => {
+    const res = await request(app).put(`/api/shifts/staff/${kadrosuzStaff}`)
+      .set(auth()).send({ project_id: kampId })
+    expect(res.status).toBe(200)
+    expect(getDB().prepare('SELECT project_id FROM staff WHERE id=?')
+      .get(kadrosuzStaff).project_id).toBe(kampId)
+  })
+
+  it('boş değer kadrodan çıkarır', async () => {
+    await request(app).put(`/api/shifts/staff/${kadrosuzStaff}`)
+      .set(auth()).send({ project_id: '' })
+    expect(getDB().prepare('SELECT project_id FROM staff WHERE id=?')
+      .get(kadrosuzStaff).project_id).toBeNull()
+  })
+
+  it('personel listesi kadroyu ve proje adını döner', async () => {
+    const res = await request(app).get(`/api/shifts/staff?project_id=${fpuId}`).set(auth())
+    const kayit = res.body.find(r => r.id === fpuStaff)
+    expect(kayit.project_id).toBe(fpuId)
+    expect(kayit.project_name).toBe('FPU')
+  })
+})
+
+// Rozet project_name'e bakıyor; join olmazsa kadrolu biri "KADROSUZ" görünür —
+// eksik bilgiden daha kötüsü, YANLIŞ bilgi.
+describe('Personel dosyası kadroyu döner', () => {
+  it('tek personel ucu proje adını içerir', async () => {
+    const res = await request(app).get(`/api/shifts/staff/${fpuStaff}`).set(auth())
+    expect(res.status).toBe(200)
+    expect(res.body.project_name).toBe('FPU')
+  })
+
+  it('360 dosyası proje adını içerir', async () => {
+    const res = await request(app).get(`/api/personnel/${kampStaff}/360`).set(auth())
+    expect(res.status).toBe(200)
+    expect(res.body.person.project_name).toBe('Kamp Alanı')
+  })
+
+  // Dosya BAŞLIĞINDAKİ rozet bu ucu okuyor — tarayıcıda yakalandı.
+  it('dosya ucu proje adını içerir', async () => {
+    const res = await request(app).get(`/api/personnel/${fpuStaff}/dossier`).set(auth())
+    expect(res.status).toBe(200)
+    expect(res.body.person.project_name).toBe('FPU')
+  })
+
+  it('kadrosu olmayanda proje adı boş kalır', async () => {
+    const res = await request(app).get(`/api/shifts/staff/${kadrosuzStaff}`).set(auth())
+    expect(res.body.project_name ?? null).toBeNull()
+  })
+})

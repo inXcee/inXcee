@@ -14,8 +14,10 @@ export function get360(staffId) {
       p.id as dorm_personnel_id,
       p.discipline_points as dorm_discipline_points,
       p.is_blacklisted, p.blacklist_reason,
-      p.passport_no
+      p.passport_no,
+      pr.name as project_name, pr.code as project_code, pr.color_class as project_color
     FROM staff s
+    LEFT JOIN projects pr ON pr.id = s.project_id
     LEFT JOIN departments d ON d.id = s.department_id
     LEFT JOIN pickup_points pp ON pp.id = s.pickup_point_id
     LEFT JOIN personnel p ON p.tc_no IS NOT NULL AND p.tc_no = s.tc_no

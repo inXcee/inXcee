@@ -239,6 +239,7 @@ function OverviewTab({ data }) {
       </Section>
 
       <Section title="İŞ BİLGİLERİ">
+        <Field k="Kadro / Proje" v={p.project_name || 'Kadrosu belirsiz'} color={p.project_color} />
         <Field k="Departman" v={p.dept_name} color={p.dept_color} />
         <Field k="Pozisyon" v={p.position} />
         <Field k="Rol/Etiket" v={p.role_label} />

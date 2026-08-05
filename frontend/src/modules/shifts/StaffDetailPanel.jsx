@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
+import { useProjects } from '../../shared/hooks/useProjects.js'
 import { SkeletonCard } from '../../shared/components/Skeleton.jsx'
 import {
   DossierActivity,
@@ -30,7 +31,7 @@ const TEXT_FIELDS = [
   ['blood_type', 'Kan grubu', 'text'],
 ]
 
-function QuickEditForm({ person, departments, roles, isPending, onSave, onCancel }) {
+function QuickEditForm({ person, departments, roles, projects, isPending, onSave, onCancel }) {
   const [form, setForm] = useState(() => ({
     full_name: person.full_name || '', phone: person.phone || '', email: person.email || '',
     position: person.position || '', emergency_contact: person.emergency_contact || '',
@@ -38,6 +39,7 @@ function QuickEditForm({ person, departments, roles, isPending, onSave, onCancel
     hire_date: (person.hire_date || '').slice(0, 10), birth_date: (person.birth_date || '').slice(0, 10),
     contract_end: (person.contract_end || '').slice(0, 10), blood_type: person.blood_type || '',
     gender: person.gender || '', department_id: person.department_id || '', role_id: person.role_id || '',
+    project_id: person.project_id || '',
   }))
   const set = (key, value) => setForm(prev => ({ ...prev, [key]: value }))
   return (
@@ -54,6 +56,14 @@ function QuickEditForm({ person, departments, roles, isPending, onSave, onCancel
           <label className="form-label">Cinsiyet</label>
           <select className="form-input" value={form.gender} onChange={event => set('gender', event.target.value)}>
             <option value="">—</option><option value="male">Erkek</option><option value="female">Kadın</option>
+          </select>
+        </div>
+        <div>
+          <label className="form-label">Kadro / Proje</label>
+          <select className="form-input" value={form.project_id} aria-label="Kadro projesi"
+            onChange={event => set('project_id', event.target.value)}>
+            <option value="">Kadrosu belirsiz</option>
+            {(projects || []).map(pr => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
           </select>
         </div>
         <div>
@@ -150,6 +160,7 @@ export default function StaffDetailPanel({ staffId, onClose, departments = [] })
     queryKey: ['shift-roles'], queryFn: () => api.get('/shifts/roles').then(r => r.data),
     staleTime: 5 * 60 * 1000, enabled: editing,
   })
+  const { projects } = useProjects({ enabled: editing })
   const updateMutation = useMutation({
     mutationFn: payload => api.put(`/shifts/staff/${staffId}`, payload),
     onSuccess: () => {
@@ -202,6 +213,7 @@ export default function StaffDetailPanel({ staffId, onClose, departments = [] })
                   person={dossier.person}
                   departments={departments}
                   roles={roles}
+                  projects={projects}
                   isPending={updateMutation.isPending}
                   onSave={payload => updateMutation.mutate(payload)}
                   onCancel={() => setEditing(false)}

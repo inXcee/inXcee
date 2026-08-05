@@ -274,13 +274,15 @@ export function getStaffById(id) {
       wl.site as primary_work_location_site,
       wl.color_class as primary_work_location_color,
       wl.dept_id as primary_work_location_dept_id,
-      wl.is_active as primary_work_location_active
+      wl.is_active as primary_work_location_active,
+      pr.name as project_name, pr.code as project_code, pr.color_class as project_color
     FROM staff s
     ${CURRENT_ASSIGNMENT_JOIN}
     LEFT JOIN departments d ON d.id = ${CURRENT_DEPARTMENT_SQL}
     LEFT JOIN staff_roles sr ON sr.id = ${CURRENT_ROLE_SQL}
     LEFT JOIN departments expected_dept ON expected_dept.id = sr.expected_dept_id
     LEFT JOIN work_locations wl ON wl.id = sa.work_location_id
+    LEFT JOIN projects pr ON pr.id = s.project_id
     WHERE s.id = ?
   `).get(id)
   return resolveCurrentStaffAssignment(row)
@@ -321,7 +323,8 @@ export function createStaff(data) {
 export function updateStaff(id, data) {
   const db = getDB()
   const fields = ['tc_no','full_name','phone','email','position','department_id','role_id','hire_date','birth_date',
-    'contract_end','address','emergency_contact','emergency_phone','blood_type','gender','salary','iban','notes','is_active','role_label','pickup_point_id']
+    'contract_end','address','emergency_contact','emergency_phone','blood_type','gender','salary','iban','notes','is_active','role_label','pickup_point_id',
+    'project_id']
   const sets = []
   const params = []
   fields.forEach(f => {
