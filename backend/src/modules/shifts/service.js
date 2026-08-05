@@ -31,6 +31,7 @@ import {
   listStationAttendanceSourceEvents, getAttendanceCandidateStaffIds,
   getAttendanceReconciliationContext, findAttendanceReconciliation, dayHasAttendanceEvents,
   getProjectMismatch,
+  getUnmappedWorkLocations, getActiveWorkLocationCount,
   insertAttendanceReconciliation, markScheduleWorkedFromAttendance,
   resolveStaleAttendanceExceptions, upsertAttendanceException,
   listAttendanceExceptions, getAttendanceException, updateAttendanceExceptionStatus,
@@ -258,7 +259,15 @@ export function projectMismatchService({ from, to }) {
   if (!from || !to) {
     throw Object.assign(new Error('from ve to tarihleri gerekli (YYYY-MM-DD)'), { statusCode: 400 })
   }
-  return getProjectMismatch(from, to)
+  const unmapped = getUnmappedWorkLocations()
+  return {
+    rows: getProjectMismatch(from, to),
+    setup: {
+      total_locations: getActiveWorkLocationCount(),
+      unmapped_locations: unmapped.length,
+      unmapped_names: unmapped.map(row => row.name),
+    },
+  }
 }
 
 export function scheduleBreakdownService({ from, to } = {}) {

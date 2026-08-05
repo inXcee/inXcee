@@ -17,6 +17,7 @@ import LiveOccupancyBoard from './LiveOccupancyBoard.jsx'
 import ScheduleImportModal from './ScheduleImportModal.jsx'
 import CoverageBoard from './CoverageBoard.jsx'
 import DayDetailBoard from './DayDetailBoard.jsx'
+import ProjectCrossoverBoard from './ProjectCrossoverBoard.jsx'
 import { PayrollClosingModal, ScheduleTemplateModal } from './ScheduleControlModals.jsx'
 import ScheduleShareModal from './ScheduleShareModal.jsx'
 
@@ -950,6 +951,10 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
       />}
 
       {scheduleView === 'weekly' && <DayDetailBoard key={weekDays[0] || 'current-week'} weekDays={weekDays} onPersonClick={onPersonClick} />}
+
+      {scheduleView === 'weekly' && (
+        <ProjectCrossoverBoard from={weekStart} to={weekEnd} onPersonClick={onPersonClick} />
+      )}
 
       {scheduleView === 'weekly' && (
         <div style={{

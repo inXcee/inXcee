@@ -4027,6 +4027,19 @@ export function getPuantaj(monthStart, monthEnd, deptId, projectId = null) {
 // Kadrosu bir projede olup fiilen BAŞKA projenin noktasında çalışanlar.
 // İki alan bilerek ayrı tutuluyor (bkz. migration 084) — bu sorgu o ayrımın
 // karşılığı: "FPU listesinde ama Kamp'ta çalışanlar".
+// Çapraz çalışma listesi boşsa sebebi iki türlü olabilir: gerçekten çapraz
+// çalışan yok, ya da noktalar henüz projeye bağlanmadı. Ekranın ikisini
+// ayırabilmesi için eşlenmemiş nokta sayısı da dönüyor.
+export function getUnmappedWorkLocations() {
+  return getDB().prepare(
+    'SELECT id, name FROM work_locations WHERE is_active = 1 AND project_id IS NULL ORDER BY name',
+  ).all()
+}
+
+export function getActiveWorkLocationCount() {
+  return getDB().prepare('SELECT COUNT(*) n FROM work_locations WHERE is_active = 1').get().n
+}
+
 export function getProjectMismatch(from, to) {
   return getDB().prepare(`
     SELECT ss.work_date, s.id AS staff_id, s.full_name,

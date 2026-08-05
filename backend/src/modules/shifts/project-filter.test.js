@@ -91,7 +91,7 @@ describe('Çapraz çalışma — kadrosu bir projede, fiilen başka projede', ()
   it('FPU kadrosunda olup Kamp sahasında çalışanı bulur', async () => {
     const res = await request(app).get(`/api/shifts/project-mismatch?from=${HAFTA}&to=${HAFTA}`).set(auth())
     expect(res.status).toBe(200)
-    const kayit = res.body.find(r => r.staff_id === fpuStaff)
+    const kayit = res.body.rows.find(r => r.staff_id === fpuStaff)
     expect(kayit).toBeTruthy()
     expect(kayit.roster_project_name).toBe('FPU')
     expect(kayit.worked_project_name).toBe('Kamp Alanı')
@@ -100,7 +100,7 @@ describe('Çapraz çalışma — kadrosu bir projede, fiilen başka projede', ()
 
   it('kendi sahasında çalışanı listelemez', async () => {
     const res = await request(app).get(`/api/shifts/project-mismatch?from=${HAFTA}&to=${HAFTA}`).set(auth())
-    expect(res.body.some(r => r.staff_id === kampStaff)).toBe(false)
+    expect(res.body.rows.some(r => r.staff_id === kampStaff)).toBe(false)
   })
 
   it('tarih aralığı zorunlu', async () => {
@@ -282,5 +282,36 @@ describe('Departman filtresi metin parametreyle çalışır', () => {
     const idler = (res.body.rows || res.body).map(r => r.id)
     expect(idler).toContain(fpuStaff)
     expect(idler).not.toContain(kampStaff)
+  })
+})
+
+// Çapraz çalışma listesi boş dönebilir çünkü (a) gerçekten çapraz çalışan yok,
+// ya da (b) çalışma noktaları henüz projeye bağlanmadı. İkisi ekranda AYNI
+// görünürse kullanıcı "çapraz çalışan yok" sanır — yanlış cevap. Uç, kurulum
+// durumunu da dönmeli.
+describe('Çapraz çalışma — kurulum durumu', () => {
+  it('eşlenmemiş çalışma noktalarını bildirir', async () => {
+    const db = getDB()
+    db.prepare("INSERT INTO work_locations(name, project_id, is_active) VALUES('EŞLENMEMİŞ NOKTA', NULL, 1)").run()
+    const res = await request(app).get(`/api/shifts/project-mismatch?from=${HAFTA}&to=${HAFTA}`).set(auth())
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body.rows)).toBe(true)
+    expect(res.body.setup.unmapped_locations).toBeGreaterThan(0)
+    expect(res.body.setup.unmapped_names).toContain('EŞLENMEMİŞ NOKTA')
+  })
+
+  it('çapraz çalışan satırları rows içinde kalır', async () => {
+    const res = await request(app).get(`/api/shifts/project-mismatch?from=${HAFTA}&to=${HAFTA}`).set(auth())
+    const kayit = res.body.rows.find(r => r.staff_id === fpuStaff)
+    expect(kayit.roster_project_name).toBe('FPU')
+    expect(kayit.worked_project_name).toBe('Kamp Alanı')
+  })
+
+  it('tüm noktalar eşlendiğinde uyarı sıfırlanır', async () => {
+    const db = getDB()
+    const kamp = db.prepare("SELECT id FROM projects WHERE code='KAMP'").get().id
+    db.prepare('UPDATE work_locations SET project_id=? WHERE project_id IS NULL').run(kamp)
+    const res = await request(app).get(`/api/shifts/project-mismatch?from=${HAFTA}&to=${HAFTA}`).set(auth())
+    expect(res.body.setup.unmapped_locations).toBe(0)
   })
 })
