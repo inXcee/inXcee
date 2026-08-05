@@ -6,6 +6,8 @@ import { formatDate } from '../shared.jsx'
 import {
   crossoverState, summarizeCrossover, crossoverDirections, CROSSOVER_STATE,
 } from '../logic/projectCrossover.js'
+import { exportCrossoverExcel } from '../logic/projectCrossoverExport.js'
+import { useToastStore } from '../../../shared/store/toastStore.js'
 
 // "Kadrosu FPU'da ama Kamp'ta çalışanlar" panosu.
 //
@@ -26,6 +28,21 @@ export default function ProjectCrossoverBoard({ from, to, onPersonClick }) {
   const kisiler = useMemo(() => summarizeCrossover(data?.rows), [data])
   const yonler = useMemo(() => crossoverDirections(data?.rows), [data])
   const eslenmeyen = data?.setup?.unmapped_locations || 0
+  const [indiriliyor, setIndiriliyor] = useState(false)
+
+  const indir = async () => {
+    if (indiriliyor) return
+    setIndiriliyor(true)
+    try {
+      await exportCrossoverExcel({ from, to, payload: data })
+    } catch (e) {
+      useToastStore.getState().addToast(
+        e.response?.data?.error || 'Çapraz çalışma dökümü indirilemedi', 'error',
+      )
+    } finally {
+      setIndiriliyor(false)
+    }
+  }
 
   return (
     <div style={{
@@ -113,6 +130,13 @@ export default function ProjectCrossoverBoard({ from, to, onPersonClick }) {
                 </div>
               )}
 
+              <div style={{ marginBottom: 8 }}>
+                <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}
+                  disabled={indiriliyor} onClick={indir}
+                  title="Kişi özeti, yön kırılımı ve gün gün döküm — projeler arası maliyet aktarımı için">
+                  {indiriliyor ? 'Hazırlanıyor…' : '📊 Excel dökümü'}
+                </button>
+              </div>
               <div style={{ overflowX: 'auto' }}>
                 <table className="data-table" style={{ fontSize: 11 }}>
                   <thead>
