@@ -242,3 +242,45 @@ describe('Çalışma noktası — proje eşlemesi', () => {
       .set(auth()).send({ project_id: fpuId })
   })
 })
+
+// SQLite'ta CASE/COALESCE ifadelerinin affinity'si YOKTUR: sütun tamsayı,
+// HTTP'den gelen dept_id ise metin ('4'). Düz sütun karşılaştırmasında SQLite
+// metni sayıya çevirir, ifadede çevirmez -> filtre sessizce HİÇ eşleşmez.
+describe('Departman filtresi metin parametreyle çalışır', () => {
+  const AY = '2026-09'
+  let deptId
+
+  it('hazırlık: personele departman ata', async () => {
+    const db = getDB()
+    deptId = db.prepare('SELECT id FROM departments ORDER BY id LIMIT 1').get().id
+    db.prepare('UPDATE staff SET department_id=? WHERE id IN (?,?)').run(deptId, fpuStaff, kampStaff)
+    expect(deptId).toBeTruthy()
+  })
+
+  it('puantaj departmana göre süzülür', async () => {
+    const res = await request(app).get(`/api/shifts/puantaj?month=${AY}&dept_id=${deptId}`).set(auth())
+    expect(res.status).toBe(200)
+    const idler = (res.body.rows || res.body).map(r => r.id)
+    expect(idler).toContain(fpuStaff)
+  })
+
+  it('puantaj takvimi departmana göre süzülür', async () => {
+    const res = await request(app).get(`/api/shifts/puantaj/days?month=${AY}&dept_id=${deptId}`).set(auth())
+    expect(res.status).toBe(200)
+    expect(Object.keys(res.body.days).length).toBeGreaterThan(0)
+  })
+
+  it('vardiya çizelgesi departmana göre süzülür', async () => {
+    const res = await request(app).get(`/api/shifts/schedule?week=${HAFTA}&dept_id=${deptId}`).set(auth())
+    expect(res.status).toBe(200)
+    expect(res.body.length).toBeGreaterThan(0)
+  })
+
+  it('departman ve proje filtresi birlikte çalışır', async () => {
+    const res = await request(app)
+      .get(`/api/shifts/puantaj?month=${AY}&dept_id=${deptId}&project_id=${fpuId}`).set(auth())
+    const idler = (res.body.rows || res.body).map(r => r.id)
+    expect(idler).toContain(fpuStaff)
+    expect(idler).not.toContain(kampStaff)
+  })
+})

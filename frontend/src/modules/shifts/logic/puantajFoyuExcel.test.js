@@ -241,3 +241,52 @@ describe('puantajFoyuExcel workbook builder', () => {
     expect(buffer.byteLength).toBeGreaterThan(5000)
   })
 })
+
+// Şikâyet: imzaya giden cetvelde neredeyse her hücrede kırmızı üçgen çıkıyordu.
+// Not artık yalnız açıklama isteyen istisnalara yazılır.
+describe('Föy hücre notları — yalnız istisnalar', () => {
+  function gunHucreleri(ws) {
+    const bulunan = []
+    ws.eachRow((row, rowNo) => {
+      if (rowNo < 4) return
+      row.eachCell({ includeEmpty: false }, (cell, colNo) => {
+        if (colNo > 3 && colNo <= 3 + 31) bulunan.push({ rowNo, colNo, note: cell.note })
+      })
+    })
+    return bulunan
+  }
+
+  it('çalışılan / izinli / tatil günlerine not yazmaz', () => {
+    const { workbook } = buildSampleWorkbook()
+    const ws = workbook.getWorksheet('Puantaj')
+    const notlu = gunHucreleri(ws).filter(c => c.note)
+    // Örnek veride yalnız devamsız ve planlı günler var; hepsi istisna.
+    notlu.forEach(c => {
+      expect(String(c.note)).toMatch(/Devamsız|Planlı|nedeni girilmemiş/)
+    })
+  })
+
+  it('devamsız ve planlı günler işaretli kalır', () => {
+    const { workbook } = buildSampleWorkbook()
+    const ws = workbook.getWorksheet('Puantaj')
+    const notlar = gunHucreleri(ws).filter(c => c.note).map(c => String(c.note))
+    expect(notlar.some(n => n.includes('Devamsız'))).toBe(true)
+    expect(notlar.some(n => n.includes('Planlı'))).toBe(true)
+  })
+
+  it('çalışılan günün vardiya/nokta bilgisi hücre notuna girmez', () => {
+    const { workbook } = buildSampleWorkbook()
+    const ws = workbook.getWorksheet('Puantaj')
+    const notlar = gunHucreleri(ws).filter(c => c.note).map(c => String(c.note))
+    expect(notlar.some(n => n.includes('OTC Lokal'))).toBe(false)
+    expect(notlar.some(n => n.includes('Nokta:'))).toBe(false)
+    expect(notlar.some(n => n.includes('FM:'))).toBe(false)
+  })
+
+  it('istisna özeti başlıkta görünür', () => {
+    const { workbook } = buildSampleWorkbook()
+    const ws = workbook.getWorksheet('Puantaj')
+    const altBaslik = String(ws.getRow(2).getCell(1).value || '')
+    expect(altBaslik).toMatch(/devamsız|Açıklama gerektiren gün yok/)
+  })
+})

@@ -1,4 +1,5 @@
 import { buildFoyuRow, buildFoyuCodeIndex, buildFoyuLegend, FOYU_TOTAL_COLUMNS } from './puantajFoyu.js'
+import { foyuCellNote, countFoyuNotes } from './puantajFoyuNote.js'
 import { codeHex } from './shiftColors.js'
 import {
   COLORS,
@@ -302,15 +303,11 @@ function addDataRows(ws, rows, context) {
         } else if (new Date(y, m - 1, dayNo).getDay() === 0) {
           cell.fill = fill('FDF3E0')
         }
-        const noteParts = [
-          dayCell?.date,
-          dayCell?.status ? (STATUS_LABELS[dayCell.status] || dayCell.status) : '',
-          formatShiftCell(dayCell),
-          dayCell?.workLocationName ? `Nokta: ${dayCell.workLocationName}` : '',
-          dayCell?.overtimeHours ? `FM: ${dayCell.overtimeHours}s` : '',
-          dayCell?.absentReason ? `Neden: ${dayCell.absentReason}` : '',
-        ].filter(Boolean)
-        if (noteParts.length > 1) cell.note = noteParts.join('\n')
+        // Not = Excel'de hücre köşesinde kırmızı üçgen. Yalnızca açıklama
+        // isteyen istisnalara yazılır; vardiya/nokta/FM dökümünün tamamı zaten
+        // VARDİYA DETAY sayfasında satır satır duruyor.
+        const istisnaNotu = foyuCellNote(dayCell)
+        if (istisnaNotu) cell.note = `${dayCell?.date || ''}\n${istisnaNotu}`.trim()
       } else if (colNo >= totalColStart) {
         cell.font = { size: 8, bold: true }
         cell.numFmt = FOYU_TOTAL_COLUMNS[colNo - totalColStart]?.key === 'fmHours' ? '#,##0.0' : '#,##0'
@@ -393,7 +390,13 @@ function addFoyuSheet(workbook, sheetName, rows, context, tabHex = COLORS.purple
     views: [{ state: 'frozen', xSplit: 3, ySplit: 3, showGridLines: false }],
   })
   setupSheet(ws, tabHex)
-  setupTitle(ws, `${companyName} - AYLIK PUANTAJ CETVELİ`, `Dönem: ${monthLabel}   ·   Departman: ${deptName}   ·   ${rows.length} personel`, lastCol)
+  // İstisnalar hücre hücre kırmızı üçgen yerine tek satırda başlıkta duyurulur;
+  // hangi günler olduğu VARDİYA DETAY ve GÜNLÜK KAPANIŞ sayfalarında.
+  const istisna = countFoyuNotes(rows)
+  const istisnaMetni = istisna.total
+    ? `   ·   ${istisna.absent} devamsız${istisna.missingReason ? ` (${istisna.missingReason} nedensiz)` : ''}${istisna.planned ? `, ${istisna.planned} planlı gün açık` : ''}`
+    : '   ·   Açıklama gerektiren gün yok'
+  setupTitle(ws, `${companyName} - AYLIK PUANTAJ CETVELİ`, `Dönem: ${monthLabel}   ·   Departman: ${deptName}   ·   ${rows.length} personel${istisnaMetni}`, lastCol)
 
   const sheetContext = { ...context, totalColStart, lastCol }
   addHeaderRow(ws, sheetContext)

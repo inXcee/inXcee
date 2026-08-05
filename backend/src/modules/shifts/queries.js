@@ -167,8 +167,8 @@ export function getStaffList(filters = {}) {
   // 'none' = kadrosu atanmamis olanlar; sayisal id = o proje.
   if (filters.project_id === 'none') { query += ' AND s.project_id IS NULL' }
   else if (filters.project_id) { query += ' AND s.project_id = ?'; params.push(Number(filters.project_id)) }
-  if (filters.dept_id) { query += ` AND ${CURRENT_DEPARTMENT_SQL} = ?`; params.push(filters.dept_id) }
-  if (filters.role_id) { query += ` AND ${CURRENT_ROLE_SQL} = ?`; params.push(filters.role_id) }
+  if (filters.dept_id) { query += ` AND ${CURRENT_DEPARTMENT_SQL} = ?`; params.push(idParam(filters.dept_id)) }
+  if (filters.role_id) { query += ` AND ${CURRENT_ROLE_SQL} = ?`; params.push(idParam(filters.role_id)) }
   if (filters.is_active !== undefined) { query += ' AND s.is_active = ?'; params.push(filters.is_active) }
   if (filters.gender) { query += ' AND s.gender = ?'; params.push(filters.gender) }
   if (filters.work_location_id) { query += ' AND sa.work_location_id = ?'; params.push(filters.work_location_id) }
@@ -516,7 +516,7 @@ export function getSchedule(weekStart, weekEnd, deptId, projectId = null) {
   else if (projectId) { query += ' AND s.project_id = ?'; params.push(Number(projectId)) }
   if (deptId) {
     query += ' AND COALESCE(ss.dept_id, s.department_id) = ?'
-    params.push(deptId)
+    params.push(idParam(deptId))
   }
   query += ' ORDER BY d.id, s.full_name, ss.work_date'
   const rows = db.prepare(query).all(...params)
@@ -540,7 +540,7 @@ export function getSchedule(weekStart, weekEnd, deptId, projectId = null) {
   const segmentParams = [weekStart, weekEnd]
   if (deptId) {
     segmentQuery += ' AND ss.dept_id = ?'
-    segmentParams.push(deptId)
+    segmentParams.push(idParam(deptId))
   }
   segmentQuery += ' ORDER BY seg.schedule_id, seg.sequence_no, seg.id'
   const bySchedule = new Map()
@@ -923,7 +923,7 @@ export function getStaffWithShiftStatus(date, deptId) {
   const params = [date, date]
   if (deptId) {
     query += ' AND s.department_id = ?'
-    params.push(deptId)
+    params.push(idParam(deptId))
   }
   query += ' ORDER BY d.id, s.full_name'
   return db.prepare(query).all(...params)
@@ -1059,7 +1059,7 @@ export function getLeaveRequests(filters) {
   `
   const params = []
   if (filters.status) { query += ' AND lr.status=?'; params.push(filters.status) }
-  if (filters.dept_id) { query += ' AND s.department_id=?'; params.push(filters.dept_id) }
+  if (filters.dept_id) { query += ' AND s.department_id=?'; params.push(idParam(filters.dept_id)) }
   if (filters.staff_id) { query += ' AND lr.staff_id=?'; params.push(filters.staff_id) }
   if (filters.leave_type) { query += ' AND lr.leave_type=?'; params.push(filters.leave_type) }
   query += ' ORDER BY lr.created_at DESC LIMIT 200'
@@ -1172,7 +1172,7 @@ export function getOvertimeRecords(filters) {
     WHERE 1=1
   `
   const params = []
-  if (filters.dept_id) { query += ' AND s.department_id=?'; params.push(filters.dept_id) }
+  if (filters.dept_id) { query += ' AND s.department_id=?'; params.push(idParam(filters.dept_id)) }
   if (filters.month) { query += " AND strftime('%Y-%m', ot.work_date)=?"; params.push(filters.month) }
   if (filters.staff_id) { query += ' AND ot.staff_id=?'; params.push(filters.staff_id) }
   query += ' ORDER BY ot.work_date DESC LIMIT 200'
@@ -1291,7 +1291,7 @@ export function getOvertimeRequests(filters = {}) {
   if (filters.status) { sql += ' AND otr.status=?'; params.push(filters.status) }
   if (filters.month) { sql += " AND strftime('%Y-%m', otr.work_date)=?"; params.push(filters.month) }
   if (filters.staff_id) { sql += ' AND otr.staff_id=?'; params.push(filters.staff_id) }
-  if (filters.dept_id) { sql += ' AND s.department_id=?'; params.push(filters.dept_id) }
+  if (filters.dept_id) { sql += ' AND s.department_id=?'; params.push(idParam(filters.dept_id)) }
   sql += ' ORDER BY otr.work_date DESC, otr.id DESC LIMIT 300'
   const rows = db.prepare(sql).all(...params)
   if (!rows.length) return rows
@@ -1408,7 +1408,7 @@ export function getAttendanceLogs(filters) {
   `
   const params = []
   if (filters.date) { query += " AND date(al.check_in_at)=?"; params.push(filters.date) }
-  if (filters.dept_id) { query += ' AND s.department_id=?'; params.push(filters.dept_id) }
+  if (filters.dept_id) { query += ' AND s.department_id=?'; params.push(idParam(filters.dept_id)) }
   query += ' ORDER BY al.check_in_at DESC LIMIT 200'
   return db.prepare(query).all(...params)
 }
@@ -1466,7 +1466,7 @@ export function listAttendanceEvents(filters = {}) {
   if (filters.from) { sql += ' AND ae.work_date >= ?'; params.push(filters.from) }
   if (filters.to) { sql += ' AND ae.work_date <= ?'; params.push(filters.to) }
   if (filters.staff_id) { sql += ' AND ae.staff_id = ?'; params.push(filters.staff_id) }
-  if (filters.dept_id) { sql += ' AND s.department_id = ?'; params.push(filters.dept_id) }
+  if (filters.dept_id) { sql += ' AND s.department_id = ?'; params.push(idParam(filters.dept_id)) }
   if (filters.source) { sql += ' AND ae.source = ?'; params.push(filters.source) }
   if (filters.device_id) { sql += ' AND ae.device_id = ?'; params.push(filters.device_id) }
   if (filters.match_status) { sql += ' AND ae.match_status = ?'; params.push(filters.match_status) }
@@ -1647,7 +1647,7 @@ export function listAttendanceExceptions(filters = {}) {
   if (filters.from) { sql += ' AND ax.work_date >= ?'; params.push(filters.from) }
   if (filters.to) { sql += ' AND ax.work_date <= ?'; params.push(filters.to) }
   if (filters.staff_id) { sql += ' AND ax.staff_id = ?'; params.push(filters.staff_id) }
-  if (filters.dept_id) { sql += ' AND s.department_id = ?'; params.push(filters.dept_id) }
+  if (filters.dept_id) { sql += ' AND s.department_id = ?'; params.push(idParam(filters.dept_id)) }
   if (filters.exception_type) { sql += ' AND ax.exception_type = ?'; params.push(filters.exception_type) }
   sql += ` ORDER BY CASE ax.severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
     ax.work_date DESC, ax.updated_at DESC LIMIT ?`
@@ -1699,7 +1699,7 @@ export function getAttendanceMonthSummary(monthStart, monthEnd, deptId) {
     WHERE 1 = 1
   `
   const params = [monthStart, monthEnd, monthStart, monthEnd]
-  if (deptId) { sql += ' AND s.department_id = ?'; params.push(deptId) }
+  if (deptId) { sql += ' AND s.department_id = ?'; params.push(idParam(deptId)) }
   sql += ' GROUP BY s.id'
   return db.prepare(sql).all(...params)
 }
@@ -1787,7 +1787,7 @@ export function getOperationsDashboardData({ date, monthStart, monthEnd, deptId 
   let unassignedDeptSql = ''
   if (deptId) {
     unassignedDeptSql = ' AND COALESCE(sa.department_id, s.department_id) = ?'
-    unassignedParams.push(deptId)
+    unassignedParams.push(idParam(deptId))
   }
   const unassignedStaff = db.prepare(`
     WITH event_summary AS (
@@ -1831,7 +1831,7 @@ export function getOperationsDashboardData({ date, monthStart, monthEnd, deptId 
   let unplannedEventDeptSql = ''
   if (deptId) {
     unplannedEventDeptSql = ' AND s.department_id = ?'
-    unplannedEventParams.push(deptId)
+    unplannedEventParams.push(idParam(deptId))
   }
   const unplannedEvents = db.prepare(`
     SELECT ae.id, ae.staff_id, ae.event_type, ae.occurred_at, ae.source,
@@ -1854,7 +1854,7 @@ export function getOperationsDashboardData({ date, monthStart, monthEnd, deptId 
   let trendDeptSql = ''
   if (deptId) {
     trendDeptSql = ' AND COALESCE(ss.dept_id, s.department_id) = ?'
-    trendParams.push(deptId)
+    trendParams.push(idParam(deptId))
   }
   const trends = db.prepare(`
     WITH schedule_counts AS (
@@ -1882,7 +1882,7 @@ export function getOperationsDashboardData({ date, monthStart, monthEnd, deptId 
   let breakdownDeptSql = ''
   if (deptId) {
     breakdownDeptSql = ' AND COALESCE(ss.dept_id, s.department_id) = ?'
-    breakdownParams.push(deptId)
+    breakdownParams.push(idParam(deptId))
   }
   const breakdowns = db.prepare(`
     WITH assignments AS (
@@ -1927,7 +1927,7 @@ export function getOperationsDashboardData({ date, monthStart, monthEnd, deptId 
   let streakDeptSql = ''
   if (deptId) {
     streakDeptSql = ' AND COALESCE(ss.dept_id, s.department_id) = ?'
-    streakParams.push(deptId)
+    streakParams.push(idParam(deptId))
   }
   const streakRows = db.prepare(`
     SELECT ss.staff_id, s.full_name, ss.work_date, ss.status,
@@ -1946,7 +1946,7 @@ export function getOperationsDashboardData({ date, monthStart, monthEnd, deptId 
   let endingLeaveDeptSql = ''
   if (deptId) {
     endingLeaveDeptSql = ' AND s.department_id = ?'
-    endingLeaveParams.push(deptId)
+    endingLeaveParams.push(idParam(deptId))
   }
   const endingLeaves = db.prepare(`
     SELECT lr.id, lr.staff_id, s.full_name, s.department_id AS dept_id,
@@ -1963,7 +1963,7 @@ export function getOperationsDashboardData({ date, monthStart, monthEnd, deptId 
   let balanceDeptSql = ''
   if (deptId) {
     balanceDeptSql = ' AND s.department_id = ?'
-    balanceParams.push(deptId)
+    balanceParams.push(idParam(deptId))
   }
   const lowLeaveBalances = db.prepare(`
     SELECT s.id AS staff_id, s.full_name, s.department_id AS dept_id,
@@ -1980,7 +1980,7 @@ export function getOperationsDashboardData({ date, monthStart, monthEnd, deptId 
 
   const activeStaffParams = [date, date]
   let activeStaffSql = ''
-  if (deptId) { activeStaffSql = ' AND COALESCE(sa.department_id, s.department_id)=?'; activeStaffParams.push(deptId) }
+  if (deptId) { activeStaffSql = ' AND COALESCE(sa.department_id, s.department_id)=?'; activeStaffParams.push(idParam(deptId)) }
   const activeStaff = db.prepare(`
     SELECT COUNT(*) AS count
     FROM staff s
@@ -2015,7 +2015,7 @@ export function getPuantajClosingPackageData({ monthStart, monthEnd, deptId = nu
   const db = getDB()
   const leavesParams = [monthEnd, monthStart]
   let leavesDeptSql = ''
-  if (deptId) { leavesDeptSql = ' AND s.department_id=?'; leavesParams.push(deptId) }
+  if (deptId) { leavesDeptSql = ' AND s.department_id=?'; leavesParams.push(idParam(deptId)) }
   const leaveRequests = db.prepare(`
     SELECT lr.*, s.full_name, s.tc_no, s.department_id AS dept_id, d.name AS dept_name,
       reviewer.full_name AS reviewer_name,
@@ -2030,7 +2030,7 @@ export function getPuantajClosingPackageData({ monthStart, monthEnd, deptId = nu
 
   const overtimeParams = [monthStart, monthEnd]
   let overtimeDeptSql = ''
-  if (deptId) { overtimeDeptSql = ' AND s.department_id=?'; overtimeParams.push(deptId) }
+  if (deptId) { overtimeDeptSql = ' AND s.department_id=?'; overtimeParams.push(idParam(deptId)) }
   const overtimeRequests = db.prepare(`
     SELECT otr.*, s.full_name, s.tc_no, s.department_id AS dept_id, d.name AS dept_name,
       reviewer.full_name AS reviewer_name,
@@ -2045,7 +2045,7 @@ export function getPuantajClosingPackageData({ monthStart, monthEnd, deptId = nu
 
   const eventParams = [monthStart, monthEnd]
   let eventDeptSql = ''
-  if (deptId) { eventDeptSql = ' AND s.department_id=?'; eventParams.push(deptId) }
+  if (deptId) { eventDeptSql = ' AND s.department_id=?'; eventParams.push(idParam(deptId)) }
   const attendanceEvents = db.prepare(`
     SELECT ae.id, ae.work_date, ae.occurred_at, ae.event_type, ae.source, ae.device_id,
       ae.match_status, ae.match_detail, ae.staff_id, s.full_name,
@@ -2060,7 +2060,7 @@ export function getPuantajClosingPackageData({ monthStart, monthEnd, deptId = nu
 
   const exceptionParams = [monthStart, monthEnd]
   let exceptionDeptSql = ''
-  if (deptId) { exceptionDeptSql = ' AND s.department_id=?'; exceptionParams.push(deptId) }
+  if (deptId) { exceptionDeptSql = ' AND s.department_id=?'; exceptionParams.push(idParam(deptId)) }
   const attendanceExceptions = db.prepare(`
     SELECT ax.*, s.full_name, s.department_id AS dept_id, d.name AS dept_name,
       resolver.full_name AS resolved_by_name
@@ -2076,7 +2076,7 @@ export function getPuantajClosingPackageData({ monthStart, monthEnd, deptId = nu
   let documentDeptSql = ''
   if (deptId) {
     documentDeptSql = ' AND COALESCE(ls.department_id, os.department_id, ss_staff.department_id)=?'
-    documentParams.push(deptId)
+    documentParams.push(idParam(deptId))
   }
   const documents = db.prepare(`
     SELECT ld.id, ld.file_name, ld.mime_type, ld.file_size, ld.file_url, ld.created_at,
@@ -3890,7 +3890,7 @@ export function getPuantajDayRows(monthStart, monthEnd, deptId, projectId = null
   const params = [monthStart, monthEnd]
   if (deptId) {
     query += ' AND COALESCE(ss.dept_id, CASE WHEN day_sa.id IS NOT NULL THEN day_sa.department_id ELSE s.department_id END) = ?'
-    params.push(deptId)
+    params.push(idParam(deptId))
   }
   const projeGun = projectFilterSql(projectId)
   query += projeGun.sql
@@ -3938,6 +3938,18 @@ export function puantajUnitsSubquery() {
     ))
     WHERE ss.work_date BETWEEN ? AND ?
     GROUP BY ss.staff_id`
+}
+
+// SQLite'ta CASE/COALESCE gibi ifadelerin sütun affinity'si YOKTUR. HTTP'den
+// gelen dept_id/role_id birer metindir ('4'); düz sütun karşılaştırmasında
+// SQLite metni sayıya çevirir, ifadede çevirmez -> filtre sessizce HİÇ
+// eşleşmez, kullanıcı "seçtim ama kimse gelmiyor" görür. Bu yüzden sayısal
+// görünen id'ler bağlanmadan önce sayıya çevrilir. Sayısal olmayan değerler
+// (ör. 'none' gibi sentinel'lar) olduğu gibi bırakılır.
+export function idParam(value) {
+  if (value === null || value === undefined || value === '') return value
+  const n = Number(value)
+  return Number.isFinite(n) ? n : value
 }
 
 // Proje (kadro) süzme kuralı — TEK NOKTA. 'none' = kadrosu atanmamış.
@@ -4003,7 +4015,7 @@ export function getPuantaj(monthStart, monthEnd, deptId, projectId = null) {
   const params = [monthEnd, monthEnd, monthStart, monthEnd, monthStart, monthEnd]
   if (deptId) {
     query += ' AND CASE WHEN period_sa.id IS NOT NULL THEN period_sa.department_id ELSE COALESCE(sch.snapshot_dept_id, s.department_id) END = ?'
-    params.push(deptId)
+    params.push(idParam(deptId))
   }
   const proje = projectFilterSql(projectId)
   query += proje.sql
