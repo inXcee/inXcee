@@ -1,5 +1,6 @@
 // Gün detayı çıktıları: Excel (exceljs lazy) ve yazdırma görünümü (tarayıcı → PDF).
 // Satır üretimi dayDetail.js'te; burada yalnız dosya/sayfa kurulumu.
+import { openPrintWindow } from '../../../shared/logic/printWindow.js'
 import { buildShiftMatrix, dayDetailRows, dayDetailSummary } from './dayDetail.js'
 
 const GROUP_LABEL = { dept: 'Departman', site: 'Site', location: 'Çalışma noktası' }
@@ -168,11 +169,5 @@ export function buildDayDetailHtml(detail) {
 }
 
 export function openDayDetailPrint(detail) {
-  const win = window.open('', '_blank', 'width=1024,height=800')
-  if (!win) throw new Error('Yazdırma penceresi açılamadı')
-  win.document.open()
-  win.document.write(buildDayDetailHtml(detail))
-  win.document.close()
-  win.focus()
-  window.setTimeout(() => win.print(), 400)
+  openPrintWindow(buildDayDetailHtml(detail), { width: 1024, height: 800 })
 }

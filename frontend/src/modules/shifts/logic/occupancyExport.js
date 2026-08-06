@@ -1,6 +1,7 @@
 // "ŞU AN" canlı lokasyon doluluğu snapshot'ı — PDF/yazdır ve Excel çıktısı.
 // Saf builder'lar (buildOccupancyPrintHtml / buildOccupancyWorkbook) test edilebilir;
 // openOccupancyPrintWindow / exportOccupancyExcel ince tarayıcı sarmalayıcılarıdır.
+import { openPrintWindow } from '../../../shared/logic/printWindow.js'
 import { saveWorkbook } from '../../../shared/logic/excelKit.js'
 
 function escapeHtml(value) {
@@ -95,13 +96,7 @@ export function buildOccupancyPrintHtml({ date, time, rows = [] } = {}) {
 
 export function openOccupancyPrintWindow(payload) {
   const html = buildOccupancyPrintHtml(payload)
-  const win = window.open('', '_blank', 'width=1024,height=800')
-  if (!win) throw new Error('Yazdirma penceresi acilamadi')
-  win.document.open()
-  win.document.write(html)
-  win.document.close()
-  win.focus()
-  window.setTimeout(() => win.print(), 350)
+  openPrintWindow(html, { width: 1024, height: 800 })
 }
 
 export function occupancyFilename(date, time, ext) {

@@ -1,3 +1,4 @@
+import { openPrintWindow } from '../../../shared/logic/printWindow.js'
 import {
   formatDate,
   leaveTypeLabel,
@@ -333,6 +334,16 @@ function buildStyles(opts) {
     .dept-block.split { page-break-before: always; break-before: page; }
     .dept-block.split:first-of-type { page-break-before: auto; break-before: auto; }
     .footer { margin-top: 12px; color: #64748b; font-size: 9px; display: flex; justify-content: space-between; gap: 12px; }
+    /* --- Yazdırma sayfa düzeni ---
+       Tarayıcı, söylenmedikçe tablo başlığını sonraki sayfaya taşımaz: uzun
+       çizelgenin 2. sayfasında hangi sütunun hangi gün olduğu kaybolur.
+       Satırlar da sayfa sınırında ortadan ikiye bölünür. */
+    thead { display: table-header-group; }
+    tfoot { display: table-footer-group; }
+    tr { break-inside: avoid; page-break-inside: avoid; }
+    .dept-row { break-after: avoid; page-break-after: avoid; }
+    .legend, .signatures, .note, .metrics, .top { break-inside: avoid; page-break-inside: avoid; }
+    .legend-item, .signature, .metric { break-inside: avoid; page-break-inside: avoid; }
     @page { size: ${pageSize} landscape; margin: 8mm; }
     @media print {
       body { background: #fff; }
@@ -537,13 +548,7 @@ export function buildOutputCenterHtml({
 
 export function openOutputCenterPrintWindow(payload) {
   const html = buildOutputCenterHtml(payload)
-  const win = window.open('', '_blank', 'width=1280,height=900')
-  if (!win) throw new Error('Yazdirma penceresi acilamadi')
-  win.document.open()
-  win.document.write(html)
-  win.document.close()
-  win.focus()
-  window.setTimeout(() => win.print(), 350)
+  openPrintWindow(html, { width: 1280, height: 900 })
 }
 
 export function scheduleShareFilename(weekStart, ext, revision = '') {
@@ -554,13 +559,7 @@ export function scheduleShareFilename(weekStart, ext, revision = '') {
 
 export function openSchedulePrintWindow(payload) {
   const html = buildScheduleShareHtml(payload)
-  const win = window.open('', '_blank', 'width=1280,height=900')
-  if (!win) throw new Error('Yazdirma penceresi acilamadi')
-  win.document.open()
-  win.document.write(html)
-  win.document.close()
-  win.focus()
-  window.setTimeout(() => win.print(), 350)
+  openPrintWindow(html, { width: 1280, height: 900 })
 }
 
 // ── Native canvas render (foreignObject taint sorunu YOK) ───────────────────

@@ -232,3 +232,35 @@ describe('noktasız vardiya yemekhaneye sayılmaz', () => {
     expect(areaRows.find(([name]) => name === 'İşçi Lokali')?.[1]).toBe(1)
   })
 })
+
+// Yazdırma kalitesi: kullanıcı çıktıdan verim alamadığını söyledi. Uzun bir
+// çizelge birden fazla sayfaya taşınca tarayıcı, tekrar etmesi SÖYLENMEDİKÇE
+// başlık satırını taşımaz — 2. sayfada hangi sütunun hangi gün olduğu belli
+// olmaz. Satırlar da sayfa sınırında ikiye bölünür.
+describe('Yazdırma sayfa düzeni', () => {
+  const css = () => buildScheduleShareHtml(payload())
+
+  it('tablo başlığı her sayfada tekrarlar', () => {
+    expect(css()).toMatch(/thead\s*\{[^}]*display:\s*table-header-group/)
+  })
+
+  it('personel satırı sayfa sınırında bölünmez', () => {
+    expect(css()).toMatch(/tr\s*\{[^}]*break-inside:\s*avoid/)
+  })
+
+  it('departman başlığı sayfanın dibinde tek başına kalmaz', () => {
+    expect(css()).toMatch(/\.dept-row[^{]*\{[^}]*break-after:\s*avoid/)
+  })
+
+  it('lejant, imza ve not blokları ikiye bölünmez', () => {
+    const html = css()
+    expect(html).toMatch(/\.legend[^{]*\{[^}]*break-inside:\s*avoid/)
+    expect(html).toMatch(/\.signatures[^{]*\{[^}]*break-inside:\s*avoid/)
+    expect(html).toMatch(/\.note[^{]*\{[^}]*break-inside:\s*avoid/)
+  })
+
+  // Renkli hücreler yazıcıda beyaz çıkmasın.
+  it('arka plan renkleri baskıya zorlanır', () => {
+    expect(css()).toMatch(/print-color-adjust:\s*exact/)
+  })
+})
