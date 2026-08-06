@@ -882,7 +882,7 @@ shiftsRouter.get('/puantaj/closing-package', ...managerOrSupervisor, (req, res) 
   try {
     const { month, dept_id } = req.query
     if (!month) return res.status(400).json({ error: 'month parametresi YYYY-MM formatinda gereklidir' })
-    res.json(puantajClosingPackageService(month, dept_id || null))
+    res.json(puantajClosingPackageService(month, dept_id || null, req.query.project_id || null))
   } catch (e) {
     res.status(e.statusCode || 400).json({ error: e.message })
   }

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
+import { useProjects, NO_PROJECT } from '../../../shared/hooks/useProjects.js'
 import { useAuthStore } from '../../../shared/store/authStore.js'
 import {
   toastErr, toastOk, LEAVE_TYPES, STATUS_MAP, formatDate, deptColor,
@@ -27,7 +28,8 @@ export default function LeaveTab({ departments, onPersonClick }) {
   const qc = useQueryClient()
   const user = useAuthStore(state => state.user)
   const canApprove = ['campus_manager', 'shift_supervisor'].includes(user?.role)
-  const [filters, setFilters] = useState({ status: '', dept_id: '', leave_type: '' })
+  const [filters, setFilters] = useState({ status: '', dept_id: '', project_id: '', leave_type: '' })
+  const { projects } = useProjects()
   const [newLeave, setNewLeave] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
   const [review, setReview] = useState(null)
@@ -117,6 +119,13 @@ export default function LeaveTab({ departments, onPersonClick }) {
             {status === '' ? 'Tümü' : STATUS_MAP[status]?.label}
           </button>
         ))}
+        <select className="form-select" value={filters.project_id} aria-label="İzin projesi"
+          onChange={event => setFilters(previous => ({ ...previous, project_id: event.target.value }))}
+          style={{ width: 'auto', minWidth: '140px', padding: '5px 11px', fontSize: '11px' }}>
+          <option value="">Tüm Projeler</option>
+          {projects.map(pr => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
+          <option value={NO_PROJECT}>Kadrosu belirsiz</option>
+        </select>
         <select className="form-select" value={filters.dept_id}
           onChange={event => setFilters(previous => ({ ...previous, dept_id: event.target.value }))}
           style={{ width: 'auto', minWidth: '140px', padding: '5px 11px', fontSize: '11px' }}>

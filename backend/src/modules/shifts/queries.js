@@ -1051,13 +1051,18 @@ export function getLeaveRequests(filters) {
   const db = getDB()
   let query = `
     SELECT lr.*, s.full_name, s.gender, s.position,
-      d.name as dept_name, d.color_class as dept_color
+      d.name as dept_name, d.color_class as dept_color,
+      s.project_id, pr.name as project_name, pr.code as project_code, pr.color_class as project_color
     FROM leave_requests lr
     JOIN staff s ON s.id = lr.staff_id
     LEFT JOIN departments d ON d.id = s.department_id
+    LEFT JOIN projects pr ON pr.id = s.project_id
     WHERE 1=1
   `
   const params = []
+  const izinProje = projectFilterSql(filters.project_id)
+  query += izinProje.sql
+  params.push(...izinProje.params)
   if (filters.status) { query += ' AND lr.status=?'; params.push(filters.status) }
   if (filters.dept_id) { query += ' AND s.department_id=?'; params.push(idParam(filters.dept_id)) }
   if (filters.staff_id) { query += ' AND lr.staff_id=?'; params.push(filters.staff_id) }
@@ -1165,13 +1170,18 @@ export function upsertOvertimeDay(staffId, workDate, hours, userId) {
 export function getOvertimeRecords(filters) {
   const db = getDB()
   let query = `
-    SELECT ot.*, s.full_name, s.gender, s.position, d.name as dept_name, d.color_class as dept_color
+    SELECT ot.*, s.full_name, s.gender, s.position, d.name as dept_name, d.color_class as dept_color,
+      s.project_id, pr.name as project_name, pr.code as project_code, pr.color_class as project_color
     FROM overtime_records ot
     JOIN staff s ON s.id = ot.staff_id
     LEFT JOIN departments d ON d.id = s.department_id
+    LEFT JOIN projects pr ON pr.id = s.project_id
     WHERE 1=1
   `
   const params = []
+  const mesaiProje = projectFilterSql(filters.project_id)
+  query += mesaiProje.sql
+  params.push(...mesaiProje.params)
   if (filters.dept_id) { query += ' AND s.department_id=?'; params.push(idParam(filters.dept_id)) }
   if (filters.month) { query += " AND strftime('%Y-%m', ot.work_date)=?"; params.push(filters.month) }
   if (filters.staff_id) { query += ' AND ot.staff_id=?'; params.push(filters.staff_id) }
@@ -1280,14 +1290,19 @@ export function getOvertimeRequests(filters = {}) {
   let sql = `
     SELECT otr.*, s.full_name, s.gender, s.position,
       d.name as dept_name, d.color_class as dept_color,
+      s.project_id, pr.name as project_name, pr.code as project_code, pr.color_class as project_color,
       reviewer.full_name as reviewer_name
     FROM overtime_requests otr
     JOIN staff s ON s.id=otr.staff_id
     LEFT JOIN departments d ON d.id=s.department_id
+    LEFT JOIN projects pr ON pr.id = s.project_id
     LEFT JOIN users reviewer ON reviewer.id=otr.reviewed_by
     WHERE 1=1
   `
   const params = []
+  const talepProje = projectFilterSql(filters.project_id)
+  sql += talepProje.sql
+  params.push(...talepProje.params)
   if (filters.status) { sql += ' AND otr.status=?'; params.push(filters.status) }
   if (filters.month) { sql += " AND strftime('%Y-%m', otr.work_date)=?"; params.push(filters.month) }
   if (filters.staff_id) { sql += ' AND otr.staff_id=?'; params.push(filters.staff_id) }
@@ -1630,12 +1645,14 @@ export function listAttendanceExceptions(filters = {}) {
   const db = getDB()
   let sql = `
     SELECT ax.*, s.full_name, d.name AS dept_name, d.color_class AS dept_color,
+      s.project_id, pr.name AS project_name, pr.code AS project_code,
       sd.name AS shift_name, sd.start_hour, sd.end_hour,
       adr.actual_check_in, adr.actual_check_out, adr.overtime_candidate_minutes,
       resolver.full_name AS resolved_by_name
     FROM attendance_exceptions ax
     LEFT JOIN staff s ON s.id = ax.staff_id
     LEFT JOIN departments d ON d.id = s.department_id
+    LEFT JOIN projects pr ON pr.id = s.project_id
     LEFT JOIN shift_schedule ss ON ss.id = ax.shift_schedule_id
     LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id
     LEFT JOIN attendance_daily_reconciliations adr ON adr.id = ax.reconciliation_id
@@ -1643,6 +1660,9 @@ export function listAttendanceExceptions(filters = {}) {
     WHERE 1 = 1
   `
   const params = []
+  const istisnaProje = projectFilterSql(filters.project_id)
+  sql += istisnaProje.sql
+  params.push(...istisnaProje.params)
   if (filters.status) { sql += ' AND ax.status = ?'; params.push(filters.status) }
   if (filters.from) { sql += ' AND ax.work_date >= ?'; params.push(filters.from) }
   if (filters.to) { sql += ' AND ax.work_date <= ?'; params.push(filters.to) }

@@ -2343,14 +2343,14 @@ export function operationsDashboardService({ date, month, deptId } = {}) {
   }
 }
 
-export function puantajClosingPackageService(month, deptId) {
+export function puantajClosingPackageService(month, deptId, projectId = null) {
   const { monthStart, monthEnd } = parsePuantajMonth(month)
   const parsedDeptId = deptId == null || deptId === '' ? null : Number(deptId)
   if (parsedDeptId != null && (!Number.isInteger(parsedDeptId) || parsedDeptId <= 0)) {
     throw Object.assign(new Error('dept_id sayisal olmali'), { statusCode: 400 })
   }
   const packageRows = getPuantajClosingPackageData({ monthStart, monthEnd, deptId: parsedDeptId })
-  const payroll = puantajService(month, parsedDeptId)
+  const payroll = puantajService(month, parsedDeptId, { projectId })
   return {
     period: month,
     generated_at: new Date().toISOString(),

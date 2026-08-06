@@ -315,3 +315,119 @@ describe('Çapraz çalışma — kurulum durumu', () => {
     expect(res.body.setup.unmapped_locations).toBe(0)
   })
 })
+
+// İzin ve mesai de iki proje ayrımına tabi: "FPU'nun bu ayki mesaisi ne" sorusu
+// puantaj kadar sık soruluyor.
+describe('İzin ve mesai proje filtresi', () => {
+  const AY = '2026-09'
+
+  it('hazırlık: iki projeye izin ve mesai kaydı', async () => {
+    const db = getDB()
+    const izin = db.prepare(
+      "INSERT INTO leave_requests(staff_id, leave_type, start_date, end_date, status, total_days) VALUES(?,'annual',?,?,'approved',3)",
+    )
+    izin.run(fpuStaff, `${AY}-10`, `${AY}-12`)
+    izin.run(kampStaff, `${AY}-10`, `${AY}-12`)
+    const mesai = db.prepare('INSERT INTO overtime_records(staff_id, work_date, hours) VALUES(?,?,?)')
+    mesai.run(fpuStaff, `${AY}-15`, 3)
+    mesai.run(kampStaff, `${AY}-15`, 5)
+    expect(db.prepare('SELECT COUNT(*) n FROM overtime_records').get().n).toBeGreaterThan(0)
+  })
+
+  it('izin listesi projeye göre süzülür', async () => {
+    const res = await request(app).get(`/api/shifts/leave?project_id=${fpuId}`).set(auth())
+    expect(res.status).toBe(200)
+    const idler = res.body.map(r => r.staff_id)
+    expect(idler).toContain(fpuStaff)
+    expect(idler).not.toContain(kampStaff)
+  })
+
+  it('mesai listesi projeye göre süzülür', async () => {
+    const res = await request(app).get(`/api/shifts/overtime?month=${AY}&project_id=${kampId}`).set(auth())
+    expect(res.status).toBe(200)
+    const idler = res.body.map(r => r.staff_id)
+    expect(idler).toContain(kampStaff)
+    expect(idler).not.toContain(fpuStaff)
+  })
+
+  it('kayıtlar proje adını taşır', async () => {
+    const res = await request(app).get(`/api/shifts/overtime?month=${AY}`).set(auth())
+    const kayit = res.body.find(r => r.staff_id === fpuStaff)
+    expect(kayit.project_name).toBe('FPU')
+  })
+
+  it('kadrosu belirsiz süzmesi çalışır', async () => {
+    const res = await request(app).get('/api/shifts/leave?project_id=none').set(auth())
+    expect(res.body.map(r => r.staff_id)).not.toContain(fpuStaff)
+  })
+})
+
+// Mesai SEKMESİ /overtime/requests ucunu okuyor, /overtime'ı değil. Filtre
+// yalnız birine eklenirse ekranda seçici çalışıyor görünür ama aynı satırlar
+// döner — "sessizce yok sayılan filtre", en yanıltıcı hâli.
+describe('Mesai TALEPLERİ proje filtresi', () => {
+  const AY = '2026-09'
+
+  it('hazırlık: iki projeye mesai talebi', async () => {
+    const db = getDB()
+    const t = db.prepare(
+      "INSERT INTO overtime_requests(staff_id, work_date, requested_hours, reason, compensation_type, status) VALUES(?,?,?,'Yogunluk','pay','pending')",
+    )
+    t.run(fpuStaff, `${AY}-20`, 3)
+    t.run(kampStaff, `${AY}-20`, 4)
+    expect(db.prepare('SELECT COUNT(*) n FROM overtime_requests').get().n).toBeGreaterThanOrEqual(2)
+  })
+
+  it('talep listesi projeye göre süzülür', async () => {
+    const res = await request(app).get(`/api/shifts/overtime/requests?month=${AY}&project_id=${fpuId}`).set(auth())
+    expect(res.status).toBe(200)
+    const idler = res.body.map(r => r.staff_id)
+    expect(idler).toContain(fpuStaff)
+    expect(idler).not.toContain(kampStaff)
+  })
+
+  it('talep kaydı proje adını taşır', async () => {
+    const res = await request(app).get(`/api/shifts/overtime/requests?month=${AY}`).set(auth())
+    expect(res.body.find(r => r.staff_id === kampStaff).project_name).toBe('Kamp Alanı')
+  })
+})
+
+// Puantaj ekranı devamsızlık istisnalarına da project_id gönderiyor; uç
+// desteklemezse proje seçilince istisna sayısı değişmez ve o proje temiz sanılır.
+describe('Devamsızlık istisnaları proje filtresi', () => {
+  const GUN = '2026-09-22'
+
+  it('hazırlık: iki projeye açık istisna', async () => {
+    const db = getDB()
+    const t = db.prepare(
+      "INSERT INTO attendance_exceptions(staff_id, work_date, exception_type, severity, status, message) VALUES(?,?,'missing_scan','warning','open','Okutma yok')",
+    )
+    t.run(fpuStaff, GUN)
+    t.run(kampStaff, GUN)
+    expect(db.prepare('SELECT COUNT(*) n FROM attendance_exceptions').get().n).toBeGreaterThanOrEqual(2)
+  })
+
+  it('istisna listesi projeye göre süzülür', async () => {
+    const res = await request(app)
+      .get(`/api/shifts/attendance/exceptions?from=${GUN}&to=${GUN}&project_id=${kampId}`).set(auth())
+    expect(res.status).toBe(200)
+    const idler = res.body.rows.map(r => r.staff_id)
+    expect(idler).toContain(kampStaff)
+    expect(idler).not.toContain(fpuStaff)
+  })
+})
+
+// İmzalık föy kapanış ekini de bu uçtan alıyor ve project_id gönderiyor.
+// Uç yok sayarsa FPU föyünün ekinde Kamp personelinin bordrosu çıkar.
+describe('Kapanış paketi proje filtresi', () => {
+  const AY = '2026-09'
+
+  it('bordro satırları projeye göre süzülür', async () => {
+    const res = await request(app)
+      .get(`/api/shifts/puantaj/closing-package?month=${AY}&project_id=${fpuId}`).set(auth())
+    expect(res.status).toBe(200)
+    const idler = (res.body.accounting || []).map(r => r.staff_id)
+    expect(idler).toContain(fpuStaff)
+    expect(idler).not.toContain(kampStaff)
+  })
+})

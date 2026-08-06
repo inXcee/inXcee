@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
+import { useProjects, NO_PROJECT } from '../../../shared/hooks/useProjects.js'
 import { useAuthStore } from '../../../shared/store/authStore.js'
 import { toastErr, toastOk, formatDate, deptColor, ModalOverlay, StaffSearch } from '../shared.jsx'
 
@@ -35,16 +36,19 @@ export default function OvertimeTab({ departments, onPersonClick }) {
   const today = new Date()
   const [month, setMonth] = useState(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`)
   const [deptFilter, setDeptFilter] = useState('')
+  const [projectFilter, setProjectFilter] = useState('')
+  const { projects } = useProjects()
   const [statusFilter, setStatusFilter] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
   const [review, setReview] = useState(null)
 
   const { data: requests = [] } = useQuery({
-    queryKey: ['overtime-requests', month, deptFilter, statusFilter],
+    queryKey: ['overtime-requests', month, deptFilter, statusFilter, projectFilter],
     queryFn: () => api.get('/shifts/overtime/requests', { params: {
       month,
       dept_id: deptFilter || undefined,
+      project_id: projectFilter || undefined,
       status: statusFilter || undefined,
     } }).then(response => response.data),
   })
@@ -134,6 +138,13 @@ export default function OvertimeTab({ departments, onPersonClick }) {
     <div className="fade-up">
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
         <input type="month" className="form-input" value={month} onChange={event => setMonth(event.target.value)} style={{ width: 'auto', padding: '5px 11px', fontSize: '12px' }} />
+        <select className="form-select" value={projectFilter} aria-label="Mesai projesi"
+          onChange={event => setProjectFilter(event.target.value)}
+          style={{ width: 'auto', minWidth: '140px', padding: '5px 11px', fontSize: '11px' }}>
+          <option value="">Tüm Projeler</option>
+          {projects.map(pr => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
+          <option value={NO_PROJECT}>Kadrosu belirsiz</option>
+        </select>
         <select className="form-select" value={deptFilter} onChange={event => setDeptFilter(event.target.value)} style={{ width: 'auto', minWidth: '140px', padding: '5px 11px', fontSize: '11px' }}>
           <option value="">Tüm Bölümler</option>
           {departments.map(department => <option key={department.id} value={department.id}>{department.name}</option>)}
