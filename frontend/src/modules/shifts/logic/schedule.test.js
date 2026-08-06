@@ -159,6 +159,12 @@ describe('parseQuickScheduleCode', () => {
     expect(parseQuickScheduleCode('acil', SHIFT_DEFS)).toEqual({ action: 'assign', shiftDefId: null, status: 'on_leave', leaveType: 'emergency' })
     expect(parseQuickScheduleCode('dogum', SHIFT_DEFS)).toEqual({ action: 'assign', shiftDefId: null, status: 'on_leave', leaveType: 'maternity' })
     expect(parseQuickScheduleCode('alacak', SHIFT_DEFS)).toEqual({ action: 'assign', shiftDefId: null, status: 'on_leave', leaveType: 'owed' })
+    // "Denkleştirme" alacak iznin ikinci adı; iki terim de aynı türe gitmeli
+    // ki hangi kelimeyi yazan olursa olsun aynı kod düşsün.
+    const alacak = { action: 'assign', shiftDefId: null, status: 'on_leave', leaveType: 'owed' }
+    expect(parseQuickScheduleCode('denklestirme', SHIFT_DEFS)).toEqual(alacak)
+    expect(parseQuickScheduleCode('DENKLEŞTİRME', SHIFT_DEFS)).toEqual(alacak)
+    expect(parseQuickScheduleCode('denk', SHIFT_DEFS)).toEqual(alacak)
   })
 })
 

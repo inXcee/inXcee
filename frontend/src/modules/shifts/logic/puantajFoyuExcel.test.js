@@ -256,22 +256,24 @@ describe('Föy hücre notları — yalnız istisnalar', () => {
     return bulunan
   }
 
-  it('çalışılan / izinli / tatil günlerine not yazmaz', () => {
+  it('not yalnız ücreti/hakkı etkileyen günlere düşer', () => {
     const { workbook } = buildSampleWorkbook()
     const ws = workbook.getWorksheet('Puantaj')
     const notlu = gunHucreleri(ws).filter(c => c.note)
-    // Örnek veride yalnız devamsız ve planlı günler var; hepsi istisna.
     notlu.forEach(c => {
-      expect(String(c.note)).toMatch(/Devamsız|Planlı|nedeni girilmemiş/)
+      expect(String(c.note)).toMatch(/Devamsız|Fazla mesai|Alacak izin|nedeni girilmemiş/)
     })
   })
 
-  it('devamsız ve planlı günler işaretli kalır', () => {
+  // Kullanıcı planlı günlerin işaretlenmesini istemedi: plan girilip puantaj
+  // işlenmemiş aylarda bunlar yüzlerce hücre eder.
+  it('planlı günler işaretlenmez, devamsız ve mesai işaretlenir', () => {
     const { workbook } = buildSampleWorkbook()
     const ws = workbook.getWorksheet('Puantaj')
     const notlar = gunHucreleri(ws).filter(c => c.note).map(c => String(c.note))
+    expect(notlar.some(n => n.includes('Planlı'))).toBe(false)
     expect(notlar.some(n => n.includes('Devamsız'))).toBe(true)
-    expect(notlar.some(n => n.includes('Planlı'))).toBe(true)
+    expect(notlar.some(n => n.includes('Fazla mesai'))).toBe(true)
   })
 
   it('çalışılan günün vardiya/nokta bilgisi hücre notuna girmez', () => {
@@ -287,6 +289,6 @@ describe('Föy hücre notları — yalnız istisnalar', () => {
     const { workbook } = buildSampleWorkbook()
     const ws = workbook.getWorksheet('Puantaj')
     const altBaslik = String(ws.getRow(2).getCell(1).value || '')
-    expect(altBaslik).toMatch(/devamsız|Açıklama gerektiren gün yok/)
+    expect(altBaslik).toMatch(/devamsız|fazla mesai|Açıklama gerektiren gün yok/)
   })
 })

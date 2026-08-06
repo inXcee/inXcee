@@ -115,6 +115,6 @@ describe('buildDayDetail — kenar durumlar', () => {
     const result = buildDayDetail([
       { staff_id: 10, full_name: 'Nur', dept_name: 'Teknik', role_name: '', shift_def_id: null, shift_name: null, start_hour: null, end_hour: null, work_location_name: null, site: null, status: 'on_leave', leave_type: 'owed', absent_reason: null },
     ], { groupBy: 'dept' })
-    expect(result.groups[0].on_leave[0].leave_type_label).toBe('Alacak izin')
+    expect(result.groups[0].on_leave[0].leave_type_label).toBe('Alacak izin (denkleştirme)')
   })
 })

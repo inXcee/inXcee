@@ -43,7 +43,7 @@ export const DEFAULT_PUANTAJ_CODES = [
   { id: -4, code: 'R', label: 'Raporlu', color_hex: 'F97316', status: 'on_leave', leave_type: 'sick', sort_order: 4, is_active: 1, is_builtin: 1 },
   { id: -5, code: 'Üİ', label: 'Ücretsiz izin', color_hex: '94A3B8', status: 'on_leave', leave_type: 'unpaid', sort_order: 5, is_active: 1, is_builtin: 1 },
   { id: -6, code: 'İ', label: 'İzinli', color_hex: 'A78BFA', status: 'on_leave', leave_type: 'other', sort_order: 6, is_active: 1, is_builtin: 1 },
-  { id: -7, code: 'Aİ', label: 'Alacak izin', color_hex: 'EC4899', status: 'on_leave', leave_type: 'owed', sort_order: 7, is_active: 1, is_builtin: 1 },
+  { id: -7, code: 'Aİ', label: 'Alacak izin (denkleştirme)', color_hex: 'EC4899', status: 'on_leave', leave_type: 'owed', sort_order: 7, is_active: 1, is_builtin: 1 },
   { id: -8, code: 'Y', label: 'Devamsız', color_hex: 'EF4444', status: 'absent', leave_type: null, sort_order: 8, is_active: 1, is_builtin: 1 },
   { id: -9, code: 'P', label: 'Planlı', color_hex: '64748B', status: 'scheduled', leave_type: null, sort_order: 9, is_active: 1, is_builtin: 1 },
 ]

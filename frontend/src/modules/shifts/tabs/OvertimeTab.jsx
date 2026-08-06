@@ -210,7 +210,7 @@ export default function OvertimeTab({ departments, onPersonClick }) {
                       <strong style={{ color: 'var(--purple)' }}>{request.requested_hours} s</strong>
                       <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: request.actual_hours != null ? 'var(--green)' : 'var(--text3)', marginTop: '3px' }}>Gerçek: {request.actual_hours ?? '—'} s</div>
                     </td>
-                    <td data-label="Karşılık"><span className={`badge ${request.compensation_type === 'pay' ? 'badge-green' : 'badge-blue'}`}>{request.compensation_type === 'pay' ? 'Ücret' : 'Serbest zaman'}</span></td>
+                    <td data-label="Karşılık"><span className={`badge ${request.compensation_type === 'pay' ? 'badge-green' : 'badge-blue'}`}>{request.compensation_type === 'pay' ? 'Ücret' : 'Serbest zaman (denkleştirme)'}</span></td>
                     <td data-label="Gerekçe" style={{ maxWidth: '190px', fontSize: '11px', color: 'var(--text2)' }}>
                       {request.reason}
                       {request.review_note && <div style={{ color: 'var(--accent)', fontSize: '9px', marginTop: '4px' }}>Amir: {request.review_note}</div>}
@@ -258,7 +258,7 @@ export default function OvertimeTab({ departments, onPersonClick }) {
             <div>
               <label className="form-label">Karşılık</label>
               <select className="form-select" value={form.compensation_type} onChange={event => setForm(previous => ({ ...previous, compensation_type: event.target.value }))}>
-                <option value="pay">Ücret olarak ödenecek</option><option value="time_off">Serbest zaman olarak kullanılacak</option>
+                <option value="pay">Ücret olarak ödenecek</option><option value="time_off">Serbest zaman / denkleştirme olarak kullanılacak</option>
               </select>
             </div>
             <div><label className="form-label">Mesai gerekçesi</label><textarea className="form-textarea" rows={2} value={form.reason} onChange={event => setForm(previous => ({ ...previous, reason: event.target.value }))} /></div>

@@ -16,7 +16,7 @@ const OUTSIDE_GROUP = 'Bölüm dışı / izinli'
 const LEAVE_LABELS = {
   annual: 'Yıllık izin', sick: 'Raporlu', emergency: 'Acil izin', maternity: 'Doğum izni',
   paternity: 'Babalık izni', marriage: 'Evlilik', bereavement: 'Vefat izni',
-  unpaid: 'Ücretsiz izin', owed: 'Alacak izin', other: 'İzinli',
+  unpaid: 'Ücretsiz izin', owed: 'Alacak izin (denkleştirme)', other: 'İzinli',
 }
 
 // start_hour segmentlerde "HH:MM" (string), fallback'te saat (sayı) gelebilir.

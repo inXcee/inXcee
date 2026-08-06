@@ -117,6 +117,9 @@ const LEAVE_CODE_TYPE = {
   evlilik: 'marriage',
   vefat: 'bereavement',
   alacak: 'owed',
+  // "Denkleştirme" alacak iznin diğer adı — ikisi de fazla mesainin ücret
+  // yerine serbest zaman olarak kullanılması. Aynı türe gidiyorlar.
+  denk: 'owed', denklestirme: 'owed',
 }
 
 export function parseQuickScheduleCode(val, shiftDefs) {

@@ -380,7 +380,7 @@ function OvertimeCandidatePanel({ target, submitting, onSubmit, onClose, onPerso
             <label style={{ fontSize: 9, color: 'var(--text2)' }}>Karsiligi
               <select className="form-select" value={compensationType} onChange={event => setCompensationType(event.target.value)} aria-label="Mesai karsiligi" style={{ marginTop: 4 }}>
                 <option value="pay">Ucret</option>
-                <option value="time_off">Serbest zaman</option>
+                <option value="time_off">Serbest zaman (denkleştirme)</option>
               </select>
             </label>
             <label style={{ fontSize: 9, color: 'var(--text2)' }}>Gerceklesen baslangic

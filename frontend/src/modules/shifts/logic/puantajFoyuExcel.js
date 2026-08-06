@@ -393,8 +393,13 @@ function addFoyuSheet(workbook, sheetName, rows, context, tabHex = COLORS.purple
   // İstisnalar hücre hücre kırmızı üçgen yerine tek satırda başlıkta duyurulur;
   // hangi günler olduğu VARDİYA DETAY ve GÜNLÜK KAPANIŞ sayfalarında.
   const istisna = countFoyuNotes(rows)
-  const istisnaMetni = istisna.total
-    ? `   ·   ${istisna.absent} devamsız${istisna.missingReason ? ` (${istisna.missingReason} nedensiz)` : ''}${istisna.planned ? `, ${istisna.planned} planlı gün açık` : ''}`
+  const istisnaParcalari = [
+    istisna.absent ? `${istisna.absent} devamsız${istisna.missingReason ? ` (${istisna.missingReason} nedensiz)` : ''}` : '',
+    istisna.overtime ? `${istisna.overtime} gün fazla mesai` : '',
+    istisna.owed ? `${istisna.owed} gün alacak izin (denkleştirme)` : '',
+  ].filter(Boolean)
+  const istisnaMetni = istisnaParcalari.length
+    ? `   ·   ${istisnaParcalari.join(', ')}`
     : '   ·   Açıklama gerektiren gün yok'
   setupTitle(ws, `${companyName} - AYLIK PUANTAJ CETVELİ`, `Dönem: ${monthLabel}   ·   Departman: ${deptName}   ·   ${rows.length} personel${istisnaMetni}`, lastCol)
 

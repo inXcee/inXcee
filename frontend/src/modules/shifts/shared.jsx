@@ -23,7 +23,7 @@ export const LEAVE_TYPES = {
   bereavement: { label: 'Vefat izni',  badge: 'badge-gray' },
   unpaid:      { label: 'Ücretsiz izin', badge: 'badge-gray' },
   other:       { label: 'İzinli',       badge: 'badge-gray' },
-  owed:        { label: 'Alacak izin',  badge: 'badge-amber' },
+  owed:        { label: 'Alacak izin (denkleştirme)', badge: 'badge-amber' },
 }
 
 // İzin türünün çizelge hücresi/Excel görünümü — tür belli değilse generic İZİN.
