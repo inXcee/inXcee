@@ -431,3 +431,48 @@ describe('Kapanış paketi proje filtresi', () => {
     expect(idler).not.toContain(kampStaff)
   })
 })
+
+// Şef / şef yardımcısı / müdür gibi unvanlar çizelgede ilk bakışta ayrılsın
+// diye her rol kendi rengini taşır ve renk değiştirilebilir olmalı.
+describe('Rol renkleri', () => {
+  it('rol listesi renk döner', async () => {
+    const res = await request(app).get('/api/shifts/roles').set(auth())
+    expect(res.status).toBe(200)
+    expect(res.body.length).toBeGreaterThan(0)
+    res.body.forEach(rol => expect(rol.color_class).toBeTruthy())
+  })
+
+  it('rol rengi güncellenebilir', async () => {
+    const rolId = (await request(app).get('/api/shifts/roles').set(auth())).body[0].id
+    const res = await request(app).put(`/api/shifts/roles/${rolId}`)
+      .set(auth()).send({ color_class: 'bg-rose-500' })
+    expect(res.status).toBe(200)
+    expect(getDB().prepare('SELECT color_class FROM staff_roles WHERE id=?').get(rolId).color_class)
+      .toBe('bg-rose-500')
+  })
+
+  it('yeni rol renkle birlikte açılabilir', async () => {
+    const res = await request(app).post('/api/shifts/roles')
+      .set(auth()).send({ name: 'Şef Yardımcısı', color_class: 'bg-purple-500', sort_order: 5 })
+    expect([200, 201]).toContain(res.status)
+    const kayit = getDB().prepare("SELECT * FROM staff_roles WHERE name='Şef Yardımcısı'").get()
+    expect(kayit.color_class).toBe('bg-purple-500')
+  })
+
+  it('çizelge satırları da rol rengini taşır', async () => {
+    const db = getDB()
+    const rol = db.prepare("SELECT id FROM staff_roles WHERE name='Şef Yardımcısı'").get()
+    db.prepare('UPDATE staff SET role_id=? WHERE id=?').run(rol.id, kampStaff)
+    const res = await request(app).get(`/api/shifts/schedule?week=${HAFTA}`).set(auth())
+    const satir = res.body.find(r => r.staff_id === kampStaff)
+    expect(satir.role_color).toBe('bg-purple-500')
+  })
+
+  it('personel listesi rolün rengini taşır', async () => {
+    const db = getDB()
+    const rol = db.prepare("SELECT id FROM staff_roles WHERE name='Şef Yardımcısı'").get()
+    db.prepare('UPDATE staff SET role_id=? WHERE id=?').run(rol.id, fpuStaff)
+    const res = await request(app).get(`/api/shifts/staff/${fpuStaff}`).set(auth())
+    expect(res.body.role_color).toBe('bg-purple-500')
+  })
+})

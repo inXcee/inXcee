@@ -1,3 +1,4 @@
+import { classHex } from '../logic/shiftColors.js'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
@@ -15,7 +16,7 @@ export default function SettingsTab({ departments, shiftDefs }) {
   const { projects } = useProjects()
   const [locForm, setLocForm] = useState({ name: '', dept_id: '', site: '', project_id: '', color_class: 'bg-blue-400', sort_order: '' })
   const [roleModal, setRoleModal] = useState(null)
-  const [roleForm, setRoleForm] = useState({ name: '', sort_order: '', expected_dept_id: '' })
+  const [roleForm, setRoleForm] = useState({ name: '', sort_order: '', expected_dept_id: '', color_class: 'bg-blue-500' })
 
   const { data: workLocations = [] } = useQuery({
     queryKey: ['shift-work-locations'],
@@ -125,7 +126,7 @@ export default function SettingsTab({ departments, shiftDefs }) {
       <div className="panel" style={{ marginBottom: '28px' }}>
         <div className="panel-header">
           <div><div className="panel-title">PERSONEL ROLLERI</div><div className="panel-subtitle">{staffRoles.length} ROL</div></div>
-          <button className="btn btn-primary btn-sm" onClick={() => { setRoleForm({ name: '', sort_order: '', expected_dept_id: '' }); setRoleModal({}) }}>+ Yeni Rol</button>
+          <button className="btn btn-primary btn-sm" onClick={() => { setRoleForm({ name: '', sort_order: '', expected_dept_id: '', color_class: 'bg-blue-500' }); setRoleModal({}) }}>+ Yeni Rol</button>
         </div>
         <div className="panel-body" style={{ padding: 0 }}>
           <table className="data-table responsive-stack">
@@ -133,12 +134,18 @@ export default function SettingsTab({ departments, shiftDefs }) {
             <tbody>
               {staffRoles.map(role => (
                 <tr key={role.id}>
-                  <td data-label="Rol" style={{ fontWeight: 600 }}>{role.name}</td>
+                  <td data-label="Rol" style={{ fontWeight: 600 }}>
+                    <span style={{
+                      display: 'inline-block', width: 10, height: 10, borderRadius: 3, marginRight: 7,
+                      background: `#${classHex(role.color_class)}`, verticalAlign: 'middle',
+                    }} title={`Rol rengi: ${role.color_class || '—'}`} />
+                    {role.name}
+                  </td>
                   <td data-label="Beklenen Bolum">{role.expected_dept_name || 'Genel / serbest'}</td>
                   <td data-label="Sira" style={{ fontFamily: 'var(--mono)' }}>{role.sort_order ?? 0}</td>
                   <td data-label="Islem">
                     <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                      <button className="btn btn-ghost btn-sm" onClick={() => { setRoleForm({ name: role.name, sort_order: role.sort_order?.toString() || '', expected_dept_id: role.expected_dept_id?.toString() || '' }); setRoleModal(role) }}>Duzenle</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => { setRoleForm({ name: role.name, sort_order: role.sort_order?.toString() || '', expected_dept_id: role.expected_dept_id?.toString() || '', color_class: role.color_class || 'bg-blue-500' }); setRoleModal(role) }}>Duzenle</button>
                       <button className="btn btn-danger btn-sm" onClick={async () => { if (await confirmDialog({ title: 'Rolu Pasiflestir', body: `${role.name} pasif yapilsin mi?`, danger: true })) deleteRole.mutate(role.id) }}>Pasif</button>
                     </div>
                   </td>
@@ -243,12 +250,25 @@ export default function SettingsTab({ departments, shiftDefs }) {
               </select>
             </div>
             <div><label className="form-label">Sira</label><input type="number" className="form-input" value={roleForm.sort_order} onChange={e => setRoleForm(p => ({ ...p, sort_order: e.target.value }))} /></div>
+            <div><label className="form-label">Renk</label>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }} role="group" aria-label="Rol rengi">
+                {DEF_COLORS.map(c => { const sc = shiftColor(c); return (
+                  <button key={c} type="button" aria-label={`Rol rengi ${c}`}
+                    onClick={() => setRoleForm(p => ({ ...p, color_class: c }))}
+                    style={{ width: '32px', height: '32px', borderRadius: '6px', background: sc.bg, border: `2px solid ${roleForm.color_class === c ? sc.text : 'transparent'}`, cursor: 'pointer' }}>
+                    <span style={{ width: '12px', height: '12px', borderRadius: '3px', background: sc.text, display: 'inline-block' }} />
+                  </button>) })}
+              </div>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text4)', marginTop: 3 }}>
+                Sef, sef yardimcisi, mudur gibi unvanlar cizelgede ve ciktilarda bu renkle ayrisir.
+              </div>
+            </div>
           </div>
           <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
             <button className="btn btn-primary" style={{ flex: 1, opacity: !roleForm.name ? 0.5 : 1 }}
               disabled={!roleForm.name}
               onClick={() => {
-                const payload = { name: roleForm.name, sort_order: parseInt(roleForm.sort_order) || 0, expected_dept_id: roleForm.expected_dept_id ? parseInt(roleForm.expected_dept_id) : null }
+                const payload = { name: roleForm.name, sort_order: parseInt(roleForm.sort_order) || 0, expected_dept_id: roleForm.expected_dept_id ? parseInt(roleForm.expected_dept_id) : null, color_class: roleForm.color_class }
                 if (roleModal.id) updateRole.mutate({ id: roleModal.id, ...payload }); else createRole.mutate(payload)
               }}>
               {roleModal.id ? 'Guncelle' : 'Olustur'}

@@ -239,6 +239,7 @@ export function createStaffRoleService(data) {
     sort_order: data.sort_order ?? 0,
     is_active: data.is_active,
     expected_dept_id: data.expected_dept_id || null,
+    color_class: data.color_class || null,
   })
 }
 

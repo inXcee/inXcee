@@ -100,19 +100,20 @@ export function getStaffRoles({ includeInactive = false } = {}) {
 
 export function createStaffRole(data) {
   return getDB().prepare(`
-    INSERT INTO staff_roles(name, sort_order, is_active, expected_dept_id)
-    VALUES(@name, @sort_order, @is_active, @expected_dept_id)
+    INSERT INTO staff_roles(name, sort_order, is_active, expected_dept_id, color_class)
+    VALUES(@name, @sort_order, @is_active, @expected_dept_id, @color_class)
   `).run({
     name: data.name,
     sort_order: Number.isFinite(+data.sort_order) ? +data.sort_order : 0,
     is_active: data.is_active === undefined ? 1 : (data.is_active ? 1 : 0),
     expected_dept_id: data.expected_dept_id || null,
+    color_class: data.color_class || 'bg-slate-500',
   }).lastInsertRowid
 }
 
 export function updateStaffRole(id, data) {
   const db = getDB()
-  const fields = ['name', 'sort_order', 'is_active', 'expected_dept_id']
+  const fields = ['name', 'sort_order', 'is_active', 'expected_dept_id', 'color_class']
   const sets = []
   const params = []
   fields.forEach(f => {
@@ -140,7 +141,7 @@ export function getStaffList(filters = {}) {
   const db = getDB()
   let query = `
     SELECT s.*, d.name as dept_name, d.color_class as dept_color,
-      sr.name as role_name, sr.sort_order as role_sort_order,
+      sr.name as role_name, sr.sort_order as role_sort_order, sr.color_class as role_color,
       sr.expected_dept_id, expected_dept.name as expected_dept_name,
       sa.id as current_assignment_id,
       sa.department_id as assignment_department_id,
@@ -264,7 +265,7 @@ export function getStaffDirectoryMetrics(staffIds = []) {
 export function getStaffById(id) {
   const row = getDB().prepare(`
     SELECT s.*, d.name as dept_name, d.color_class as dept_color,
-      sr.name as role_name, sr.sort_order as role_sort_order,
+      sr.name as role_name, sr.sort_order as role_sort_order, sr.color_class as role_color,
       sr.expected_dept_id, expected_dept.name as expected_dept_name,
       sa.id as current_assignment_id,
       sa.department_id as assignment_department_id,
@@ -487,7 +488,7 @@ export function getSchedule(weekStart, weekEnd, deptId, projectId = null) {
       s.id as staff_id, s.full_name, s.gender, s.position, s.role_id,
       COALESCE(ss.dept_id, s.department_id) as dept_id,
       d.name as dept_name, d.color_class as dept_color,
-      sr.name as role_name, sr.sort_order as role_sort_order,
+      sr.name as role_name, sr.sort_order as role_sort_order, sr.color_class as role_color,
       ss.work_location_id,
       wl.name as work_location_name, wl.color_class as work_location_color, wl.sort_order as work_location_sort_order,
       sd.id as shift_def_id, sd.name as shift_name, sd.start_hour, sd.end_hour, sd.color_class as shift_color,

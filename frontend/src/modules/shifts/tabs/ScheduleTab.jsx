@@ -1,3 +1,4 @@
+import { classHex } from '../logic/shiftColors.js'
 import { useState, useMemo, useEffect, Fragment } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -1406,7 +1407,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                             }}>{person.position}</span>
                           )}
                           <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '5px' }}>
-                            <span style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--blue)', background: 'rgba(59,140,240,.10)', border: '1px solid rgba(59,140,240,.25)', borderRadius: '6px', padding: '1px 5px' }}>{person.role_name || 'Rolsuz'}</span>
+                            <span style={(() => { const h = `#${classHex(person.role_color)}`; return { fontFamily: 'var(--mono)', fontSize: '8px', color: h, background: `${h}1a`, border: `1px solid ${h}44`, borderRadius: '6px', padding: '1px 5px' } })()}>{person.role_name || 'Rolsuz'}</span>
                             <span style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--green)', background: 'rgba(34,197,94,.10)', border: '1px solid rgba(34,197,94,.25)', borderRadius: '6px', padding: '1px 5px' }}>C {personWeek.work}</span>
                             <span style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--teal)', background: 'rgba(20,184,166,.10)', border: '1px solid rgba(20,184,166,.25)', borderRadius: '6px', padding: '1px 5px' }}>I {personWeek.leave}</span>
                             <span style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: personWeek.empty || personWeek.absent ? 'var(--red)' : 'var(--text3)', background: personWeek.empty || personWeek.absent ? 'rgba(231,76,60,.10)' : 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '6px', padding: '1px 5px' }}>B {personWeek.empty + personWeek.absent}</span>
