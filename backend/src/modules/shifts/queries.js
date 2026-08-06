@@ -86,6 +86,22 @@ export function deleteWorkLocation(id) {
   getDB().prepare('UPDATE work_locations SET is_active=0 WHERE id=?').run(id)
 }
 
+// Çizelge sırası — sürükleyip bırakma sonrası tek transaction'da yazılır ki
+// yarım uygulanmış bir sıra kalmasın.
+export function setStaffScheduleOrder(ids = []) {
+  const db = getDB()
+  const yaz = db.prepare('UPDATE staff SET schedule_order=? WHERE id=?')
+  let updated = 0
+  db.transaction(() => {
+    ids.forEach((id, index) => { updated += yaz.run(index + 1, Number(id)).changes })
+  })()
+  return updated
+}
+
+export function clearStaffScheduleOrder() {
+  return getDB().prepare('UPDATE staff SET schedule_order=NULL WHERE schedule_order IS NOT NULL').run().changes
+}
+
 export function getStaffRoles({ includeInactive = false } = {}) {
   let sql = `
     SELECT sr.*, d.name AS expected_dept_name
@@ -178,7 +194,8 @@ export function getStaffList(filters = {}) {
     const term = `%${filters.search}%`
     params.push(term, term, term, term)
   }
-  query += ' ORDER BY s.full_name'
+  // Elle sürüklenen sıra önce; sıralanmayanlar eskisi gibi ada göre altta.
+  query += ' ORDER BY COALESCE(s.schedule_order, 1000000), s.full_name'
   if (filters._limit) {
     query += ' LIMIT ? OFFSET ?'
     params.push(Number(filters._limit), Number(filters._offset || 0))
@@ -485,7 +502,7 @@ export function getSchedule(weekStart, weekEnd, deptId, projectId = null) {
   let query = `
     SELECT
       ss.id, ss.work_date, ss.status, ss.row_version, ss.puantaj_code_id, ss.absent_reason,
-      s.id as staff_id, s.full_name, s.gender, s.position, s.role_id,
+      s.id as staff_id, s.full_name, s.gender, s.position, s.role_id, s.schedule_order,
       COALESCE(ss.dept_id, s.department_id) as dept_id,
       d.name as dept_name, d.color_class as dept_color,
       sr.name as role_name, sr.sort_order as role_sort_order, sr.color_class as role_color,
@@ -519,7 +536,8 @@ export function getSchedule(weekStart, weekEnd, deptId, projectId = null) {
     query += ' AND COALESCE(ss.dept_id, s.department_id) = ?'
     params.push(idParam(deptId))
   }
-  query += ' ORDER BY d.id, s.full_name, ss.work_date'
+  // Çizelge de elle sürüklenen sırayı izler; ekran ve çıktı aynı düzende olsun.
+  query += ' ORDER BY d.id, COALESCE(s.schedule_order, 1000000), s.full_name, ss.work_date'
   const rows = db.prepare(query).all(...params)
   if (rows.length === 0) return rows
 

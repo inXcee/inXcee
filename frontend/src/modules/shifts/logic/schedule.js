@@ -16,6 +16,7 @@ export function buildStaffGrid(rows, allStaff, deptFilter) {
         id: r.staff_id, full_name: r.full_name, gender: r.gender, position: r.position,
         dept_id: r.dept_id, dept_name: r.dept_name, dept_color: r.dept_color,
         role_id: r.role_id, role_name: r.role_name, role_sort_order: r.role_sort_order,
+        role_color: r.role_color, schedule_order: r.schedule_order,
         days: {}
       })
     }
@@ -30,6 +31,7 @@ export function buildStaffGrid(rows, allStaff, deptFilter) {
       result.set(s.id, {
         id: s.id, full_name: s.full_name, gender: s.gender, position: s.position,
         dept_id: s.department_id, dept_name: s.dept_name, dept_color: s.dept_color,
+        role_color: s.role_color, schedule_order: s.schedule_order,
         role_id: s.role_id, role_name: s.role_name, role_sort_order: s.role_sort_order,
         days: {}
       })
@@ -48,6 +50,11 @@ export function buildStaffGrid(rows, allStaff, deptFilter) {
       if (!deptB) return -1
       return deptA.localeCompare(deptB, 'tr')
     }
+    // Elle sürüklenen sıra departman İÇİNDE geçerli: gruplama bozulmaz ama
+    // kullanıcının dizdiği düzen rol/ad sıralamasını ezer. Sırasızlar altta.
+    const sa = a.schedule_order ?? Number.MAX_SAFE_INTEGER
+    const sb = b.schedule_order ?? Number.MAX_SAFE_INTEGER
+    if (sa !== sb) return sa - sb
     if ((a.role_sort_order ?? 9999) !== (b.role_sort_order ?? 9999)) return (a.role_sort_order ?? 9999) - (b.role_sort_order ?? 9999)
     if (a.role_name && b.role_name && a.role_name !== b.role_name) return a.role_name.localeCompare(b.role_name, 'tr')
     return (a.full_name || '').localeCompare(b.full_name || '', 'tr')

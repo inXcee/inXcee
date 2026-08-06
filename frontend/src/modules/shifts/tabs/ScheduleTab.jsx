@@ -1,4 +1,5 @@
 import { classHex } from '../logic/shiftColors.js'
+import { reorderStaff, mergeVisibleOrder } from '../logic/staffOrder.js'
 import { useState, useMemo, useEffect, Fragment } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -385,6 +386,32 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
       lowDays: perDay.filter(day => day.work < coverageMin).length,
     }
   }).sort((a, b) => a.name.localeCompare(b.name, 'tr')), [departments, deptStats, weekDays, coverageMin, allStaff])
+
+  // Satır sürükleme: hücre sürükleme paletiyle çakışmasın diye YALNIZ tutamak
+  // sürüklenebilir. Sıra sunucuya yazılır — çizelge imzaya/yazıcıya gidiyor,
+  // herkesin ekranında aynı olmalı.
+  const [rowDragId, setRowDragId] = useState(null)
+  const [rowOverId, setRowOverId] = useState(null)
+  const saveOrder = useMutation({
+    mutationFn: (order) => api.post('/shifts/staff/order', { order }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['staff-list-active'] })
+      qc.invalidateQueries({ queryKey: ['schedule'] })
+      useToastStore.getState().addToast('Sıra kaydedildi', 'success')
+    },
+    onError: (err) => useToastStore.getState()
+      .addToast(err?.response?.data?.error || 'Sıra kaydedilemedi', 'error'),
+  })
+
+  const dropRow = (hedefId) => {
+    const kaynak = rowDragId
+    setRowDragId(null)
+    setRowOverId(null)
+    if (!kaynak || kaynak === hedefId) return
+    const gorunenSira = reorderStaff(visibleGrid.map(p => p.id), kaynak, hedefId)
+    const hepsi = mergeVisibleOrder(allStaff.map(p => p.id), gorunenSira)
+    saveOrder.mutate(hepsi)
+  }
 
   const visibleGrid = useMemo(() => {
     const q = gridSearch.toLocaleLowerCase('tr').trim()
@@ -1377,14 +1404,36 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                       title="Personel detayini ac"
                       style={{
                       position: 'sticky', left: 0, zIndex: 5,
-                      background: r % 2 === 0 ? 'var(--bg)' : 'var(--surface)',
+                      background: rowOverId === person.id
+                        ? 'rgba(240,165,0,.14)'
+                        : (r % 2 === 0 ? 'var(--bg)' : 'var(--surface)'),
                       borderRight: '2px solid var(--border)',
+                      borderTop: rowOverId === person.id ? '2px solid var(--accent)' : undefined,
                       padding: '8px 12px',
                       cursor: 'pointer',
-                    }}>
+                    }}
+                    onDragOver={e => { if (rowDragId) { e.preventDefault(); setRowOverId(person.id) } }}
+                    onDragLeave={() => { if (rowOverId === person.id) setRowOverId(null) }}
+                    onDrop={e => { if (rowDragId) { e.preventDefault(); dropRow(person.id) } }}
+                    >
                       <div
                         style={{ display: 'flex', alignItems: 'center', gap: '10px' }}
                       >
+                        {/* Sıra tutamağı — sadece bu eleman sürüklenebilir */}
+                        <span
+                          draggable
+                          aria-label={`${person.full_name} sırasını değiştir`}
+                          title="Sürükleyerek sırayı değiştir"
+                          onDragStart={e => { e.stopPropagation(); e.dataTransfer.effectAllowed = 'move'; setRowDragId(person.id) }}
+                          onDragEnd={() => { setRowDragId(null); setRowOverId(null) }}
+                          onClick={e => e.stopPropagation()}
+                          style={{
+                            cursor: 'grab', flexShrink: 0, userSelect: 'none',
+                            fontFamily: 'var(--mono)', fontSize: 12, lineHeight: 1,
+                            color: rowDragId === person.id ? 'var(--accent)' : 'var(--text4)',
+                            padding: '2px 1px',
+                          }}
+                        >⋮⋮</span>
                         {/* Avatar */}
                         <div style={{
                           width: '34px', height: '34px', borderRadius: '10px', flexShrink: 0,

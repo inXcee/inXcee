@@ -479,3 +479,37 @@ describe('parseScheduleSheet', () => {
     expect(res.entries[1].work_location_id).toBeUndefined()
   })
 })
+
+// Sürüklenen sıra ekranda da geçerli olmalı. buildStaffGrid istemcide yeniden
+// sıralıyor; sunucudaki schedule_order'ı yok sayarsa sürükleme kaydedilir ama
+// hiçbir şey değişmemiş gibi görünür.
+describe('buildStaffGrid — elle sıra', () => {
+  const PERSONEL = [
+    { id: 1, full_name: 'Ali', dept_name: 'Bahçe', department_id: 6, schedule_order: 3 },
+    { id: 2, full_name: 'Burak', dept_name: 'Bahçe', department_id: 6, schedule_order: 1 },
+    { id: 3, full_name: 'Cem', dept_name: 'Bahçe', department_id: 6, schedule_order: 2 },
+  ]
+
+  it('elle sıra ada göre sıralamayı ezer', () => {
+    const grid = buildStaffGrid([], PERSONEL, '')
+    expect(grid.map(p => p.full_name)).toEqual(['Burak', 'Cem', 'Ali'])
+  })
+
+  it('sırasızlar altta, kendi aralarında ada göre', () => {
+    const karisik = [
+      { id: 1, full_name: 'Zeynep', dept_name: 'Bahçe', department_id: 6 },
+      { id: 2, full_name: 'Burak', dept_name: 'Bahçe', department_id: 6, schedule_order: 1 },
+      { id: 3, full_name: 'Ahmet', dept_name: 'Bahçe', department_id: 6 },
+    ]
+    expect(buildStaffGrid([], karisik, '').map(p => p.full_name)).toEqual(['Burak', 'Ahmet', 'Zeynep'])
+  })
+
+  // Departman gruplaması bozulmamalı: sıra departman İÇİNDE geçerli.
+  it('departman gruplaması korunur', () => {
+    const iki = [
+      { id: 1, full_name: 'Ali', dept_name: 'Bahçe', department_id: 6, schedule_order: 5 },
+      { id: 2, full_name: 'Veli', dept_name: 'Aşçı', department_id: 3, schedule_order: 1 },
+    ]
+    expect(buildStaffGrid([], iki, '').map(p => p.dept_name)).toEqual(['Aşçı', 'Bahçe'])
+  })
+})

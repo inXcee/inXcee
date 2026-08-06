@@ -25,6 +25,7 @@ import {
   listPuantajCodes, createPuantajCode, updatePuantajCode, getPuantajCode, deletePuantajCode,
   getStaffDetail,
   getStaffList, getStaffDirectoryMetrics, getStaffById, createStaff, updateStaff, deleteStaff,
+  setStaffScheduleOrder, clearStaffScheduleOrder,
   getStaffAssignments, createStaffAssignment, getStaffDataQualityRows,
   getStaffDayBreakdown, getPuantajDayRows, listDeductions,
   findAttendanceIdentity, insertAttendanceEvent, listAttendanceEvents,
@@ -3007,6 +3008,19 @@ function staffDayBreakdownServiceLegacy(staffId, month) {
     result.push(entry)
   }
   return result
+}
+
+// Çizelgede isimlerin sırası — ortak, kişiye özel değil (çıktı herkeste aynı).
+export function setStaffScheduleOrderService(body = {}) {
+  const ids = Array.isArray(body.order) ? body.order.map(Number).filter(Number.isInteger) : null
+  if (!ids || !ids.length) {
+    throw Object.assign(new Error('order alanı personel id dizisi olmalıdır'), { statusCode: 400 })
+  }
+  return { updated: setStaffScheduleOrder(ids) }
+}
+
+export function clearStaffScheduleOrderService() {
+  return { cleared: clearStaffScheduleOrder() }
 }
 
 export function puantajService(month, deptId, { includeMeta = false, projectId = null } = {}) {

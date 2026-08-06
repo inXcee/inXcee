@@ -10,6 +10,7 @@ import {
   departmentsService, shiftDefinitionsService, scheduleService, bulkAssignService,
   scheduleSegmentsService, createScheduleSegmentService, updateScheduleSegmentService, deleteScheduleSegmentService,
   workLocationsService, createWorkLocationService, updateWorkLocationService, deleteWorkLocationService,
+  setStaffScheduleOrderService, clearStaffScheduleOrderService,
   staffRolesService, createStaffRoleService, updateStaffRoleService, deleteStaffRoleService, scheduleBreakdownService, breakdownAssigneesService, locationOccupancyService, dayDetailService,
   staffStatusService, createLeaveService, approveLeaveService, leaveListService,
   requestDocumentsService, addRequestDocumentsService, deleteRequestDocumentService,
@@ -129,6 +130,20 @@ shiftsRouter.get('/staff/:id/detail', ...managerOrSupervisor, (req, res) => {
   } catch (e) {
     res.status(404).json({ error: e.message })
   }
+})
+
+// Çizelge sırası — /staff/:id'den ÖNCE tanımlı olmalı, yoksa 'order' bir id sanılır.
+shiftsRouter.post('/staff/order', ...managerOrSupervisor, (req, res) => {
+  try {
+    const sonuc = setStaffScheduleOrderService(req.body)
+    logAudit(req.user.id, 'staff_order_update', 'shifts', null, `${sonuc.updated} kayit`)
+    res.json(sonuc)
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
+shiftsRouter.delete('/staff/order', ...managerOrSupervisor, (req, res) => {
+  try { res.json(clearStaffScheduleOrderService()) }
+  catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
 
 shiftsRouter.post('/staff', ...managerOrSupervisor, (req, res) => {

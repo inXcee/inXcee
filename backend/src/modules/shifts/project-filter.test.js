@@ -476,3 +476,51 @@ describe('Rol renkleri', () => {
     expect(res.body.role_color).toBe('bg-purple-500')
   })
 })
+
+// Çizelgede isimlerin yeri sürüklenerek değiştirilebilmeli. Sıra ORTAK olmalı:
+// çizelge imzaya/yazıcıya gidiyor, herkeste farklı sırada görünürse anlamsızlaşır.
+describe('Çizelge isim sırası', () => {
+  let temelSira
+
+  it('hazırlık: mevcut sırayı al', async () => {
+    const res = await request(app).get('/api/shifts/staff?is_active=1').set(auth())
+    temelSira = res.body.map(r => r.id)
+    expect(temelSira.length).toBeGreaterThan(2)
+  })
+
+  it('sıra kaydedilir ve sıralananlar en üste geçer', async () => {
+    const res = await request(app).post('/api/shifts/staff/order')
+      .set(auth()).send({ order: [kampStaff, fpuStaff] })
+    expect(res.status).toBe(200)
+    const idler = (await request(app).get('/api/shifts/staff?is_active=1').set(auth())).body.map(r => r.id)
+    expect(idler[0]).toBe(kampStaff)
+    expect(idler[1]).toBe(fpuStaff)
+  })
+
+  // Sürüklenmeyenlerin sırası bozulmamalı; yoksa bir kişiyi taşımak tüm
+  // listeyi karıştırmış gibi görünür.
+  it('sıralanmayanlar kendi aralarındaki sırayı korur', async () => {
+    const idler = (await request(app).get('/api/shifts/staff?is_active=1').set(auth())).body.map(r => r.id)
+    const kalan = idler.slice(2)
+    const beklenen = temelSira.filter(id => id !== kampStaff && id !== fpuStaff)
+    expect(kalan).toEqual(beklenen)
+  })
+
+  // Ekran, çizelge satırlarındaki alandan sıralıyor; SELECT'te yoksa çizelgede
+  // olan herkes "sırasız" görünüp en alta düşerdi.
+  it('çizelge satırı schedule_order alanını taşır', async () => {
+    const res = await request(app).get(`/api/shifts/schedule?week=${HAFTA}`).set(auth())
+    const satir = res.body.find(r => r.staff_id === kampStaff)
+    expect(satir.schedule_order).toBe(1)
+  })
+
+  it('sıra çizelgeye de yansır', async () => {
+    const res = await request(app).get(`/api/shifts/schedule?week=${HAFTA}`).set(auth())
+    const idler = res.body.map(r => r.staff_id)
+    expect(idler.indexOf(kampStaff)).toBeLessThan(idler.indexOf(fpuStaff))
+  })
+
+  it('geçersiz gövde 400 döner', async () => {
+    expect((await request(app).post('/api/shifts/staff/order').set(auth()).send({})).status).toBe(400)
+  })
+})
