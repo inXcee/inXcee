@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '../../shared/store/authStore.js'
 import HelpHint from '../../shared/components/HelpHint.jsx'
 import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
+import { todayStr } from '../../shared/logic/localDate.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import api from '../../shared/api/client.js'
 import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
@@ -500,7 +501,7 @@ function ReportCard({ report, selectedDate }) {
 }
 
 export default function ReportsPage() {
-  const [selectedDate, setSelectedDate] = useUrlParamState('date', () => new Date().toISOString().split('T')[0])
+  const [selectedDate, setSelectedDate] = useUrlParamState('date', todayStr)
 
   return (
     <div>

@@ -140,7 +140,9 @@ export default function DayDetailBoard({ weekDays = [], staffGrid = [], onPerson
   }
 
   return (
-    <div className="panel" style={{ marginBottom: '12px', borderTop: '3px solid var(--accent)' }}>
+    /* overflow:visible — .panel varsayılanı hidden ve yapışkan gün şeridini hem
+       kırpıyor hem kapsayıcıyı daraltıp yapışmasını engelliyor. */
+    <div className="panel" style={{ marginBottom: '12px', borderTop: '3px solid var(--accent)', overflow: 'visible' }}>
       <div className="panel-header" style={{ alignItems: 'center' }}>
         <div>
           <div className="panel-title">📅 GÜN DETAYI</div>
@@ -162,8 +164,19 @@ export default function DayDetailBoard({ weekDays = [], staffGrid = [], onPerson
 
       {open && (
         <>
-          {/* Gün + gruplama seçici */}
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '10px' }}>
+          {/* Gün + gruplama seçici — YAPIŞKAN.
+              Gün dökümü uzun bir liste; seçici yukarıda sabit kalmayınca başka
+              bir güne bakmak için sayfanın en başına dönmek gerekiyordu.
+              top=0: kaydırma kabı zaten sayfanın yapışkan başlık çubuğunun
+              altında başlıyor, ayrıca boşluk bırakmak gerekmiyor. */}
+          <div style={{
+            position: 'sticky', top: 0, zIndex: 5,
+            display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center',
+            margin: '0 -14px 10px', padding: '8px 14px',
+            background: 'color-mix(in srgb, var(--surface) 92%, transparent)',
+            backdropFilter: 'blur(8px)',
+            borderBottom: '1px solid var(--border)',
+          }}>
             {weekDays.length > 0 && (
               <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
                 {weekDays.map(day => (

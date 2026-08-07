@@ -1,10 +1,11 @@
 // Housekeeping genelinde paylaşılan sabitler, helper'lar ve küçük presentational
 // primitive'ler (ProgressStrip, GhostTile, FacilityCell).
 import { BLOCKS } from '../../shared/blocks.js'
+import { todayStr } from '../../shared/logic/localDate.js'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 export const ALL_BLOCK_NAMES = BLOCKS.map(b => b.block)
-export const TODAY = new Date().toISOString().split('T')[0]
+export const TODAY = todayStr()
 
 export const CHECKLIST_ITEMS = [
   { id: 'zemin',    label: 'Zemin süpürüldü / silindi',    icon: '🧹' },

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
+import { todayStr } from '../../shared/logic/localDate.js'
 import { BLOCKS, blockColor } from '../../shared/blocks.js'
 import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 import HelpHint from '../../shared/components/HelpHint.jsx'
@@ -526,7 +527,7 @@ function RoomDetail({ block, roomNo, days, onBack }) {
 function DayGroup({ day, items, onPhoto }) {
   const d = new Date(day + 'T00:00:00')
   const dayLabel = d.toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long' })
-  const isToday = day === new Date().toISOString().split('T')[0]
+  const isToday = day === todayStr()
 
   return (
     <div className="panel">

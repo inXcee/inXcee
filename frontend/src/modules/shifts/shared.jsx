@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { classHex, hexToRgba } from './logic/shiftColors.js'
+import { startOfWeek, addDays, todayStr, toLocalDate } from '../../shared/logic/localDate.js'
 
 // Tek noktadan toast ile hata gosterimi — onError callback'lerinde alert yerine bunu cagir.
 // Module-level fonksiyon: closure'a bagimli degil, callback'lerde stale ref riski yok.
@@ -92,30 +93,19 @@ export const SWAP_STATUS = {
 export const BLOOD_TYPES = ['A+','A-','B+','B-','AB+','AB-','0+','0-']
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
-export function getWeekStart(date) {
-  const d = new Date(date)
-  const day = d.getDay()
-  const diff = (day === 0 ? -6 : 1 - day)
-  d.setDate(d.getDate() + diff)
-  return d.toISOString().split('T')[0]
-}
+// Hepsi yerel takvim gününde çalışır (bkz. shared/logic/localDate.js). Eski
+// toISOString() kalıbı UTC'ye çevirdiği için gece yarısı–03:00 arasında hafta
+// ve "bugün" bir gün geriye kayıyordu.
+export const getWeekStart = startOfWeek
 
-export function addDays(dateStr, n) {
-  const d = new Date(dateStr)
-  d.setDate(d.getDate() + n)
-  return d.toISOString().split('T')[0]
-}
+export { addDays, todayStr }
 
 export function formatDate(dateStr) {
-  return new Date(dateStr).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' })
+  return toLocalDate(dateStr).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' })
 }
 
 export function shortDay(dateStr) {
-  return new Date(dateStr).toLocaleDateString('tr-TR', { weekday: 'short' })
-}
-
-export function todayStr() {
-  return new Date().toISOString().split('T')[0]
+  return toLocalDate(dateStr).toLocaleDateString('tr-TR', { weekday: 'short' })
 }
 
 export function calcAge(birthDate) {

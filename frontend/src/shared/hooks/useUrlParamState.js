@@ -4,7 +4,7 @@ import { useCallback } from 'react'
 // URL query parametresine bağlı state. Paylaşılabilir URL + geri tuşu uyumu.
 //
 //   const [tab, setTab] = useUrlParamState('tab', 'search')
-//   const [date, setDate] = useUrlParamState('date', () => new Date().toISOString().split('T')[0])
+//   const [date, setDate] = useUrlParamState('date', todayStr)   // shared/logic/localDate.js
 //
 // Boş string ve default value URL'den temizlenir (URL kirli kalmasın diye).
 export function useUrlParamState(key, defaultValue) {

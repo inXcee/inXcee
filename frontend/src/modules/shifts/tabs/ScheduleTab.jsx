@@ -14,6 +14,7 @@ import {
   formatShiftHours, shiftHoursFrom, leaveCellMeta, leaveTypeLabel,
 } from '../shared.jsx'
 import { buildStaffGrid, computeWeekStats, parseQuickScheduleCode, cellToScheduleCode, cellToClipboardCode, buildScheduleWarnings, planCellPaste } from '../logic/schedule.js'
+import { SCHEDULE_PANELS, loadPanelPrefs, savePanelPrefs, togglePanel, setAllPanels, hiddenPanelCount } from '../logic/panelPrefs.js'
 import { DailyView, WeekFillSheet, CellAssignSheet } from './scheduleSheets.jsx'
 import LiveOccupancyBoard from './LiveOccupancyBoard.jsx'
 import ScheduleImportModal from './ScheduleImportModal.jsx'
@@ -39,6 +40,10 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
   const [dailyDate, setDailyDate] = useState(todayStr())
   const [toolsOpen, setToolsOpen] = useState(false)
   const [toolsRect, setToolsRect] = useState(null)
+  // Çizelge altındaki yardımcı paneller kapatılabilir; tercih tarayıcıda kalır.
+  const [panels, setPanels] = useState(loadPanelPrefs)
+  const [panelMenuOpen, setPanelMenuOpen] = useState(false)
+  const setPanel = next => { setPanels(next); savePanelPrefs(next) }
   const [cellPopover, setCellPopover] = useState(null)
   const [weekFillPopover, setWeekFillPopover] = useState(null) // { person, rect }
   const [weekFillDef, setWeekFillDef] = useState('')
@@ -849,6 +854,54 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
           }}>Bugün</button>
         </div>
 
+        {/* Panel görünürlüğü — çizelgenin altındaki bloklar herkese lazım değil.
+            Kapatılan panel hiç render edilmez, isteği de gitmez. */}
+        {scheduleView === 'weekly' && (
+          <div style={{ position: 'relative' }}>
+            <button
+              className={`btn btn-sm ${hiddenPanelCount(panels) ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => setPanelMenuOpen(o => !o)}
+              aria-expanded={panelMenuOpen}
+              title="Çizelge altındaki panelleri göster/gizle"
+            >
+              ⚙ Paneller{hiddenPanelCount(panels) > 0 ? ` · ${hiddenPanelCount(panels)} gizli` : ''}
+            </button>
+            {panelMenuOpen && (
+              <>
+                {/* Dışarı tıklayınca kapansın */}
+                <div onClick={() => setPanelMenuOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
+                <div style={{
+                  position: 'absolute', top: '110%', left: 0, zIndex: 41, minWidth: 260,
+                  background: 'var(--surface)', border: '1px solid var(--border)',
+                  borderRadius: 10, padding: 10, boxShadow: '0 8px 28px rgba(0,0,0,.28)',
+                }}>
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                    <button className="btn btn-xs btn-ghost" onClick={() => setPanel(setAllPanels(true))}>Hepsini aç</button>
+                    <button className="btn btn-xs btn-ghost" onClick={() => setPanel(setAllPanels(false))}>Hepsini gizle</button>
+                  </div>
+                  {SCHEDULE_PANELS.map(panel => (
+                    <label key={panel.key} style={{
+                      display: 'flex', alignItems: 'flex-start', gap: 8, padding: '6px 4px',
+                      cursor: 'pointer', borderTop: '1px solid var(--border)',
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={panels[panel.key] !== false}
+                        onChange={() => setPanel(togglePanel(panels, panel.key))}
+                        style={{ marginTop: 2 }}
+                      />
+                      <span>
+                        <span style={{ fontSize: 12, color: 'var(--text)' }}>{panel.label}</span>
+                        <span style={{ display: 'block', fontSize: 10, color: 'var(--text3)' }}>{panel.hint}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
         {/* View toggle: HAFTALIK / GÜNLÜK */}
         <div style={{ display: 'flex', gap: '4px' }}>
           <button
@@ -966,7 +1019,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
         )}
       </div>
 
-      {scheduleView === 'weekly' && <CoverageBoard
+      {scheduleView === 'weekly' && panels.coverage !== false && <CoverageBoard
         from={weekStart}
         to={weekEnd}
         weekDays={weekDays}
@@ -979,13 +1032,13 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
         staffGrid={staffGrid}
       />}
 
-      {scheduleView === 'weekly' && <DayDetailBoard key={weekDays[0] || 'current-week'} weekDays={weekDays} staffGrid={staffGrid} onPersonClick={onPersonClick} />}
+      {scheduleView === 'weekly' && panels.dayDetail !== false && <DayDetailBoard key={weekDays[0] || 'current-week'} weekDays={weekDays} staffGrid={staffGrid} onPersonClick={onPersonClick} />}
 
-      {scheduleView === 'weekly' && (
+      {scheduleView === 'weekly' && panels.crossover !== false && (
         <ProjectCrossoverBoard from={weekStart} to={weekEnd} onPersonClick={onPersonClick} />
       )}
 
-      {scheduleView === 'weekly' && (
+      {scheduleView === 'weekly' && panels.deptCards !== false && (
         <div style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
