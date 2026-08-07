@@ -102,3 +102,64 @@ export function departmentDayShiftMatrix(group, weekDays = []) {
     dayTotals: gunler.map(g => [...g.counts.values()].reduce((t, n) => t + n, 0)),
   }
 }
+
+// GÜN GÜN DÖKÜM — "o gün hangi vardiyada kimler var, kaç kişi".
+//
+// Matris yalnız SAYI veriyordu; sahada "bu gece kim var" sorusunu isim isim
+// cevaplamak için yine çizelgeye dönmek gerekiyordu. Burada gün → vardiya →
+// (nokta) → isimler kırılımı üretilir.
+//
+// İsimler bölüm bilgisiyle taşınır: aynı vardiyada iki bölümden insan olabilir
+// ve çıktıya bakan kişi kimin nereden olduğunu bilmek ister.
+export function dayRoster(groups = [], weekDays = [], { byLocation = true } = {}) {
+  return (weekDays || []).map(date => {
+    const vardiyalar = new Map()
+
+    ;(groups || []).forEach(group => (group.people || []).forEach(person => {
+      const cell = person.days?.[date]
+      if (!calisiyorMu(cell)) return
+      const vardiya = shiftLabel(cell)
+      if (!vardiyalar.has(vardiya)) vardiyalar.set(vardiya, new Map())
+      const yerler = vardiyalar.get(vardiya)
+      const yer = byLocation ? (cell.work_location_name || DIGEST_DEFAULT_AREA) : ''
+      if (!yerler.has(yer)) yerler.set(yer, [])
+      yerler.get(yer).push({
+        name: person.full_name || '',
+        department: group.name || person.dept_name || 'Departmansız',
+        role: person.role_name || person.position || '',
+      })
+    }))
+
+    const shifts = [...vardiyalar.entries()]
+      .map(([shift, yerler]) => {
+        const locations = [...yerler.entries()]
+          .map(([location, people]) => ({
+            location,
+            count: people.length,
+            people: people.sort((a, b) => a.name.localeCompare(b.name, 'tr')),
+          }))
+          .sort((a, b) => b.count - a.count || a.location.localeCompare(b.location, 'tr'))
+        return {
+          shift,
+          count: locations.reduce((t, l) => t + l.count, 0),
+          locations,
+        }
+      })
+      .sort((a, b) => b.count - a.count || a.shift.localeCompare(b.shift, 'tr'))
+
+    return {
+      date,
+      total: shifts.reduce((t, v) => t + v.count, 0),
+      shifts,
+    }
+  })
+}
+
+// Tek satırda isim listesi; uzun listeler kırpılır ama kırpma SÖYLENİR.
+export function namesLine(people = [], { max = 14 } = {}) {
+  const adlar = people.map(p => p.name).filter(Boolean)
+  if (!adlar.length) return ''
+  const gosterilen = adlar.slice(0, max)
+  const kalan = adlar.length - gosterilen.length
+  return gosterilen.join(', ') + (kalan > 0 ? ` … +${kalan} kişi` : '')
+}

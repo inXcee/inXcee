@@ -383,6 +383,11 @@ export default function ScheduleShareModal({
                     onChange={e => patch('includeDeptDigest', e.target.checked)} />
                   Bölüm özeti (vardiya + nokta sayımı)
                 </label>
+                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <input type="checkbox" checked={options.includeDayRoster !== false}
+                    onChange={e => patch('includeDayRoster', e.target.checked)} />
+                  Gün gün döküm (kim, hangi vardiyada)
+                </label>
                 <label className="form-label">
                   Kağıt
                   <select className="form-select" value={options.pageSize} onChange={e => patch('pageSize', e.target.value)}>

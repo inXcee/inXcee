@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   departmentShiftDigest, digestLine, departmentDayShiftMatrix, shiftLabel,
+  dayRoster, namesLine,
   DIGEST_DEFAULT_AREA, DIGEST_DEFAULT_SHIFT,
 } from './departmentDigest.js'
 
@@ -104,5 +105,70 @@ describe('Gün × vardiya matrisi', () => {
     const m = departmentDayShiftMatrix({ people: [] }, GUNLER)
     expect(m.rows).toEqual([])
     expect(m.dayTotals).toEqual([0, 0])
+  })
+})
+
+describe('Gün gün döküm (kim, hangi vardiyada)', () => {
+  it('her gün için vardiya → nokta → isim kırılımı verir', () => {
+    const [gun1] = dayRoster(GRUPLAR, GUNLER)
+    expect(gun1.date).toBe(GUNLER[0])
+    expect(gun1.total).toBe(3) // A, B (Mutfak) + D (Temizlik)
+    const gunduz = gun1.shifts.find(v => v.shift === 'Gündüz')
+    expect(gunduz.count).toBe(2)
+    expect(gunduz.locations.map(l => l.location).sort()).toEqual(['OTC Lokal', 'Tas Bina'])
+  })
+
+  it('isimleri alfabetik ve bölümüyle taşır', () => {
+    const [gun1] = dayRoster(GRUPLAR, GUNLER)
+    const aksam = gun1.shifts.find(v => v.shift === 'Akşam')
+    expect(aksam.locations[0].people).toEqual([{ name: 'B', department: 'Mutfak', role: '' }])
+  })
+
+  // İzinli kişi listede görünürse o gece sahada olduğu sanılır.
+  it('çalışmayanları listelemez', () => {
+    const [gun1] = dayRoster(GRUPLAR, GUNLER)
+    const tumIsimler = gun1.shifts.flatMap(v => v.locations.flatMap(l => l.people.map(p => p.name)))
+    expect(tumIsimler).not.toContain('C')
+  })
+
+  it('ikinci günde yalnız o günün kayıtları', () => {
+    const [, gun2] = dayRoster(GRUPLAR, GUNLER)
+    expect(gun2.total).toBe(1)
+    expect(gun2.shifts[0].shift).toBe('Gündüz')
+  })
+
+  it('en kalabalık vardiya üstte', () => {
+    const [gun1] = dayRoster(GRUPLAR, GUNLER)
+    expect(gun1.shifts[0].shift).toBe('Gündüz')
+  })
+
+  it('nokta kırılımı kapatılabilir', () => {
+    const [gun1] = dayRoster(GRUPLAR, GUNLER, { byLocation: false })
+    const gunduz = gun1.shifts.find(v => v.shift === 'Gündüz')
+    expect(gunduz.locations).toHaveLength(1)
+    expect(gunduz.locations[0].count).toBe(2)
+  })
+
+  it('boş girdide gün başına boş sonuç', () => {
+    expect(dayRoster([], GUNLER)).toEqual([
+      { date: GUNLER[0], total: 0, shifts: [] },
+      { date: GUNLER[1], total: 0, shifts: [] },
+    ])
+  })
+})
+
+describe('İsim satırı', () => {
+  it('isimleri virgülle yazar', () => {
+    expect(namesLine([{ name: 'Ali' }, { name: 'Veli' }])).toBe('Ali, Veli')
+  })
+
+  // Kırpma sessiz kalırsa liste tam sanılır ve eksik kişi fark edilmez.
+  it('kırpmayı açıkça bildirir', () => {
+    const cok = Array.from({ length: 20 }, (_, i) => ({ name: `K${i}` }))
+    expect(namesLine(cok, { max: 3 })).toBe('K0, K1, K2 … +17 kişi')
+  })
+
+  it('boş listede boş döner', () => {
+    expect(namesLine([])).toBe('')
   })
 })

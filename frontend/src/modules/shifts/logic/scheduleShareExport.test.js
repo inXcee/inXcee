@@ -290,3 +290,27 @@ describe('Departman özeti (çıktıda)', () => {
     expect(yukseklik(ekonomik)).toBeLessThan(yukseklik(normal))
   })
 })
+
+describe('Gün gün vardiya dökümü (çıktıda)', () => {
+  it('gün başlıkları, vardiya adı, kişi sayısı ve isimler yazılır', () => {
+    const html = buildScheduleShareHtml(payload())
+    expect(html).toContain('GÜN GÜN VARDİYA DÖKÜMÜ')
+    expect(html).toMatch(/dr-shift-name/)
+    expect(html).toMatch(/kişi<\/em>/)
+    expect(html).toContain('Ali Yilmaz')
+  })
+
+  it('kapatılabilir', () => {
+    const html = buildScheduleShareHtml(payload({ options: { includeDayRoster: false } }))
+    expect(html).not.toContain('GÜN GÜN VARDİYA DÖKÜMÜ')
+  })
+
+  // Nokta gösterme kapalıysa döküm de nokta adı yazmamalı.
+  it('nokta kapalıyken nokta adı geçmez', () => {
+    const html = buildScheduleShareHtml(payload({
+      visibleGrid: [STAFF[1]],
+      options: { onlyVisible: true, includeLocation: false, includeRole: false },
+    }))
+    expect(html).not.toContain('OTC Yemekhane')
+  })
+})

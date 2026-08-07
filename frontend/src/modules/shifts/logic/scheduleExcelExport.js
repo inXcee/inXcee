@@ -1,4 +1,4 @@
-import { departmentShiftDigest, departmentDayShiftMatrix } from './departmentDigest.js'
+import { departmentShiftDigest, departmentDayShiftMatrix, dayRoster } from './departmentDigest.js'
 import {
   buildPayrollClosingCheck,
   buildScheduleWarnings,
@@ -408,6 +408,70 @@ function appendSummaryMatrix(ws, startRow, title, firstLabel, rows, weekDays, co
 // "Hangi vardiyada kaç kişi, nerede duruyorlar" — bölüm bölüm. Kapsama sayfası
 // gün başına TOPLAM veriyordu; vardiya kırılımı ve çalışma noktaları yoktu,
 // bunun için çizelgeyi satır satır taramak gerekiyordu.
+// GÜN GÜN DÖKÜM — "o gün hangi vardiyada kimler, kaç kişi". Vardiya Dagilimi
+// sayfası SAYI veriyor; burada isimler var. Sahada "bu gece kim var" sorusu
+// buradan cevaplanır, çizelgeye dönmeye gerek kalmaz.
+function addDayRosterSheet(wb, { sheetName, navSheets, weekDays, exportRows, weekStart, weekEnd }) {
+  const ws = wb.addWorksheet(sheetName, { views: [{ state: 'frozen', ySplit: 5 }] })
+  setupSheet(ws, COLORS.purple)
+  setupTitle(ws, 'GUN GUN VARDIYA DOKUMU', `${weekStart} - ${weekEnd}  ·  gun / vardiya / nokta / isimler`, 6)
+  addNav(ws, navSheets, 3)
+
+  const gruplar = []
+  const indeks = new Map()
+  exportRows.forEach(person => {
+    const ad = person.dept_name || 'Departmansiz'
+    if (!indeks.has(ad)) { indeks.set(ad, { name: ad, people: [] }); gruplar.push(indeks.get(ad)) }
+    indeks.get(ad).people.push(person)
+  })
+
+  const baslik = ws.getRow(5)
+  baslik.values = ['Tarih', 'Gun', 'Vardiya', 'Calisma Noktasi', 'Kisi', 'Personel']
+  styleHeaderRow(baslik)
+
+  const gunler = dayRoster(gruplar, weekDays)
+  gunler.forEach((gun, gi) => {
+    if (gun.total === 0) {
+      const bos = ws.addRow([formatDate(gun.date), DAY_LABELS[gi] || '', 'Kayit yok', '', 0, ''])
+      bos.eachCell(cell => {
+        cell.border = border
+        cell.font = { size: 9, italic: true, color: { argb: argb(COLORS.red) } }
+      })
+      return
+    }
+    gun.shifts.forEach((vardiya, vi) => {
+      vardiya.locations.forEach((yer, yi) => {
+        const row = ws.addRow([
+          vi === 0 && yi === 0 ? formatDate(gun.date) : '',
+          vi === 0 && yi === 0 ? (DAY_LABELS[gi] || '') : '',
+          yi === 0 ? vardiya.shift : '',
+          yer.location,
+          yer.count,
+          // Excel'de kırpma yapılmaz: kâğıt sınırı yok, filtreleyip aramak isteniyor.
+          yer.people.map(p => p.name).join(', '),
+        ])
+        row.eachCell((cell, colNo) => {
+          cell.border = border
+          cell.font = { size: 9, bold: colNo <= 3 }
+          cell.alignment = { horizontal: colNo === 5 ? 'center' : 'left', vertical: 'top', wrapText: colNo === 6 }
+        })
+      })
+    })
+    // Günün toplamı, gün blokları birbirine karışmasın diye ayrı satırda.
+    const toplam = ws.addRow(['', '', 'GUN TOPLAMI', '', gun.total, ''])
+    toplam.eachCell(cell => {
+      cell.border = border
+      cell.font = { size: 9, bold: true, color: { argb: argb(COLORS.ink) } }
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } }
+    })
+  })
+
+  ;[12, 10, 16, 22, 7, 90].forEach((w, i) => { ws.getColumn(i + 1).width = w })
+  ws.autoFilter = { from: { row: 5, column: 1 }, to: { row: ws.lastRow.number, column: 6 } }
+  ws.pageSetup.printTitlesRow = '1:5'
+  return ws
+}
+
 function addShiftDistributionSheet(wb, { sheetName, navSheets, weekDays, exportRows, weekStart, weekEnd }) {
   const ws = wb.addWorksheet(sheetName, { views: [{ state: 'frozen', ySplit: 5 }] })
   setupSheet(ws, COLORS.teal)
@@ -906,12 +970,13 @@ export function buildScheduleExcelWorkbook(ExcelJS, {
     operation: uniqueSheetName('Operasyon', usedSheetNames),
     raw: uniqueSheetName('Veri', usedSheetNames),
     shifts: uniqueSheetName('Vardiya Dagilimi', usedSheetNames),
+    dayRoster: uniqueSheetName('Gun Gun Dokum', usedSheetNames),
   }
   const departmentSheets = deptSummary.map(dept => ({
     dept,
     sheetName: uniqueSheetName(`Bolum - ${dept.name}`, usedSheetNames),
   }))
-  const navSheets = [sheetNames.control, sheetNames.plan, sheetNames.operation, sheetNames.shifts, sheetNames.raw, ...departmentSheets.map(item => item.sheetName)]
+  const navSheets = [sheetNames.control, sheetNames.plan, sheetNames.operation, sheetNames.shifts, sheetNames.dayRoster, sheetNames.raw, ...departmentSheets.map(item => item.sheetName)]
   const entryStartRow = 8
   const entryEndRow = Math.max(entryStartRow, entryStartRow + exportRows.length - 1)
   const entryDayStartCol = 6
@@ -1228,6 +1293,10 @@ export function buildScheduleExcelWorkbook(ExcelJS, {
 
   addShiftDistributionSheet(wb, {
     sheetName: sheetNames.shifts, navSheets, weekDays, exportRows, weekStart, weekEnd,
+  })
+
+  addDayRosterSheet(wb, {
+    sheetName: sheetNames.dayRoster, navSheets, weekDays, exportRows, weekStart, weekEnd,
   })
 
   const raw = wb.addWorksheet(sheetNames.raw, { views: [{ state: 'frozen', ySplit: 4 }] })

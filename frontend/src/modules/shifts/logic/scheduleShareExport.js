@@ -5,7 +5,7 @@ import {
   shiftHoursFrom,
 } from '../shared.jsx'
 import { deptHex, leaveHex, shiftHex } from './shiftColors.js'
-import { departmentShiftDigest, digestLine } from './departmentDigest.js'
+import { departmentShiftDigest, digestLine, dayRoster, namesLine } from './departmentDigest.js'
 
 const STATUS_HEX = {
   empty: 'F8FAFC',
@@ -23,6 +23,7 @@ export const DEFAULT_SCHEDULE_SHARE_OPTIONS = {
   density: 'normal',
   includeSummary: true,
   includeDeptDigest: true,
+  includeDayRoster: true,
   includeRole: true,
   includeLocation: true,
   includeStaffTotals: true,
@@ -333,6 +334,17 @@ function buildStyles(opts) {
     .main { display: block; font-size: ${density.font}px; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .sub { display: block; margin-top: 3px; font-size: ${density.sub}px; font-weight: 700; opacity: .9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .count { color: #475569; font-size: 8px; margin-top: 3px; }
+    .dayroster { margin-top: 14px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 9px 11px; background: #fff; break-inside: auto; }
+    .dr-title { font-size: 10px; font-weight: 900; letter-spacing: .6px; color: #0f172a; border-bottom: 2px solid #334155; padding-bottom: 4px; margin-bottom: 6px; }
+    .dr-day { break-inside: avoid; page-break-inside: avoid; margin-bottom: 7px; }
+    .dr-head { display: flex; justify-content: space-between; font-size: 9px; background: #f1f5f9; border-left: 3px solid #334155; padding: 3px 6px; }
+    .dr-head span { color: #475569; font-weight: 900; }
+    .dr-shift { margin: 3px 0 0 8px; }
+    .dr-shift-name { font-size: 8.5px; font-weight: 900; color: #0f172a; }
+    .dr-shift-name em { font-style: normal; color: #475569; font-weight: 700; }
+    .dr-loc { margin-left: 8px; font-size: 8px; line-height: 1.35; }
+    .dr-loc-name { font-weight: 900; color: #334155; }
+    .dr-names { color: #475569; }
     .legend { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 12px; }
     .legend-item { display: flex; align-items: center; gap: 5px; border: 1px solid #cbd5e1; border-radius: 999px; padding: 4px 8px; font-size: 9px; font-weight: 800; background: #fff; }
     .swatch { width: 13px; height: 13px; border-radius: 4px; display: inline-block; }
@@ -520,6 +532,39 @@ function renderScheduleBody(model) {
     </div>
   ` : ''
 
+  // GÜN GÜN DÖKÜM — "o gün hangi vardiyada kimler var, kaç kişi".
+  // Izgara kim hangi gün çalışıyor sorusunu kişi kişi cevaplıyor; bu bölüm
+  // aynı veriyi TERSTEN sunar: gün → vardiya → nokta → isimler.
+  const gunlukDokum = opts.includeDayRoster === false ? '' : (() => {
+    const gunler = dayRoster(groups, weekDays, { byLocation: opts.includeLocation !== false })
+    const dolu = gunler.filter(g => g.total > 0)
+    if (!dolu.length) return ''
+    return `
+      <div class="dayroster">
+        <div class="dr-title">GÜN GÜN VARDİYA DÖKÜMÜ</div>
+        ${dolu.map(gun => `
+          <div class="dr-day">
+            <div class="dr-head">
+              <b>${escapeHtml(formatDate(gun.date))}</b>
+              <span>${gun.total} kişi</span>
+            </div>
+            ${gun.shifts.map(v => `
+              <div class="dr-shift">
+                <div class="dr-shift-name">${escapeHtml(v.shift)} <em>${v.count} kişi</em></div>
+                ${v.locations.map(l => `
+                  <div class="dr-loc">
+                    ${l.location ? `<span class="dr-loc-name">${escapeHtml(l.location)} (${l.count})</span>` : ''}
+                    <span class="dr-names">${escapeHtml(namesLine(l.people, { max: 40 }))}</span>
+                  </div>
+                `).join('')}
+              </div>
+            `).join('')}
+          </div>
+        `).join('')}
+      </div>
+    `
+  })()
+
   return `
     <div class="sheet">
       ${header}
@@ -527,6 +572,7 @@ function renderScheduleBody(model) {
       ${coverageNote}
       ${tableHtml}
       ${noteHtml}
+      ${gunlukDokum}
       ${legendHtml}
       ${signaturesHtml}
       <div class="footer">

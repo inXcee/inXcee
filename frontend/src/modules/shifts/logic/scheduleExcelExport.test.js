@@ -81,7 +81,7 @@ describe('scheduleExcelExport - X3 workbook builder', () => {
     expect(result.sheetNames.control).toBe('Kontrol')
     expect(result.sheetNames.departments).toEqual(['Bolum - Guvenlik', 'Bolum - Teknik'])
     // 'Vardiya Dagilimi': bolum bazinda hangi vardiyada kac kisi + calisma noktalari
-    expect(names).toEqual(['Kontrol', 'Plan', 'Operasyon', 'Vardiya Dagilimi', 'Veri', 'Bolum - Guvenlik', 'Bolum - Teknik'])
+    expect(names).toEqual(['Kontrol', 'Plan', 'Operasyon', 'Vardiya Dagilimi', 'Gun Gun Dokum', 'Veri', 'Bolum - Guvenlik', 'Bolum - Teknik'])
   })
 
   it('writes control panel metrics and warning sections', () => {
@@ -115,7 +115,7 @@ describe('scheduleExcelExport - X3 workbook builder', () => {
     const settingsRow = raw.getColumn(18).values.findIndex(value => value === 'Sayfa Modu')
 
     expect(settingsRow).toBeGreaterThan(0)
-    expect(raw.getCell(settingsRow, 19).value).toBe('7 sayfa')
+    expect(raw.getCell(settingsRow, 19).value).toBe('8 sayfa')
     expect(raw.getCell(settingsRow, 20).value).toContain('2 bolum sayfasi')
     expect(raw.getCell('P4').value).toBe('Ikramci')
     expect(raw.getCell('Q4').value).toBe('OTC Yemekhane')
@@ -226,5 +226,32 @@ describe('Vardiya dagilimi sayfasi', () => {
     const metin = []
     ws.eachRow(r => r.eachCell(c => { if (c.value != null) metin.push(String(c.value)) }))
     expect(metin.join(' | ')).toContain('Konum belirtilmemiş')
+  })
+})
+
+describe('Gun gun dokum sayfasi', () => {
+  it('gun / vardiya / nokta / isim satirlari ve gun toplami yazar', () => {
+    const ws = buildWorkbook().workbook.getWorksheet('Gun Gun Dokum')
+    expect(ws).toBeTruthy()
+    const metin = []
+    ws.eachRow(r => r.eachCell(c => { if (c.value != null) metin.push(String(c.value)) }))
+    const hepsi = metin.join(' | ')
+    expect(hepsi).toContain('GUN GUN VARDIYA DOKUMU')
+    expect(hepsi).toContain('GUN TOPLAMI')
+    expect(hepsi).toContain('Ali Yilmaz')
+  })
+
+  // Kimsenin çalışmadığı gün sessizce atlanırsa "veri yok mu, kimse mi yok"
+  // ayırt edilemez.
+  it('kimsenin olmadigi gunu acikca isaretler', () => {
+    // Varsayilan fixture'da her gun dolu; bos gun durumu icin tek gunluk kadro.
+    const kisi = {
+      id: 77, full_name: 'Tek Kisi', dept_id: 1, dept_name: 'Teknik',
+      days: { [WEEK[0]]: { status: 'worked', shift_name: 'Gunduz', work_location_name: 'Kamp' } },
+    }
+    const ws = buildWorkbook({ staffGrid: [kisi], visibleGrid: [kisi] }).workbook.getWorksheet('Gun Gun Dokum')
+    const metin = []
+    ws.eachRow(r => r.eachCell(c => { if (c.value != null) metin.push(String(c.value)) }))
+    expect(metin.join(' | ')).toContain('Kayit yok')
   })
 })
