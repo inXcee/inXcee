@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { weekShiftMatrix, dayHeadcounts } from '../logic/departmentDigest.js'
 import { useQuery } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
 import { useToastStore } from '../../../shared/store/toastStore.js'
@@ -35,7 +36,7 @@ const groupKey = group => group.key || group.name
 const personMeta = person => [person.role_name, person.work_location_name || person.site].filter(Boolean).join(' · ')
 
 // Gün detayı: seçili gün için bölüm bölüm kadro + izin/rapor/devamsız + toplu özet.
-export default function DayDetailBoard({ weekDays = [], onPersonClick }) {
+export default function DayDetailBoard({ weekDays = [], staffGrid = [], onPersonClick }) {
   const [open, setOpen] = useState(true)
   const [date, setDate] = useState(() => {
     const today = todayIso()
@@ -51,6 +52,20 @@ export default function DayDetailBoard({ weekDays = [], onPersonClick }) {
     queryFn: () => api.get('/shifts/day-detail', { params: { date, group_by: groupBy } }).then(r => r.data),
     enabled: open && !!date,
   })
+
+  // Hafta özeti ekrandaki çizelgeden hesaplanır — 7 gün için 7 istek atmaya
+  // gerek yok, veri zaten yüklü.
+  const haftaGruplari = useMemo(() => {
+    const map = new Map()
+    ;(staffGrid || []).forEach(p => {
+      const ad = p.dept_name || 'Departmansız'
+      if (!map.has(ad)) map.set(ad, { name: ad, people: [] })
+      map.get(ad).people.push(p)
+    })
+    return [...map.values()]
+  }, [staffGrid])
+  const haftaMatrisi = useMemo(() => weekShiftMatrix(haftaGruplari, weekDays), [haftaGruplari, weekDays])
+  const gunToplamlari = useMemo(() => dayHeadcounts(haftaGruplari, weekDays), [haftaGruplari, weekDays])
 
   const summary = useMemo(() => dayDetailSummary(detail || {}), [detail])
   const matrix = useMemo(() => buildShiftMatrix(detail || {}), [detail])
@@ -160,6 +175,11 @@ export default function DayDetailBoard({ weekDays = [], onPersonClick }) {
                   >
                     <span>{shortDay(day)}</span>
                     <strong style={{ marginLeft: '4px' }}>{day.slice(8, 10)}</strong>
+                    <span style={{
+                      marginLeft: 5, fontFamily: 'var(--mono)', fontSize: 9,
+                      opacity: day === date ? 0.85 : 0.6,
+                      color: gunToplamlari[day] ? undefined : 'var(--red)',
+                    }}>{gunToplamlari[day] ?? 0}</span>
                   </button>
                 ))}
               </div>
@@ -174,6 +194,58 @@ export default function DayDetailBoard({ weekDays = [], onPersonClick }) {
               ))}
             </div>
           </div>
+
+          {/* Hafta özeti — her günü tek tek açmadan tek bakışta */}
+          {haftaMatrisi.rows.length > 0 && (
+            <div style={{
+              border: '1px solid var(--border)', borderRadius: 9, padding: '8px 10px',
+              marginBottom: 12, background: 'var(--surface2)', overflowX: 'auto',
+            }}>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: 1, color: 'var(--text3)', marginBottom: 6 }}>
+                HAFTA ÖZETİ · vardiya × gün · toplam {haftaMatrisi.weekTotal} kişi-gün
+              </div>
+              <table className="data-table" style={{ fontSize: 11, minWidth: 420 }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'left' }}>VARDİYA</th>
+                    {weekDays.map(d => (
+                      <th key={d} style={{ textAlign: 'center', cursor: 'pointer' }}
+                        onClick={() => selectDate(d)} title={`${formatDate(d)} detayına git`}>
+                        {shortDay(d)}<div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--text3)' }}>{d.slice(8, 10)}</div>
+                      </th>
+                    ))}
+                    <th style={{ textAlign: 'center' }}>TOP</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {haftaMatrisi.rows.map(satir => (
+                    <tr key={satir.shift}>
+                      <td style={{ fontWeight: 600 }}>{satir.shift}</td>
+                      {satir.days.map((n, i) => (
+                        <td key={weekDays[i]} style={{
+                          textAlign: 'center', fontFamily: 'var(--mono)', cursor: 'pointer',
+                          // Sıfır sessiz kalmasın: o vardiyada o gün kimse yok demek.
+                          color: n === 0 ? 'var(--red)' : 'var(--text)',
+                          background: weekDays[i] === date ? 'rgba(240,165,0,.10)' : undefined,
+                        }} onClick={() => selectDate(weekDays[i])}>{n}</td>
+                      ))}
+                      <td style={{ textAlign: 'center', fontFamily: 'var(--mono)', fontWeight: 700 }}>{satir.total}</td>
+                    </tr>
+                  ))}
+                  <tr>
+                    <td style={{ fontWeight: 700, color: 'var(--text3)' }}>TOPLAM</td>
+                    {haftaMatrisi.dayTotals.map((n, i) => (
+                      <td key={weekDays[i]} style={{
+                        textAlign: 'center', fontFamily: 'var(--mono)', fontWeight: 700,
+                        color: n === 0 ? 'var(--red)' : 'var(--text)',
+                      }}>{n}</td>
+                    ))}
+                    <td style={{ textAlign: 'center', fontFamily: 'var(--mono)', fontWeight: 700 }}>{haftaMatrisi.weekTotal}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
 
           {/* Toplu özet — her zaman görünür */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(108px, 1fr))', gap: '8px', marginBottom: '12px' }}>

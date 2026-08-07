@@ -163,3 +163,25 @@ export function namesLine(people = [], { max = 14 } = {}) {
   const kalan = adlar.length - gosterilen.length
   return gosterilen.join(', ') + (kalan > 0 ? ` … +${kalan} kişi` : '')
 }
+
+// HAFTA ÖZETİ — bütün günler tek bakışta: vardiya satırları, gün sütunları.
+//
+// Gün detayı panelinde her günü tek tek açmak gerekiyordu; "perşembe gecesi
+// kaç kişi var" sorusu 7 tıklama ediyordu. Bu, aynı hücrelerden haftalık
+// matrisi çıkarır — ek istek yok, ekrandaki veri yeter.
+export function weekShiftMatrix(groups = [], weekDays = []) {
+  const herkes = (groups || []).flatMap(g => g.people || [])
+  const matris = departmentDayShiftMatrix({ people: herkes }, weekDays)
+  return {
+    ...matris,
+    // En kalabalık vardiya üstte dursun; gözün ilk gittiği yer o olsun.
+    rows: [...matris.rows].sort((a, b) => b.total - a.total || a.shift.localeCompare(b.shift, 'tr')),
+    weekTotal: matris.dayTotals.reduce((t, n) => t + n, 0),
+  }
+}
+
+// Gün başına toplam — gün düğmelerinde rozet olarak gösterilir.
+export function dayHeadcounts(groups = [], weekDays = []) {
+  const roster = dayRoster(groups, weekDays, { byLocation: false })
+  return Object.fromEntries(roster.map(g => [g.date, g.total]))
+}

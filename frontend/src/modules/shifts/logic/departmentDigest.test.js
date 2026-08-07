@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   departmentShiftDigest, digestLine, departmentDayShiftMatrix, shiftLabel,
-  dayRoster, namesLine,
+  dayRoster, namesLine, weekShiftMatrix, dayHeadcounts,
   DIGEST_DEFAULT_AREA, DIGEST_DEFAULT_SHIFT,
 } from './departmentDigest.js'
 
@@ -170,5 +170,34 @@ describe('İsim satırı', () => {
 
   it('boş listede boş döner', () => {
     expect(namesLine([])).toBe('')
+  })
+})
+
+describe('Hafta özeti (tek bakışta)', () => {
+  it('tüm bölümleri birleştirip vardiya × gün matrisi verir', () => {
+    const m = weekShiftMatrix(GRUPLAR, GUNLER)
+    expect(m.rows.find(r => r.shift === 'Gündüz').days).toEqual([2, 1])
+    expect(m.rows.find(r => r.shift === 'Akşam').days).toEqual([1, 0])
+    expect(m.dayTotals).toEqual([3, 1])
+    expect(m.weekTotal).toBe(4)
+  })
+
+  it('en kalabalık vardiya üstte', () => {
+    expect(weekShiftMatrix(GRUPLAR, GUNLER).rows[0].shift).toBe('Gündüz')
+  })
+
+  it('boş girdide sıfırlar', () => {
+    const m = weekShiftMatrix([], GUNLER)
+    expect(m.rows).toEqual([])
+    expect(m.weekTotal).toBe(0)
+  })
+
+  // Gün düğmesindeki rozet: kaç kişi olduğunu tıklamadan görmek için.
+  it('gün başına toplam verir', () => {
+    expect(dayHeadcounts(GRUPLAR, GUNLER)).toEqual({ [GUNLER[0]]: 3, [GUNLER[1]]: 1 })
+  })
+
+  it('kimse yoksa sıfır yazar (anahtarı siler değil)', () => {
+    expect(dayHeadcounts([], GUNLER)).toEqual({ [GUNLER[0]]: 0, [GUNLER[1]]: 0 })
   })
 })

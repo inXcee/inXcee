@@ -978,7 +978,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
         locations={workLocations}
       />}
 
-      {scheduleView === 'weekly' && <DayDetailBoard key={weekDays[0] || 'current-week'} weekDays={weekDays} onPersonClick={onPersonClick} />}
+      {scheduleView === 'weekly' && <DayDetailBoard key={weekDays[0] || 'current-week'} weekDays={weekDays} staffGrid={staffGrid} onPersonClick={onPersonClick} />}
 
       {scheduleView === 'weekly' && (
         <ProjectCrossoverBoard from={weekStart} to={weekEnd} onPersonClick={onPersonClick} />
