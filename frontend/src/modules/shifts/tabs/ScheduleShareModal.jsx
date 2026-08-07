@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import api from '../../../shared/api/client.js'
 import { useToastStore } from '../../../shared/store/toastStore.js'
 import { ModalOverlay, shortDay } from '../shared.jsx'
 import {
@@ -138,6 +139,38 @@ export default function ScheduleShareModal({
     } catch (err) { toast(err?.message || 'PDF görünümü açılamadı', 'error') }
   }
 
+  // İmza föyünü GERÇEK PDF olarak indirir: tarayıcının baskı diyaloğu yok,
+  // font ve sayfa ölçüsü sunucuda sabit — belge her makinede aynı çıkar.
+  const runSignaturePdf = async () => {
+    if (signatureDates.length === 0) {
+      toast('İmza föyü için en az bir gün seçin', 'warning'); return
+    }
+    if ((options.sig_layout || 'weekly') !== 'weekly') {
+      toast('PDF indirme haftalık föy düzeninde çalışır', 'warning'); return
+    }
+    try {
+      setBusy('sigpdf')
+      const res = await api.post('/shifts/schedule/signature-pdf', {
+        model: weeklySignatureModel,
+        meta: {
+          revision: options.revision,
+          generated: new Date().toLocaleString('tr-TR'),
+          weekLabel: `${weekStart} - ${weekEnd}`,
+          weekStart,
+        },
+      }, { responseType: 'blob' })
+      const url = URL.createObjectURL(res.data)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `imza-foyu-${weekStart}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+      toast('İmza föyü PDF indirildi', 'success')
+    } catch (err) {
+      toast(err?.response?.data?.error || 'İmza föyü PDF indirilemedi', 'error')
+    } finally { setBusy(null) }
+  }
+
   const runImage = async () => {
     const fmt = (options.imageFormat || 'png').toUpperCase()
     try {
@@ -193,7 +226,14 @@ export default function ScheduleShareModal({
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          <button className="btn btn-primary btn-sm" onClick={runPrint}>PDF / Yazdır</button>
+          {content !== 'schedule' && (options.sig_layout || 'weekly') === 'weekly' && (
+            <button className="btn btn-primary btn-sm" onClick={runSignaturePdf} disabled={busy === 'sigpdf'}
+              title="İmza föyünü doğrudan PDF dosyası olarak indirir (yazdırma diyaloğu açılmaz)">
+              {busy === 'sigpdf' ? 'Hazırlanıyor…' : '⬇ İmza PDF indir'}
+            </button>
+          )}
+          <button className="btn btn-ghost btn-sm" onClick={runPrint}
+            title="Tarayıcının yazdırma önizlemesini açar">Yazdır</button>
           <button className="btn btn-ghost btn-sm" onClick={runExcel} disabled={busy === 'xls'}>{busy === 'xls' ? 'Hazırlanıyor...' : 'Excel'}</button>
           {content !== 'signatures' && <button className="btn btn-ghost btn-sm" onClick={runImage} disabled={busy === 'img'}>{busy === 'img' ? 'Hazırlanıyor...' : `Çizelge ${(options.imageFormat || 'png').toUpperCase()}`}</button>}
           {content !== 'schedule' && (options.sig_layout || 'weekly') === 'weekly' && <button className="btn btn-ghost btn-sm" onClick={runSignatureImage} disabled={busy === 'sigimg'}>{busy === 'sigimg' ? 'Hazırlanıyor...' : 'İmza PNG'}</button>}

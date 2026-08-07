@@ -39,6 +39,7 @@ import {
   operationsDashboardService, puantajClosingPackageService
 } from './service.js'
 import PDFDocument from 'pdfkit'
+import { drawSignaturePdf } from './signaturePdf.js'
 import {
   checkConflicts, listHolidays, createHoliday, updateHoliday, deleteHoliday,
   getPayrollExport, getCombinedAbsences,
@@ -504,6 +505,36 @@ const DEDUCTION_KIND_TR = {
   damage: 'Hasar kesintisi', discipline: 'Disiplin kesintisi', late: 'Gec gelme kesintisi',
   advance: 'Avans mahsubu', tax: 'Vergi kesintisi', other: 'Diger kesinti',
 }
+
+// İmza föyü — GERÇEK PDF indirmesi.
+// Yerleşim modeli istemcide kurulur (testli buildWeeklySignatureModel); burada
+// yalnız çizilir. Böylece HTML çıktısı ile PDF aynı kaynaktan beslenir ve
+// kullanıcı tarayıcının baskı diyaloğuyla uğraşmadan dosyayı indirir.
+shiftsRouter.post('/schedule/signature-pdf', ...managerOrSupervisor, (req, res) => {
+  try {
+    const model = req.body?.model
+    if (!model || !Array.isArray(model.pages)) {
+      return res.status(400).json({ error: 'model.pages dizisi gereklidir' })
+    }
+    // Kaza eseri devasa gövde gelmesin; föy elle imzalanan bir belge.
+    const satirSayisi = model.pages.reduce((t, p) => t + (Array.isArray(p.rows) ? p.rows.length : 0), 0)
+    if (model.pages.length > 200 || satirSayisi > 3000) {
+      return res.status(413).json({ error: 'İmza föyü çok büyük — gün veya personel sayısını daraltın' })
+    }
+
+    const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 28 })
+    res.setHeader('Content-Type', 'application/pdf')
+    const hafta = String(req.body?.meta?.weekStart || '').replace(/[^0-9-]/g, '') || 'hafta'
+    res.setHeader('Content-Disposition', `attachment; filename="imza-foyu-${hafta}.pdf"`)
+    doc.pipe(res)
+    drawSignaturePdf(doc, model, req.body?.meta || {})
+    doc.end()
+    logAudit(req.user.id, 'signature_pdf', 'shifts', null, `${model.pages.length} sayfa`)
+  } catch (e) {
+    console.error('[signature-pdf]', e)
+    if (!res.headersSent) res.status(500).json({ error: 'İmza föyü PDF oluşturulamadı' })
+  }
+})
 
 shiftsRouter.get('/payslip/:staffId/pdf', ...managerOrSupervisor, (req, res) => {
   try {

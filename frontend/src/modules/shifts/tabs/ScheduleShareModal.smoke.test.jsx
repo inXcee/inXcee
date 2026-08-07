@@ -23,7 +23,10 @@ describe('ScheduleShareModal smoke', () => {
     )
 
     expect(screen.getByText('ÇIKTI MERKEZİ')).toBeInTheDocument()
-    expect(screen.getByText('PDF / Yazdır')).toBeInTheDocument()
+    // "PDF / Yazdır" tek düğmeydi ve aslında yalnız yazdırma önizlemesi açıyordu;
+    // gerçek PDF indirmesi ayrı bir eylem olduğu için ikisi ayrıldı.
+    expect(screen.getByText('Yazdır')).toBeInTheDocument()
+    expect(screen.getByText(/İmza PDF indir/)).toBeInTheDocument()
     expect(screen.getByText('Çizelge PNG')).toBeInTheDocument()
     expect(screen.getByText('İmza PNG')).toBeInTheDocument()
     expect(screen.getByText('Tek sayfa PNG, birden fazla bölüm veya sayfa tek ZIP paketi olur.')).toBeInTheDocument()
