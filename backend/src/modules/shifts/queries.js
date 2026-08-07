@@ -2721,6 +2721,9 @@ export function getBreakdownAssignees({ date, dimension, value }) {
     site: `COALESCE(wl.site, '${DEFAULT_SITE}')`,
     location: `COALESCE(wl.name, '${DEFAULT_LOCATION}')`,
     role: "COALESCE(sr.name, 'Rolsüz')",
+    // Departman kırılımı: bir noktada/rolde birden fazla bölümden insan olabilir;
+    // "hangi bölümden kaç kişi" ancak böyle sorulabiliyor.
+    dept: "COALESCE(d.name, '—')",
   }[dimension]
   if (!groupExpr) return []
   return db.prepare(`

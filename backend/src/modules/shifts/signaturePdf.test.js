@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeAll } from 'vitest'
 import PDFDocument from 'pdfkit'
 import { drawSignaturePdf, signatureColumnWidths } from './signaturePdf.js'
 
@@ -100,18 +100,29 @@ describe('İmza föyü kolon genişlikleri', () => {
 })
 
 describe('İmza föyü PDF ucu', () => {
-  it('geçersiz model 400 döner', async () => {
-    const { default: request } = await import('supertest')
-    const { default: app } = await import('../../app.js')
+  // Kurulum test GÖVDESİNDE yapılırsa suite içinde diğer dosyalarla çakışıyor
+  // (aynı :memory: DB yeniden seed ediliyor). Diğer dosyalarla aynı desen:
+  // beforeAll içinde bir kez.
+  let request, app, auth
+
+  beforeAll(async () => {
+    process.env.DB_PATH = ':memory:'
+    request = (await import('supertest')).default
+    app = (await import('../../app.js')).default
     const { initDB } = await import('../../shared/db/index.js')
     const { seedDev } = await import('../../shared/db/seed.js')
-    process.env.DB_PATH = ':memory:'
-    initDB(); seedDev()
-    const token = (await request(app).post('/api/auth/login').send({ username: 'mudur', password: 'admin123' })).body.token
-    const auth = { Authorization: `Bearer ${token}` }
+    initDB()
+    seedDev()
+    const token = (await request(app).post('/api/auth/login')
+      .send({ username: 'mudur', password: 'admin123' })).body.token
+    auth = { Authorization: `Bearer ${token}` }
+  })
 
+  it('geçersiz model 400 döner', async () => {
     expect((await request(app).post('/api/shifts/schedule/signature-pdf').set(auth).send({})).status).toBe(400)
+  })
 
+  it('geçerli model PDF döndürür', async () => {
     const res = await request(app).post('/api/shifts/schedule/signature-pdf')
       .set(auth).send({ model: MODEL, meta: { weekStart: '2026-08-10' } })
     expect(res.status).toBe(200)

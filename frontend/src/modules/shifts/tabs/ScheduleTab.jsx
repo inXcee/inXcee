@@ -976,6 +976,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
         shiftDefs={shiftDefs}
         roles={staffRoles}
         locations={workLocations}
+        staffGrid={staffGrid}
       />}
 
       {scheduleView === 'weekly' && <DayDetailBoard key={weekDays[0] || 'current-week'} weekDays={weekDays} staffGrid={staffGrid} onPersonClick={onPersonClick} />}

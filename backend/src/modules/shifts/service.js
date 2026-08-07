@@ -279,7 +279,7 @@ export function scheduleBreakdownService({ from, to } = {}) {
 
 export function breakdownAssigneesService({ date, dimension, value } = {}) {
   if (!date || !dimension) throw Object.assign(new Error('date ve dimension gerekli'), { statusCode: 400 })
-  if (!['site', 'location', 'role'].includes(dimension)) {
+  if (!['site', 'location', 'role', 'dept'].includes(dimension)) {
     throw Object.assign(new Error('gecersiz dimension'), { statusCode: 400 })
   }
   return { date, dimension, value: value ?? '', assignees: getBreakdownAssignees({ date, dimension, value: value ?? '' }) }

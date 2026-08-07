@@ -18,7 +18,7 @@ function toClockInput(value) {
 // Kırılım hücrelerine tıklayınca o gün+değer için atanan kişiler panelde açılır (tıklanabilir).
 export default function CoverageBoard({
   from, to, weekDays = [], onPersonClick, canEdit = false,
-  departments = [], shiftDefs = [], roles = [], locations = [],
+  departments = [], shiftDefs = [], roles = [], locations = [], staffGrid = [],
 }) {
   const qc = useQueryClient()
   const [open, setOpen] = useState(false)
@@ -56,6 +56,24 @@ export default function CoverageBoard({
     })
     return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name, 'tr'))
   }, [breakdown])
+  // Departman kırılımı: bir noktada birden fazla bölümden insan çalışabiliyor,
+  // "hangi bölümden kaç kişi" sorusu ancak böyle cevaplanıyor. Ekrandaki
+  // çizelgeden hesaplanır — ek istek yok.
+  const deptRows = useMemo(() => {
+    const byName = new Map()
+    ;(staffGrid || []).forEach(person => {
+      const ad = person.dept_name || 'Departmansız'
+      if (!byName.has(ad)) byName.set(ad, { name: ad, perDay: {} })
+      const kayit = byName.get(ad)
+      weekDays.forEach(date => {
+        const cell = person.days?.[date]
+        if (!['scheduled', 'worked', 'overtime'].includes(cell?.status)) return
+        kayit.perDay[date] = (kayit.perDay[date] || 0) + 1
+      })
+    })
+    return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name, 'tr'))
+  }, [staffGrid, weekDays])
+
   // Rol kırılımı grup bazlı: Yemek/İkram · Bulaşıkhane · Diğer (karışmasın).
   const roleGroups = useMemo(() => {
     const groups = new Map()
@@ -268,6 +286,7 @@ export default function CoverageBoard({
       )}
       {open && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '14px' }}>
+          <BreakdownTable title="DEPARTMAN KIRILIMI (bölüm bölüm kaç kişi)" label="Bölüm" dimension="dept" rows={deptRows} weekDays={weekDays} onCell={openCell} />
           <BreakdownTable title="SITE KIRILIMI (OTC / LOKAL / KAMP · YEMEKHANE)" label="Site" dimension="site" rows={siteRows} weekDays={weekDays} onCell={openCell} />
           <BreakdownTable title="ÇALIŞMA NOKTASI KIRILIMI (atanmamış → Yemekhane)" label="Nokta" dimension="location" rows={locationRows} weekDays={weekDays} onCell={openCell} />
           {roleGroups.map(group => (
@@ -341,7 +360,21 @@ function AssigneePanel({ picked, onClose, onPersonClick }) {
     }).then(r => r.data),
   })
   const people = data?.assignees || []
-  const dimLabel = { site: 'Site', location: 'Nokta', role: 'Rol' }[picked.dimension] || ''
+  const dimLabel = { site: 'Site', location: 'Nokta', role: 'Rol', dept: 'Bölüm' }[picked.dimension] || ''
+  // Bir noktada/rolde birden çok bölümden insan olabiliyor ve düz liste bunu
+  // gizliyordu ("ikram'a tıkladım, kat hizmetleri de çıktı"). Bölüm bölüm
+  // ayrılır ve her bölümün kaç kişisi olduğu yazılır.
+  const byDept = useMemo(() => {
+    const map = new Map()
+    people.forEach(p => {
+      const ad = p.dept_name || 'Departmansız'
+      if (!map.has(ad)) map.set(ad, [])
+      map.get(ad).push(p)
+    })
+    return [...map.entries()]
+      .map(([name, list]) => ({ name, list }))
+      .sort((a, b) => b.list.length - a.list.length || a.name.localeCompare(b.name, 'tr'))
+  }, [people])
   return (
     <SidePanel
       title={picked.label}
@@ -353,8 +386,25 @@ function AssigneePanel({ picked, onClose, onPersonClick }) {
     >
       {isLoading && <div style={{ fontSize: '11px', color: 'var(--text3)' }}>Yükleniyor…</div>}
       {!isLoading && people.length === 0 && <div style={{ fontSize: '11px', color: 'var(--text3)' }}>Kayıt yok.</div>}
+      {byDept.length > 1 && (
+        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 8 }}>
+          {byDept.map(g => (
+            <span key={g.name} style={{
+              fontFamily: 'var(--mono)', fontSize: 9, padding: '2px 7px', borderRadius: 999,
+              background: 'var(--surface2)', border: '1px solid var(--border)', color: 'var(--text2)',
+            }}>{g.name} {g.list.length}</span>
+          ))}
+        </div>
+      )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        {people.map(p => {
+        {byDept.map(grup => (
+          <div key={grup.name}>
+            <div style={{
+              fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: 1, color: 'var(--text3)',
+              borderBottom: '1px solid var(--border)', padding: '4px 0 3px', marginBottom: 5,
+            }}>{grup.name.toLocaleUpperCase('tr')} · {grup.list.length} kişi</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        {grup.list.map(p => {
           const sc = shiftColor(p.work_location_color)
           return (
             <button
@@ -378,6 +428,9 @@ function AssigneePanel({ picked, onClose, onPersonClick }) {
             </button>
           )
         })}
+            </div>
+          </div>
+        ))}
       </div>
     </SidePanel>
   )

@@ -524,3 +524,41 @@ describe('Çizelge isim sırası', () => {
     expect((await request(app).post('/api/shifts/staff/order').set(auth()).send({})).status).toBe(400)
   })
 })
+
+// Kapsama panosunda Site/Nokta/Rol kırılımı vardı ama DEPARTMAN yoktu; ayrıca
+// bir hücreye tıklayınca gelen liste düzdü, bölümler karışık görünüyordu.
+describe('Kırılım — departman boyutu', () => {
+  const GUN = '2026-09-07'
+
+  it('hazırlık: iki bölümden aynı noktaya vardiya', async () => {
+    const db = getDB()
+    const bolumler = db.prepare('SELECT id, name FROM departments ORDER BY id LIMIT 2').all()
+    const nokta = db.prepare('SELECT id FROM work_locations WHERE is_active=1 LIMIT 1').get()
+    db.prepare('UPDATE staff SET department_id=? WHERE id=?').run(bolumler[0].id, fpuStaff)
+    db.prepare('UPDATE staff SET department_id=? WHERE id=?').run(bolumler[1].id, kampStaff)
+    const ekle = db.prepare(
+      "INSERT INTO shift_schedule(staff_id, work_date, status, work_location_id, dept_id) VALUES(?,?,'worked',?,?)",
+    )
+    ;[[fpuStaff, bolumler[0].id], [kampStaff, bolumler[1].id]].forEach(([sid, did]) => {
+      try { ekle.run(sid, GUN, nokta.id, did) } catch { /* zaten var */ }
+    })
+    expect(bolumler.length).toBe(2)
+  })
+
+  it('departman boyutu kabul edilir', async () => {
+    const bolum = getDB().prepare('SELECT name FROM departments ORDER BY id LIMIT 1').get().name
+    const res = await request(app)
+      .get(`/api/shifts/breakdown/assignees?date=${GUN}&dimension=dept&value=${encodeURIComponent(bolum)}`)
+      .set(auth())
+    expect(res.status).toBe(200)
+    const idler = res.body.assignees.map(a => a.staff_id)
+    expect(idler).toContain(fpuStaff)
+    expect(idler).not.toContain(kampStaff)
+  })
+
+  it('geçersiz boyut hâlâ reddedilir', async () => {
+    const res = await request(app)
+      .get(`/api/shifts/breakdown/assignees?date=${GUN}&dimension=uydurma&value=x`).set(auth())
+    expect(res.status).toBe(400)
+  })
+})
