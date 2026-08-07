@@ -17,6 +17,7 @@ export function buildStaffGrid(rows, allStaff, deptFilter) {
         dept_id: r.dept_id, dept_name: r.dept_name, dept_color: r.dept_color,
         role_id: r.role_id, role_name: r.role_name, role_sort_order: r.role_sort_order,
         role_color: r.role_color, schedule_order: r.schedule_order,
+        project_id: r.project_id, project_name: r.project_name, project_code: r.project_code,
         days: {}
       })
     }
@@ -32,6 +33,7 @@ export function buildStaffGrid(rows, allStaff, deptFilter) {
         id: s.id, full_name: s.full_name, gender: s.gender, position: s.position,
         dept_id: s.department_id, dept_name: s.dept_name, dept_color: s.dept_color,
         role_color: s.role_color, schedule_order: s.schedule_order,
+        project_id: s.project_id, project_name: s.project_name, project_code: s.project_code,
         role_id: s.role_id, role_name: s.role_name, role_sort_order: s.role_sort_order,
         days: {}
       })

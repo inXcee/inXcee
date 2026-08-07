@@ -121,7 +121,7 @@ describe('Gün gün döküm (kim, hangi vardiyada)', () => {
   it('isimleri alfabetik ve bölümüyle taşır', () => {
     const [gun1] = dayRoster(GRUPLAR, GUNLER)
     const aksam = gun1.shifts.find(v => v.shift === 'Akşam')
-    expect(aksam.locations[0].people).toEqual([{ name: 'B', department: 'Mutfak', role: '' }])
+    expect(aksam.locations[0].people).toEqual([{ name: 'B', department: 'Mutfak', role: '', project: '' }])
   })
 
   // İzinli kişi listede görünürse o gece sahada olduğu sanılır.

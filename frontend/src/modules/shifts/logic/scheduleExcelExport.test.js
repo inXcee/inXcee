@@ -112,13 +112,17 @@ describe('scheduleExcelExport - X3 workbook builder', () => {
   it('keeps raw settings aware of the expanded sheet count', () => {
     const result = buildWorkbook()
     const raw = result.workbook.getWorksheet('Veri')
-    const settingsRow = raw.getColumn(18).values.findIndex(value => value === 'Sayfa Modu')
+    // Ayar/kod blogu 'proje' kolonu yuzunden bir saga kaydi.
+    const settingsRow = raw.getColumn(19).values.findIndex(value => value === 'Sayfa Modu')
 
     expect(settingsRow).toBeGreaterThan(0)
-    expect(raw.getCell(settingsRow, 19).value).toBe('8 sayfa')
-    expect(raw.getCell(settingsRow, 20).value).toContain('2 bolum sayfasi')
-    expect(raw.getCell('P4').value).toBe('Ikramci')
-    expect(raw.getCell('Q4').value).toBe('OTC Yemekhane')
+    expect(raw.getCell(settingsRow, 20).value).toBe('8 sayfa')
+    expect(raw.getCell(settingsRow, 21).value).toContain('2 bolum sayfasi')
+    // 'proje' kolonu C'ye eklendi (iki proje yurutuluyor, pivot icin gerekli);
+    // sonraki kolonlar bir saga kaydi.
+    expect(raw.getCell('C4').value).toBe('Kadrosuz')
+    expect(raw.getCell('Q4').value).toBe('Ikramci')
+    expect(raw.getCell('R4').value).toBe('OTC Yemekhane')
   })
 
   it('serializes the generated workbook to an xlsx buffer', async () => {

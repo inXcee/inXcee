@@ -513,3 +513,31 @@ describe('buildStaffGrid — elle sıra', () => {
     expect(buildStaffGrid([], iki, '').map(p => p.dept_name)).toEqual(['Aşçı', 'Bahçe'])
   })
 })
+
+// İki proje aynı anda yürüyor; çizelge ızgarasından beslenen çıktılar
+// (Excel, yazdırma) kişinin kadrosunu gösteremiyorsa proje bazlı döküm
+// alınamıyor.
+describe('buildStaffGrid — proje bilgisi', () => {
+  it('çizelge satırından proje taşınır', () => {
+    const rows = [{
+      staff_id: 1, full_name: 'Ali', work_date: '2026-08-03', status: 'worked',
+      dept_name: 'Mutfak', project_id: 2, project_name: 'Kamp Alanı', project_code: 'KAMP',
+    }]
+    const [kisi] = buildStaffGrid(rows, [], '')
+    expect(kisi.project_name).toBe('Kamp Alanı')
+    expect(kisi.project_code).toBe('KAMP')
+  })
+
+  it('çizelgede olmayan personelde de proje gelir', () => {
+    const [kisi] = buildStaffGrid([], [{
+      id: 5, full_name: 'Veli', dept_name: 'Temizlik',
+      project_id: 1, project_name: 'FPU', project_code: 'FPU',
+    }], '')
+    expect(kisi.project_name).toBe('FPU')
+  })
+
+  it('kadrosuz kişide alan boş kalır, patlamaz', () => {
+    const [kisi] = buildStaffGrid([], [{ id: 6, full_name: 'Kadrosuz', dept_name: 'X' }], '')
+    expect(kisi.project_name).toBeUndefined()
+  })
+})

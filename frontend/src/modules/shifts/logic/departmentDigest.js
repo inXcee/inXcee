@@ -127,6 +127,7 @@ export function dayRoster(groups = [], weekDays = [], { byLocation = true } = {}
         name: person.full_name || '',
         department: group.name || person.dept_name || 'Departmansız',
         role: person.role_name || person.position || '',
+        project: person.project_name || '',
       })
     }))
 

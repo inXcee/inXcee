@@ -426,7 +426,7 @@ function addDayRosterSheet(wb, { sheetName, navSheets, weekDays, exportRows, wee
   })
 
   const baslik = ws.getRow(5)
-  baslik.values = ['Tarih', 'Gun', 'Vardiya', 'Calisma Noktasi', 'Kisi', 'Personel']
+  baslik.values = ['Tarih', 'Gun', 'Vardiya', 'Calisma Noktasi', 'Kisi', 'Personel', 'Projeler']
   styleHeaderRow(baslik)
 
   const gunler = dayRoster(gruplar, weekDays)
@@ -449,6 +449,8 @@ function addDayRosterSheet(wb, { sheetName, navSheets, weekDays, exportRows, wee
           yer.count,
           // Excel'de kırpma yapılmaz: kâğıt sınırı yok, filtreleyip aramak isteniyor.
           yer.people.map(p => p.name).join(', '),
+          // Hangi projelerden insan var: iki proje yürüyor, karışım görünsün.
+          [...new Set(yer.people.map(p => p.project || '').filter(Boolean))].join(', '),
         ])
         row.eachCell((cell, colNo) => {
           cell.border = border
@@ -466,8 +468,8 @@ function addDayRosterSheet(wb, { sheetName, navSheets, weekDays, exportRows, wee
     })
   })
 
-  ;[12, 10, 16, 22, 7, 90].forEach((w, i) => { ws.getColumn(i + 1).width = w })
-  ws.autoFilter = { from: { row: 5, column: 1 }, to: { row: ws.lastRow.number, column: 6 } }
+  ;[12, 10, 16, 22, 7, 90, 18].forEach((w, i) => { ws.getColumn(i + 1).width = w })
+  ws.autoFilter = { from: { row: 5, column: 1 }, to: { row: ws.lastRow.number, column: 7 } }
   ws.pageSetup.printTitlesRow = '1:5'
   return ws
 }
@@ -988,7 +990,7 @@ export function buildScheduleExcelWorkbook(ExcelJS, {
   const entryRiskRange = sheetRange(sheetNames.plan, `$Q$${entryStartRow}:$Q$${entryEndRow}`)
   const codeListStart = 5
   const codeListEnd = codeListStart + codes.length - 1
-  const codeValidationRange = sheetRange(sheetNames.raw, `$S$${codeListStart}:$S$${codeListEnd}`)
+  const codeValidationRange = sheetRange(sheetNames.raw, `$T$${codeListStart}:$T$${codeListEnd}`)
   const absentTotal = exportRows.reduce((sum, person) => sum + personCounts(person, weekDays).absent, 0)
   const riskyRows = exportRows.filter(person => riskFor(personCounts(person, weekDays)) !== 'OK').length
 
@@ -1302,7 +1304,7 @@ export function buildScheduleExcelWorkbook(ExcelJS, {
   const raw = wb.addWorksheet(sheetNames.raw, { views: [{ state: 'frozen', ySplit: 4 }] })
   setupSheet(raw, COLORS.gray)
   setupTitle(raw, 'VERI, KODLAR VE AYARLAR', 'Filtre, pivot, denetim ve Excel icindeki acilir kod listeleri bu sayfada toplanir.', 23)
-  raw.getRow(3).values = ['staff_id', 'personel', 'dept_id', 'bolum', 'alan', 'pozisyon', 'tarih', 'gun', 'status', 'kod', 'shift_def_id', 'vardiya', 'baslangic', 'bitis', 'not', 'rol', 'calisma_noktasi']
+  raw.getRow(3).values = ['staff_id', 'personel', 'proje', 'dept_id', 'bolum', 'alan', 'pozisyon', 'tarih', 'gun', 'status', 'kod', 'shift_def_id', 'vardiya', 'baslangic', 'bitis', 'not', 'rol', 'calisma_noktasi']
   styleHeaderRow(raw.getRow(3))
   weekDays.forEach((date, idx) => {
     exportRows.forEach(person => {
@@ -1310,6 +1312,7 @@ export function buildScheduleExcelWorkbook(ExcelJS, {
       const row = raw.addRow([
         person.id,
         person.full_name,
+        person.project_name || 'Kadrosuz',
         person.dept_id || '',
         person.dept_name || '',
         inferWorkArea(person),
@@ -1326,7 +1329,7 @@ export function buildScheduleExcelWorkbook(ExcelJS, {
         person.role_name || '',
         cell?.work_location_name || '',
       ])
-      row.getCell(7).numFmt = 'yyyy-mm-dd'
+      row.getCell(8).numFmt = 'yyyy-mm-dd'
       row.eachCell((cellItem, colNo) => {
         cellItem.border = border
         cellItem.alignment = { vertical: 'middle', wrapText: true }
@@ -1338,13 +1341,13 @@ export function buildScheduleExcelWorkbook(ExcelJS, {
       })
     })
   })
-  raw.getRow(4).getCell(18).value = 'Liste'
-  raw.getRow(4).getCell(19).value = 'Kod'
-  raw.getRow(4).getCell(20).value = 'Anlam'
-  raw.getRow(4).getCell(21).value = 'Saat'
-  raw.getRow(4).getCell(22).value = 'Renk HEX'
-  raw.getRow(4).getCell(23).value = 'Not'
-  ;[18, 19, 20, 21, 22, 23].forEach(colNo => {
+  raw.getRow(4).getCell(19).value = 'Liste'
+  raw.getRow(4).getCell(20).value = 'Kod'
+  raw.getRow(4).getCell(21).value = 'Anlam'
+  raw.getRow(4).getCell(22).value = 'Saat'
+  raw.getRow(4).getCell(23).value = 'Renk HEX'
+  raw.getRow(4).getCell(24).value = 'Not'
+  ;[19, 20, 21, 22, 23, 24].forEach(colNo => {
     const cell = raw.getRow(4).getCell(colNo)
     cell.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } }
     cell.fill = fill(COLORS.header)
@@ -1354,24 +1357,24 @@ export function buildScheduleExcelWorkbook(ExcelJS, {
   codes.forEach((item, idx) => {
     const rowNo = codeListStart + idx
     const row = raw.getRow(rowNo)
-    row.getCell(18).value = item.kind === 'shift' ? 'Vardiya' : 'Durum'
-    row.getCell(19).value = item.code
-    row.getCell(20).value = item.label
-    row.getCell(21).value = item.hours
-    row.getCell(22).value = item.hex
-    row.getCell(23).value = item.note
-    row.getCell(22).fill = fill(item.hex)
-    ;[18, 19, 20, 21, 22, 23].forEach(colNo => {
+    row.getCell(19).value = item.kind === 'shift' ? 'Vardiya' : 'Durum'
+    row.getCell(20).value = item.code
+    row.getCell(21).value = item.label
+    row.getCell(22).value = item.hours
+    row.getCell(23).value = item.hex
+    row.getCell(24).value = item.note
+    row.getCell(23).fill = fill(item.hex)
+    ;[19, 20, 21, 22, 23, 24].forEach(colNo => {
       const cell = row.getCell(colNo)
       cell.border = border
-      cell.alignment = { horizontal: colNo === 20 || colNo === 23 ? 'left' : 'center', vertical: 'middle', wrapText: true }
-      cell.font = { size: 9, bold: colNo === 19 }
+      cell.alignment = { horizontal: colNo === 21 || colNo === 24 ? 'left' : 'center', vertical: 'middle', wrapText: true }
+      cell.font = { size: 9, bold: colNo === 20 }
     })
   })
   const settingsStart = Math.max(codeListEnd + 3, 18)
-  raw.getCell(settingsStart, 18).value = 'Ayar'
-  raw.getCell(settingsStart, 19).value = 'Deger'
-  raw.getCell(settingsStart, 20).value = 'Aciklama'
+  raw.getCell(settingsStart, 19).value = 'Ayar'
+  raw.getCell(settingsStart, 20).value = 'Deger'
+  raw.getCell(settingsStart, 21).value = 'Aciklama'
   ;[18, 19, 20].forEach(colNo => {
     const cell = raw.getRow(settingsStart).getCell(colNo)
     cell.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } }
@@ -1385,10 +1388,10 @@ export function buildScheduleExcelWorkbook(ExcelJS, {
     ['Sayfa Modu', `${navSheets.length} sayfa`, `Kontrol + Plan + Operasyon + Veri + ${departmentSheets.length} bolum sayfasi`],
   ].forEach((item, idx) => {
     const row = raw.getRow(settingsStart + 1 + idx)
-    row.getCell(18).value = item[0]
-    row.getCell(19).value = item[1]
-    row.getCell(20).value = item[2]
-    if (item[1] instanceof Date) row.getCell(19).numFmt = 'yyyy-mm-dd'
+    row.getCell(19).value = item[0]
+    row.getCell(20).value = item[1]
+    row.getCell(21).value = item[2]
+    if (item[1] instanceof Date) row.getCell(20).numFmt = 'yyyy-mm-dd'
     ;[18, 19, 20].forEach(colNo => {
       const cell = row.getCell(colNo)
       cell.border = border
