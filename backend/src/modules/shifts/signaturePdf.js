@@ -46,9 +46,15 @@ export function signatureColumnWidths({ dayCount, showRole, usableWidth }) {
   return { no, ad, gorev, gun }
 }
 
+// Tüm metinler mutlak konumla çizilir. pdfkit, satırın alt kenarı yazılabilir
+// alanı bir punto aşarsa SESSİZCE yeni sayfa açar; o sayfada ne başlık ne tablo
+// olur. Satır yüksekliği fonta bağlı olduğu için (sunucuda DejaVu, Windows'ta
+// Arial) sınıra dayanan yerleşim yerelde temiz görünüp canlıda hayalet sayfa
+// üretiyordu. Konumu sayfa içinde tutmak bunu kaynağında keser.
 function metin(doc, deger, fonts, { x, y, w, size = 8, bold = false, color = RENK.metin, align = 'left' }) {
   doc.font(bold ? fonts.bold : fonts.regular).fontSize(size).fillColor(color)
-    .text(pdfText(deger, fonts), x, y, { width: w, align, lineBreak: false, ellipsis: true })
+  const enAlt = doc.page.maxY() - doc.currentLineHeight()
+  doc.text(pdfText(deger, fonts), x, Math.min(y, enAlt), { width: w, align, lineBreak: false, ellipsis: true })
 }
 
 function sayfaBasligi(doc, fonts, { page, weekLabel, revision, generated }, x, y, w) {
@@ -120,6 +126,72 @@ function bantCiz(doc, fonts, ad, x, y, w) {
   return y + h
 }
 
+// Satır yüksekliği sayfaya göre uyarlanır: kullanıcı "tek sayfaya 30 kişi"
+// istiyor ama sabit 26pt ile A4 yatayda ancak ~17 satır giriyordu, gerisi
+// taşıyordu. Az satır istendiğinde gereksiz sıkıştırma yapılmaz.
+const MIN_ROW = 13   // altına inince imza atacak yer kalmıyor
+const MAX_ROW = 26
+const MAX_ROW_DOUBLE = 34
+
+export function signatureRowHeight({ rowsPerPage, usableHeight, doubleSignature = false }) {
+  const tavan = doubleSignature ? MAX_ROW_DOUBLE : MAX_ROW
+  const adet = Math.max(1, Number(rowsPerPage) || 1)
+  // Taban okunabilirlik içindir: sığmıyorsa satırı daha da küçültmek yerine
+  // sayfa artar — imza atılamayan bir föy işe yaramaz.
+  return Math.max(MIN_ROW, Math.min(tavan, Math.floor(usableHeight / adet)))
+}
+
+// HAFTA İÇİ DEĞİŞİKLİK KAYDI.
+//
+// Föy hafta başında basılıp hafta boyunca imzalanıyor; bu arada izin kayıyor,
+// kişi hastalanıp raporlu oluyor, OFF günü değişiyor. Kâğıtta yapısal bir yer
+// olmayınca değişiklik ya hiç kaydedilmiyor ya satırın üstüne karalanıyor ve
+// hangi imzayla ilişkili olduğu kayboluyor.
+const CHANGE_COLS = [
+  ['Tarih', 0.10],
+  ['Personel', 0.22],
+  ['Planlanan', 0.15],
+  ['Gerçekleşen', 0.15],
+  ['Açıklama', 0.24],
+  ['Onay / İmza', 0.14],
+]
+
+export function changeLogRowCount(opts = {}) {
+  // HTML föyü bu tabloyu blankRows ile sürüyor; PDF de aynı kaynaktan beslenir,
+  // yoksa aynı belgenin iki çıktısı farklı sayıda satır gösterir.
+  const istenen = opts.changeRows ?? opts.blankRows
+  if (Number(istenen) === 0) return 0
+  const sayi = Number(istenen)
+  return Math.max(0, Math.min(12, Number.isFinite(sayi) ? sayi : 4))
+}
+
+function degisiklikBlogu(doc, fonts, x, y, w, satirSayisi) {
+  if (satirSayisi <= 0) return y
+  metin(doc, 'HAFTA İÇİ DEĞİŞİKLİK KAYDI', fonts, { x, y, w: 200, size: 9, bold: true })
+  metin(doc, 'Föy basıldıktan sonra değişen izin / rapor / OFF ve vardiya kaydırmaları buraya yazılır.',
+    fonts, { x: x + 205, y: y + 1, w: w - 205, size: 7, color: RENK.soluk })
+
+  let cy = y + 14
+  const h = 15
+  let cx = x
+  doc.rect(x, cy, w, h).fillAndStroke(RENK.baslik, RENK.cizgi)
+  CHANGE_COLS.forEach(([baslik, oran]) => {
+    metin(doc, baslik, fonts, { x: cx + 4, y: cy + 4, w: w * oran - 8, size: 7.5, bold: true })
+    cx += w * oran
+  })
+  cy += h
+
+  for (let i = 0; i < satirSayisi; i += 1) {
+    cx = x
+    CHANGE_COLS.forEach(([, oran]) => {
+      doc.rect(cx, cy, w * oran, h).lineWidth(0.5).strokeColor(RENK.ince).stroke()
+      cx += w * oran
+    })
+    cy += h
+  }
+  return cy
+}
+
 function altBilgi(doc, fonts, x, y, w) {
   const yarim = w / 2 - 10
   ;['Listeyi Hazırlayan / İmza', 'Vardiya Amiri Kontrolü / İmza'].forEach((etiket, i) => {
@@ -145,17 +217,70 @@ export function drawSignaturePdf(doc, model, meta = {}) {
     showRole: model.opts?.showLocationAndRole !== false,
     usableWidth,
   })
-  const satirYuksekligi = model.opts?.doubleSignature ? 34 : 26
+  const bantGosteriliyor = model.opts?.showDepartmentBands !== false
+  const bosSatir = Math.min(6, Math.max(0, Number(model.opts?.blankRows) || 0))
+  const degisiklikSatiri = changeLogRowCount(model.opts || {})
+
+  // Sayfa sayısı TAHMİN edilmez, sayılır. Tahmin edilince pdfkit'in kendi
+  // eklediği sayfalar sayıma girmiyor ve uç, çağırana yanlış sayı bildiriyordu.
+  let sayfaAdedi = pages.length > 0 ? 1 : 0
+  const sayfaEkle = () => { doc.addPage(); sayfaAdedi += 1 }
+
+  // Alt bilgi için ayrılan pay cömert tutulur: kenara dayanan çizim pdfkit'e
+  // SESSİZCE yeni sayfa açtırıyor ve o sayfada ne başlık ne tablo başlığı
+  // oluyor. Satır yüksekliği fontla birlikte değiştiği için (sunucuda DejaVu,
+  // Windows'ta Arial) sınıra dayanmak yerelde geçip canlıda bozulan bir hata.
+  // Alt bilgi kutusu ~34pt (çizgi +22, etiket +25 ve satır yüksekliği). 46
+  // bunun üstüne pay bırakır; daha cömert tutmak "30 kişi tek sayfa" isteğini
+  // birkaç punto farkla bozuyordu.
+  const altBilgiYuksekligi = 46
+  const sayfaDibi = doc.page.height - doc.page.margins.bottom - altBilgiYuksekligi
+
+  // Satır yüksekliği başlıklar ÇİZİLDİKTEN sonra hesaplanır: başlık yüksekliğini
+  // sabit varsaymak fontla birlikte kayıyor. Başlıklar her sayfada aynı olduğu
+  // için ilk sayfada ölçmek yeterli.
+  let satirYuksekligi = null
+  let kullanilacakBosSatir = 0
 
   pages.forEach((page, index) => {
-    if (index > 0) doc.addPage()
+    if (index > 0) sayfaEkle()
     let y = sayfaBasligi(doc, fonts, { page, weekLabel, revision, generated }, x, doc.page.margins.top, usableWidth)
     y = tabloBasligi(doc, fonts, model, gen, x, y)
 
+    if (satirYuksekligi === null) {
+      // Departman bantları da yer kaplıyor (birleşik listede her bölüm
+      // değişiminde bir şerit); bütçeye katılmazsa son satırlar taşıyor.
+      const bantSayisi = !bantGosteriliyor ? 0 : pages.reduce((m, p) => {
+        if (!p.combined) return m
+        return Math.max(m, new Set((p.rows || []).map(r => r.department)).size)
+      }, 0)
+      const enCokSatir = pages.reduce((m, p) => Math.max(m, (p.rows || []).length), 0)
+      const kullanilabilir = sayfaDibi - y - bantSayisi * 14
+      satirYuksekligi = signatureRowHeight({
+        // Boş satırlar da yer kaplıyor; bütçeye katılmazsa son satırlar taşar.
+        rowsPerPage: enCokSatir + bosSatir,
+        usableHeight: kullanilabilir,
+        doubleSignature: model.opts?.doubleSignature,
+      })
+      // Sığmıyorsa BOŞ satır kısılır, gerçek personel değil: kadro sayfayı
+      // belirler, dolgu ona uyar.
+      const sigacak = Math.floor(kullanilabilir / satirYuksekligi)
+      kullanilacakBosSatir = Math.max(0, Math.min(bosSatir, sigacak - enCokSatir))
+    }
+
     let oncekiBolum = ''
     const tabloGenislik = gen.no + gen.ad + gen.gorev + gen.gun * (model.dates || []).length
+    const yeniSayfa = () => {
+      sayfaEkle()
+      const ny = sayfaBasligi(doc, fonts, { page, weekLabel, revision, generated }, x, doc.page.margins.top, usableWidth)
+      oncekiBolum = ''
+      return tabloBasligi(doc, fonts, model, gen, x, ny)
+    }
+
     page.rows.forEach((row, i) => {
-      if (page.combined && model.opts?.showDepartmentBands !== false && row.department !== oncekiBolum) {
+      const bantGerek = page.combined && bantGosteriliyor && row.department !== oncekiBolum
+      if (y + satirYuksekligi + (bantGerek ? 14 : 0) > sayfaDibi) y = yeniSayfa()
+      if (page.combined && bantGosteriliyor && row.department !== oncekiBolum) {
         y = bantCiz(doc, fonts, row.department, x, y, tabloGenislik)
         oncekiBolum = row.department
       }
@@ -164,9 +289,9 @@ export function drawSignaturePdf(doc, model, meta = {}) {
     })
 
     // Sonradan eklenen kişiler için boş satırlar — föy elde doldurulabilsin.
-    if (page.show_blank_rows && Number(model.opts?.blankRows) > 0) {
-      const bos = Math.min(6, Number(model.opts.blankRows))
-      for (let i = 0; i < bos; i += 1) {
+    if (page.show_blank_rows) {
+      for (let i = 0; i < kullanilacakBosSatir; i += 1) {
+        if (y + satirYuksekligi > sayfaDibi) break
         satirCiz(doc, fonts, {
           row: { full_name: '', role: '', days: (model.dates || []).map(d => ({ date: d, label: '', detail: '', can_sign: true, category: 'working' })) },
           sira: '', model, gen, x, y, h: satirYuksekligi,
@@ -175,8 +300,20 @@ export function drawSignaturePdf(doc, model, meta = {}) {
       }
     }
 
-    altBilgi(doc, fonts, x, y + 6, usableWidth)
+    altBilgi(doc, fonts, x, sayfaDibi + 8, usableWidth)
   })
 
-  return { pageCount: pages.length }
+  // Değişiklik kaydı KENDİ sayfasında: kadro sayfasının altına sıkıştırılınca
+  // "tek sayfaya 30 kişi" isteği bozuluyor, ayrıca elle yazmaya yer kalmıyor.
+  if (degisiklikSatiri > 0 && pages.length > 0) {
+    sayfaEkle()
+    let y = sayfaBasligi(doc, fonts, {
+      page: { department: 'Hafta içi değişiklikler', rows: [], page: sayfaAdedi, page_count: sayfaAdedi },
+      weekLabel, revision, generated,
+    }, x, doc.page.margins.top, usableWidth)
+    y = degisiklikBlogu(doc, fonts, x, y + 4, usableWidth, degisiklikSatiri)
+    altBilgi(doc, fonts, x, Math.max(y + 12, sayfaDibi + 8), usableWidth)
+  }
+
+  return { pageCount: sayfaAdedi }
 }

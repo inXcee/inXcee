@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildDailySignatureModel, buildSignatureModels, buildWeeklySignatureModel, classifySignatureCell,
   renderSignaturePageHtml, renderSignaturePagesHtml, renderWeeklySignaturePagesHtml, signaturePagesCss,
+  weeklyChangeRowCount,
 } from './scheduleSignatureExport.js'
 
 const DATE = '2026-07-13'
@@ -143,7 +144,7 @@ describe('weekly signature sheet', () => {
     const model = buildWeeklySignatureModel({ people: weeklyPeople, dates: [DATE, SECOND_DATE], options: { blankRows: 2 } })
     const html = renderWeeklySignaturePagesHtml(model, { revision: '3', weekLabel: `${DATE} - ${SECOND_DATE}` })
     expect(html).toContain('HAFTALIK PERSONEL İMZA FÖYÜ')
-    expect(html).toContain('Sonradan Eklenen / Vardiyası Değişen')
+    expect(html).toContain('Hafta İçi Değişiklik Kaydı')
     expect(html).toContain('Revizyon: 3')
     expect(html).not.toContain('Özel sağlık açıklaması')
     const css = signaturePagesCss()
@@ -238,5 +239,78 @@ describe('çalışma noktası girilmemişse uydurulmaz', () => {
     const model = buildDailySignatureModel({ people: PEOPLE, date: DATE })
     const ahmet = model.groups.flatMap(g => g.rows).find(row => row.full_name === 'Ahmet')
     expect(ahmet.work_location).toBe('İşçi Lokali')
+  })
+})
+
+// Kullanıcı tek sayfaya 30 kişi istedi; üst sınır 25'te sabitti ve daha
+// büyük değerler sessizce 25'e kırpılıyordu — "30 yazdım ama 25 çıktı".
+describe('Sayfa başına satır sınırı', () => {
+  const KISILER = Array.from({ length: 62 }, (_, i) => ({
+    staff_id: i + 1, full_name: `Kisi ${i + 1}`, dept_name: 'Mutfak', role_name: 'Asci', days: {},
+  }))
+  const GUNLER = ['2026-08-10', '2026-08-11']
+
+  it('30 satır istendiğinde 30 satır koyar', () => {
+    const model = buildWeeklySignatureModel({
+      people: KISILER, dates: GUNLER,
+      options: { rowsPerPage: 30, groupMode: 'combined' },
+    })
+    expect(model.pages[0].rows).toHaveLength(30)
+    expect(model.pages).toHaveLength(Math.ceil(62 / 30))
+  })
+
+  it('40 satıra kadar izin verir', () => {
+    const model = buildWeeklySignatureModel({
+      people: KISILER, dates: GUNLER,
+      options: { rowsPerPage: 40, groupMode: 'combined' },
+    })
+    expect(model.pages[0].rows).toHaveLength(40)
+  })
+
+  // Sınırsız değil: 60 satır A4'e sığmaz, okunamaz çıktı üretmektense kırp.
+  it('üst sınır aşılırsa kırpar', () => {
+    const model = buildWeeklySignatureModel({
+      people: KISILER, dates: GUNLER,
+      options: { rowsPerPage: 100, groupMode: 'combined' },
+    })
+    expect(model.pages[0].rows.length).toBeLessThanOrEqual(40)
+  })
+
+  it('alt sınır korunur', () => {
+    const model = buildWeeklySignatureModel({
+      people: KISILER, dates: GUNLER,
+      options: { rowsPerPage: 2, groupMode: 'combined' },
+    })
+    expect(model.pages[0].rows.length).toBeGreaterThanOrEqual(8)
+  })
+})
+
+// Aynı föyün HTML ve PDF çıktısı aynı formu vermeli; sütunlar ya da satır
+// sayısı ayrışırsa ikisi birlikte dosyalanamıyor. Karşılığı:
+// backend/src/modules/shifts/signaturePdf.js — changeLogRowCount + CHANGE_COLS.
+describe('hafta içi değişiklik kaydı', () => {
+  it('satır sayısı kuralı sunucudaki PDF ile aynı', () => {
+    expect(weeklyChangeRowCount(0)).toBe(0)
+    expect(weeklyChangeRowCount(3)).toBe(3)
+    expect(weeklyChangeRowCount(20)).toBe(12)   // üst sınır
+    expect(weeklyChangeRowCount(undefined)).toBe(4)
+  })
+
+  it('sütun başlıkları PDF ile birebir', () => {
+    const model = buildWeeklySignatureModel({
+      people: [{ full_name: 'Ali Veli', dept_name: 'Teknik', days: {} }],
+      dates: [DATE], options: { blankRows: 3 },
+    })
+    const html = renderWeeklySignaturePagesHtml(model)
+    ;['Tarih', 'Personel', 'Planlanan', 'Gerçekleşen', 'Açıklama', 'Onay / İmza']
+      .forEach(baslik => expect(html).toContain(`<th>${baslik}</th>`))
+  })
+
+  it('kapatılınca blok hiç çizilmez', () => {
+    const model = buildWeeklySignatureModel({
+      people: [{ full_name: 'Ali Veli', dept_name: 'Teknik', days: {} }],
+      dates: [DATE], options: { blankRows: 0 },
+    })
+    expect(renderWeeklySignaturePagesHtml(model)).not.toContain('Hafta İçi Değişiklik Kaydı')
   })
 })

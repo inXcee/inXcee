@@ -296,6 +296,7 @@ export default function ScheduleShareModal({
                       <div style={{ gridColumn: '1 / -1' }}>
                         <div className="form-label" style={{ fontSize: 10, marginBottom: 5 }}>Hızlı düzen</div>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 5 }}>
+                          <button className={`btn btn-xs ${Number(options.sig_rowsPerPage) === 30 && (options.sig_groupMode || 'combined') === 'combined' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => applySignatureProfile(30, 3)}>Sıkı 30</button>
                           <button className={`btn btn-xs ${Number(options.sig_rowsPerPage) === 25 && (options.sig_groupMode || 'combined') === 'combined' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => applySignatureProfile(25, 2)}>Ekonomik 25</button>
                           <button className={`btn btn-xs ${Number(options.sig_rowsPerPage) === 18 && (options.sig_groupMode || 'combined') === 'combined' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => applySignatureProfile(18, 3)}>Dengeli 18</button>
                           <button className={`btn btn-xs ${Number(options.sig_rowsPerPage) === 12 && (options.sig_groupMode || 'combined') === 'combined' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => applySignatureProfile(12, 3)}>Rahat 12</button>

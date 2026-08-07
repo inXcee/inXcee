@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import PDFDocument from 'pdfkit'
-import { drawSignaturePdf, signatureColumnWidths } from './signaturePdf.js'
+import { drawSignaturePdf, signatureColumnWidths, signatureRowHeight } from './signaturePdf.js'
 
 function gun(label, kategori = 'working', detail = '') {
   return { date: '2026-08-10', category: kategori, label, detail, can_sign: kategori === 'working' }
@@ -41,6 +41,20 @@ function pdfUret(model, meta) {
   })
 }
 
+// Sayfa sayısı pdfkit'in kendi sayacından okunur. PDF gövdesinde "/Type /Page"
+// aramak yanıltıcı: font gömülünce ikili font verisi de kalıba takılabiliyor.
+// Ayrıca uç, sayfa sayısını çağırana bildiriyor — gerçekle karşılaştırılmazsa
+// yanlış sayı bildirdiği fark edilmez.
+function sayfaSay(model, meta = {}) {
+  const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 28, bufferPages: true })
+  doc.on('data', () => {})
+  const sonuc = drawSignaturePdf(doc, model, meta)
+  const gercek = doc.bufferedPageRange().count
+  doc.end()
+  expect(sonuc.pageCount).toBe(gercek)
+  return gercek
+}
+
 describe('İmza föyü PDF', () => {
   it('geçerli bir PDF üretir', async () => {
     const buf = await pdfUret(MODEL, { revision: '2', weekLabel: '10-16 Ağustos' })
@@ -63,10 +77,8 @@ describe('İmza föyü PDF', () => {
         { ...MODEL.pages[0], page: 2, page_count: 2, row_offset: 2, show_blank_rows: true },
       ],
     }
-    const buf = await pdfUret(cokSayfa, {})
-    // /Type /Page sayısı sayfa sayısını verir (Pages ağacı hariç).
-    const adet = (buf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length
-    expect(adet).toBe(2)
+    // 2 kadro sayfası + 1 değişiklik kaydı sayfası.
+    expect(sayfaSay(cokSayfa)).toBe(3)
   })
 
   it('boş sayfa listesinde patlamaz', async () => {
@@ -129,5 +141,91 @@ describe('İmza föyü PDF ucu', () => {
     expect(res.headers['content-type']).toContain('application/pdf')
     expect(res.headers['content-disposition']).toContain('imza-foyu-2026-08-10.pdf')
     expect(res.body.length).toBeGreaterThan(1000)
+  })
+})
+
+// 30 kişi tek sayfaya sığmalı: satır yüksekliği sabit 26pt iken A4 yatayda
+// ancak ~17 satır giriyordu, gerisi sayfadan taşıyordu.
+describe('İmza föyü satır yüksekliği', () => {
+  const KULLANILABILIR = 449 // A4 yatay, başlık ve alt bilgi düşülmüş
+
+  it('30 satır sayfaya sığar', () => {
+    const h = signatureRowHeight({ rowsPerPage: 30, usableHeight: KULLANILABILIR, doubleSignature: false })
+    expect(h * 30).toBeLessThanOrEqual(KULLANILABILIR)
+  })
+
+  it('az satırda ferah kalır, gereksiz sıkışmaz', () => {
+    const az = signatureRowHeight({ rowsPerPage: 12, usableHeight: KULLANILABILIR, doubleSignature: false })
+    const cok = signatureRowHeight({ rowsPerPage: 30, usableHeight: KULLANILABILIR, doubleSignature: false })
+    expect(az).toBeGreaterThan(cok)
+    expect(az).toBeLessThanOrEqual(26)
+  })
+
+  // Okunabilirlik tabanı: altına inince imza atacak yer kalmıyor.
+  it('okunabilir alt sınırın altına inmez', () => {
+    const h = signatureRowHeight({ rowsPerPage: 40, usableHeight: 200, doubleSignature: false })
+    expect(h).toBeGreaterThanOrEqual(13)
+  })
+
+  it('çift imzada daha yüksek satır ister', () => {
+    const tek = signatureRowHeight({ rowsPerPage: 20, usableHeight: KULLANILABILIR, doubleSignature: false })
+    const cift = signatureRowHeight({ rowsPerPage: 20, usableHeight: KULLANILABILIR, doubleSignature: true })
+    expect(cift).toBeGreaterThanOrEqual(tek)
+  })
+})
+
+// Föy pazartesi basılıyor ama hafta boyunca imzalanıyor: arada izin değişiyor,
+// kişi hastalanıp raporlu oluyor, OFF günü kayıyor. Kâğıt bunu kaydedecek yer
+// vermezse değişiklik ya çizelgeye hiç yansımıyor ya da föyün üstüne
+// karalanıyor ve imza ile ilişkisi kayboluyor.
+describe('İmza föyü — hafta içi değişiklikler', () => {
+  // Blok kadro sayfasının altına sıkıştırılmaz: "tek sayfaya 30 kişi" isteğini
+  // bozuyor ve elle yazacak yer kalmıyordu. Kendi sayfasına alındı.
+  it('değişiklik kaydı kendi sayfasında çıkar', async () => {
+    const buf = await pdfUret(MODEL, { weekLabel: '10-16 Ağustos' })
+    expect(buf.length).toBeGreaterThan(1000)
+    expect(sayfaSay(MODEL, { weekLabel: '10-16 Ağustos' })).toBe(2) // 1 kadro + 1 değişiklik
+  })
+
+  it('değişiklik satır sayısı ayarlanabilir', async () => {
+    const az = await pdfUret({ ...MODEL, opts: { ...MODEL.opts, changeRows: 2 } }, {})
+    const cok = await pdfUret({ ...MODEL, opts: { ...MODEL.opts, changeRows: 8 } }, {})
+    expect(cok.length).toBeGreaterThan(az.length)
+  })
+
+  it('kapatılabilir', async () => {
+    const buf = await pdfUret({ ...MODEL, opts: { ...MODEL.opts, changeRows: 0 } }, {})
+    expect(buf.subarray(0, 5).toString()).toBe('%PDF-')
+  })
+})
+
+// Sayfalama PDF'in kendi işi olmalı: taşan çizimde pdfkit sessizce sayfa
+// ekliyor ve o sayfada başlık da tablo başlığı da olmuyordu — 35 kişilik föy
+// 21 bozuk sayfa üretiyordu.
+describe('İmza föyü sayfalama', () => {
+  function foy(kisiSayisi, opts = {}) {
+    const gun = () => ({ date: '2026-08-10', category: 'working', label: '08-16', detail: '', can_sign: true })
+    const rows = Array.from({ length: kisiSayisi }, (_, i) => ({
+      full_name: `PERSONEL ${i + 1}`, role: 'Aşçı', department: 'Mutfak',
+      days: Array.from({ length: 7 }, gun),
+    }))
+    return {
+      dates: Array.from({ length: 7 }, (_, i) => `2026-08-1${i}`),
+      opts: { showLocationAndRole: true, blankRows: 3, ...opts },
+      pages: [{ department: 'Tüm', combined: true, page: 1, page_count: 1, row_offset: 0, show_blank_rows: true, rows }],
+    }
+  }
+  it('30 kişi tek kadro sayfasına sığar', () => {
+    expect(sayfaSay(foy(30))).toBe(2) // 1 kadro + 1 değişiklik
+  })
+
+  // Sığmayınca düzgün ikinci sayfa açılmalı, onlarca bozuk sayfa değil.
+  it('taşan kadro makul sayıda sayfaya bölünür', () => {
+    expect(sayfaSay(foy(60))).toBeLessThanOrEqual(4)
+    expect(sayfaSay(foy(120))).toBeLessThanOrEqual(6)
+  })
+
+  it('değişiklik sayfası kapatılınca üretilmez', () => {
+    expect(sayfaSay(foy(30, { changeRows: 0 }))).toBe(1)
   })
 })

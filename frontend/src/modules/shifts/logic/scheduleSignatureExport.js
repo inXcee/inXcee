@@ -211,7 +211,10 @@ export function buildWeeklySignatureModel({ people = [], dates = [], options = {
     showDepartmentBands: true,
     ...options,
   }
-  const rowsPerPage = Math.min(25, Math.max(8, Number(opts.rowsPerPage) || 12))
+  // Üst sınır 40: A4 dikeyde imza satırı ~14pt'ye kadar okunur kalıyor, altına
+  // inince fotokopide kayboluyor. Sınırsız bırakmak yerine kırpılır — ama
+  // kullanıcı 30 yazınca 30 alır, sessizce 25'e düşmez.
+  const rowsPerPage = Math.min(40, Math.max(8, Number(opts.rowsPerPage) || 12))
   const departments = new Map()
 
   people.forEach(person => {
@@ -444,12 +447,22 @@ function weeklySignLines(doubleSignature) {
     : '<span class="weekly-sign-line">İmza</span>'
 }
 
+// Föy pazartesi basılıp hafta boyunca imzalanıyor: arada izin kayıyor, kişi
+// hastalanıp raporlu oluyor, OFF günü değişiyor. Sütunlar sunucudaki PDF ile
+// birebir aynı (signaturePdf.js CHANGE_COLS) — aynı belgenin iki çıktısı farklı
+// form gösterirse ikisi birlikte dosyalanamıyor.
+export function weeklyChangeRowCount(count) {
+  if (Number(count) === 0) return 0
+  const sayi = Number(count)
+  return Math.max(0, Math.min(12, Number.isFinite(sayi) ? sayi : 4))
+}
+
 function weeklyChangeRows(count) {
-  const safeCount = Math.min(6, Math.max(0, Number(count) || 0))
+  const safeCount = weeklyChangeRowCount(count)
   if (!safeCount) return ''
-  const rows = Array.from({ length: safeCount }, (_, index) => `<tr><td>${index + 1}</td><td></td><td></td><td></td><td></td><td></td></tr>`).join('')
-  return `<div class="weekly-change-title">Sonradan Eklenen / Vardiyası Değişen Personel</div>
-    <table class="weekly-change"><thead><tr><th>No</th><th>Personel</th><th>Tarih</th><th>Önceki Durum</th><th>Yeni Durum</th><th>Personel / Amir İmzası</th></tr></thead><tbody>${rows}</tbody></table>`
+  const rows = Array.from({ length: safeCount }, (_, index) => `<tr><td>${index + 1}</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`).join('')
+  return `<div class="weekly-change-title">Hafta İçi Değişiklik Kaydı — izin / rapor / OFF değişikliği, vardiya kaydırma</div>
+    <table class="weekly-change"><thead><tr><th>No</th><th>Tarih</th><th>Personel</th><th>Planlanan</th><th>Gerçekleşen</th><th>Açıklama</th><th>Onay / İmza</th></tr></thead><tbody>${rows}</tbody></table>`
 }
 
 export function renderWeeklySignaturePagesHtml(model, meta = {}) {
@@ -475,7 +488,7 @@ export function renderWeeklySignaturePagesHtml(model, meta = {}) {
     return `<section class="weekly-sig-page${densityClass}">
       <div class="weekly-sig-head"><div><div class="weekly-sig-title">HAFTALIK PERSONEL İMZA FÖYÜ</div><div class="weekly-sig-sub">${esc(page.department)} · ${esc(weekLabel)} · ${page.rows.length} personel</div></div><div class="weekly-sig-meta">Revizyon: ${esc(revision)}<br />Sayfa: ${page.page}/${page.page_count}${generated ? `<br />Oluşturma: ${esc(generated)}` : ''}</div></div>
       <table class="weekly-sig"><thead><tr><th class="weekly-no">No</th><th class="weekly-person">Personel</th>${model.opts.showLocationAndRole ? '<th class="weekly-role">Görev</th>' : ''}${dayHeads}</tr></thead><tbody>${rows}</tbody></table>
-      ${page.show_blank_rows ? weeklyChangeRows(model.opts.blankRows) : ''}
+      ${page.show_blank_rows ? weeklyChangeRows(model.opts.changeRows ?? model.opts.blankRows) : ''}
       <div class="weekly-sig-footer"><div>Listeyi Hazırlayan / İmza</div><div>Vardiya Amiri Kontrolü / İmza</div></div>
     </section>`
   }).join('\n')
