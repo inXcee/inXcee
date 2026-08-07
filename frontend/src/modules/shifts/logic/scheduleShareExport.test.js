@@ -264,3 +264,29 @@ describe('Yazdırma sayfa düzeni', () => {
     expect(css()).toMatch(/print-color-adjust:\s*exact/)
   })
 })
+
+// Çıktıya bakan kişi "bu bölümde hangi vardiyada kaç kişi, nerede" sorusunu
+// satır satır tarayarak cevaplıyordu.
+describe('Departman özeti (çıktıda)', () => {
+  it('bölüm şeridinin altında vardiya ve nokta sayımı çıkar', () => {
+    const html = buildScheduleShareHtml(payload())
+    expect(html).toMatch(/<tr class="dept-digest">/)
+    expect(html).toMatch(/Vardiya<\/span>/)
+    expect(html).toMatch(/Nokta<\/span>/)
+    expect(html).toMatch(/kişi-gün/)
+  })
+
+  it('kapatılabilir', () => {
+    // CSS bloğu her zaman gömülü; satırın kendisi aranmalı.
+    const html = buildScheduleShareHtml(payload({ options: { includeDeptDigest: false } }))
+    expect(html).not.toMatch(/<tr class="dept-digest">/)
+    expect(buildScheduleShareHtml(payload())).toMatch(/<tr class="dept-digest">/)
+  })
+
+  it('ekonomik yoğunluk satırı daha da kısaltır', () => {
+    const normal = buildScheduleShareHtml(payload({ options: { density: 'normal' } }))
+    const ekonomik = buildScheduleShareHtml(payload({ options: { density: 'economy' } }))
+    const yukseklik = html => Number((html.match(/min-height:\s*(\d+)px/) || [])[1] || 0)
+    expect(yukseklik(ekonomik)).toBeLessThan(yukseklik(normal))
+  })
+})

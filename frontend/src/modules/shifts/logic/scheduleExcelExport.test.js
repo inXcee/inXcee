@@ -80,7 +80,8 @@ describe('scheduleExcelExport - X3 workbook builder', () => {
 
     expect(result.sheetNames.control).toBe('Kontrol')
     expect(result.sheetNames.departments).toEqual(['Bolum - Guvenlik', 'Bolum - Teknik'])
-    expect(names).toEqual(['Kontrol', 'Plan', 'Operasyon', 'Veri', 'Bolum - Guvenlik', 'Bolum - Teknik'])
+    // 'Vardiya Dagilimi': bolum bazinda hangi vardiyada kac kisi + calisma noktalari
+    expect(names).toEqual(['Kontrol', 'Plan', 'Operasyon', 'Vardiya Dagilimi', 'Veri', 'Bolum - Guvenlik', 'Bolum - Teknik'])
   })
 
   it('writes control panel metrics and warning sections', () => {
@@ -114,7 +115,7 @@ describe('scheduleExcelExport - X3 workbook builder', () => {
     const settingsRow = raw.getColumn(18).values.findIndex(value => value === 'Sayfa Modu')
 
     expect(settingsRow).toBeGreaterThan(0)
-    expect(raw.getCell(settingsRow, 19).value).toBe('6 sayfa')
+    expect(raw.getCell(settingsRow, 19).value).toBe('7 sayfa')
     expect(raw.getCell(settingsRow, 20).value).toContain('2 bolum sayfasi')
     expect(raw.getCell('P4').value).toBe('Ikramci')
     expect(raw.getCell('Q4').value).toBe('OTC Yemekhane')
@@ -203,5 +204,27 @@ describe('scheduleExcelExport - X3 workbook builder', () => {
     expect(ws.getRow(headerRow + 2).height).toBe(18)
     const names = ws.getColumn(2).values.map(value => String(value || ''))
     expect(names).toContain('Personel 25')
+  })
+})
+
+describe('Vardiya dagilimi sayfasi', () => {
+  it('bolum bazinda vardiya satirlari ve gun sayimlari yazar', () => {
+    const ws = buildWorkbook().workbook.getWorksheet('Vardiya Dagilimi')
+    expect(ws).toBeTruthy()
+    const metin = []
+    ws.eachRow(r => r.eachCell(c => { if (c.value != null) metin.push(String(c.value)) }))
+    const hepsi = metin.join(' | ')
+    expect(hepsi).toContain('VARDIYA DAGILIMI')
+    expect(hepsi).toContain('Calisma noktalari')
+  })
+
+  // Noktasız çalışma boş bırakılmamalı; boşluk "nokta yok" diye okunuyor.
+  // Etiket diğer çıktılarla AYNI kovadan gelir, yoksa iki döküm çelişir.
+  it('noktasiz calisma ortak kovada adlandirilir', () => {
+    const kisi = { id: 9, full_name: 'Noktasiz Kisi', dept_id: 3, dept_name: 'Guvenlik', days: { [WEEK[0]]: { status: 'worked', shift_name: 'Gunduz' } } }
+    const ws = buildWorkbook({ staffGrid: [kisi], visibleGrid: [kisi] }).workbook.getWorksheet('Vardiya Dagilimi')
+    const metin = []
+    ws.eachRow(r => r.eachCell(c => { if (c.value != null) metin.push(String(c.value)) }))
+    expect(metin.join(' | ')).toContain('Konum belirtilmemiş')
   })
 })

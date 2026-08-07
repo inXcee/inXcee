@@ -5,6 +5,7 @@ import {
   shiftHoursFrom,
 } from '../shared.jsx'
 import { deptHex, leaveHex, shiftHex } from './shiftColors.js'
+import { departmentShiftDigest, digestLine } from './departmentDigest.js'
 
 const STATUS_HEX = {
   empty: 'F8FAFC',
@@ -21,6 +22,7 @@ export const DEFAULT_SCHEDULE_SHARE_OPTIONS = {
   colorMode: 'shift',
   density: 'normal',
   includeSummary: true,
+  includeDeptDigest: true,
   includeRole: true,
   includeLocation: true,
   includeStaffTotals: true,
@@ -276,10 +278,15 @@ export function buildScheduleShareModel({
   }
 }
 
+// Satır yüksekliği tek sayfaya kaç kişi sığdığını belirler. Kullanıcı daha
+// fazla kişi istedi: mevcut modlar daraltıldı ve en sıkısı için "ekonomik"
+// eklendi. Yazı boyutu okunabilirlik sınırında tutuldu — 7px altına inince
+// fotokopide kayboluyor.
 const DENSITY_MAP = {
-  compact: { page: 1120, name: 148, cellPad: 4, font: 9, sub: 7, head: 8, row: 38 },
-  normal: { page: 1320, name: 182, cellPad: 6, font: 10, sub: 8, head: 9, row: 48 },
-  wide: { page: 1540, name: 220, cellPad: 8, font: 11, sub: 9, head: 10, row: 58 },
+  economy: { page: 1080, name: 124, cellPad: 2, font: 8, sub: 6, head: 7, row: 24 },
+  compact: { page: 1120, name: 140, cellPad: 3, font: 9, sub: 7, head: 8, row: 30 },
+  normal: { page: 1320, name: 168, cellPad: 4, font: 10, sub: 8, head: 9, row: 38 },
+  wide: { page: 1540, name: 210, cellPad: 7, font: 11, sub: 9, head: 10, row: 52 },
 }
 
 function densityFor(opts) {
@@ -312,6 +319,10 @@ function buildStyles(opts) {
     .person-head { width: ${density.name}px; text-align: left; }
     .day-date { display: block; color: #475569; font-size: 8px; margin-top: 2px; }
     .weekend { background: ${tint(weekend, 0.16)} !important; border-bottom: 3px solid #${weekend}; }
+    .dept-digest td { background: #f8fafc; padding: 4px 9px; font-size: 8px; color: #475569; border-bottom: 1px solid #cbd5e1; }
+    .dept-digest .dg-k { font-weight: 900; color: #0f172a; text-transform: uppercase; letter-spacing: .3px; }
+    .dept-digest .dg-sp { margin-left: 10px; }
+    .dept-digest .dg-t { float: right; font-weight: 900; color: #0f172a; }
     .dept-row td { background: #f1f5f9; padding: 7px 8px; font-size: 10px; font-weight: 900; color: #0f172a; border-top: 2.5px solid #334155; border-bottom: 2px solid #64748b; }
     .dept-name { display: inline-block; border-radius: 999px; padding: 3px 8px; color: #fff; }
     tr.person-row > td { border-top: 1.6px solid #64748b !important; border-bottom: 1.6px solid #64748b !important; }
@@ -418,6 +429,19 @@ function renderScheduleBody(model) {
 
   const renderGroupRows = (group) => {
     const deptColor = cleanHex(deptHex(group.color), '64748B')
+    // Departmanın hangi vardiyada kaç kişisi olduğu ve nerede durdukları,
+    // bölüm şeridinin hemen altında. Aynı hücrelerden sayılır — çizelgeyle
+    // çelişemez.
+    const [ozet] = departmentShiftDigest([group], weekDays)
+    const ozetSatiri = opts.includeDeptDigest === false || !ozet || ozet.personDays === 0 ? '' : `
+      <tr class="dept-digest">
+        <td colspan="${weekDays.length + 1}">
+          <span class="dg-k">Vardiya</span> ${escapeHtml(digestLine(ozet.shifts, { max: 6 }))}
+          ${opts.includeLocation === false ? '' : `<span class="dg-k dg-sp">Nokta</span> ${escapeHtml(digestLine(ozet.areas, { max: 6 }))}`}
+          <span class="dg-t">${ozet.personDays} kişi-gün</span>
+        </td>
+      </tr>
+    `
     const deptRow = `
       <tr class="dept-row">
         <td colspan="${weekDays.length + 1}">
@@ -425,6 +449,7 @@ function renderScheduleBody(model) {
           <span style="margin-left:8px;color:#64748b;">${group.people.length} kisi</span>
         </td>
       </tr>
+      ${ozetSatiri}
     `
     const peopleRows = group.people.map(person => {
       const counts = personCounts(person, weekDays)

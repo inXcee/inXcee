@@ -372,10 +372,16 @@ export default function ScheduleShareModal({
                 <label className="form-label">
                   Yoğunluk
                   <select className="form-select" value={options.density} onChange={e => patch('density', e.target.value)}>
+                    <option value="economy">Ekonomik (en çok kişi)</option>
                     <option value="compact">Kompakt</option>
                     <option value="normal">Normal</option>
                     <option value="wide">Geniş</option>
                   </select>
+                </label>
+                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <input type="checkbox" checked={options.includeDeptDigest !== false}
+                    onChange={e => patch('includeDeptDigest', e.target.checked)} />
+                  Bölüm özeti (vardiya + nokta sayımı)
                 </label>
                 <label className="form-label">
                   Kağıt
