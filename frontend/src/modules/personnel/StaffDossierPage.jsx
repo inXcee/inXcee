@@ -29,7 +29,8 @@ import StaffWorkTrackingPanel, { StaffMovementTimeline } from './dossier/StaffWo
 import StaffOffboardingPanel from './dossier/StaffOffboardingPanel.jsx'
 import { StaffFormSheet } from '../shifts/tabs/StaffTab.jsx'
 import { useToastStore } from '../../shared/store/toastStore.js'
-import { exportRowsToXlsx } from '../../shared/utils/exportData.js'
+import { useAuthStore } from '../../shared/store/authStore.js'
+import { exportPersonnelDossierExcel } from './logic/personnelTrackingExcel.js'
 import './StaffDossierPage.css'
 
 const TABS = [
@@ -61,44 +62,6 @@ function localIsoDate() {
 
 function asList(value) {
   return Array.isArray(value) ? value : []
-}
-
-const DOSSIER_EXPORT_COLUMNS = [
-  ['full_name', 'Ad Soyad'], ['tc_no', 'TC Kimlik No'], ['status', 'Durum'],
-  ['position', 'Pozisyon'], ['project', 'Proje'], ['department', 'Departman'], ['role', 'Rol'],
-  ['site', 'Saha'], ['work_location', 'Ana Çalışma Noktası'], ['phone', 'Telefon'], ['email', 'E-posta'],
-  ['emergency_contact', 'Acil Kişi'], ['emergency_phone', 'Acil Telefon'], ['hire_date', 'İşe Giriş'],
-  ['contract_end', 'Sözleşme Bitişi'], ['birth_date', 'Doğum Tarihi'], ['blood_type', 'Kan Grubu'],
-  ['room', 'Konaklama'], ['document_completion', 'Belge Tamamlama'], ['open_followups', 'Açık Görev'],
-  ['risk_score', 'Risk Puanı'], ['dossier_path', 'Personel Dosyası'],
-].map(([key, label]) => ({ key, label }))
-
-function dossierExportRow(dossier, staffId) {
-  const person = dossier.person || {}
-  return {
-    full_name: person.full_name,
-    tc_no: person.tc_no,
-    status: Number(person.is_active) === 1 ? 'Aktif' : 'Pasif',
-    position: person.position,
-    project: person.project_name,
-    department: person.dept_name,
-    role: person.role_name,
-    site: person.primary_work_location_site,
-    work_location: person.primary_work_location_name,
-    phone: person.phone,
-    email: person.email,
-    emergency_contact: person.emergency_contact,
-    emergency_phone: person.emergency_phone,
-    hire_date: person.hire_date,
-    contract_end: person.contract_end,
-    birth_date: person.birth_date,
-    blood_type: person.blood_type,
-    room: dossier.room ? `${dossier.room.block}-${dossier.room.room_no} / ${dossier.room.bed_no || '—'}` : '',
-    document_completion: `%${dossier.documents?.completion_rate ?? 100}`,
-    open_followups: dossier.counters?.open_followups || 0,
-    risk_score: dossier.risk_score || 0,
-    dossier_path: `/shifts/personnel/${staffId}`,
-  }
 }
 
 async function copyText(value) {
@@ -402,8 +365,10 @@ export default function StaffDossierPage() {
   const staffId = params.staffId || params.id
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const user = useAuthStore(state => state.user)
   const [tab, setTab] = useUrlParamState('tab', 'overview')
   const [showEdit, setShowEdit] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
   const [editForm, setEditForm] = useState({})
   const { data: dossier, isLoading, error } = useStaffDossier(staffId)
   const needsDetail = tab === 'identity' || tab === 'work'
@@ -514,11 +479,19 @@ export default function StaffDossierPage() {
     }
   }
   const exportDossier = async () => {
+    setIsExporting(true)
     try {
-      await exportRowsToXlsx(DOSSIER_EXPORT_COLUMNS, [dossierExportRow(dossier, staffId)], `personel-dosyasi-${staffId}-${localIsoDate()}.xlsx`, 'Personel Dosyası')
-      useToastStore.getState().addToast('Personel dosyası Excel olarak hazırlandı', 'success')
-    } catch {
-      useToastStore.getState().addToast('Excel dosyası oluşturulamadı', 'error')
+      const from = dossier.person.hire_date && dossier.person.hire_date < localIsoDate() ? dossier.person.hire_date : '2000-01-01'
+      const tracking = await api.get(`/personnel/${staffId}/tracking`, { params: { from, to: localIsoDate(), event_limit: 200 } }).then(response => response.data)
+      const report = await exportPersonnelDossierExcel({
+        dossier, tracking, staffId,
+        generatedBy: user?.full_name || user?.username || 'YYS Kullanıcısı',
+      })
+      useToastStore.getState().addToast(`${report.events} hareket içeren personel Excel dosyası hazırlandı`, 'success')
+    } catch (error) {
+      useToastStore.getState().addToast(error.response?.data?.error || 'Excel dosyası oluşturulamadı', 'error')
+    } finally {
+      setIsExporting(false)
     }
   }
 
@@ -549,7 +522,7 @@ export default function StaffDossierPage() {
           {dossier.person.phone && <a className="btn btn-ghost btn-xs" href={`tel:${dossier.person.phone}`}>Ara</a>}
           {dossier.person.email && <a className="btn btn-ghost btn-xs" href={`mailto:${dossier.person.email}`}>E-posta</a>}
           <button type="button" className="btn btn-ghost btn-xs" onClick={copySummary}>Özeti Kopyala</button>
-          <button type="button" className="btn btn-ghost btn-xs" onClick={exportDossier}>Excel</button>
+          <button type="button" aria-label="Excel" className="btn btn-ghost btn-xs" disabled={isExporting} onClick={exportDossier}>{isExporting ? 'Hazırlanıyor…' : 'Excel Dosyası'}</button>
           <button type="button" className="btn btn-ghost btn-xs" onClick={refreshDossier}>Yenile</button>
         </div>
       </div>

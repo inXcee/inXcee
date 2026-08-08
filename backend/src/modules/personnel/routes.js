@@ -38,7 +38,7 @@ import {
   updateTrackingRules, updatePersonnelAlert, convertAlertToFollowup,
 } from './tracking-alerts.js'
 import {
-  getTrackingOverview, listTrackingPeople, listTrackingEvents, getPersonTracking,
+  getTrackingOverview, listTrackingPeople, listTrackingEvents, getPersonTracking, getTrackingExportDetails,
 } from './tracking-read.js'
 
 export const personnelRouter = Router()
@@ -69,6 +69,11 @@ personnelRouter.get('/tracking/overview', ...mgr, (req, res) => {
 personnelRouter.get('/tracking/people', ...mgr, (req, res) => {
   try { res.json(listTrackingPeople(req.query)) }
   catch (error) { trackingError(res, error, '[personnel/tracking-people]') }
+})
+
+personnelRouter.get('/tracking/export-details', ...mgr, (req, res) => {
+  try { res.json(getTrackingExportDetails(req.query)) }
+  catch (error) { trackingError(res, error, '[personnel/tracking-export-details]') }
 })
 
 personnelRouter.get('/tracking/events', ...mgr, (req, res) => {

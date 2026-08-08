@@ -172,7 +172,7 @@ export function listTrackingPeople(filters = {}) {
   const staffFilter = currentStaffFilters(filters)
   const limit = Math.min(500, Math.max(1, Number(filters.limit) || 200))
   const rows = db.prepare(`
-    SELECT s.id, s.full_name, s.phone, s.position, s.is_active,
+    SELECT s.id, s.full_name, s.phone, s.position, s.hire_date, s.is_active,
       s.offboarding_started_at, s.exit_date, s.exit_type,
       s.project_id, p.name AS project_name,
       s.department_id, d.name AS department_name,
@@ -214,6 +214,52 @@ export function listTrackingPeople(filters = {}) {
     ...staffFilter.params, limit,
   )
   return { period: { from, to }, items: rows, total: rows.length }
+}
+
+export function getTrackingExportDetails(filters = {}) {
+  const db = getDB()
+  const { from, to } = period(filters)
+  const staffFilter = currentStaffFilters(filters)
+  const leaves = db.prepare(`
+    SELECT lr.*, s.full_name, p.name AS project_name, d.name AS department_name,
+      u.full_name AS approved_by_name
+    FROM leave_requests lr
+    JOIN staff s ON s.id=lr.staff_id
+    LEFT JOIN projects p ON p.id=s.project_id
+    LEFT JOIN departments d ON d.id=s.department_id
+    LEFT JOIN users u ON u.id=lr.approved_by
+    WHERE lr.end_date>=? AND lr.start_date<=? AND ${staffFilter.sql}
+    ORDER BY lr.start_date DESC, lr.id DESC
+  `).all(from, to, ...staffFilter.params)
+  const overtime = db.prepare(`
+    SELECT ot.*, s.full_name, p.name AS project_name, d.name AS department_name,
+      u.full_name AS approved_by_name
+    FROM overtime_records ot
+    JOIN staff s ON s.id=ot.staff_id
+    LEFT JOIN projects p ON p.id=s.project_id
+    LEFT JOIN departments d ON d.id=s.department_id
+    LEFT JOIN users u ON u.id=ot.approved_by
+    WHERE ot.work_date BETWEEN ? AND ? AND ${staffFilter.sql}
+    ORDER BY ot.work_date DESC, ot.id DESC
+  `).all(from, to, ...staffFilter.params)
+  const temporaryWork = db.prepare(`
+    SELECT ss.id, ss.work_date, ss.status, s.id AS staff_id, s.full_name,
+      p.name AS permanent_project_name, wp.name AS work_project_name,
+      d.name AS department_name, wl.name AS work_location_name,
+      sd.name AS shift_name
+    FROM shift_schedule ss
+    JOIN staff s ON s.id=ss.staff_id
+    JOIN work_locations wl ON wl.id=ss.work_location_id
+    JOIN projects wp ON wp.id=wl.project_id
+    LEFT JOIN projects p ON p.id=s.project_id
+    LEFT JOIN departments d ON d.id=s.department_id
+    LEFT JOIN shift_definitions sd ON sd.id=ss.shift_def_id
+    WHERE ss.work_date BETWEEN ? AND ?
+      AND s.project_id IS NOT NULL AND wl.project_id<>s.project_id
+      AND ${staffFilter.sql}
+    ORDER BY ss.work_date DESC, ss.id DESC
+  `).all(from, to, ...staffFilter.params)
+  return { period: { from, to }, leaves, overtime, temporary_work: temporaryWork }
 }
 
 function parseEvent(row) {

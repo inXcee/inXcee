@@ -286,7 +286,14 @@ describe('personnel tracking APIs and controlled offboarding', () => {
       .get(`/api/personnel/tracking/people?from=2026-01-01&to=2099-12-31&q=Takip Yasam`)
       .set(auth())
     expect(people.status).toBe(200)
-    expect(people.body.items.some(row => row.id === staffId)).toBe(true)
+    expect(people.body.items.find(row => row.id === staffId)).toMatchObject({ hire_date: '2026-01-01' })
+    const exportDetails = await request(app)
+      .get('/api/personnel/tracking/export-details?from=2026-01-01&to=2099-12-31')
+      .set(auth())
+    expect(exportDetails.status).toBe(200)
+    expect(exportDetails.body).toEqual(expect.objectContaining({
+      leaves: expect.any(Array), overtime: expect.any(Array), temporary_work: expect.any(Array),
+    }))
   })
 
   it('denies tracking data to non-management roles', async () => {

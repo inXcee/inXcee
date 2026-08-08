@@ -6,6 +6,7 @@ import { useDebounce } from '../../shared/hooks/useDebounce.js'
 import { useAuthStore } from '../../shared/store/authStore.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { SkeletonGrid } from '../../shared/components/Skeleton.jsx'
+import { exportPersonnelTrackingExcel } from './logic/personnelTrackingExcel.js'
 import './PersonnelTrackingCenter.css'
 
 const EVENT_LABELS = {
@@ -101,11 +102,35 @@ function RuleRow({ rule, onSave, pending }) {
   )
 }
 
+function ActionRow({ alert, users, onPersonClick, onUpdate, onFollowup, pending }) {
+  const [assignedUserId, setAssignedUserId] = useState(alert.assigned_user_id ? String(alert.assigned_user_id) : '')
+  const [dueAt, setDueAt] = useState(alert.due_at ? String(alert.due_at).slice(0, 10) : '')
+  return (
+    <article className={`tracking-alert tracking-alert--${alert.severity}`}>
+      <div><span>{SEVERITY_LABELS[alert.severity]}</span><small>{alert.rule_key}</small></div>
+      <button type="button" onClick={() => onPersonClick?.(alert.staff_id)}>
+        <strong>{alert.title || alert.full_name}</strong><span>{alert.message}</span>
+        <small>{alert.full_name} · {alert.assigned_user_name || 'Sorumlu atanmamış'} · Son: {dateTime(alert.due_at)}</small>
+      </button>
+      <div className="tracking-alert__actions">
+        <select aria-label={`${alert.full_name} aksiyon sorumlusu`} className="form-select" value={assignedUserId} onChange={event => setAssignedUserId(event.target.value)} disabled={!!alert.followup_id}>
+          <option value="">Sorumlu seç</option>{users.map(item => <option key={item.id} value={item.id}>{item.full_name || item.username}</option>)}
+        </select>
+        <input aria-label={`${alert.full_name} aksiyon son tarihi`} className="form-input" type="date" value={dueAt} onChange={event => setDueAt(event.target.value)} disabled={!!alert.followup_id} />
+        {alert.status === 'open' && <button type="button" className="btn btn-ghost btn-xs" onClick={() => onUpdate({ id: alert.id, status: 'acknowledged' })}>Görüldü</button>}
+        <button type="button" className="btn btn-ghost btn-xs" disabled={pending} onClick={() => onUpdate({ id: alert.id, status: 'resolved' })}>Çözüldü</button>
+        <button type="button" className="btn btn-primary btn-xs" disabled={pending || alert.followup_id} onClick={() => onFollowup({ alertId: alert.id, payload: { assigned_user_id: assignedUserId || null, due_at: dueAt || null } })}>{alert.followup_id ? 'Görev Açık' : 'Göreve Dönüştür'}</button>
+      </div>
+    </article>
+  )
+}
+
 export default function PersonnelTrackingCenter({ projects = [], departments = [], onPersonClick }) {
   const [params, setParams] = useSearchParams()
   const queryClient = useQueryClient()
   const user = useAuthStore(state => state.user)
   const [showSettings, setShowSettings] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
   const range = params.get('range') || '30'
   const defaults = rangeDates(range === 'custom' ? '30' : range)
   const q = params.get('q') || ''
@@ -140,9 +165,10 @@ export default function PersonnelTrackingCenter({ projects = [], departments = [
   const people = useQuery({ queryKey: ['personnel-tracking-people', requestFilters], queryFn: () => api.get('/personnel/tracking/people', { params: requestFilters }).then(response => response.data) })
   const events = useQuery({ queryKey: ['personnel-tracking-events', requestFilters], queryFn: () => api.get('/personnel/tracking/events', { params: { ...requestFilters, limit: 100 } }).then(response => response.data) })
   const alerts = useQuery({ queryKey: ['personnel-tracking-alerts'], queryFn: () => api.get('/personnel/tracking/alerts', { params: { limit: 100 } }).then(response => response.data) })
+  const users = useQuery({ queryKey: ['users-for-personnel-alerts'], queryFn: () => api.get('/users').then(response => response.data).catch(() => []), staleTime: 300000 })
   const rules = useQuery({ queryKey: ['personnel-tracking-settings'], queryFn: () => api.get('/personnel/tracking/settings').then(response => response.data), enabled: showSettings })
   const refresh = () => ['personnel-tracking-overview', 'personnel-tracking-people', 'personnel-tracking-events', 'personnel-tracking-alerts', 'personnel-tracking-settings'].forEach(key => queryClient.invalidateQueries({ queryKey: [key] }))
-  const followupMutation = useMutation({ mutationFn: alertId => api.post(`/personnel/tracking/alerts/${alertId}/followup`, {}), onSuccess: () => { refresh(); useToastStore.getState().addToast('Uyarı takip görevine dönüştürüldü', 'success') }, onError: error => useToastStore.getState().addToast(error.response?.data?.error || 'Görev oluşturulamadı', 'error') })
+  const followupMutation = useMutation({ mutationFn: ({ alertId, payload }) => api.post(`/personnel/tracking/alerts/${alertId}/followup`, payload), onSuccess: () => { refresh(); useToastStore.getState().addToast('Uyarı takip görevine dönüştürüldü', 'success') }, onError: error => useToastStore.getState().addToast(error.response?.data?.error || 'Görev oluşturulamadı', 'error') })
   const alertMutation = useMutation({ mutationFn: ({ id, status }) => api.patch(`/personnel/tracking/alerts/${id}`, { status }), onSuccess: refresh })
   const ruleMutation = useMutation({ mutationFn: rule => api.patch('/personnel/tracking/settings', { rules: [rule] }), onSuccess: () => { refresh(); useToastStore.getState().addToast('Takip kuralı güncellendi', 'success') }, onError: error => useToastStore.getState().addToast(error.response?.data?.error || 'Kural güncellenemedi', 'error') })
 
@@ -154,6 +180,29 @@ export default function PersonnelTrackingCenter({ projects = [], departments = [
   const projectDistribution = useMemo(() => distribution(peopleRows, 'project_name', 'Proje atanmamış'), [peopleRows])
   const departmentDistribution = useMemo(() => distribution(peopleRows, 'department_name', 'Departman atanmamış'), [peopleRows])
   const maxTrend = Math.max(1, ...(overview.data?.trends || []).map(item => Number(item.shift_changes || 0) + Number(item.movements || 0) + Number(item.exits || 0)))
+  const exportReport = async () => {
+    setIsExporting(true)
+    try {
+      const project = projects.find(item => String(item.id) === String(filters.project_id))
+      const department = departments.find(item => String(item.id) === String(filters.department_id))
+      const labels = [
+        filters.project_id === 'none' ? 'Proje: Atanmamış' : project ? `Proje: ${project.name}` : 'Proje: Tümü',
+        department ? `Departman: ${department.name}` : 'Departman: Tümü',
+        `Durum: ${STATUS_LABELS[filters.status] || 'Tümü'}`,
+        `Hareket: ${EVENT_LABELS[filters.event_type] || 'Tümü'}`,
+        filters.q ? `Arama: ${filters.q}` : null,
+      ]
+      const report = await exportPersonnelTrackingExcel({
+        api, filters: requestFilters, filterLabels: labels,
+        generatedBy: user?.full_name || user?.username || 'YYS Kullanıcısı',
+      })
+      useToastStore.getState().addToast(`${report.rows} personel için Excel raporu hazırlandı`, 'success')
+    } catch (error) {
+      useToastStore.getState().addToast(error.response?.data?.error || 'Excel raporu oluşturulamadı', 'error')
+    } finally {
+      setIsExporting(false)
+    }
+  }
 
   return (
     <div className="personnel-tracking-center">
@@ -171,6 +220,7 @@ export default function PersonnelTrackingCenter({ projects = [], departments = [
           <select aria-label="Takip merkezi olay filtresi" className="form-select" value={filters.event_type} onChange={event => setFilter('event_type', event.target.value)}><option value="">Tüm hareketler</option>{Object.entries(EVENT_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>
           {range === 'custom' && <><input aria-label="Başlangıç tarihi" type="date" className="form-input" value={filters.from} onChange={event => setFilter('from', event.target.value)} /><input aria-label="Bitiş tarihi" type="date" className="form-input" value={filters.to} onChange={event => setFilter('to', event.target.value)} /></>}
           <button type="button" className="btn btn-ghost btn-sm" onClick={refresh}>Yenile</button>
+          <button type="button" className="btn btn-primary btn-sm" disabled={isExporting} onClick={exportReport}>{isExporting ? 'Hazırlanıyor…' : 'Excel Raporu'}</button>
           <button type="button" className={`btn btn-sm ${showSettings ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setShowSettings(value => !value)}>Uyarı Kuralları</button>
         </div>
         <div className="tracking-filterbar__meta"><span>{filters.from} → {filters.to}</span><span>{people.data?.total || 0} personel</span><span>{events.data?.total || 0} hareket</span></div>
@@ -236,12 +286,8 @@ export default function PersonnelTrackingCenter({ projects = [], departments = [
         <section className="tracking-card">
           <div className="tracking-card__header"><div><strong>Aksiyon kuyruğu</strong><span>Risk, sorumlu, son tarih ve görev durumu</span></div><b>{alertRows.length}</b></div>
           <div className="tracking-alert-list">
-            {alertRows.map(alert => <article className={`tracking-alert tracking-alert--${alert.severity}`} key={alert.id}>
-              <div><span>{SEVERITY_LABELS[alert.severity]}</span><small>{alert.rule_key}</small></div><button type="button" onClick={() => onPersonClick?.(alert.staff_id)}><strong>{alert.full_name}</strong><span>{alert.message}</span><small>{alert.assigned_user_name || 'Sorumlu atanmamış'} · Son: {dateTime(alert.due_at)}</small></button><div>
-                {alert.status === 'open' && <button type="button" className="btn btn-ghost btn-xs" onClick={() => alertMutation.mutate({ id: alert.id, status: 'acknowledged' })}>Görüldü</button>}
-                <button type="button" className="btn btn-primary btn-xs" disabled={followupMutation.isPending || alert.followup_id} onClick={() => followupMutation.mutate(alert.id)}>{alert.followup_id ? 'Görev Açık' : 'Göreve Dönüştür'}</button>
-              </div>
-            </article>)}
+            {alertRows.map(alert => <ActionRow key={alert.id} alert={alert} users={users.data || []} onPersonClick={onPersonClick}
+              pending={alertMutation.isPending || followupMutation.isPending} onUpdate={payload => alertMutation.mutate(payload)} onFollowup={payload => followupMutation.mutate(payload)} />)}
             {!alertRows.length && <div className="tracking-empty tracking-empty--success">Açık takip aksiyonu yok.</div>}
           </div>
         </section>
