@@ -104,7 +104,8 @@ describe('DayDetailBoard', () => {
     expect(screen.getByText('İzinli (1)')).toBeInTheDocument()
     expect(screen.getByText('Raporlu (1)')).toBeInTheDocument()
     expect(screen.getByText('Devamsız (1)')).toBeInTheDocument()
-    expect(screen.getByText('Mutfak')).toBeInTheDocument()
+    // Konum artık ayrı etiket değil, ismin yanındaki meta içinde (rol · nokta).
+    expect(screen.getByText('Aşçı · Mutfak')).toBeInTheDocument()
   })
 
   it('kişiye tıklayınca onPersonClick çağrılır', async () => {
@@ -197,5 +198,23 @@ describe('DayDetailBoard', () => {
     expect(container.contains(cubuk)).toBe(false)
     expect(document.body.contains(cubuk)).toBe(true)
     expect(cubuk.closest('.panel')).toBeNull()
+  })
+
+  // Gün değişince sonucu görmek için panelin tepesine dönmek gerekmesin.
+  it('yüzen çubuk seçili günün çalışan sayısını gösterir', async () => {
+    renderBoard()
+    await screen.findByRole('button', { name: 'Yemekhane detayları' })
+    const cubuk = screen.getByRole('group', { name: 'Gün değiştir' })
+    expect(within(cubuk).getByText('3')).toBeInTheDocument()   // totals.working
+  })
+
+  // İzin/rapor/devamsız dört ayrı ızgara bloğuydu; tek satıra indi ama sebep
+  // kaybolmamalı — ismin başlığında (title) duruyor.
+  it('kova satırında sebep başlıkta korunur', async () => {
+    const user = userEvent.setup()
+    renderBoard()
+    await user.click(await screen.findByRole('button', { name: 'Yemekhane detayları' }))
+    expect(screen.getByRole('button', { name: 'Hasan' })).toHaveAttribute('title', expect.stringContaining('Haber vermedi'))
+    expect(screen.getByRole('button', { name: 'Ayşe' })).toHaveAttribute('title', expect.stringContaining('Yıllık izin'))
   })
 })

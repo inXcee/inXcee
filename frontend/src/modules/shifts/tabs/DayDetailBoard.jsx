@@ -518,9 +518,14 @@ export default function DayDetailBoard({ weekDays = [], staffGrid = [], onPerson
 
                   {isOpen && (
                     <div style={{ padding: '0 12px 10px' }}>
+                      {/* Vardiya kırılımı SADE: kişi başına iki satırlık kart yerine
+                          akan isim listesi. Kartlarla 12 kişilik bir vardiya bir
+                          ekranı doldurup asıl soruyu — kim var — zorlaştırıyordu.
+                          Konum etiketleri de kaldırıldı; zaten her ismin yanında
+                          yazıyor, üstte tekrar etmesi gürültüydü. */}
                       {group.shifts.map(shift => (
-                        <div key={shift.shift_key || `${shift.shift_def_id ?? shift.shift_name}|${shift.start_hour || ''}|${shift.end_hour || ''}`} style={{ padding: '8px 0', borderTop: '1px dashed var(--border)' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap' }}>
+                        <div key={shift.shift_key || `${shift.shift_def_id ?? shift.shift_name}|${shift.start_hour || ''}|${shift.end_hour || ''}`} style={{ padding: '7px 0', borderTop: '1px dashed var(--border)' }}>
+                          <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', flexWrap: 'wrap', marginBottom: '3px' }}>
                             <strong style={{ fontSize: '12px' }}>{shift.shift_name}</strong>
                             {shift.start_hour != null && shift.start_hour !== '' && (
                               <span style={{ color: 'var(--text3)', fontSize: '10px' }}>
@@ -528,17 +533,8 @@ export default function DayDetailBoard({ weekDays = [], staffGrid = [], onPerson
                               </span>
                             )}
                             <span style={{ color: 'var(--accent)', fontFamily: 'var(--mono)', fontSize: '11px' }}>{shift.count} kişi</span>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', marginLeft: 'auto' }}>
-                              {[...new Set(shift.people.flatMap(person => (
-                                person.work_locations?.length ? person.work_locations : [person.work_location_name]
-                              )).filter(Boolean))].map(location => (
-                                <span key={location} style={{ borderRadius: '999px', padding: '2px 6px', background: 'var(--surface)', color: 'var(--text3)', fontSize: '9px' }}>
-                                  {location}
-                                </span>
-                              ))}
-                            </div>
                           </div>
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '5px', marginTop: '6px' }}>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 10px' }}>
                             {shift.people.map(person => (
                               <button
                                 key={person.staff_id}
@@ -547,44 +543,50 @@ export default function DayDetailBoard({ weekDays = [], staffGrid = [], onPerson
                                 aria-label={person.full_name}
                                 title="Personel detayını aç"
                                 style={{
-                                  border: '1px solid var(--border)', borderRadius: '8px', padding: '5px 8px',
-                                  background: 'var(--surface2, var(--surface))', cursor: 'pointer', color: 'var(--text)', textAlign: 'left',
+                                  border: 0, background: 'none', padding: '1px 0', cursor: 'pointer',
+                                  color: 'var(--text)', textAlign: 'left', fontSize: '11.5px', lineHeight: 1.5,
                                 }}
                               >
-                                <span style={{ display: 'block', fontSize: '11px', fontWeight: 650 }}>{person.full_name}</span>
-                                {personMeta(person) && <span style={{ display: 'block', marginTop: '1px', fontSize: '9px', color: 'var(--text3)' }}>{personMeta(person)}</span>}
+                                {person.full_name}
+                                {personMeta(person) && (
+                                  <span style={{ marginLeft: 4, fontSize: '9px', color: 'var(--text3)' }}>{personMeta(person)}</span>
+                                )}
                               </button>
                             ))}
                           </div>
                         </div>
                       ))}
 
+                      {/* İzin/rapor/devamsız: dört ayrı bloklu ızgara yerine kova
+                          başına TEK satır. Sebep (izin türü, rapor, devamsızlık
+                          nedeni) ismin başlığında duruyor — ekranda dört kat yer
+                          kaplamasına gerek yok. */}
                       {BUCKETS.map(bucket => {
                         const items = group[bucket.key] || []
                         if (!items.length) return null
                         return (
-                          <div key={bucket.key} style={{ padding: '8px 0', borderTop: '1px dashed var(--border)' }}>
-                            <div style={{ fontWeight: 700, marginBottom: '5px', fontSize: '11px', color: bucket.color }}>
+                          <div key={bucket.key} style={{
+                            padding: '6px 0', borderTop: '1px dashed var(--border)',
+                            display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'baseline',
+                          }}>
+                            <span style={{ fontWeight: 700, fontSize: '11px', color: bucket.color, whiteSpace: 'nowrap' }}>
                               <span aria-hidden="true">{bucket.icon}</span> {bucket.title} ({items.length})
-                            </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '5px' }}>
+                            </span>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 10px' }}>
                               {items.map(person => (
-                              <button
-                                key={person.staff_id}
-                                type="button"
-                                onClick={() => onPersonClick?.(person.staff_id)}
-                                aria-label={person.full_name}
-                                title="Personel detayını aç"
-                                style={{
-                                  background: 'var(--surface)', border: `1px solid ${bucket.color}`,
-                                  borderRadius: '8px', padding: '5px 8px', cursor: 'pointer',
-                                  color: 'var(--text2)', textAlign: 'left',
-                                }}
-                              >
-                                <span style={{ display: 'block', fontSize: '11px', fontWeight: 650 }}>{person.full_name}</span>
-                                <span style={{ display: 'block', marginTop: '1px', fontSize: '9px', color: bucket.color }}>{bucket.detail(person)}</span>
-                                {personMeta(person) && <span style={{ display: 'block', marginTop: '1px', fontSize: '9px', color: 'var(--text3)' }}>{personMeta(person)}</span>}
-                              </button>
+                                <button
+                                  key={person.staff_id}
+                                  type="button"
+                                  onClick={() => onPersonClick?.(person.staff_id)}
+                                  aria-label={person.full_name}
+                                  title={[bucket.detail(person), personMeta(person)].filter(Boolean).join(' · ') || 'Personel detayını aç'}
+                                  style={{
+                                    border: 0, background: 'none', padding: '1px 0', cursor: 'pointer',
+                                    color: 'var(--text2)', textAlign: 'left', fontSize: '11.5px', lineHeight: 1.5,
+                                  }}
+                                >
+                                  {person.full_name}
+                                </button>
                               ))}
                             </div>
                           </div>
@@ -648,6 +650,16 @@ export default function DayDetailBoard({ weekDays = [], staffGrid = [], onPerson
             onClick={() => selectDate(stepDay(weekDays, date, 1))}
             aria-label="Sonraki gün"
           >›</button>
+          {/* Seçili günün çalışan sayısı: gün değiştirince sonucu görmek için
+              panelin tepesine dönmek gerekmesin. */}
+          {hasData && (
+            <span style={{
+              marginLeft: 4, paddingLeft: 8, borderLeft: '1px solid var(--border)',
+              fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', whiteSpace: 'nowrap',
+            }}>
+              çalışan <strong style={{ color: 'var(--green)' }}>{detail?.totals?.working ?? 0}</strong>
+            </span>
+          )}
         </div>,
         document.body,
       )}
