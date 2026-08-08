@@ -110,10 +110,33 @@ fi
 step "5/6 PM2 reload (zero-downtime)"
 pm2 reload yys-backend --update-env
 BACKEND_RELOADED=1
-ok "Backend yeniden yüklendi"
 
-# Backend hazır olana kadar kısa bekleme
-sleep 3
+# Reload'un GERÇEKTEN yeni kodu yüklediğini doğrula.
+#
+# 2026-08-09: `pm2 reload` çıkış kodu 0 döndü, betik "Backend yeniden yüklendi"
+# yazdı, deploy BAŞARILI bitti — ama eski süreç ayakta kaldı. Canlı günlerce
+# eski kodla koştu; yeni migration'lar (090/091) uygulanmadı, Personel Takip
+# Merkezi "veri alınamadı" verdi ve sunucu logunda hiçbir iz yoktu. Bir deploy'un
+# başarılı sayılması için çalışan sürecin commit'i deploy edilenle AYNI olmalı.
+DEPLOYED_COMMIT=$(git rev-parse --short HEAD)
+RUNNING_COMMIT=""
+for attempt in 1 2 3 4; do
+  sleep 4
+  RUNNING_COMMIT=$(curl -s http://localhost:3001/api/health 2>/dev/null \
+    | grep -o '"commit":"[^"]*"' | head -1 | cut -d'"' -f4)
+  [[ -n "$RUNNING_COMMIT" && "$DEPLOYED_COMMIT" == "$RUNNING_COMMIT"* ]] && break
+  if [[ "$attempt" -eq 2 ]]; then
+    echo "  reload yeni kodu yüklemedi (çalışan: ${RUNNING_COMMIT:-bilinmiyor}) — restart deneniyor"
+    pm2 restart yys-backend --update-env
+  fi
+done
+
+if [[ -z "$RUNNING_COMMIT" || "$DEPLOYED_COMMIT" != "$RUNNING_COMMIT"* ]]; then
+  echo -e "\033[1;31m  Backend hâlâ eski kodda: çalışan=${RUNNING_COMMIT:-bilinmiyor} beklenen=$DEPLOYED_COMMIT\033[0m"
+  echo "  Elle: pm2 restart yys-backend --update-env"
+  exit 1
+fi
+ok "Backend yeni kodda çalışıyor ($RUNNING_COMMIT)"
 
 step "6/6 Post-deploy smoke test"
 if [[ -f scripts/deploy/post-deploy-smoke.sh ]]; then

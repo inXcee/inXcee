@@ -77,8 +77,12 @@ HEALTH_BODY=$(curl -s "$BACKEND_URL/api/health" 2>/dev/null || echo "")
 PENDING=$(echo "$HEALTH_BODY" | grep -o '"pending":[0-9]*' | head -1 | cut -d: -f2)
 APPLIED=$(echo "$HEALTH_BODY" | grep -o '"applied":[0-9]*' | head -1 | cut -d: -f2)
 EXPECTED=$(echo "$HEALTH_BODY" | grep -o '"expected":[0-9]*' | head -1 | cut -d: -f2)
-if [ -z "$PENDING" ]; then
-  echo "⚠ health migration bilgisi vermiyor (eski sürüm mü?)"
+if [ -z "$EXPECTED" ] || [ -z "$PENDING" ]; then
+  # Alanlar yoksa çalışan süreç ESKİ koddadır — "geçti" demek yanılmaktır.
+  # İlk denemede tam bu yüzden yanlış onay verdi: eski health 'pending'
+  # bildirmiyordu, kontrol yine de ✓ yazdı.
+  echo "✗ health migration karşılaştırması vermiyor — çalışan süreç eski kodda"
+  ERRORS=$((ERRORS + 1))
 elif [ "$PENDING" = "0" ]; then
   echo "✓ Şema güncel ($APPLIED/$EXPECTED migration uygulanmış)"
 else
