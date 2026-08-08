@@ -1019,25 +1019,6 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
         )}
       </div>
 
-      {scheduleView === 'weekly' && panels.coverage !== false && <CoverageBoard
-        from={weekStart}
-        to={weekEnd}
-        weekDays={weekDays}
-        onPersonClick={onPersonClick}
-        canEdit={canEdit}
-        departments={departments}
-        shiftDefs={shiftDefs}
-        roles={staffRoles}
-        locations={workLocations}
-        staffGrid={staffGrid}
-      />}
-
-      {scheduleView === 'weekly' && panels.dayDetail !== false && <DayDetailBoard key={weekDays[0] || 'current-week'} weekDays={weekDays} staffGrid={staffGrid} onPersonClick={onPersonClick} />}
-
-      {scheduleView === 'weekly' && panels.crossover !== false && (
-        <ProjectCrossoverBoard from={weekStart} to={weekEnd} onPersonClick={onPersonClick} />
-      )}
-
       {scheduleView === 'weekly' && panels.deptCards !== false && (
         <div style={{
           display: 'grid',
@@ -1313,16 +1294,28 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
       {isLoading ? (
         <SkeletonTable rows={6} cols={8} />
       ) : (
-        <div style={{ overflowX: 'auto', borderRadius: '12px', border: '1px solid var(--border)', boxShadow: '0 4px 24px rgba(0,0,0,.15)' }}>
+        /* Çizelge KENDİ kutusunda kayar (maxHeight). Sayfayla birlikte kayarken
+           gün başlıkları yukarıda kalıyordu: 197 kişilik listede aşağı inince
+           hangi sütunun hangi gün olduğu kayboluyor, isim sütunu yatayda
+           yapışık olduğu hâlde tarih görünmüyordu. Kendi kutusunda kayınca
+           thead sticky çalışır — sayfayı kaydıran kapta çalışmıyor, çünkü
+           overflowX:auto dikey ekseni de scroll kabı yapıyor. */
+        <div style={{
+          overflow: 'auto', maxHeight: 'calc(100vh - 240px)',
+          borderRadius: '12px', border: '1px solid var(--border)', boxShadow: '0 4px 24px rgba(0,0,0,.15)',
+        }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '700px' }}>
             {/* Header row */}
             <thead>
               <tr style={{ background: 'var(--surface2)' }}>
                 <th style={{
-                  position: 'sticky', left: 0, zIndex: 10,
+                  // Köşe hücresi iki eksende birden yapışır; en üstte durmalı.
+                  position: 'sticky', left: 0, top: 0, zIndex: 14,
                   background: 'var(--surface2)', borderRight: '2px solid var(--border)',
                   padding: '12px 16px', minWidth: '180px', textAlign: 'left',
-                  borderBottom: '2px solid var(--border)',
+                  // borderCollapse:collapse yapışkan hücrede kenarlığı düşürüyor;
+                  // alt çizgi inset gölgeyle korunur.
+                  boxShadow: 'inset 0 -2px 0 var(--border)',
                 }}>
                   <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', letterSpacing: '2px', color: 'var(--text3)' }}>
                     PERSONEL · {weekStats.total}
@@ -1334,10 +1327,14 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                   const dayStats = weekStats.perDay[i] || { working: [], leave: [], empty: [] }
                   return (
                     <th key={d} onClick={() => setDayDetail(d)} style={{
+                      position: 'sticky', top: 0, zIndex: 11,
                       padding: '10px 8px', textAlign: 'center', minWidth: '110px',
                       borderRight: i < 6 ? '1px solid var(--border)' : 'none',
-                      background: isToday ? 'rgba(59,140,240,.1)' : sun ? 'rgba(240,165,0,.07)' : undefined,
-                      borderBottom: isToday ? '2px solid var(--blue)' : sun ? '2px solid var(--accent)' : '2px solid var(--border)',
+                      // Yapışkan başlık altındaki satırlar görünmesin diye zemin
+                      // saydam bırakılamaz.
+                      background: isToday ? 'color-mix(in srgb, var(--surface2) 82%, var(--blue))'
+                        : sun ? 'color-mix(in srgb, var(--surface2) 88%, var(--accent))' : 'var(--surface2)',
+                      boxShadow: `inset 0 -2px 0 ${isToday ? 'var(--blue)' : sun ? 'var(--accent)' : 'var(--border)'}`,
                       cursor: 'pointer',
                     }}>
                       <div style={{
@@ -1365,7 +1362,11 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                     </th>
                   )
                 })}
-                {canEdit && <th style={{ width: '60px', background: 'var(--surface2)' }} />}
+                {canEdit && <th style={{
+                  position: 'sticky', top: 0, zIndex: 11,
+                  width: '60px', background: 'var(--surface2)',
+                  boxShadow: 'inset 0 -2px 0 var(--border)',
+                }} />}
               </tr>
             </thead>
             <tbody>
@@ -1753,6 +1754,29 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
       )}
       </>
       )}
+
+      {/* Yardımcı paneller çizelgenin ALTINDA. Üstteyken asıl çizelge beş
+          panelin altına iniyordu: kullanıcı çizelgeye bakarken güne tıklamak
+          için sayfanın tepesine dönmek zorunda kalıyordu. */}
+      {scheduleView === 'weekly' && panels.coverage !== false && <CoverageBoard
+        from={weekStart}
+        to={weekEnd}
+        weekDays={weekDays}
+        onPersonClick={onPersonClick}
+        canEdit={canEdit}
+        departments={departments}
+        shiftDefs={shiftDefs}
+        roles={staffRoles}
+        locations={workLocations}
+        staffGrid={staffGrid}
+      />}
+
+      {scheduleView === 'weekly' && panels.dayDetail !== false && <DayDetailBoard key={weekDays[0] || 'current-week'} weekDays={weekDays} staffGrid={staffGrid} onPersonClick={onPersonClick} />}
+
+      {scheduleView === 'weekly' && panels.crossover !== false && (
+        <ProjectCrossoverBoard from={weekStart} to={weekEnd} onPersonClick={onPersonClick} />
+      )}
+
 
       {/* Cell panel — vardiya/izin atama */}
       {cellPopover && (
