@@ -12,7 +12,7 @@ echo "========================================="
 echo ""
 
 # 1. Health check (cold start için yeniden dene)
-echo "[1/4] Health check..."
+echo "[1/5] Health check..."
 for attempt in 1 2 3; do
   HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BACKEND_URL/api/health" 2>/dev/null || echo "000")
   if [ "$HTTP_CODE" = "200" ]; then
@@ -30,7 +30,7 @@ done
 
 # 2. Auth endpoint çalışıyor mu (yanlış şifre → 401 veya 400, 500 değil)
 echo ""
-echo "[2/4] Auth endpoint kontrolü..."
+echo "[2/5] Auth endpoint kontrolü..."
 AUTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BACKEND_URL/api/auth/login" \
   -H "Content-Type: application/json" \
   -d '{"username":"__smoke_test__","password":"wrong"}' 2>/dev/null || echo "000")
@@ -45,7 +45,7 @@ fi
 # Not: Sadece gerçekten GET handler'ı olan endpoint'ler test edilir.
 # /api/dashboard gibi router'larda kök GET yoktur — sadece alt-path'ler var.
 echo ""
-echo "[3/4] Korunan route'lar (token olmadan 401 bekleniyor)..."
+echo "[3/5] Korunan route'lar (token olmadan 401 bekleniyor)..."
 ROUTES=("/api/checkin/stats" "/api/maintenance/requests" "/api/users" "/api/inventory" "/api/companies")
 for route in "${ROUTES[@]}"; do
   HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BACKEND_URL$route" 2>/dev/null || echo "000")
@@ -59,12 +59,32 @@ done
 
 # 4. 404 handler JSON döndürüyor mu
 echo ""
-echo "[4/4] JSON 404 handler..."
+echo "[4/5] JSON 404 handler..."
 BODY=$(curl -s "$BACKEND_URL/api/nonexistent_route_smoke" 2>/dev/null || echo "")
 if echo "$BODY" | grep -q '"error"'; then
   echo "✓ 404 handler JSON döndürüyor"
 else
   echo "⚠ 404 handler JSON döndürmüyor (HTML veya boş): $BODY"
+fi
+
+# 5. Şema, deploy edilen kodla aynı sürümde mi?
+# 2026-08-09: deploy "BAŞARILI" dedi, kod ve build indi, health 200 döndü — ama
+# çalışan süreç ESKİ şemayla koşuyordu (090/091 uygulanmamıştı). Personel Takip
+# Merkezi ekranda "veri alınamadı" diyordu, sunucu logunda hiçbir iz yoktu.
+echo ""
+echo "[5/5] Şema sürümü (bekleyen migration)..."
+HEALTH_BODY=$(curl -s "$BACKEND_URL/api/health" 2>/dev/null || echo "")
+PENDING=$(echo "$HEALTH_BODY" | grep -o '"pending":[0-9]*' | head -1 | cut -d: -f2)
+APPLIED=$(echo "$HEALTH_BODY" | grep -o '"applied":[0-9]*' | head -1 | cut -d: -f2)
+EXPECTED=$(echo "$HEALTH_BODY" | grep -o '"expected":[0-9]*' | head -1 | cut -d: -f2)
+if [ -z "$PENDING" ]; then
+  echo "⚠ health migration bilgisi vermiyor (eski sürüm mü?)"
+elif [ "$PENDING" = "0" ]; then
+  echo "✓ Şema güncel ($APPLIED/$EXPECTED migration uygulanmış)"
+else
+  echo "✗ $PENDING migration UYGULANMAMIŞ ($APPLIED/$EXPECTED) — süreç eski şemayla koşuyor"
+  echo "  Çözüm: pm2 restart yys-backend (initDB bekleyenleri uygular)"
+  ERRORS=$((ERRORS + 1))
 fi
 
 echo ""

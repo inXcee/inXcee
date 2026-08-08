@@ -7,6 +7,7 @@ import { useAuthStore } from '../../shared/store/authStore.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { SkeletonGrid } from '../../shared/components/Skeleton.jsx'
 import { exportPersonnelTrackingExcel } from './logic/personnelTrackingExcel.js'
+import { describeTrackingErrors } from './logic/trackingErrors.js'
 import './PersonnelTrackingCenter.css'
 
 const EVENT_LABELS = {
@@ -167,6 +168,12 @@ export default function PersonnelTrackingCenter({ projects = [], departments = [
   const alerts = useQuery({ queryKey: ['personnel-tracking-alerts'], queryFn: () => api.get('/personnel/tracking/alerts', { params: { limit: 100 } }).then(response => response.data) })
   const users = useQuery({ queryKey: ['users-for-personnel-alerts'], queryFn: () => api.get('/users').then(response => response.data).catch(() => []), staleTime: 300000 })
   const rules = useQuery({ queryKey: ['personnel-tracking-settings'], queryFn: () => api.get('/personnel/tracking/settings').then(response => response.data), enabled: showSettings })
+  const yuklemeHatasi = describeTrackingErrors([
+    { label: 'Özet', query: overview },
+    { label: 'Personel listesi', query: people },
+    { label: 'Hareketler', query: events },
+    { label: 'Uyarılar', query: alerts },
+  ])
   const refresh = () => ['personnel-tracking-overview', 'personnel-tracking-people', 'personnel-tracking-events', 'personnel-tracking-alerts', 'personnel-tracking-settings'].forEach(key => queryClient.invalidateQueries({ queryKey: [key] }))
   const followupMutation = useMutation({ mutationFn: ({ alertId, payload }) => api.post(`/personnel/tracking/alerts/${alertId}/followup`, payload), onSuccess: () => { refresh(); useToastStore.getState().addToast('Uyarı takip görevine dönüştürüldü', 'success') }, onError: error => useToastStore.getState().addToast(error.response?.data?.error || 'Görev oluşturulamadı', 'error') })
   const alertMutation = useMutation({ mutationFn: ({ id, status }) => api.patch(`/personnel/tracking/alerts/${id}`, { status }), onSuccess: refresh })
@@ -226,7 +233,18 @@ export default function PersonnelTrackingCenter({ projects = [], departments = [
         <div className="tracking-filterbar__meta"><span>{filters.from} → {filters.to}</span><span>{people.data?.total || 0} personel</span><span>{events.data?.total || 0} hareket</span></div>
       </section>
 
-      {[overview, people, events, alerts].some(query => query.isError) && <div className="tracking-error" role="alert">Takip verilerinin bir bölümü alınamadı. Bağlantıyı kontrol edip Yenile ile tekrar deneyin.</div>}
+      {/* Hata kaynağını adıyla söyle. Tek cümlelik "bir bölümü alınamadı"
+          uyarısı hangi bölümün neden düştüğünü gizliyordu; sebep bağlantı
+          sanılıp sunucudaki asıl arıza (eksik şema) gözden kaçtı. */}
+      {yuklemeHatasi && (
+        <div className="tracking-error" role="alert">
+          <strong>{yuklemeHatasi.labels.join(', ')} alınamadı.</strong>{' '}
+          {yuklemeHatasi.reasons.join(' · ')}
+          {yuklemeHatasi.retryable
+            ? <> — <button type="button" className="btn btn-ghost btn-sm" onClick={refresh}>Yenile</button> ile tekrar deneyebilirsiniz.</>
+            : ' Bu bölüm için tekrar denemek işe yaramaz; yetki veya oturum sorunudur.'}
+        </div>
+      )}
 
       {showSettings && (
         <section className="tracking-settings">

@@ -13,6 +13,7 @@ import { dirname, resolve } from 'node:path'
 import { sanitizeBody } from './shared/middleware/sanitize.js'
 import { getDB } from './shared/db/index.js'
 import { verifySchemaObjects } from './shared/db/verify.js'
+import { migrationFileVersions, pendingMigrations } from './shared/db/runner.js'
 import { logger } from './shared/logger.js'
 import { setupExpressErrorHandler as setupSentryErrorHandler, isSentryActive } from './shared/sentry.js'
 import { httpMetricsMiddleware } from './shared/metrics.js'
@@ -229,12 +230,27 @@ app.get('/api/health', async (req, res) => {
 
   // Migration verify — kritik index/trigger eksikse degraded (sessiz migration skip tespiti)
   let schema = { ok: true, missing: [] }
-  let migrations = { applied: 0, latest: null }
+  let migrations = { applied: 0, latest: null, expected: 0, pending: 0 }
   if (dbStatus === 'ok') {
     try { schema = verifySchemaObjects() } catch { schema = { ok: false, missing: ['verify:failed'] } }
     try {
-      const m = getDB().prepare('SELECT COUNT(*) c, MAX(version) v FROM schema_migrations').get()
-      migrations = { applied: m.c, latest: m.v }
+      const db = getDB()
+      const m = db.prepare('SELECT COUNT(*) c, MAX(version) v FROM schema_migrations').get()
+      // Diskteki dosyalarla karşılaştır: deploy koda yetişip şemaya yetişmezse
+      // (süreç eski şemayla koşuyorsa) burası sessiz kalmamalı — 2026-08-09'da
+      // personel takip tabloları oluşmadı ve ekranda "veri alınamadı" çıkarken
+      // health 'ok' diyordu.
+      const bekleyen = pendingMigrations(db)
+      migrations = {
+        applied: m.c,
+        latest: m.v,
+        expected: migrationFileVersions().length,
+        pending: bekleyen.length,
+        pending_versions: bekleyen.slice(0, 10),
+      }
+      if (bekleyen.length > 0) {
+        schema = { ok: false, missing: [...schema.missing, ...bekleyen.map(v => `migration:${v}`)] }
+      }
     } catch { /* migration tablosu yoksa default kalır */ }
   }
 

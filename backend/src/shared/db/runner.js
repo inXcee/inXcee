@@ -19,6 +19,35 @@ import { logger } from '../logger.js'
 
 const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), 'migrations')
 
+// Diskteki migration sürümleri (artan). /api/health bunu DB'deki kayıtla
+// karşılaştırır: deploy koda yetişip şemaya yetişmediğinde fark buradan görünür.
+export function migrationFileVersions(dir = MIGRATIONS_DIR) {
+  let files
+  try {
+    files = readdirSync(dir).filter(f => /^\d+.*\.sql$/i.test(f))
+  } catch (err) {
+    if (err.code === 'ENOENT') return []
+    throw err
+  }
+  return files
+    .map(f => parseInt(f, 10))
+    .filter(v => !Number.isNaN(v))
+    .sort((a, b) => a - b)
+}
+
+// Dosyası olup DB'de kaydı olmayan sürümler. Boş değilse çalışan süreç ESKİ
+// şemayla koşuyor demektir — 2026-08-09'da personel takip tabloları böyle
+// oluşmadı ve ekran "veri alınamadı" derken sunucu logu sessiz kaldı.
+export function pendingMigrations(db, dir = MIGRATIONS_DIR) {
+  let applied
+  try {
+    applied = new Set(db.prepare('SELECT version FROM schema_migrations').all().map(r => r.version))
+  } catch {
+    return migrationFileVersions(dir)   // tablo hiç yoksa hepsi bekliyor
+  }
+  return migrationFileVersions(dir).filter(v => !applied.has(v))
+}
+
 export function applyMigrations(db, dir = MIGRATIONS_DIR) {
   db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
     version INTEGER PRIMARY KEY,
