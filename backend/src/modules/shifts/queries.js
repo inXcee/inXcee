@@ -1,5 +1,6 @@
 import { getDB } from '../../shared/db/index.js'
 import { isIsoDate } from '../../shared/validation/date.js'
+import { recordPersonnelEvent } from '../personnel/tracking-events.js'
 
 const CURRENT_ASSIGNMENT_JOIN = `
   LEFT JOIN staff_assignments sa ON sa.id = (
@@ -15,6 +16,15 @@ const CURRENT_ASSIGNMENT_JOIN = `
 
 const CURRENT_DEPARTMENT_SQL = 'CASE WHEN sa.id IS NOT NULL THEN sa.department_id ELSE s.department_id END'
 const CURRENT_ROLE_SQL = 'CASE WHEN sa.id IS NOT NULL THEN sa.role_id ELSE s.role_id END'
+const CURRENT_PROJECT_SQL = 'CASE WHEN sa.id IS NOT NULL THEN sa.project_id ELSE s.project_id END'
+const TRACKED_SCHEDULE_FIELDS = [
+  'dept_id', 'shift_def_id', 'status', 'leave_type', 'leave_hours', 'absent_reason',
+  'work_location_id', 'puantaj_code_id', 'detail_note', 'attachment_url',
+]
+
+function scheduleChanged(before, after) {
+  return TRACKED_SCHEDULE_FIELDS.some(field => (before?.[field] ?? null) !== (after?.[field] ?? null))
+}
 
 function resolveCurrentStaffAssignment(row) {
   if (!row) return row
@@ -22,6 +32,7 @@ function resolveCurrentStaffAssignment(row) {
     ...row,
     department_id: row.current_assignment_id ? row.assignment_department_id : row.department_id,
     role_id: row.current_assignment_id ? row.assignment_role_id : row.role_id,
+    project_id: row.current_assignment_id ? row.assignment_project_id : row.project_id,
   }
 }
 
@@ -160,6 +171,7 @@ export function getStaffList(filters = {}) {
       sr.name as role_name, sr.sort_order as role_sort_order, sr.color_class as role_color,
       sr.expected_dept_id, expected_dept.name as expected_dept_name,
       sa.id as current_assignment_id,
+      sa.project_id as assignment_project_id,
       sa.department_id as assignment_department_id,
       sa.role_id as assignment_role_id,
       sa.work_location_id as primary_work_location_id,
@@ -177,13 +189,13 @@ export function getStaffList(filters = {}) {
     LEFT JOIN staff_roles sr ON sr.id = ${CURRENT_ROLE_SQL}
     LEFT JOIN departments expected_dept ON expected_dept.id = sr.expected_dept_id
     LEFT JOIN work_locations wl ON wl.id = sa.work_location_id
-    LEFT JOIN projects pr ON pr.id = s.project_id
+    LEFT JOIN projects pr ON pr.id = ${CURRENT_PROJECT_SQL}
     WHERE 1=1
   `
   const params = []
   // 'none' = kadrosu atanmamis olanlar; sayisal id = o proje.
-  if (filters.project_id === 'none') { query += ' AND s.project_id IS NULL' }
-  else if (filters.project_id) { query += ' AND s.project_id = ?'; params.push(Number(filters.project_id)) }
+  if (filters.project_id === 'none') { query += ` AND ${CURRENT_PROJECT_SQL} IS NULL` }
+  else if (filters.project_id) { query += ` AND ${CURRENT_PROJECT_SQL} = ?`; params.push(Number(filters.project_id)) }
   if (filters.dept_id) { query += ` AND ${CURRENT_DEPARTMENT_SQL} = ?`; params.push(idParam(filters.dept_id)) }
   if (filters.role_id) { query += ` AND ${CURRENT_ROLE_SQL} = ?`; params.push(idParam(filters.role_id)) }
   if (filters.is_active !== undefined) { query += ' AND s.is_active = ?'; params.push(filters.is_active) }
@@ -285,6 +297,7 @@ export function getStaffById(id) {
       sr.name as role_name, sr.sort_order as role_sort_order, sr.color_class as role_color,
       sr.expected_dept_id, expected_dept.name as expected_dept_name,
       sa.id as current_assignment_id,
+      sa.project_id as assignment_project_id,
       sa.department_id as assignment_department_id,
       sa.role_id as assignment_role_id,
       sa.work_location_id as primary_work_location_id,
@@ -302,7 +315,7 @@ export function getStaffById(id) {
     LEFT JOIN staff_roles sr ON sr.id = ${CURRENT_ROLE_SQL}
     LEFT JOIN departments expected_dept ON expected_dept.id = sr.expected_dept_id
     LEFT JOIN work_locations wl ON wl.id = sa.work_location_id
-    LEFT JOIN projects pr ON pr.id = s.project_id
+    LEFT JOIN projects pr ON pr.id = ${CURRENT_PROJECT_SQL}
     WHERE s.id = ?
   `).get(id)
   return resolveCurrentStaffAssignment(row)
@@ -311,9 +324,9 @@ export function getStaffById(id) {
 export function createStaff(data) {
   const db = getDB()
   const r = db.prepare(`
-    INSERT INTO staff(tc_no,full_name,phone,email,position,department_id,role_id,hire_date,birth_date,
+    INSERT INTO staff(tc_no,full_name,phone,email,position,department_id,role_id,project_id,hire_date,birth_date,
       address,emergency_contact,emergency_phone,blood_type,gender,salary,iban,notes,is_active,role_label,pickup_point_id)
-    VALUES(@tc_no,@full_name,@phone,@email,@position,@department_id,@role_id,@hire_date,@birth_date,
+    VALUES(@tc_no,@full_name,@phone,@email,@position,@department_id,@role_id,@project_id,@hire_date,@birth_date,
       @address,@emergency_contact,@emergency_phone,@blood_type,@gender,@salary,@iban,@notes,@is_active,@role_label,@pickup_point_id)
   `).run({
     tc_no: data.tc_no || null,
@@ -323,6 +336,7 @@ export function createStaff(data) {
     position: data.position || null,
     department_id: data.department_id || null,
     role_id: data.role_id || null,
+    project_id: data.project_id || null,
     hire_date: data.hire_date || null,
     birth_date: data.birth_date || null,
     address: data.address || null,
@@ -361,6 +375,8 @@ export function updateStaff(id, data) {
 export function getStaffAssignments(staffId) {
   return getDB().prepare(`
     SELECT sa.*,
+      pr.name AS project_name,
+      pr.code AS project_code,
       d.name AS dept_name,
       d.color_class AS dept_color,
       sr.name AS role_name,
@@ -369,6 +385,7 @@ export function getStaffAssignments(staffId) {
       wl.color_class AS work_location_color,
       u.full_name AS created_by_name
     FROM staff_assignments sa
+    LEFT JOIN projects pr ON pr.id = sa.project_id
     LEFT JOIN departments d ON d.id = sa.department_id
     LEFT JOIN staff_roles sr ON sr.id = sa.role_id
     LEFT JOIN work_locations wl ON wl.id = sa.work_location_id
@@ -381,6 +398,12 @@ export function getStaffAssignments(staffId) {
 export function createStaffAssignment(data) {
   const db = getDB()
   const save = db.transaction(() => {
+    const previous = db.prepare(`
+      SELECT * FROM staff_assignments
+      WHERE staff_id=? AND effective_from<=?
+        AND (effective_to IS NULL OR effective_to>=?)
+      ORDER BY effective_from DESC, id DESC LIMIT 1
+    `).get(data.staff_id, data.effective_from, data.effective_from)
     const next = db.prepare(`
       SELECT effective_from
       FROM staff_assignments
@@ -392,14 +415,15 @@ export function createStaffAssignment(data) {
       ? db.prepare("SELECT date(?, '-1 day') AS value").get(next.effective_from).value
       : null
     const existing = db.prepare(`
-      SELECT id FROM staff_assignments WHERE staff_id = ? AND effective_from = ?
+      SELECT * FROM staff_assignments WHERE staff_id = ? AND effective_from = ?
     `).get(data.staff_id, data.effective_from)
 
     let assignmentId
     if (existing) {
       db.prepare(`
         UPDATE staff_assignments
-        SET department_id = @department_id,
+        SET project_id = @project_id,
+            department_id = @department_id,
             role_id = @role_id,
             work_location_id = @work_location_id,
             effective_to = @effective_to,
@@ -408,6 +432,7 @@ export function createStaffAssignment(data) {
         WHERE id = @id
       `).run({
         id: existing.id,
+        project_id: data.project_id || null,
         department_id: data.department_id || null,
         role_id: data.role_id || null,
         work_location_id: data.work_location_id || null,
@@ -427,14 +452,15 @@ export function createStaffAssignment(data) {
 
       assignmentId = db.prepare(`
         INSERT INTO staff_assignments(
-          staff_id, department_id, role_id, work_location_id,
+          staff_id, project_id, department_id, role_id, work_location_id,
           effective_from, effective_to, note, created_by
         ) VALUES(
-          @staff_id, @department_id, @role_id, @work_location_id,
+          @staff_id, @project_id, @department_id, @role_id, @work_location_id,
           @effective_from, @effective_to, @note, @created_by
         )
       `).run({
         staff_id: data.staff_id,
+        project_id: data.project_id || null,
         department_id: data.department_id || null,
         role_id: data.role_id || null,
         work_location_id: data.work_location_id || null,
@@ -446,7 +472,7 @@ export function createStaffAssignment(data) {
     }
 
     const current = db.prepare(`
-      SELECT department_id, role_id
+      SELECT project_id, department_id, role_id
       FROM staff_assignments
       WHERE staff_id = ?
         AND effective_from <= date('now', 'localtime')
@@ -455,9 +481,21 @@ export function createStaffAssignment(data) {
       LIMIT 1
     `).get(data.staff_id)
     if (current) {
-      db.prepare('UPDATE staff SET department_id = ?, role_id = ? WHERE id = ?')
-        .run(current.department_id, current.role_id, data.staff_id)
+      db.prepare('UPDATE staff SET project_id = ?, department_id = ?, role_id = ? WHERE id = ?')
+        .run(current.project_id, current.department_id, current.role_id, data.staff_id)
     }
+    const after = db.prepare('SELECT * FROM staff_assignments WHERE id=?').get(assignmentId)
+    recordPersonnelEvent({
+      staffId: data.staff_id,
+      eventType: 'assignment_changed',
+      effectiveAt: data.effective_from,
+      sourceType: 'staff_assignment',
+      sourceId: assignmentId,
+      before: previous || null,
+      after,
+      reason: data.note || 'Personel atamasi guncellendi',
+      actorUserId: data.created_by || null,
+    })
     return assignmentId
   })
   return save()
@@ -665,7 +703,8 @@ export function deleteScheduleSegment(id) {
 
 export function bulkAssignShifts(entries, createdBy) {
   const db = getDB()
-  const findExisting = db.prepare('SELECT id, row_version FROM shift_schedule WHERE staff_id=? AND work_date=?')
+  const findExisting = db.prepare('SELECT * FROM shift_schedule WHERE staff_id=? AND work_date=?')
+  const findStaffExit = db.prepare('SELECT exit_date, offboarding_started_at FROM staff WHERE id=?')
   const findCode = db.prepare(`
     SELECT id FROM puantaj_codes
     WHERE is_active=1 AND status=?
@@ -692,6 +731,13 @@ export function bulkAssignShifts(entries, createdBy) {
       const status = e.status || 'scheduled'
       const leaveType = status === 'on_leave' ? (e.leave_type || e.leaveType || null) : null
       const existing = findExisting.get(e.staff_id, e.work_date)
+      const exit = findStaffExit.get(e.staff_id)
+      if (exit?.offboarding_started_at && exit.exit_date && e.work_date > exit.exit_date) {
+        throw Object.assign(new Error('Cikis tarihinden sonraya vardiya yazilamaz'), {
+          statusCode: 409,
+          details: { staff_id: e.staff_id, work_date: e.work_date, exit_date: exit.exit_date },
+        })
+      }
       if (!existing && e.expected_version != null && Number(e.expected_version) !== 0) {
         throw Object.assign(new Error('Bu hucre silinmis veya baska bir kullanici tarafindan degistirilmis. Guncel veri yeniden yuklendi.'), {
           statusCode: 409,
@@ -716,7 +762,34 @@ export function bulkAssignShifts(entries, createdBy) {
         puantaj_code_id: e.puantaj_code_id || inferredCode?.id || null,
         created_by: createdBy,
       })
-      saved.push(db.prepare('SELECT * FROM shift_schedule WHERE staff_id=? AND work_date=?').get(e.staff_id, e.work_date))
+      const after = db.prepare('SELECT * FROM shift_schedule WHERE staff_id=? AND work_date=?').get(e.staff_id, e.work_date)
+      saved.push(after)
+      if (existing) {
+        if (scheduleChanged(existing, after)) {
+          recordPersonnelEvent({
+            staffId: e.staff_id,
+            eventType: 'shift_changed',
+            effectiveAt: e.work_date,
+            sourceType: 'shift_schedule',
+            sourceId: after.id,
+            before: existing,
+            after,
+            reason: e.change_reason || e.reason || 'Vardiya kaydi guncellendi',
+            actorUserId: createdBy || null,
+          })
+        }
+      } else if (after.status === 'absent') {
+        recordPersonnelEvent({
+          staffId: e.staff_id,
+          eventType: 'absence_recorded',
+          effectiveAt: e.work_date,
+          sourceType: 'shift_schedule',
+          sourceId: after.id,
+          after,
+          reason: e.absent_reason || 'Devamsizlik kaydi olusturuldu',
+          actorUserId: createdBy || null,
+        })
+      }
     })
   })
   tx()
@@ -996,11 +1069,27 @@ function markLeaveOnSchedule(db, req, approvedBy) {
       puantaj_code_id=excluded.puantaj_code_id, row_version=shift_schedule.row_version+1
   `)
   for (let date = req.start_date; date <= req.end_date; date = addDaysStr(date, 1)) {
+    const before = db.prepare('SELECT * FROM shift_schedule WHERE staff_id=? AND work_date=?').get(req.staff_id, date)
     upsertLeave.run(req.staff_id, staff?.department_id || null, date, req.leave_type || null, req.leave_hours || null, code?.id || null, approvedBy || null)
+    const after = db.prepare('SELECT * FROM shift_schedule WHERE staff_id=? AND work_date=?').get(req.staff_id, date)
+    if (before) {
+      recordPersonnelEvent({
+        staffId: req.staff_id,
+        eventType: 'shift_changed',
+        effectiveAt: date,
+        sourceType: 'shift_schedule',
+        sourceId: after.id,
+        before,
+        after,
+        reason: `Onayli ${req.leave_type} izni vardiyaya islendi`,
+        actorUserId: approvedBy || null,
+        metadata: { leave_request_id: req.id, synchronization: 'leave_approved' },
+      })
+    }
   }
 }
 
-function clearLeaveFromSchedule(db, req) {
+function clearLeaveFromSchedule(db, req, actorUserId = null) {
   const restorePlanned = db.prepare(`
     UPDATE shift_schedule
     SET status='scheduled', leave_type=NULL, leave_hours=NULL,
@@ -1013,8 +1102,24 @@ function clearLeaveFromSchedule(db, req) {
     WHERE staff_id=? AND work_date=? AND status='on_leave' AND shift_def_id IS NULL
   `)
   for (let date = req.start_date; date <= req.end_date; date = addDaysStr(date, 1)) {
+    const before = db.prepare('SELECT * FROM shift_schedule WHERE staff_id=? AND work_date=?').get(req.staff_id, date)
     restorePlanned.run(req.staff_id, date)
     deleteLeaveOnly.run(req.staff_id, date)
+    const after = db.prepare('SELECT * FROM shift_schedule WHERE staff_id=? AND work_date=?').get(req.staff_id, date) || null
+    if (before) {
+      recordPersonnelEvent({
+        staffId: req.staff_id,
+        eventType: 'shift_changed',
+        effectiveAt: date,
+        sourceType: 'shift_schedule',
+        sourceId: before.id,
+        before,
+        after,
+        reason: 'Izin iptali vardiya planina islendi',
+        actorUserId,
+        metadata: { leave_request_id: req.id, synchronization: 'leave_cancelled' },
+      })
+    }
   }
 }
 
@@ -1058,7 +1163,7 @@ export function approveLeaveRequest(id, approvedBy, status, { note = null, expec
       adjustLeaveBalance(db, req, +1)
     } else if (status === 'rejected' && wasApproved) {
       // Onaylıyken reddedilirse bakiye iadesi + program geri alınır
-      clearLeaveFromSchedule(db, req)
+      clearLeaveFromSchedule(db, req, approvedBy)
       adjustLeaveBalance(db, req, -1)
     }
   })
@@ -2952,13 +3057,13 @@ export function deleteShiftDefinition(id) {
 }
 
 // ── Leave cancellation ──
-export function cancelLeaveRequest(id) {
+export function cancelLeaveRequest(id, actorUserId = null) {
   const db = getDB()
   const req = db.prepare('SELECT * FROM leave_requests WHERE id=?').get(id)
   if (!req) throw new Error('İzin talebi bulunamadı')
   const tx = db.transaction(() => {
     db.prepare("UPDATE leave_requests SET status='rejected', version=version+1, updated_at=CURRENT_TIMESTAMP WHERE id=?").run(id)
-    clearLeaveFromSchedule(db, req)
+    clearLeaveFromSchedule(db, req, actorUserId)
     // E1 — onaylı izin iptalinde bakiye iadesi
     if (req.status === 'approved') adjustLeaveBalance(db, req, -1)
   })
@@ -3088,9 +3193,44 @@ export function approveSwapRequest(id, approvedBy) {
       const update = db.prepare(`UPDATE shift_schedule_segments SET ${set}, updated_at=CURRENT_TIMESTAMP WHERE id=@id`)
       update.run({ ...targetSegment, id: requesterSegment.id })
       update.run({ ...requesterSegment, id: targetSegment.id })
+      const requesterAfter = getScheduleSegment(requesterSegment.id)
+      const targetAfter = getScheduleSegment(targetSegment.id)
+      for (const [before, after] of [[requesterSegment, requesterAfter], [targetSegment, targetAfter]]) {
+        recordPersonnelEvent({
+          staffId: before.staff_id,
+          eventType: 'shift_changed',
+          effectiveAt: swap.swap_date,
+          sourceType: 'shift_schedule_segment',
+          sourceId: before.id,
+          before,
+          after,
+          reason: `Vardiya parcasi takasi onaylandi (#${swap.id})`,
+          actorUserId: approvedBy,
+          metadata: { swap_request_id: swap.id },
+        })
+      }
     } else if (swap.requester_shift_id && swap.target_shift_id) {
+      const requesterBefore = db.prepare('SELECT * FROM shift_schedule WHERE staff_id=? AND work_date=?').get(swap.requester_id, swap.swap_date)
+      const targetBefore = db.prepare('SELECT * FROM shift_schedule WHERE staff_id=? AND work_date=?').get(swap.target_id, swap.swap_date)
       db.prepare('UPDATE shift_schedule SET shift_def_id=? WHERE staff_id=? AND work_date=?').run(swap.target_shift_id, swap.requester_id, swap.swap_date)
       db.prepare('UPDATE shift_schedule SET shift_def_id=? WHERE staff_id=? AND work_date=?').run(swap.requester_shift_id, swap.target_id, swap.swap_date)
+      const requesterAfter = db.prepare('SELECT * FROM shift_schedule WHERE staff_id=? AND work_date=?').get(swap.requester_id, swap.swap_date)
+      const targetAfter = db.prepare('SELECT * FROM shift_schedule WHERE staff_id=? AND work_date=?').get(swap.target_id, swap.swap_date)
+      for (const [before, after] of [[requesterBefore, requesterAfter], [targetBefore, targetAfter]]) {
+        if (!before || !after) continue
+        recordPersonnelEvent({
+          staffId: before.staff_id,
+          eventType: 'shift_changed',
+          effectiveAt: swap.swap_date,
+          sourceType: 'shift_schedule',
+          sourceId: before.id,
+          before,
+          after,
+          reason: `Vardiya takasi onaylandi (#${swap.id})`,
+          actorUserId: approvedBy,
+          metadata: { swap_request_id: swap.id },
+        })
+      }
     }
     db.prepare("UPDATE shift_swap_requests SET status='approved', approved_by=?, validation_note=? WHERE id=?")
       .run(approvedBy, swap.requester_segment_id ? 'Segment personel/tarih ve hedef kabul kontrolü tamamlandı' : 'Günlük vardiya takası', id)
@@ -3139,7 +3279,7 @@ export function copyWeekSchedule(sourceWeekStart, targetWeekStart, createdBy) {
       leave_type=excluded.leave_type,
       absent_reason=excluded.absent_reason
   `)
-  const findTarget = db.prepare('SELECT id FROM shift_schedule WHERE staff_id = ? AND work_date = ?')
+  const findTarget = db.prepare('SELECT * FROM shift_schedule WHERE staff_id = ? AND work_date = ?')
   const clearTargetSegments = db.prepare('DELETE FROM shift_schedule_segments WHERE schedule_id = ?')
   const insertSegment = db.prepare(`
     INSERT INTO shift_schedule_segments(
@@ -3151,8 +3291,24 @@ export function copyWeekSchedule(sourceWeekStart, targetWeekStart, createdBy) {
   db.transaction(() => {
     rows.forEach(r => {
       const newDate = addDaysStr(r.work_date, dayDiff)
+      const before = findTarget.get(r.staff_id, newDate)
       upsert.run(r.staff_id, r.dept_id, r.shift_def_id, r.work_location_id || null, newDate, r.status || 'scheduled', r.leave_type || null, r.absent_reason || null, createdBy)
-      const targetId = findTarget.get(r.staff_id, newDate)?.id
+      const after = findTarget.get(r.staff_id, newDate)
+      const targetId = after?.id
+      if (before && after && scheduleChanged(before, after)) {
+        recordPersonnelEvent({
+          staffId: r.staff_id,
+          eventType: 'shift_changed',
+          effectiveAt: newDate,
+          sourceType: 'shift_schedule',
+          sourceId: after.id,
+          before,
+          after,
+          reason: `Haftalik vardiya plani ${sourceWeekStart} tarihinden kopyalandi`,
+          actorUserId: createdBy,
+          metadata: { source_schedule_id: r.id, source_date: r.work_date },
+        })
+      }
       if (targetId) {
         clearTargetSegments.run(targetId)
         ;(segmentsBySchedule.get(r.id) || []).forEach(segment => {
@@ -3567,7 +3723,23 @@ export function applyRotationTemplate(staffIds, deptId, shiftDefIds, startDate, 
         const date = addDaysStr(startDate, w * 7 + d)
         staffIds.forEach((sid, idx) => {
           const shiftIdx = (idx + w) % shiftDefIds.length
+          const before = db.prepare('SELECT * FROM shift_schedule WHERE staff_id=? AND work_date=?').get(sid, date)
           upsert.run(sid, deptId, shiftDefIds[shiftIdx], date, createdBy)
+          const after = db.prepare('SELECT * FROM shift_schedule WHERE staff_id=? AND work_date=?').get(sid, date)
+          if (before && after && scheduleChanged(before, after)) {
+            recordPersonnelEvent({
+              staffId: sid,
+              eventType: 'shift_changed',
+              effectiveAt: date,
+              sourceType: 'shift_schedule',
+              sourceId: after.id,
+              before,
+              after,
+              reason: 'Vardiya rotasyonu uygulandi',
+              actorUserId: createdBy,
+              metadata: { rotation_start: startDate, rotation_weeks: weeks },
+            })
+          }
           count++
         })
       }
@@ -3577,9 +3749,9 @@ export function applyRotationTemplate(staffIds, deptId, shiftDefIds, startDate, 
 }
 
 // ── Delete shift schedule entry ──
-export function deleteScheduleEntry(staffId, workDate, expectedVersion = null) {
+export function deleteScheduleEntry(staffId, workDate, expectedVersion = null, actorUserId = null, reason = null) {
   const db = getDB()
-  const current = db.prepare('SELECT row_version FROM shift_schedule WHERE staff_id=? AND work_date=?').get(staffId, workDate)
+  const current = db.prepare('SELECT * FROM shift_schedule WHERE staff_id=? AND work_date=?').get(staffId, workDate)
   if (!current && expectedVersion != null && Number(expectedVersion) !== 0) {
     throw Object.assign(new Error('Bu hucre zaten silinmis veya baska bir kullanici tarafindan degistirilmis.'), {
       statusCode: 409,
@@ -3593,6 +3765,19 @@ export function deleteScheduleEntry(staffId, workDate, expectedVersion = null) {
     })
   }
   db.prepare('DELETE FROM shift_schedule WHERE staff_id=? AND work_date=?').run(staffId, workDate)
+  if (current) {
+    recordPersonnelEvent({
+      staffId,
+      eventType: 'shift_changed',
+      effectiveAt: workDate,
+      sourceType: 'shift_schedule',
+      sourceId: current.id,
+      before: current,
+      after: null,
+      reason: reason || 'Vardiya kaydi silindi',
+      actorUserId,
+    })
+  }
 }
 
 export function upsertPuantajDayDetail(data, userId) {
@@ -3692,7 +3877,34 @@ export function upsertPuantajDayDetail(data, userId) {
       row_version=shift_schedule.row_version+1
   `).run(next)
 
-  return db.prepare('SELECT * FROM shift_schedule WHERE staff_id=? AND work_date=?').get(staffId, workDate)
+  const after = db.prepare('SELECT * FROM shift_schedule WHERE staff_id=? AND work_date=?').get(staffId, workDate)
+  if (existing && scheduleChanged(existing, after)) {
+    recordPersonnelEvent({
+      staffId,
+      eventType: 'shift_changed',
+      effectiveAt: workDate,
+      sourceType: 'shift_schedule',
+      sourceId: after.id,
+      before: existing,
+      after,
+      reason: cleanText(data.change_reason) || detailNote || 'Puantaj gun detayi guncellendi',
+      actorUserId: userId,
+      metadata: { source: 'puantaj_day_detail' },
+    })
+  } else if (after.status === 'absent') {
+    recordPersonnelEvent({
+      staffId,
+      eventType: 'absence_recorded',
+      effectiveAt: workDate,
+      sourceType: 'shift_schedule',
+      sourceId: after.id,
+      after,
+      reason: after.absent_reason || detailNote || 'Devamsizlik puantaja islendi',
+      actorUserId: userId,
+      metadata: { source: 'puantaj_day_detail' },
+    })
+  }
+  return after
 }
 
 // ── Staff detail / profile ──

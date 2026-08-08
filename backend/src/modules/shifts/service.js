@@ -24,7 +24,7 @@ import {
   resetDailyApprovalsForDates, getPuantajDayIssueCounts, getPuantajApprovalOverview,
   listPuantajCodes, createPuantajCode, updatePuantajCode, getPuantajCode, deletePuantajCode,
   getStaffDetail,
-  getStaffList, getStaffDirectoryMetrics, getStaffById, createStaff, updateStaff, deleteStaff,
+  getStaffList, getStaffDirectoryMetrics, getStaffById, createStaff, updateStaff,
   setStaffScheduleOrder, clearStaffScheduleOrder,
   getStaffAssignments, createStaffAssignment, getStaffDataQualityRows,
   getStaffDayBreakdown, getPuantajDayRows, listDeductions,
@@ -46,6 +46,8 @@ import { createNotification } from '../../shared/notifications/service.js'
 import { logger } from '../../shared/logger.js'
 import { isIsoDate, isIsoMonth } from '../../shared/validation/date.js'
 import { createHash } from 'node:crypto'
+import { recordPersonnelEvent } from '../personnel/tracking-events.js'
+import { startOffboarding } from '../personnel/offboarding-service.js'
 
 // ── Tax helpers (2026 ücret gelirleri tarifesi — GİB) ──
 const TAX_BRACKETS = [
@@ -979,6 +981,7 @@ export function staffListService(filters) {
       summary.expired_certificates,
       summary.open_onboarding,
       summary.open_offboarding,
+      !row.project_id ? 1 : 0,
       !row.department_id ? 1 : 0,
       !row.role_id ? 1 : 0,
       !row.primary_work_location_id ? 1 : 0,
@@ -1032,12 +1035,23 @@ export function staffCreateService(data, userId) {
     const id = createStaff(data)
     createStaffAssignment({
       staff_id: id,
+      project_id: normalizeOptionalId(data.project_id) ?? null,
       department_id: normalizeOptionalId(data.department_id) ?? null,
       role_id: normalizeOptionalId(data.role_id) ?? null,
       work_location_id: normalizeOptionalId(data.primary_work_location_id) ?? null,
       effective_from: effectiveFrom,
       note: data.assignment_note || 'Personel kaydı oluşturuldu',
       created_by: userId,
+    })
+    recordPersonnelEvent({
+      staffId: id,
+      eventType: 'employment_started',
+      effectiveAt: effectiveFrom,
+      sourceType: 'staff',
+      sourceId: id,
+      after: getStaffById(id),
+      reason: data.assignment_note || 'Personel kaydi olusturuldu',
+      actorUserId: userId,
     })
     return id
   })
@@ -1049,12 +1063,14 @@ export function staffUpdateService(id, data, userId) {
   if (!current) throw new Error('Personel bulunamadı')
 
   const effectiveFrom = validateAssignmentDate(data.assignment_effective_from || todayLocal())
+  const projectId = data.project_id !== undefined ? normalizeOptionalId(data.project_id) : current.project_id
   const departmentId = data.department_id !== undefined ? normalizeOptionalId(data.department_id) : current.department_id
   const roleId = data.role_id !== undefined ? normalizeOptionalId(data.role_id) : current.role_id
   const workLocationId = data.primary_work_location_id !== undefined
     ? normalizeOptionalId(data.primary_work_location_id)
     : current.primary_work_location_id
-  const assignmentChanged = Number(departmentId || 0) !== Number(current.department_id || 0)
+  const assignmentChanged = Number(projectId || 0) !== Number(current.project_id || 0)
+    || Number(departmentId || 0) !== Number(current.department_id || 0)
     || Number(roleId || 0) !== Number(current.role_id || 0)
     || Number(workLocationId || 0) !== Number(current.primary_work_location_id || 0)
 
@@ -1064,6 +1080,7 @@ export function staffUpdateService(id, data, userId) {
     delete staffPatch.assignment_effective_from
     delete staffPatch.assignment_note
     if (effectiveFrom > todayLocal()) {
+      delete staffPatch.project_id
       delete staffPatch.department_id
       delete staffPatch.role_id
     }
@@ -1071,6 +1088,7 @@ export function staffUpdateService(id, data, userId) {
     if (assignmentChanged) {
       createStaffAssignment({
         staff_id: Number(id),
+        project_id: projectId,
         department_id: departmentId,
         role_id: roleId,
         work_location_id: workLocationId,
@@ -1094,6 +1112,7 @@ export function createStaffAssignmentService(staffId, data, userId) {
   const effectiveFrom = validateAssignmentDate(data.effective_from)
   return createStaffAssignment({
     staff_id: Number(staffId),
+    project_id: data.project_id !== undefined ? normalizeOptionalId(data.project_id) : current.project_id,
     department_id: normalizeOptionalId(data.department_id) ?? null,
     role_id: normalizeOptionalId(data.role_id) ?? null,
     work_location_id: normalizeOptionalId(data.work_location_id) ?? null,
@@ -1113,36 +1132,46 @@ function normalizeStaffIds(values) {
 
 export function bulkStaffAssignmentService(data, userId) {
   const staffIds = normalizeStaffIds(data.staff_ids)
+  const hasProject = Object.prototype.hasOwnProperty.call(data, 'project_id')
   const hasDepartment = Object.prototype.hasOwnProperty.call(data, 'department_id')
   const hasLocation = Object.prototype.hasOwnProperty.call(data, 'work_location_id')
-  if (!hasDepartment && !hasLocation) throw new Error('Departman veya çalışma lokasyonu seçilmeli')
+  if (!hasProject && !hasDepartment && !hasLocation) throw new Error('Proje, departman veya çalışma lokasyonu seçilmeli')
   const effectiveFrom = validateAssignmentDate(data.effective_from || todayLocal())
+  const projectId = hasProject ? normalizeOptionalId(data.project_id) : undefined
   const departmentId = hasDepartment ? normalizeOptionalId(data.department_id) : undefined
   const workLocationId = hasLocation ? normalizeOptionalId(data.work_location_id) : undefined
 
   const save = getDB().transaction(() => staffIds.map(staffId => {
     const current = getStaffById(staffId)
     if (!current) throw new Error(`Personel bulunamadı: ${staffId}`)
-    createStaffAssignment({
-      staff_id: staffId,
-      department_id: hasDepartment ? departmentId : current.department_id,
-      role_id: current.role_id,
-      work_location_id: hasLocation ? workLocationId : current.primary_work_location_id,
-      effective_from: effectiveFrom,
-      note: data.note?.trim() || 'Toplu personel ataması',
-      created_by: userId,
-    })
+    if (hasProject || hasDepartment || hasLocation) {
+      createStaffAssignment({
+        staff_id: staffId,
+        project_id: hasProject ? projectId : current.project_id,
+        department_id: hasDepartment ? departmentId : current.department_id,
+        role_id: current.role_id,
+        work_location_id: hasLocation ? workLocationId : current.primary_work_location_id,
+        effective_from: effectiveFrom,
+        note: data.note?.trim() || 'Toplu personel ataması',
+        created_by: userId,
+      })
+    }
     return staffId
   }))
   return { updated: save(), effective_from: effectiveFrom }
 }
 
-export function bulkStaffDeactivateService(data) {
+export function bulkStaffDeactivateService(data, userId) {
   const staffIds = normalizeStaffIds(data.staff_ids)
   const save = getDB().transaction(() => {
     for (const staffId of staffIds) {
       if (!getStaffById(staffId)) throw new Error(`Personel bulunamadı: ${staffId}`)
-      deleteStaff(staffId)
+      startOffboarding(staffId, {
+        exit_date: data.exit_date || todayLocal(),
+        exit_type: data.exit_type || 'other',
+        reason: data.reason || 'Toplu pasife alma ile çıkış süreci başlatıldı',
+        owner_user_id: userId,
+      }, userId)
     }
     return staffIds
   })
@@ -1160,6 +1189,7 @@ export function staffDataQualityService() {
     }
 
     if (staff.is_active) {
+      if (!staff.project_id) add('missing_project', 'Kadro / proje tanımlı değil')
       if (!staff.department_id) add('missing_department', 'Departman tanımlı değil', 'critical')
       if (!staff.role_id) add('missing_role', 'Rol tanımlı değil')
       if (!staff.primary_work_location_id || staff.primary_work_location_active === 0) {
@@ -1190,8 +1220,13 @@ export function staffDataQualityService() {
   }
 }
 
-export function staffDeleteService(id) {
-  deleteStaff(id)
+export function staffDeleteService(id, userId, data = {}) {
+  return startOffboarding(id, {
+    exit_date: data.exit_date || todayLocal(),
+    exit_type: data.exit_type || 'other',
+    reason: data.reason || 'Personel pasife alma ile çıkış süreci başlatıldı',
+    owner_user_id: userId,
+  }, userId)
 }
 
 export function searchStaffService(term) {
@@ -1224,13 +1259,25 @@ export function createLeaveService(data, userId) {
     throw Object.assign(new Error('Saatlik izin yalniz tek gun icin girilebilir'), { statusCode: 400 })
   }
   // reason opsiyonel — named parameter eksikse better-sqlite3 hata verir
-  return createLeaveRequest({
+  const id = createLeaveRequest({
     ...data,
     leave_hours: leaveHours,
     reason: data.reason?.trim() || null,
     requested_by: userId || null,
     total_days: totalDays,
   })
+  const row = getLeaveRequest(id)
+  recordPersonnelEvent({
+    staffId: row.staff_id,
+    eventType: 'leave_changed',
+    effectiveAt: row.start_date,
+    sourceType: 'leave_request',
+    sourceId: id,
+    after: row,
+    reason: row.reason || 'Izin talebi olusturuldu',
+    actorUserId: userId,
+  })
+  return id
 }
 
 export function approveLeaveService(id, user, status, options = {}) {
@@ -1254,6 +1301,17 @@ export function approveLeaveService(id, user, status, options = {}) {
   const row = approveLeaveRequest(id, user?.id, status, {
     note: options.review_note,
     expectedVersion: options.expected_version,
+  })
+  recordPersonnelEvent({
+    staffId: request.staff_id,
+    eventType: 'leave_changed',
+    effectiveAt: request.start_date,
+    sourceType: 'leave_request',
+    sourceId: request.id,
+    before: request,
+    after: row,
+    reason: String(options.review_note || '').trim() || `Izin talebi ${status === 'approved' ? 'onaylandi' : 'reddedildi'}`,
+    actorUserId: user?.id,
   })
   resetDailyApprovalsForDates(requestDateRange(request.start_date, request.end_date), user?.id)
   // AVS kioska push (personel telefonda abone olduysa) — opsiyonel, ana akışı bozma
@@ -1321,7 +1379,19 @@ export function createOvertimeService(data, userId) {
   if (!data.staff_id || !data.work_date || !data.hours)
     throw new Error('Zorunlu alanlar eksik')
   if (data.hours <= 0 || data.hours > 12) throw new Error('Mesai saati 0-12 arasında olmalı')
-  return createOvertime({ ...data, approved_by: userId })
+  const id = createOvertime({ ...data, approved_by: userId })
+  const row = getDB().prepare('SELECT * FROM overtime_records WHERE id=?').get(id)
+  recordPersonnelEvent({
+    staffId: row.staff_id,
+    eventType: 'overtime_changed',
+    effectiveAt: row.work_date,
+    sourceType: 'overtime_record',
+    sourceId: id,
+    after: row,
+    reason: row.reason || 'Fazla mesai kaydi olusturuldu',
+    actorUserId: userId,
+  })
+  return id
 }
 
 export function overtimeListService(filters) {
@@ -1333,7 +1403,18 @@ function optionalClock(value, field) {
 }
 
 export function createOvertimeRequestService(data, user = {}) {
-  return createOvertimeRequest(normalizeOvertimeRequestInput(data, user))
+  const row = createOvertimeRequest(normalizeOvertimeRequestInput(data, user))
+  recordPersonnelEvent({
+    staffId: row.staff_id,
+    eventType: 'overtime_changed',
+    effectiveAt: row.work_date,
+    sourceType: 'overtime_request',
+    sourceId: row.id,
+    after: row,
+    reason: row.reason || 'Fazla mesai talebi olusturuldu',
+    actorUserId: user.id,
+  })
+  return row
 }
 
 function normalizeOvertimeRequestInput(data, user = {}) {
@@ -1448,6 +1529,17 @@ export function reviewOvertimeRequestService(id, data, user = {}) {
     actual_end: optionalClock(data.actual_end, 'Gerceklesen bitis'),
     review_note: String(data.review_note || '').trim() || null,
   }, user.id)
+  recordPersonnelEvent({
+    staffId: request.staff_id,
+    eventType: 'overtime_changed',
+    effectiveAt: request.work_date,
+    sourceType: 'overtime_request',
+    sourceId: request.id,
+    before: request,
+    after: row,
+    reason: String(data.review_note || '').trim() || `Fazla mesai talebi ${status}`,
+    actorUserId: user.id,
+  })
   resetDailyApprovalsForDates([request.work_date], user.id)
   return row
 }
@@ -1459,18 +1551,60 @@ export function overtimeDayService(data, userId) {
   const hours = Number(data.hours)
   if (!Number.isFinite(hours) || hours < 0 || hours > 12) throw new Error('Mesai saati 0-12 arasında olmalı')
   assertPeriodsUnlocked([data.work_date])
+  const before = getDB().prepare('SELECT * FROM overtime_records WHERE staff_id=? AND work_date=? ORDER BY id LIMIT 1')
+    .get(data.staff_id, data.work_date)
   upsertOvertimeDay(data.staff_id, data.work_date, hours, userId)
+  const after = getDB().prepare('SELECT * FROM overtime_records WHERE staff_id=? AND work_date=? ORDER BY id LIMIT 1')
+    .get(data.staff_id, data.work_date)
+  recordPersonnelEvent({
+    staffId: data.staff_id,
+    eventType: 'overtime_changed',
+    effectiveAt: data.work_date,
+    sourceType: 'overtime_day',
+    sourceId: `${data.staff_id}:${data.work_date}`,
+    before: before || null,
+    after: after || null,
+    reason: String(data.change_reason || '').trim() || 'Puantaj fazla mesai kaydi guncellendi',
+    actorUserId: userId,
+  })
   resetDailyApprovalsForDates([data.work_date], userId)
 }
 
-export function updateOvertimeService(id, data) {
+export function updateOvertimeService(id, data, userId) {
   if (data.hours !== undefined && (data.hours <= 0 || data.hours > 12))
     throw new Error('Mesai saati 0-12 arasında olmalı')
+  const before = getDB().prepare('SELECT * FROM overtime_records WHERE id=?').get(id)
+  if (!before) throw Object.assign(new Error('Fazla mesai kaydi bulunamadi'), { statusCode: 404 })
   updateOvertime(id, data)
+  const after = getDB().prepare('SELECT * FROM overtime_records WHERE id=?').get(id)
+  recordPersonnelEvent({
+    staffId: before.staff_id,
+    eventType: 'overtime_changed',
+    effectiveAt: after.work_date,
+    sourceType: 'overtime_record',
+    sourceId: before.id,
+    before,
+    after,
+    reason: String(data.change_reason || data.reason || '').trim() || 'Fazla mesai kaydi guncellendi',
+    actorUserId: userId,
+  })
 }
 
-export function deleteOvertimeService(id) {
+export function deleteOvertimeService(id, userId, reason = null) {
+  const before = getDB().prepare('SELECT * FROM overtime_records WHERE id=?').get(id)
+  if (!before) throw Object.assign(new Error('Fazla mesai kaydi bulunamadi'), { statusCode: 404 })
   deleteOvertime(id)
+  recordPersonnelEvent({
+    staffId: before.staff_id,
+    eventType: 'overtime_changed',
+    effectiveAt: before.work_date,
+    sourceType: 'overtime_record',
+    sourceId: before.id,
+    before,
+    after: null,
+    reason: String(reason || '').trim() || 'Fazla mesai kaydi silindi',
+    actorUserId: userId,
+  })
 }
 
 export function overtimeSummaryService(month) {
@@ -2415,6 +2549,7 @@ export function assignDeptService(staffId, deptId, userId, effectiveFrom = today
   if (!current) throw new Error('Personel bulunamadı')
   createStaffAssignment({
     staff_id: Number(staffId),
+    project_id: current.project_id,
     department_id: normalizeOptionalId(deptId) ?? null,
     role_id: current.role_id,
     work_location_id: current.primary_work_location_id,
@@ -2518,7 +2653,19 @@ export function cancelLeaveService(id, userId) {
   const request = getLeaveRequest(id)
   if (!request) throw Object.assign(new Error('Izin talebi bulunamadi'), { statusCode: 404 })
   assertPeriodsUnlocked(requestDateRange(request.start_date, request.end_date))
-  cancelLeaveRequest(id)
+  cancelLeaveRequest(id, userId)
+  const after = getLeaveRequest(id)
+  recordPersonnelEvent({
+    staffId: request.staff_id,
+    eventType: 'leave_changed',
+    effectiveAt: request.start_date,
+    sourceType: 'leave_request',
+    sourceId: request.id,
+    before: request,
+    after,
+    reason: 'Izin talebi iptal edildi',
+    actorUserId: userId,
+  })
   resetDailyApprovalsForDates(requestDateRange(request.start_date, request.end_date), userId)
 }
 
@@ -2753,7 +2900,7 @@ export function rotationApplyService(body, userId) {
 
 export function deleteScheduleService(staffId, workDate, userId, expectedVersion = null) {
   assertPeriodsUnlocked([workDate])
-  deleteScheduleEntry(staffId, workDate, expectedVersion)
+  deleteScheduleEntry(staffId, workDate, expectedVersion, userId, 'Vardiya kaydi silindi')
   resetDailyApprovalsForDates([workDate], userId)
 }
 

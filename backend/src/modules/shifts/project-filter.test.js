@@ -111,6 +111,14 @@ describe('Çapraz çalışma — kadrosu bir projede, fiilen başka projede', ()
 // Kullanıcı kadroyu personel kartından da yönetebilmeli; kadro değişikliği için
 // ayrı bir ekrana gitmek zorunda kalmasın.
 describe('Personel kartından kadro değiştirme', () => {
+  it('yeni personel seçilen proje kadrosuyla oluşturulur', async () => {
+    const res = await request(app).post('/api/shifts/staff')
+      .set(auth()).send({ full_name: 'YENİ PROJELİ PERSONEL', project_id: fpuId })
+    expect(res.status).toBe(201)
+    expect(getDB().prepare('SELECT project_id FROM staff WHERE id=?')
+      .get(res.body.id).project_id).toBe(fpuId)
+  })
+
   it('project_id personel güncellemesiyle yazılır', async () => {
     const res = await request(app).put(`/api/shifts/staff/${kadrosuzStaff}`)
       .set(auth()).send({ project_id: kampId })

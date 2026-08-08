@@ -663,6 +663,10 @@ describe('Excel çizelge içe aktarımı (/import)', () => {
     // personel + departman gerçekten oluştu
     const sid = (await request(app).get(`/api/shifts/staff/search?q=${encodeURIComponent('UNDO EXCELKİŞİ')}`).set('Authorization', `Bearer ${managerToken}`)).body[0].id
     expect(sid).toBeTruthy()
+    expect(getDB().prepare(`
+      SELECT COUNT(*) AS count FROM personnel_tracking_events
+      WHERE staff_id=? AND event_type='employment_started'
+    `).get(sid).count).toBe(1)
     let depts = (await request(app).get('/api/shifts/departments').set('Authorization', `Bearer ${managerToken}`)).body
     expect(depts.some(d => d.name === 'UNDO EXCELDEPT')).toBe(true)
 
@@ -682,6 +686,11 @@ describe('Excel çizelge içe aktarımı (/import)', () => {
     // personel + departman silindi
     const sAfter = (await request(app).get(`/api/shifts/staff/search?q=${encodeURIComponent('UNDO EXCELKİŞİ')}`).set('Authorization', `Bearer ${managerToken}`)).body
     expect(sAfter.length).toBe(0)
+    expect(getDB().prepare('SELECT is_active, archived_at FROM staff WHERE id=?').get(sid)).toMatchObject({ is_active: 0 })
+    expect(getDB().prepare(`
+      SELECT COUNT(*) AS count FROM personnel_tracking_events
+      WHERE staff_id=? AND event_type='employment_ended'
+    `).get(sid).count).toBe(1)
     depts = (await request(app).get('/api/shifts/departments').set('Authorization', `Bearer ${managerToken}`)).body
     expect(depts.some(d => d.name === 'UNDO EXCELDEPT')).toBe(false)
 
@@ -796,12 +805,13 @@ describe('Staff CRUD', () => {
     expect(res.body.ok).toBe(true)
   })
 
-  it('DELETE /staff/:id soft-deletes staff (manager)', async () => {
+  it('DELETE /staff/:id starts controlled offboarding (manager)', async () => {
     const res = await request(app)
       .delete(`/api/shifts/staff/${createdStaffId}`)
       .set('Authorization', `Bearer ${managerToken}`)
-    expect(res.status).toBe(200)
+    expect(res.status).toBe(202)
     expect(res.body.ok).toBe(true)
+    expect(res.body.offboarding_started).toBe(true)
   })
 
   it('POST /staff rejects without full_name', async () => {
@@ -867,11 +877,13 @@ describe('Staff CRUD', () => {
       .set('Authorization', `Bearer ${managerToken}`)
       .send({ full_name: 'Toplu Atama Iki', is_active: 1 })
     const departmentId = getDB().prepare('SELECT id FROM departments ORDER BY id LIMIT 1').get().id
+    const projectId = getDB().prepare('SELECT id FROM projects ORDER BY id LIMIT 1').get().id
 
     const assignment = await request(app).post('/api/shifts/staff/bulk/assignment')
       .set('Authorization', `Bearer ${shiftToken}`)
       .send({
         staff_ids: [first.body.id, second.body.id],
+        project_id: projectId,
         department_id: departmentId,
       })
     expect(assignment.status).toBe(200)
@@ -880,6 +892,7 @@ describe('Staff CRUD', () => {
     const assignedRow = await request(app).get(`/api/shifts/staff/${first.body.id}`)
       .set('Authorization', `Bearer ${managerToken}`)
     expect(assignedRow.body.department_id).toBe(Number(departmentId))
+    expect(assignedRow.body.project_id).toBe(Number(projectId))
 
     const denied = await request(app).post('/api/shifts/staff/bulk/deactivate')
       .set('Authorization', `Bearer ${shiftToken}`)

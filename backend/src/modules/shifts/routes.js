@@ -177,7 +177,7 @@ shiftsRouter.post('/staff/bulk/assignment', ...managerOrSupervisor, (req, res) =
 
 shiftsRouter.post('/staff/bulk/deactivate', ...managerOnly, (req, res) => {
   try {
-    const result = bulkStaffDeactivateService(req.body)
+    const result = bulkStaffDeactivateService(req.body, req.user.id)
     logAudit(req.user.id, 'staff_bulk_deactivate', 'shifts', null, `${result.updated.length} personel`)
     res.json(result)
   } catch (e) {
@@ -187,8 +187,8 @@ shiftsRouter.post('/staff/bulk/deactivate', ...managerOnly, (req, res) => {
 
 shiftsRouter.delete('/staff/:id', ...managerOnly, (req, res) => {
   try {
-    staffDeleteService(req.params.id)
-    res.json({ ok: true })
+    const result = staffDeleteService(req.params.id, req.user.id, req.body || {})
+    res.status(202).json({ ok: true, offboarding_started: true, ...result })
   } catch (e) {
     res.status(400).json({ error: e.message })
   }
@@ -393,7 +393,7 @@ shiftsRouter.get('/import/batches', ...managerOrSupervisor, (req, res) => {
 
 shiftsRouter.post('/import/batches/:id/undo', ...managerOrSupervisor, (req, res) => {
   try {
-    const result = undoImportBatch(+req.params.id)
+    const result = undoImportBatch(+req.params.id, req.user.id)
     logAudit(req.user.id, 'schedule_import_undo', 'shifts', +req.params.id,
       `${result.scheduleDeleted} silindi · ${result.scheduleRestored} geri yüklendi · ${result.staffDeleted} personel silindi`)
     res.json(result)
@@ -794,14 +794,14 @@ shiftsRouter.post('/overtime/day', ...managerOrSupervisor, (req, res) => {
 
 shiftsRouter.put('/overtime/:id', ...managerOrSupervisor, (req, res) => {
   try {
-    updateOvertimeService(req.params.id, req.body)
+    updateOvertimeService(req.params.id, req.body, req.user.id)
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
 shiftsRouter.delete('/overtime/:id', ...managerOrSupervisor, (req, res) => {
   try {
-    deleteOvertimeService(req.params.id)
+    deleteOvertimeService(req.params.id, req.user.id, req.body?.reason)
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })

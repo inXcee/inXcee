@@ -126,7 +126,7 @@ describe('Emergency contacts (H1 P3)', () => {
 })
 
 describe('Arşiv (H1 P5)', () => {
-  it('arsivler ve geri alir', async () => {
+  it('arsiv istegini kontrollu cikisa cevirir, tamamlar ve geri alir', async () => {
     const db = getDB()
     db.prepare('INSERT INTO staff(full_name, tc_no, is_active) VALUES(?,?,1)').run('Arşiv Test', '99999999999')
     const targetId = db.prepare('SELECT id FROM staff WHERE tc_no=?').get('99999999999').id
@@ -134,7 +134,23 @@ describe('Arşiv (H1 P5)', () => {
     const arch = await request(app).post(`/api/personnel/${targetId}/archive`)
       .set('Authorization', `Bearer ${token}`)
       .send({ reason: 'İşten ayrıldı' })
-    expect(arch.status).toBe(200)
+    expect(arch.status).toBe(202)
+    expect(arch.body.offboarding_started).toBe(true)
+
+    const checklistId = arch.body.checklistId
+    db.prepare(`
+      UPDATE hr_checklist_items
+      SET done=1, done_at=CURRENT_TIMESTAMP, done_by=1
+      WHERE checklist_id=?
+    `).run(checklistId)
+    db.prepare(`
+      UPDATE hr_checklists SET status='completed', completed_at=CURRENT_TIMESTAMP WHERE id=?
+    `).run(checklistId)
+
+    const finalize = await request(app).post(`/api/personnel/${targetId}/offboarding/finalize`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ schedules: [], leaves: [], overtime_requests: [] })
+    expect(finalize.status).toBe(200)
 
     const arc = await request(app).get('/api/personnel/archived').set('Authorization', `Bearer ${token}`)
     expect(arc.body.find(p => p.id === targetId)).toBeTruthy()

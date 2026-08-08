@@ -2,7 +2,13 @@ import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { logAudit } from '../../shared/audit.js'
 import { validate } from '../../shared/middleware/validate.js'
-import { addNoteSchema, updateNoteSchema, createFollowupSchema, updateFollowupSchema, createRequirementSchema, updateRequirementSchema, emergencyContactSchema, emergencyContactUpdateSchema, archiveSchema, importPersonnelSchema } from './schemas.js'
+import {
+  addNoteSchema, updateNoteSchema, createFollowupSchema, updateFollowupSchema,
+  createRequirementSchema, updateRequirementSchema, emergencyContactSchema,
+  emergencyContactUpdateSchema, archiveSchema, importPersonnelSchema,
+  offboardingStartSchema, offboardingFinalizeSchema, restoreEmploymentSchema,
+  trackingRulesUpdateSchema, trackingAlertUpdateSchema, trackingAlertFollowupSchema,
+} from './schemas.js'
 import {
   listFollowups, createFollowup, updateFollowup, completeFollowup, cancelFollowup,
 } from './staff-followups.js'
@@ -23,6 +29,17 @@ import {
   listDocumentRequirements, createDocumentRequirement, updateDocumentRequirement,
   deleteDocumentRequirement, listDocumentCatalog, getAttachmentForDownload,
 } from './staff-documents.js'
+import {
+  getOffboardingImpact, startOffboarding, startArchiveCompatibility,
+  finalizeOffboarding, restoreEmployment,
+} from './offboarding-service.js'
+import {
+  evaluatePersonnelAlerts, listPersonnelAlerts, listTrackingRules,
+  updateTrackingRules, updatePersonnelAlert, convertAlertToFollowup,
+} from './tracking-alerts.js'
+import {
+  getTrackingOverview, listTrackingPeople, listTrackingEvents, getPersonTracking,
+} from './tracking-read.js'
 
 export const personnelRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
@@ -32,6 +49,66 @@ const view = dossierAccess
 function cleanupUpload(file) {
   if (file?.path) { try { fs.unlinkSync(file.path) } catch { /* zaten yok */ } }
 }
+
+function trackingError(res, error, context) {
+  if (error.statusCode) {
+    return res.status(error.statusCode).json({ error: error.message, details: error.details })
+  }
+  logger.error(context, error)
+  return res.status(500).json({ error: 'Sunucu hatasi' })
+}
+
+// Personel Takip Merkezi backend sozlesmeleri.
+personnelRouter.get('/tracking/overview', ...mgr, (req, res) => {
+  try {
+    evaluatePersonnelAlerts()
+    res.json(getTrackingOverview(req.query))
+  } catch (error) { trackingError(res, error, '[personnel/tracking-overview]') }
+})
+
+personnelRouter.get('/tracking/people', ...mgr, (req, res) => {
+  try { res.json(listTrackingPeople(req.query)) }
+  catch (error) { trackingError(res, error, '[personnel/tracking-people]') }
+})
+
+personnelRouter.get('/tracking/events', ...mgr, (req, res) => {
+  try { res.json(listTrackingEvents(req.query)) }
+  catch (error) { trackingError(res, error, '[personnel/tracking-events]') }
+})
+
+personnelRouter.get('/tracking/settings', ...mgr, (req, res) => {
+  try { res.json({ rules: listTrackingRules() }) }
+  catch (error) { trackingError(res, error, '[personnel/tracking-settings]') }
+})
+
+personnelRouter.patch('/tracking/settings', ...mgrOnly, validate(trackingRulesUpdateSchema), (req, res) => {
+  try {
+    const rules = updateTrackingRules(req.validated.rules, req.user.id)
+    logAudit(req.user.id, 'personnel_tracking_settings_update', 'personnel', null, `${req.validated.rules.length} kural`)
+    res.json({ rules })
+  } catch (error) { trackingError(res, error, '[personnel/tracking-settings-update]') }
+})
+
+personnelRouter.get('/tracking/alerts', ...mgr, (req, res) => {
+  try { res.json({ items: listPersonnelAlerts(req.query) }) }
+  catch (error) { trackingError(res, error, '[personnel/tracking-alerts]') }
+})
+
+personnelRouter.patch('/tracking/alerts/:alertId', ...mgr, validate(trackingAlertUpdateSchema), (req, res) => {
+  try {
+    const alert = updatePersonnelAlert(+req.params.alertId, req.validated, req.user.id)
+    logAudit(req.user.id, 'personnel_tracking_alert_update', 'personnel', +req.params.alertId, req.validated.status || 'assignment')
+    res.json(alert)
+  } catch (error) { trackingError(res, error, '[personnel/tracking-alert-update]') }
+})
+
+personnelRouter.post('/tracking/alerts/:alertId/followup', ...mgr, validate(trackingAlertFollowupSchema), (req, res) => {
+  try {
+    const followup = convertAlertToFollowup(+req.params.alertId, req.validated, req.user.id)
+    logAudit(req.user.id, 'personnel_tracking_alert_followup', 'personnel', +req.params.alertId, `followup:${followup.id}`)
+    res.status(followup.existing ? 200 : 201).json(followup)
+  } catch (error) { trackingError(res, error, '[personnel/tracking-alert-followup]') }
+})
 
 // ── Excel toplu içe aktarım ──
 personnelRouter.post('/import', ...mgr, validate(importPersonnelSchema), (req, res) => {
@@ -446,22 +523,48 @@ personnelRouter.delete('/emergency-contacts/:id', ...mgr, (req, res) => {
   catch (e) { res.status(400).json({ error: e.message }) }
 })
 
+personnelRouter.get('/:id/tracking', ...mgr, (req, res) => {
+  try { res.json(getPersonTracking(+req.params.id, req.query)) }
+  catch (error) { trackingError(res, error, '[personnel/person-tracking]') }
+})
+
+personnelRouter.get('/:id/offboarding-impact', ...mgr, (req, res) => {
+  try { res.json(getOffboardingImpact(+req.params.id, req.query.exit_date)) }
+  catch (error) { trackingError(res, error, '[personnel/offboarding-impact]') }
+})
+
+personnelRouter.post('/:id/offboarding/start', ...mgr, validate(offboardingStartSchema), (req, res) => {
+  try {
+    const result = startOffboarding(+req.params.id, req.validated, req.user.id)
+    logAudit(req.user.id, 'staff_offboarding_start', 'personnel', +req.params.id, req.validated.reason)
+    res.status(201).json(result)
+  } catch (error) { trackingError(res, error, '[personnel/offboarding-start]') }
+})
+
+personnelRouter.post('/:id/offboarding/finalize', ...mgr, validate(offboardingFinalizeSchema), (req, res) => {
+  try {
+    const result = finalizeOffboarding(+req.params.id, req.validated, req.user.id)
+    logAudit(req.user.id, 'staff_offboarding_finalize', 'personnel', +req.params.id, '')
+    res.json(result)
+  } catch (error) { trackingError(res, error, '[personnel/offboarding-finalize]') }
+})
+
 // ── Arşiv ──
 personnelRouter.post('/:id/archive', ...mgr, validate(archiveSchema), (req, res) => {
   try {
     const reason = req.validated.reason
-    q.archiveStaff(+req.params.id, reason)
+    const result = startArchiveCompatibility(+req.params.id, reason, req.user.id)
     logAudit(req.user.id, 'staff_archive', 'personnel', +req.params.id, reason || '')
-    res.json({ ok: true })
-  } catch (e) { res.status(400).json({ error: e.message }) }
+    res.status(202).json({ ok: true, offboarding_started: true, ...result })
+  } catch (error) { trackingError(res, error, '[personnel/archive]') }
 })
 
-personnelRouter.post('/:id/restore', ...mgr, (req, res) => {
+personnelRouter.post('/:id/restore', ...mgr, validate(restoreEmploymentSchema), (req, res) => {
   try {
-    q.restoreStaff(+req.params.id)
-    logAudit(req.user.id, 'staff_restore', 'personnel', +req.params.id, '')
-    res.json({ ok: true })
-  } catch (e) { res.status(400).json({ error: e.message }) }
+    const result = restoreEmployment(+req.params.id, req.validated, req.user.id)
+    logAudit(req.user.id, 'staff_restore', 'personnel', +req.params.id, req.validated.reason || '')
+    res.json(result)
+  } catch (error) { trackingError(res, error, '[personnel/restore]') }
 })
 
 personnelRouter.get('/archived', ...view, (req, res) => {

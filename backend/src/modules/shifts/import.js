@@ -15,6 +15,13 @@
 import { getDB } from '../../shared/db/index.js'
 import { guessGender } from './nameGender.js'
 import { analyzeAnomalies } from './analyze.js'
+import { recordPersonnelEvent } from '../personnel/tracking-events.js'
+
+const IMPORT_SCHEDULE_FIELDS = ['dept_id', 'shift_def_id', 'work_location_id', 'status', 'leave_type']
+
+function importedScheduleChanged(before, after) {
+  return IMPORT_SCHEDULE_FIELDS.some(field => (before?.[field] ?? null) !== (after?.[field] ?? null))
+}
 
 // İsim normalizasyonu — büyük/küçük harf + fazla boşlukları yok say (TR locale).
 export function normalizeName(s) {
@@ -347,7 +354,8 @@ export function importSchedule(payload, userId, { dryRun = false, createMissing 
 
   // Geri alma (undo) için snapshot: oturumun yarattığı + üzerine yazdığı her şey.
   const undo = { createdStaffIds: [], createdDeptIds: [], createdShiftDefIds: [], createdLeaves: [], schedulePrev: [], scheduleInserted: [] }
-  const getPrevStmt = db.prepare('SELECT dept_id, shift_def_id, work_location_id, status, leave_type FROM shift_schedule WHERE staff_id = ? AND work_date = ?')
+  const getPrevStmt = db.prepare('SELECT * FROM shift_schedule WHERE staff_id = ? AND work_date = ?')
+  const getScheduleStmt = db.prepare('SELECT * FROM shift_schedule WHERE staff_id = ? AND work_date = ?')
   const insBatch = db.prepare(`INSERT INTO schedule_import_batches(created_by, label, summary, undo_data) VALUES(?,?,?,?)`)
 
   const tx = db.transaction(() => {
@@ -377,6 +385,17 @@ export function importSchedule(payload, userId, { dryRun = false, createMissing 
       const id = insertStaff.run(name, dept?.id || null, gender || null).lastInsertRowid
       staffByName.set(normalizeName(name), { id, full_name: name, department_id: dept?.id || null })
       undo.createdStaffIds.push(id)
+      recordPersonnelEvent({
+        staffId: id,
+        eventType: 'employment_started',
+        effectiveAt: weekDates[0] || db.prepare("SELECT date('now','localtime') AS value").get().value,
+        sourceType: 'staff',
+        sourceId: id,
+        after: db.prepare('SELECT * FROM staff WHERE id=?').get(id),
+        reason: 'Vardiya Excel aktariminda personel olusturuldu',
+        actorUserId: userId || null,
+        metadata: { source: 'schedule_import' },
+      })
     }
 
     // Çizelge upsert — yeni-oluşturulanlar staffByName'e zaten eklendi, resolveStaff onları görür.
@@ -411,6 +430,33 @@ export function importSchedule(payload, userId, { dryRun = false, createMissing 
           leave_type: status === 'on_leave' ? (c.leaveType || null) : null,
           created_by: userId || null,
         })
+        const after = getScheduleStmt.get(staff.id, c.date)
+        if (prev && importedScheduleChanged(prev, after)) {
+          recordPersonnelEvent({
+            staffId: staff.id,
+            eventType: 'shift_changed',
+            effectiveAt: c.date,
+            sourceType: 'shift_schedule',
+            sourceId: after.id,
+            before: prev,
+            after,
+            reason: 'Vardiya Excel aktarimi ile guncellendi',
+            actorUserId: userId || null,
+            metadata: { source: 'schedule_import' },
+          })
+        } else if (!prev && after.status === 'absent') {
+          recordPersonnelEvent({
+            staffId: staff.id,
+            eventType: 'absence_recorded',
+            effectiveAt: c.date,
+            sourceType: 'shift_schedule',
+            sourceId: after.id,
+            after,
+            reason: 'Devamsizlik Excel vardiya aktarimi ile kaydedildi',
+            actorUserId: userId || null,
+            metadata: { source: 'schedule_import' },
+          })
+        }
         count++
       }
     }
@@ -439,6 +485,17 @@ export function importSchedule(payload, userId, { dryRun = false, createMissing 
       if (run.leaveType === 'annual') bumpAnnual.run(run.days, staff.id, year)
       else if (run.leaveType === 'sick') bumpSick.run(run.days, staff.id, year)
       undo.createdLeaves.push({ id: lid, staffId: staff.id, leaveType: run.leaveType, days: run.days, year })
+      recordPersonnelEvent({
+        staffId: staff.id,
+        eventType: 'leave_changed',
+        effectiveAt: run.start,
+        sourceType: 'leave_request',
+        sourceId: lid,
+        after: db.prepare('SELECT * FROM leave_requests WHERE id=?').get(lid),
+        reason: 'Izin Excel vardiya aktarimi ile olusturuldu',
+        actorUserId: userId || null,
+        metadata: { source: 'schedule_import' },
+      })
       leavesCreated++
     }
     report.leaves.created = leavesCreated
@@ -470,7 +527,7 @@ export function listImportBatches(limit = 20) {
 function safeParse(s) { try { return JSON.parse(s) } catch { return null } }
 
 // ── Bir oturumu geri al: yarattıklarını sil, üzerine yazdıklarını eski haline döndür ──
-export function undoImportBatch(batchId) {
+export function undoImportBatch(batchId, userId = null) {
   const db = getDB()
   const batch = db.prepare('SELECT * FROM schedule_import_batches WHERE id = ?').get(batchId)
   if (!batch) throw new Error('İçe aktarım oturumu bulunamadı')
@@ -486,32 +543,104 @@ export function undoImportBatch(batchId) {
   const delLeaveByStaff = db.prepare('DELETE FROM leave_requests WHERE staff_id = ?')
   const delBalByStaff = db.prepare('DELETE FROM leave_balance WHERE staff_id = ?')
   const delSchedByStaff = db.prepare('DELETE FROM shift_schedule WHERE staff_id = ?')
-  const delStaff = db.prepare('DELETE FROM staff WHERE id = ?')
+  const archiveStaff = db.prepare(`
+    UPDATE staff
+    SET is_active=0, archived_at=CURRENT_TIMESTAMP,
+      archive_reason='Vardiya Excel aktarimi geri alindi',
+      project_id=NULL, department_id=NULL, role_id=NULL
+    WHERE id=?
+  `)
   const staffRefByDept = db.prepare('SELECT 1 FROM staff WHERE department_id = ? LIMIT 1')
   const delDept = db.prepare('DELETE FROM departments WHERE id = ?')
   const schedRefByDef = db.prepare('SELECT 1 FROM shift_schedule WHERE shift_def_id = ? LIMIT 1')
   const delDef = db.prepare('DELETE FROM shift_definitions WHERE id = ?')
+  const getSchedule = db.prepare('SELECT * FROM shift_schedule WHERE staff_id=? AND work_date=?')
 
   const result = { scheduleRestored: 0, scheduleDeleted: 0, leavesDeleted: 0, staffDeleted: 0, deptsDeleted: 0, shiftDefsDeleted: 0 }
 
   db.transaction(() => {
     // 1) Oluşturulan izinleri sil + bakiyeyi geri yükle
     for (const lv of undo.createdLeaves || []) {
+      const before = db.prepare('SELECT * FROM leave_requests WHERE id=?').get(lv.id)
       delLeave.run(lv.id)
       if (lv.leaveType === 'annual') unbumpAnnual.run(lv.days, lv.staffId, lv.year)
       else if (lv.leaveType === 'sick') unbumpSick.run(lv.days, lv.staffId, lv.year)
+      if (before) {
+        recordPersonnelEvent({
+          staffId: lv.staffId,
+          eventType: 'leave_changed',
+          effectiveAt: before.start_date,
+          sourceType: 'leave_request',
+          sourceId: lv.id,
+          before,
+          after: null,
+          reason: `Vardiya Excel aktarimi #${batchId} geri alindi`,
+          actorUserId: userId,
+          metadata: { source: 'schedule_import_undo', batch_id: batchId },
+        })
+      }
       result.leavesDeleted++
     }
     // 2) Yeni eklenen çizelge satırlarını sil
-    for (const s of undo.scheduleInserted || []) { delSched.run(s.staff_id, s.work_date); result.scheduleDeleted++ }
+    for (const s of undo.scheduleInserted || []) {
+      const before = getSchedule.get(s.staff_id, s.work_date)
+      delSched.run(s.staff_id, s.work_date)
+      if (before) {
+        recordPersonnelEvent({
+          staffId: s.staff_id,
+          eventType: 'shift_changed',
+          effectiveAt: s.work_date,
+          sourceType: 'shift_schedule',
+          sourceId: before.id,
+          before,
+          after: null,
+          reason: `Vardiya Excel aktarimi #${batchId} geri alindi`,
+          actorUserId: userId,
+          metadata: { source: 'schedule_import_undo', batch_id: batchId },
+        })
+      }
+      result.scheduleDeleted++
+    }
     // 3) Üzerine yazılanları eski değerlerine döndür
     for (const p of undo.schedulePrev || []) {
+      const before = getSchedule.get(p.staff_id, p.work_date)
       restoreSched.run(p.dept_id, p.shift_def_id, p.work_location_id || null, p.status, p.leave_type || null, p.staff_id, p.work_date)
+      const after = getSchedule.get(p.staff_id, p.work_date)
+      if (before && after && importedScheduleChanged(before, after)) {
+        recordPersonnelEvent({
+          staffId: p.staff_id,
+          eventType: 'shift_changed',
+          effectiveAt: p.work_date,
+          sourceType: 'shift_schedule',
+          sourceId: after.id,
+          before,
+          after,
+          reason: `Vardiya Excel aktarimi #${batchId} geri alindi`,
+          actorUserId: userId,
+          metadata: { source: 'schedule_import_undo', batch_id: batchId },
+        })
+      }
       result.scheduleRestored++
     }
     // 4) Oluşturulan personeli (ve onlara ait tüm izleri) sil
     for (const sid of undo.createdStaffIds || []) {
-      delSchedByStaff.run(sid); delLeaveByStaff.run(sid); delBalByStaff.run(sid); delStaff.run(sid)
+      const before = db.prepare('SELECT * FROM staff WHERE id=?').get(sid)
+      delSchedByStaff.run(sid); delLeaveByStaff.run(sid); delBalByStaff.run(sid); archiveStaff.run(sid)
+      const after = db.prepare('SELECT * FROM staff WHERE id=?').get(sid)
+      if (before && after) {
+        recordPersonnelEvent({
+          staffId: sid,
+          eventType: 'employment_ended',
+          effectiveAt: db.prepare("SELECT date('now','localtime') AS value").get().value,
+          sourceType: 'schedule_import_undo',
+          sourceId: `${batchId}:${sid}`,
+          before,
+          after,
+          reason: `Vardiya Excel aktarimi #${batchId} geri alindi`,
+          actorUserId: userId,
+          metadata: { source: 'schedule_import_undo', batch_id: batchId },
+        })
+      }
       result.staffDeleted++
     }
     // 5) Artık kullanılmayan oluşturulmuş departmanları sil
