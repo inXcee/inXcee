@@ -208,14 +208,40 @@ describe('DayDetailBoard', () => {
     expect(within(cubuk).getByText('3')).toBeInTheDocument()   // totals.working
   })
 
-  // İzin/rapor/devamsız dört ayrı ızgara bloğuydu; tek satıra indi ama sebep
-  // kaybolmamalı — ismin başlığında (title) duruyor.
-  it('kova satırında sebep başlıkta korunur', async () => {
+  // Sebep tooltip'te saklıydı, ekranda görünmüyordu. Kart olunca ismin altına
+  // yazılıyor: devamsızlık nedeni ve izin türü bakışta okunmalı.
+  it('izin/rapor/devamsız kartında sebep GÖRÜNÜR', async () => {
     const user = userEvent.setup()
     renderBoard()
     await user.click(await screen.findByRole('button', { name: 'Yemekhane detayları' }))
-    expect(screen.getByRole('button', { name: 'Hasan' })).toHaveAttribute('title', expect.stringContaining('Haber vermedi'))
-    expect(screen.getByRole('button', { name: 'Ayşe' })).toHaveAttribute('title', expect.stringContaining('Yıllık izin'))
+
+    expect(screen.getByRole('button', { name: 'Hasan' })).toHaveTextContent('Haber vermedi')
+    expect(screen.getByRole('button', { name: 'Ayşe' })).toHaveTextContent('Yıllık izin')
+    expect(screen.getByRole('button', { name: 'Mehmet' })).toHaveTextContent('Sağlık raporu')
+  })
+
+  // Aynı vardiyada farklı noktalardaki kişiler karışık geliyordu; hangi noktada
+  // kimin olduğunu görmek için tek tek okumak gerekiyordu.
+  it('vardiya içinde kişiler noktaya göre kümelenir', async () => {
+    // İsimler bilerek öyle seçildi ki ALFABETİK sıra ile NOKTAYA GÖRE sıra
+    // farklı olsun; yoksa kümeleme çalışmasa da test geçerdi.
+    // Alfabetik: Ali, Bora, Cem — noktaya göre: Bora (OTC), Ali + Cem (Tas Bina)
+    api.get.mockResolvedValue({ data: { ...detail, groups: [{
+      ...detail.groups[0],
+      shifts: [{ shift_def_id: 10, shift_name: 'Sabah', count: 3, people: [
+        { staff_id: 21, full_name: 'Ali', work_location_name: 'Tas Bina' },
+        { staff_id: 22, full_name: 'Bora', work_location_name: 'OTC Yemekhane' },
+        { staff_id: 23, full_name: 'Cem', work_location_name: 'Tas Bina' },
+      ] }],
+    }] } })
+    const user = userEvent.setup()
+    renderBoard()
+    await user.click(await screen.findByRole('button', { name: 'Yemekhane detayları' }))
+
+    const sirali = ['Ali', 'Bora', 'Cem']
+      .map(ad => screen.getByRole('button', { name: ad }))
+      .sort((a, b) => ((a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) ? -1 : 1))
+    expect(sirali.map(el => el.getAttribute('aria-label'))).toEqual(['Bora', 'Ali', 'Cem'])
   })
 
   // "İkram ve Lokaller"i gün gün takip eden kişi her gün değişiminde bölümü

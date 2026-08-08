@@ -209,3 +209,27 @@ export function dayDetailRows(detail) {
   }
   return { headers, rows }
 }
+
+// Aynı vardiyadaki kişiler karışık sırada geliyordu: "FERDA ARAT OTC Yemekhane"
+// ile "GİZEM SOFUOĞLU Tas Bina" araya karışınca hangi noktada kimin olduğunu
+// görmek için tek tek okumak gerekiyordu. Noktaya göre kümelenince aynı yerdeki
+// kişiler yan yana düşüyor.
+//
+// Nokta girilmemiş kişiler SONA alınır ama listeden düşmez — eksik veriyi
+// gizlemek, o kişinin sahada olmadığı izlenimi verir.
+const NOKTASIZ = '\uffff'   // sıralamada en sona düşsün
+
+function personLocationKey(person) {
+  const yer = person?.work_locations?.length
+    ? [...person.work_locations].sort((a, b) => String(a).localeCompare(String(b), 'tr')).join(' + ')
+    : person?.work_location_name
+  return yer ? String(yer) : NOKTASIZ
+}
+
+export function orderPeopleByLocation(people) {
+  return [...(people || [])].sort((a, b) => {
+    const yerFarki = personLocationKey(a).localeCompare(personLocationKey(b), 'tr')
+    if (yerFarki !== 0) return yerFarki
+    return String(a?.full_name || '').localeCompare(String(b?.full_name || ''), 'tr')
+  })
+}

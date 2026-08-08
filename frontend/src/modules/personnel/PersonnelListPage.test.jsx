@@ -13,7 +13,7 @@ const PROJELER = [
   { id: 2, name: 'Kamp Alanı', code: 'KAMP', color_class: 'bg-emerald-500', staff_count: 1 },
 ]
 const PERSONEL = [
-  { id: 10, full_name: 'ARZU DOĞAN', is_active: 1, project_id: 1, project_name: 'FPU', project_code: 'FPU', project_color: 'bg-blue-500' },
+  { id: 10, full_name: 'ARZU DOĞAN', is_active: 1, project_id: 1, project_name: 'FPU', project_code: 'FPU', project_color: 'bg-blue-500', position: 'Saha Sorumlusu', dept_name: 'Operasyon', phone: '0532 111 22 33', tc_no: '123******01', primary_work_location_name: 'FPU Ana Saha' },
   { id: 11, full_name: 'AKIN AKTAŞ', is_active: 1, project_id: 2, project_name: 'Kamp Alanı', project_code: 'KAMP', project_color: 'bg-emerald-500' },
   { id: 12, full_name: 'KADROSUZ KİŞİ', is_active: 1, project_id: null },
 ]
@@ -35,6 +35,16 @@ describe('Personel listesi — kadro', () => {
     expect(screen.getByText('FPU')).toBeInTheDocument()
     expect(screen.getByText('KAMP')).toBeInTheDocument()
     expect(screen.getByText('KADROSUZ')).toBeInTheDocument()
+  })
+
+  it('kart temel çalışma ve iletişim bilgilerini pratik biçimde sunar', async () => {
+    renderWithProviders(<PersonnelListPage />)
+    expect(await screen.findByText('ARZU DOĞAN')).toBeInTheDocument()
+    expect(screen.getByText('Saha Sorumlusu')).toBeInTheDocument()
+    expect(screen.getByText('Operasyon')).toBeInTheDocument()
+    expect(screen.getByText('FPU Ana Saha')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '0532 111 22 33' })).toHaveAttribute('href', 'tel:0532 111 22 33')
+    expect(screen.getByText('123******01')).toBeInTheDocument()
   })
 
   it('proje filtresi listeyi süzer', async () => {

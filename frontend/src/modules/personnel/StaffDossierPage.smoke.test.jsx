@@ -18,8 +18,14 @@ const DOSSIER = {
     id: 7,
     full_name: 'Ayşe Dossier',
     position: 'Vardiya Lideri',
+    project_id: 3,
+    project_name: 'FPU Projesi',
+    department_id: 2,
     dept_name: 'Operasyon',
+    role_id: 4,
     role_name: 'Lider',
+    primary_work_location_id: 5,
+    primary_work_location_site: 'Filyos',
     primary_work_location_name: 'Ana Saha',
     is_active: 1,
     gender: 'female',
@@ -98,6 +104,11 @@ describe('StaffDossierPage smoke', () => {
 
     expect(await screen.findByText('Ayşe Dossier')).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Personel takip merkezi' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Personel dosyası tamamlanma durumu' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Personel dosyası hızlı işlemleri')).toBeInTheDocument()
+    expect(screen.getByText(/FPU Projesi \/ Operasyon \/ Filyos \/ Ana Saha/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Özeti Kopyala' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Excel' })).toBeInTheDocument()
     expect(screen.getByText('PERSONEL TAKİP MERKEZİ')).toBeInTheDocument()
     expect(screen.getAllByTitle('3 açık kayıt')).toHaveLength(2)
     expect(screen.getByText('2 zorunlu belge eksik')).toBeInTheDocument()

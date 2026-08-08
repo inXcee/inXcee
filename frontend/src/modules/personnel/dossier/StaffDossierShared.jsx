@@ -63,6 +63,63 @@ export function DossierField({ label, value, href, sensitive = false }) {
   )
 }
 
+const READINESS_FIELDS = [
+  ['project_id', 'Proje'],
+  ['department_id', 'Departman'],
+  ['role_id', 'Rol'],
+  ['primary_work_location_id', 'Ana lokasyon'],
+]
+
+function readinessItem(label, values, target, detail) {
+  const completed = values.filter(Boolean).length
+  return { label, completed, total: values.length, target, detail }
+}
+
+export function DossierReadiness({ dossier, compact = false, onNavigate, onEdit }) {
+  const person = dossier?.person || {}
+  const missingFields = Array.isArray(dossier?.data_quality?.missing_fields)
+    ? dossier.data_quality.missing_fields
+    : []
+  const assignmentMissing = READINESS_FIELDS.filter(([key]) => !person[key]).map(([, label]) => label)
+  const documentRate = Math.max(0, Math.min(100, Number(dossier?.documents?.completion_rate ?? 100)))
+  const items = [
+    readinessItem('Kimlik', [person.full_name, person.tc_no, person.birth_date, person.gender], 'identity', missingFields.length ? `${missingFields.length} veri alanı kontrol edilmeli` : 'Temel bilgiler hazır'),
+    readinessItem('Atama', READINESS_FIELDS.map(([key]) => person[key]), 'identity', assignmentMissing.length ? `${assignmentMissing.join(', ')} eksik` : 'Proje, departman, rol ve lokasyon hazır'),
+    readinessItem('İletişim', [person.phone, person.email, person.emergency_contact, person.emergency_phone], 'identity', (!person.phone || !person.emergency_phone) ? 'Telefon veya acil iletişim eksik' : 'İletişim kanalları hazır'),
+    { label: 'Belgeler', completed: documentRate, total: 100, target: 'documents', detail: `${dossier?.documents?.missing || 0} eksik · ${dossier?.documents?.expired || 0} süresi dolmuş` },
+  ]
+  const overall = Math.round(items.reduce((sum, item) => sum + ((item.completed / item.total) * 100), 0) / items.length)
+
+  return (
+    <section className={`dossier-readiness${compact ? ' dossier-readiness--compact' : ''}`} aria-label="Personel dosyası tamamlanma durumu">
+      <div className="dossier-readiness__summary">
+        <div>
+          <div className="dossier-readiness__eyebrow">DOSYA HAZIRLIK DURUMU</div>
+          <strong>{overall}% tamamlandı</strong>
+          <span>Eksik alanları tek yerden bulun ve tamamlayın</span>
+        </div>
+        <div className="dossier-readiness__score" aria-label={`Dosya yüzde ${overall} tamamlandı`}>{overall}</div>
+      </div>
+      <div className="dossier-readiness__bar" aria-hidden="true"><span style={{ width: `${overall}%` }} /></div>
+      <div className="dossier-readiness__items">
+        {items.map(item => {
+          const score = Math.round((item.completed / item.total) * 100)
+          return (
+            <button key={item.label} type="button" onClick={() => onNavigate?.(item.target)} className="dossier-readiness__item">
+              <span className={`dossier-readiness__dot${score === 100 ? ' is-complete' : ''}`} />
+              <span><strong>{item.label}</strong><small>{item.detail}</small></span>
+              <b>{score}%</b>
+            </button>
+          )
+        })}
+      </div>
+      {onEdit && overall < 100 && (
+        <button type="button" className="btn btn-ghost btn-sm dossier-readiness__edit" onClick={onEdit}>Eksikleri tamamla</button>
+      )}
+    </section>
+  )
+}
+
 const RISK_TONES = {
   critical: { color: 'var(--red)', bg: 'rgba(231,76,60,.10)', border: 'rgba(231,76,60,.32)' },
   warning: { color: 'var(--accent)', bg: 'rgba(240,165,0,.10)', border: 'rgba(240,165,0,.32)' },
@@ -106,7 +163,7 @@ export function DossierHeader({ dossier, actions }) {
   if (!person) return null
   const todayShift = dossier.today?.shift
   return (
-    <div style={{
+    <div className="dossier-header" style={{
       display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 14,
       padding: '16px 18px', borderRadius: 14, border: '1px solid var(--border)',
       background: 'linear-gradient(135deg, var(--surface), var(--surface2))',
@@ -127,6 +184,9 @@ export function DossierHeader({ dossier, actions }) {
         </div>
         <div style={{ color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 10, marginTop: 5 }}>
           {person.position || 'Pozisyon yok'} · {person.dept_name || 'Departman yok'} · {person.role_name || 'Rol yok'}
+        </div>
+        <div className="dossier-header__path" title="Organizasyon yolu">
+          {[person.project_name || 'Proje atanmamış', person.dept_name || 'Departman yok', person.primary_work_location_site, person.primary_work_location_name || 'Lokasyon atanmamış'].filter(Boolean).join(' / ')}
         </div>
         <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 8 }}>
           <span className="badge badge-blue">{person.primary_work_location_name || 'Lokasyon atanmamış'}</span>

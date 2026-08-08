@@ -7,10 +7,10 @@ import { exportRowsToCsv, exportRowsToXlsx } from '../../shared/utils/exportData
 import { SkeletonGrid } from '../../shared/components/Skeleton.jsx'
 import { useSavedFilters, SavedFiltersBar } from '../../shared/hooks/useSavedFilters.jsx'
 import HelpHint from '../../shared/components/HelpHint.jsx'
-import ProjectBadge from '../../shared/components/ProjectBadge.jsx'
 import { useProjects, NO_PROJECT, PROJECTS_QUERY_KEY } from '../../shared/hooks/useProjects.js'
-import { classHex } from '../shifts/logic/shiftColors.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
+import PersonnelCard from './PersonnelCard.jsx'
+import './PersonnelListPage.css'
 
 const EXPORT_COLUMNS = [
   { key: 'full_name', label: 'Ad Soyad' },
@@ -204,62 +204,17 @@ export default function PersonnelListPage() {
           <div style={{ fontFamily: 'var(--display)', fontSize: 14, letterSpacing: 2 }}>SONUÇ BULUNAMADI</div>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
+        <div className="personnel-grid">
           {filtered.map(s => {
             const secili = selected.has(s.id)
             return (
-              <div key={s.id} onClick={() => kartaTikla(s)} style={{
-                padding: 14, borderRadius: 12, cursor: 'pointer',
-                background: secili ? 'rgba(240,165,0,.08)' : 'var(--surface)',
-                // Kısayol (border) ile uzun form (borderLeft) aynı nesnede
-                // karışmamalı: seçim rengi her değiştiğinde React uyarı veriyor.
-                borderStyle: 'solid',
-                borderWidth: '1px 1px 1px 4px',
-                borderColor: `${secili ? 'var(--accent)' : 'var(--border)'} `
-                  + `${secili ? 'var(--accent)' : 'var(--border)'} `
-                  + `${secili ? 'var(--accent)' : 'var(--border)'} `
-                  + `#${classHex(s.dept_color)}`,
-                transition: 'transform .15s',
-              }}
-                onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
-                onMouseLeave={e => e.currentTarget.style.transform = 'none'}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  {selectMode && (
-                    <input type="checkbox" checked={secili} readOnly
-                      aria-label={`${s.full_name} seç`}
-                      style={{ width: 17, height: 17, flexShrink: 0, accentColor: 'var(--accent)' }} />
-                  )}
-                  <div style={{
-                    width: 44, height: 44, borderRadius: '50%', flexShrink: 0,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    background: s.gender === 'female' ? 'rgba(244,114,182,.15)' : 'rgba(59,130,246,.15)',
-                    color: s.gender === 'female' ? '#f472b6' : 'var(--blue)',
-                    fontFamily: 'var(--display)', fontSize: 18, fontWeight: 700,
-                    border: `2px solid ${s.gender === 'female' ? '#f472b6' : 'var(--blue)'}`,
-                  }}>
-                    {s.full_name?.charAt(0)?.toUpperCase() || '?'}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {s.full_name}
-                    </div>
-                    {s.dept_name && (
-                      <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text3)', marginTop: 2 }}>
-                        {s.dept_name}{s.role_label ? ` · ${s.role_label}` : ''}
-                      </div>
-                    )}
-                    {s.position && (
-                      <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text4)' }}>{s.position}</div>
-                    )}
-                  </div>
-                  <ProjectBadge project={s} />
-                </div>
-                <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text3)' }}>
-                  {s.tc_no && <div>🆔 {s.tc_no}</div>}
-                  {s.phone && <div>📞 {s.phone}</div>}
-                  {!s.is_active && <div style={{ color: 'var(--amber)' }}>🗄 ARŞİV</div>}
-                </div>
-              </div>
+              <PersonnelCard
+                key={s.id}
+                person={s}
+                selectMode={selectMode}
+                selected={secili}
+                onActivate={() => kartaTikla(s)}
+              />
             )
           })}
         </div>

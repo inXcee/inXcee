@@ -1,13 +1,14 @@
 import { Fragment, useState, useEffect, useMemo, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
-import { useProjects } from '../../../shared/hooks/useProjects.js'
+import { useProjects, NO_PROJECT } from '../../../shared/hooks/useProjects.js'
 import { useAuthStore } from '../../../shared/store/authStore.js'
 import { confirmDialog } from '../../../shared/components/ConfirmDialog.jsx'
 import { useDebounce } from '../../../shared/hooks/useDebounce.js'
 import { useSavedFilters, SavedFiltersBar } from '../../../shared/hooks/useSavedFilters.jsx'
 import { SkeletonGrid } from '../../../shared/components/Skeleton.jsx'
-import { exportRowsToCsv } from '../../../shared/utils/exportData.js'
+import { exportRowsToCsv, exportRowsToXlsx } from '../../../shared/utils/exportData.js'
+import ProjectBadge from '../../../shared/components/ProjectBadge.jsx'
 import { toastErr, toastOk, deptColor, BottomSheet } from '../shared.jsx'
 
 function localIsoDate() {
@@ -16,12 +17,13 @@ function localIsoDate() {
 }
 
 function StaffQualityPanel({ quality, onEdit }) {
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(false)
   const summary = quality?.summary || {}
   const rows = Array.isArray(quality?.rows) ? quality.rows : []
   const byCode = summary.by_code || {}
   const metrics = [
     ['Sorunlu Personel', summary.staff_with_issues || 0, 'var(--red)'],
+    ['Kadro / Proje', byCode.missing_project || 0, 'var(--accent)'],
     ['Departman', byCode.missing_department || 0, 'var(--red)'],
     ['Rol', byCode.missing_role || 0, 'var(--accent)'],
     ['Ana Nokta', byCode.missing_work_location || 0, 'var(--accent)'],
@@ -331,8 +333,58 @@ const DEFAULT_COLUMNS = DIRECTORY_COLUMNS.map(column => column.key)
 const EMPTY_LIST = []
 const EMPTY_QUALITY = { summary: {}, rows: [] }
 const DEFAULT_FILTERS = {
-  dept_id: '', role_id: '', work_location_id: '', gender: '', search: '', is_active: '1', risk: '', focus: '',
+  project_id: '', dept_id: '', role_id: '', work_location_id: '', gender: '', search: '', is_active: '1', risk: '', focus: '',
 }
+
+function fullWorkLocation(staff) {
+  const values = [staff.primary_work_location_site, staff.primary_work_location_name].filter(Boolean)
+  return [...new Set(values)].join(' / ') || 'Atanmamış'
+}
+
+function organizationPath(staff) {
+  return [staff.project_name || 'Kadrosuz', staff.dept_name || 'Departmansız', fullWorkLocation(staff)].join(' / ')
+}
+
+const PERSONNEL_EXPORT_COLUMNS = [
+  { key: 'id', label: 'Sicil ID' },
+  { key: 'full_name', label: 'Ad Soyad' },
+  { key: 'tc_no', label: 'T.C. Kimlik No' },
+  { key: 'project_name', label: 'Kadro / Proje', format: row => row.project_name || 'Kadrosuz' },
+  { key: 'project_code', label: 'Proje Kodu' },
+  { key: 'dept_name', label: 'Departman', format: row => row.dept_name || 'Departmansız' },
+  { key: 'role_name', label: 'Rol / Görev' },
+  { key: 'position', label: 'Pozisyon' },
+  { key: 'organization_path', label: 'Tam Çalışma Konumu', format: organizationPath },
+  { key: 'primary_work_location_site', label: 'Saha' },
+  { key: 'primary_work_location_name', label: 'Ana Çalışma Noktası' },
+  { key: 'phone', label: 'Telefon' },
+  { key: 'email', label: 'E-posta' },
+  { key: 'hire_date', label: 'İşe Giriş Tarihi' },
+  { key: 'contract_end', label: 'Sözleşme Bitişi' },
+  { key: 'birth_date', label: 'Doğum Tarihi' },
+  { key: 'gender', label: 'Cinsiyet', format: row => row.gender === 'female' ? 'Kadın' : row.gender === 'male' ? 'Erkek' : '' },
+  { key: 'blood_type', label: 'Kan Grubu' },
+  { key: 'address', label: 'Adres' },
+  { key: 'emergency_contact', label: 'Acil Durum Kişisi' },
+  { key: 'emergency_phone', label: 'Acil Durum Telefonu' },
+  { key: 'is_active', label: 'Personel Durumu', format: row => row.is_active ? 'Aktif' : 'Pasif' },
+  { key: 'today_shift_name', label: 'Bugünkü Vardiya' },
+  { key: 'today_status', label: 'Bugünkü Durum' },
+  { key: 'annual_leave_entitled', label: 'Yıllık İzin Hakkı' },
+  { key: 'annual_leave_remaining', label: 'Kalan Yıllık İzin' },
+  { key: 'missing_documents', label: 'Eksik Belge' },
+  { key: 'expired_documents', label: 'Süresi Dolmuş Belge' },
+  { key: 'open_followups', label: 'Açık Görev' },
+  { key: 'overdue_followups', label: 'Gecikmiş Görev' },
+  { key: 'open_attendance_exceptions', label: 'Açık Devam Sorunu' },
+  { key: 'equipment_count', label: 'Aktif Zimmet / KKD' },
+  { key: 'latest_performance_score', label: 'Son Performans Puanı' },
+  { key: 'risk_count', label: 'Toplam Risk' },
+  { key: 'salary', label: 'Maaş' },
+  { key: 'iban', label: 'IBAN' },
+  { key: 'notes', label: 'Notlar' },
+  { key: 'dossier_path', label: 'Personel Dosya Yolu', format: row => `/personnel/${row.id}` },
+]
 
 const FOCUS_FILTERS = [
   { key: '', label: 'Tüm personel' },
@@ -380,7 +432,7 @@ function riskMatches(staff, risk) {
   if (risk === 'equipment') return numberValue(staff.equipment_count) > 0
   if (risk === 'certificates') return numberValue(staff.expired_certificates) + numberValue(staff.expiring_certificates) > 0
   if (risk === 'checklists') return numberValue(staff.open_onboarding) + numberValue(staff.open_offboarding) > 0
-  if (risk === 'assignment') return !staff.department_id || !staff.role_id || !staff.primary_work_location_id
+  if (risk === 'assignment') return !staff.project_id || !staff.department_id || !staff.role_id || !staff.primary_work_location_id
   if (risk === 'contract') {
     if (!staff.contract_end) return false
     const days = Math.ceil((new Date(staff.contract_end).getTime() - Date.now()) / 86400000)
@@ -395,7 +447,7 @@ function focusMatches(staff, focus, favoriteIds = []) {
   if (focus === 'scheduled') return !!staff.today_shift_name
   if (focus === 'leave') return staff.today_status === 'on_leave'
   if (focus === 'unplanned') return !staff.today_shift_name && staff.today_status !== 'on_leave'
-  if (focus === 'assignment') return !staff.department_id || !staff.role_id || !staff.primary_work_location_id
+  if (focus === 'assignment') return !staff.project_id || !staff.department_id || !staff.role_id || !staff.primary_work_location_id
   if (focus === 'contact') return !staff.phone || !staff.email
   return true
 }
@@ -410,7 +462,7 @@ function RiskBadges({ staff, compact = false }) {
   if (numberValue(staff.open_attendance_exceptions)) add('attendance', `${staff.open_attendance_exceptions} devam sorunu`, 'red')
   if (numberValue(staff.expired_certificates)) add('certificates', `${staff.expired_certificates} sertifika dolmuş`, 'red')
   if (numberValue(staff.open_onboarding) + numberValue(staff.open_offboarding)) add('checklists', 'Açık İK süreci', 'purple')
-  if (!staff.department_id || !staff.role_id || !staff.primary_work_location_id) add('assignment', 'Atama eksik')
+  if (!staff.project_id || !staff.department_id || !staff.role_id || !staff.primary_work_location_id) add('assignment', 'Atama eksik')
 
   if (badges.length === 0) {
     return <span style={{ color: 'var(--green)', fontSize: '10px', fontFamily: 'var(--mono)' }}>Kontroller temiz</span>
@@ -456,19 +508,21 @@ function SummaryCard({ value, label, color, active = false, onClick }) {
   )
 }
 
-function BulkAssignmentSheet({ count, departments, workLocations, isPending, onSubmit, onClose }) {
+function BulkAssignmentSheet({ count, projects, departments, workLocations, isPending, onSubmit, onClose }) {
   const [bulkForm, setBulkForm] = useState({
+    project_id: '__keep__',
     department_id: '__keep__',
     work_location_id: '__keep__',
     effective_from: localIsoDate(),
     note: '',
   })
-  const hasChange = bulkForm.department_id !== '__keep__' || bulkForm.work_location_id !== '__keep__'
+  const hasChange = bulkForm.project_id !== '__keep__' || bulkForm.department_id !== '__keep__' || bulkForm.work_location_id !== '__keep__'
   const submit = () => {
     const payload = {
       effective_from: bulkForm.effective_from,
       note: bulkForm.note,
     }
+    if (bulkForm.project_id !== '__keep__') payload.project_id = bulkForm.project_id ? Number(bulkForm.project_id) : null
     if (bulkForm.department_id !== '__keep__') payload.department_id = bulkForm.department_id ? Number(bulkForm.department_id) : null
     if (bulkForm.work_location_id !== '__keep__') payload.work_location_id = bulkForm.work_location_id ? Number(bulkForm.work_location_id) : null
     onSubmit(payload)
@@ -480,6 +534,14 @@ function BulkAssignmentSheet({ count, departments, workLocations, isPending, onS
         <div style={{ color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: '9px', marginTop: '4px' }}>{count} personel seçildi</div>
       </div>
       <div style={{ padding: '18px 20px', display: 'grid', gap: '14px', overflowY: 'auto' }}>
+        <div>
+          <label className="form-label">Kadro / Proje</label>
+          <select aria-label="Toplu proje ataması" className="form-select" value={bulkForm.project_id} onChange={e => setBulkForm(p => ({ ...p, project_id: e.target.value }))}>
+            <option value="__keep__">Değiştirme</option>
+            <option value="">Kadro bağlantısını kaldır</option>
+            {projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
+          </select>
+        </div>
         <div>
           <label className="form-label">Departman</label>
           <select className="form-select" value={bulkForm.department_id} onChange={e => setBulkForm(p => ({ ...p, department_id: e.target.value }))}>
@@ -626,6 +688,7 @@ export default function StaffTab({ departments, onPersonClick }) {
   const canEdit = ['campus_manager', 'shift_supervisor'].includes(user?.role)
   const canViewSensitive = user?.role === 'campus_manager'
   const canDeactivate = user?.role === 'campus_manager'
+  const { projects } = useProjects()
 
   const [filters, setFilters] = useState(DEFAULT_FILTERS)
   const [viewMode, setViewMode] = usePersistentState('yys-shifts-staff-view', 'table')
@@ -647,18 +710,19 @@ export default function StaffTab({ departments, onPersonClick }) {
 
   const staffSavedFilters = useSavedFilters('shifts-staff', filters, setFilters)
   const hasActiveStaffFilter = !!(
-    filters.dept_id || filters.role_id || filters.work_location_id || filters.gender
+    filters.project_id || filters.dept_id || filters.role_id || filters.work_location_id || filters.gender
     || filters.search || filters.risk || filters.focus || filters.is_active !== '1'
   )
   const debouncedSearch = useDebounce(filters.search, 300)
   const effectiveFilters = useMemo(() => ({
+    project_id: filters.project_id,
     dept_id: filters.dept_id,
     role_id: filters.role_id,
     work_location_id: filters.work_location_id,
     gender: filters.gender,
     is_active: filters.is_active,
     search: debouncedSearch,
-  }), [filters.dept_id, filters.role_id, filters.work_location_id, filters.gender, filters.is_active, debouncedSearch])
+  }), [filters.project_id, filters.dept_id, filters.role_id, filters.work_location_id, filters.gender, filters.is_active, debouncedSearch])
 
   const { data: staffList = EMPTY_LIST, isLoading } = useQuery({
     queryKey: ['staff-list', effectiveFilters],
@@ -683,6 +747,11 @@ export default function StaffTab({ departments, onPersonClick }) {
     queryFn: () => api.get('/shifts/staff/quality').then(r => r.data),
     enabled: canViewSensitive,
   })
+  const departmentOverviewRows = useMemo(() => {
+    if (!filters.project_id) return directoryOverview
+    if (filters.project_id === NO_PROJECT) return directoryOverview.filter(staff => !staff.project_id)
+    return directoryOverview.filter(staff => String(staff.project_id) === String(filters.project_id))
+  }, [directoryOverview, filters.project_id])
 
   const refreshPlan = () => {
     const keys = ['staff-list', 'staff-list-active', 'staff-directory-overview', 'staff-detail', 'staff-quality', 'schedule', 'departments-summary', 'shift-breakdown', 'shift-coverage']
@@ -895,22 +964,19 @@ export default function StaffTab({ departments, onPersonClick }) {
     })
     if (confirmed) bulkDeactivateMut.mutate()
   }
-  const exportSelected = () => {
-    const rows = selected.size
+  const getExportRows = () => selected.size
       ? filteredAndSorted.filter(staff => selected.has(staff.id))
       : filteredAndSorted
-    exportRowsToCsv([
-      { key: 'full_name', label: 'Ad Soyad' },
-      { key: 'tc_no', label: 'TC Kimlik' },
-      { key: 'phone', label: 'Telefon' },
-      { key: 'position', label: 'Pozisyon' },
-      { key: 'dept_name', label: 'Departman' },
-      { key: 'role_name', label: 'Rol' },
-      { key: 'primary_work_location_name', label: 'Lokasyon' },
-      { key: 'missing_documents', label: 'Eksik Belge' },
-      { key: 'overdue_followups', label: 'Gecikmiş Görev' },
-      { key: 'equipment_count', label: 'Aktif Zimmet/KKD' },
-    ], rows, `personel-dizini-${localIsoDate()}.csv`)
+  const exportSelectedCsv = () => {
+    exportRowsToCsv(PERSONNEL_EXPORT_COLUMNS, getExportRows(), `personel-detayli-${localIsoDate()}.csv`)
+  }
+  const exportSelectedExcel = async () => {
+    try {
+      await exportRowsToXlsx(PERSONNEL_EXPORT_COLUMNS, getExportRows(), `personel-detayli-${localIsoDate()}.xlsx`, 'Personel Listesi')
+      toastOk('Detaylı personel Excel listesi hazırlandı')
+    } catch (error) {
+      toastErr(error)
+    }
   }
 
   const riskStaffCount = staffList.filter(staff => numberValue(staff.risk_count) > 0).length
@@ -936,6 +1002,9 @@ export default function StaffTab({ departments, onPersonClick }) {
 
   const filterLabels = {
     search: filters.search ? `Arama: ${filters.search}` : '',
+    project_id: filters.project_id === NO_PROJECT
+      ? 'Kadrosuz personel'
+      : projects.find(item => String(item.id) === String(filters.project_id))?.name,
     dept_id: departments.find(item => String(item.id) === String(filters.dept_id))?.name,
     role_id: staffRoles.find(item => String(item.id) === String(filters.role_id))?.name,
     work_location_id: workLocations.find(item => String(item.id) === String(filters.work_location_id))?.name,
@@ -962,9 +1031,9 @@ export default function StaffTab({ departments, onPersonClick }) {
         <SummaryCard value={equipmentCount} label="AKTİF ZİMMET / KKD" color="var(--blue)" active={filters.risk === 'equipment'} onClick={() => toggleRiskFilter('equipment')} />
       </div>
 
-      {directoryOverview.length > 0 && (
+      {departmentOverviewRows.length > 0 && (
         <DepartmentOverview
-          rows={directoryOverview}
+          rows={departmentOverviewRows}
           selectedDepartment={filters.dept_id}
           onSelect={departmentId => setFilters(previous => ({
             ...previous,
@@ -1000,6 +1069,19 @@ export default function StaffTab({ departments, onPersonClick }) {
                 <span style={{ position: 'absolute', right: 10, top: 11, color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 8 }}>/ ARA</span>
               )}
             </div>
+            <select aria-label="Proje filtresi" className="form-select" value={filters.project_id}
+              onChange={e => setFilters(previous => ({ ...previous, project_id: e.target.value }))}
+              style={{ width: 'auto', minWidth: 170, flex: '0 1 210px' }}>
+              <option value="">Tüm projeler</option>
+              {projects.map(project => <option key={project.id} value={project.id}>{project.name} ({project.staff_count ?? 0})</option>)}
+              <option value={NO_PROJECT}>Kadrosuz personel</option>
+            </select>
+            <select aria-label="Departman filtresi" className="form-select" value={filters.dept_id}
+              onChange={e => setFilters(previous => ({ ...previous, dept_id: e.target.value }))}
+              style={{ width: 'auto', minWidth: 170, flex: '0 1 210px' }}>
+              <option value="">Tüm departmanlar</option>
+              {departments.map(department => <option key={department.id} value={department.id}>{department.name}</option>)}
+            </select>
             <button type="button" className={`btn btn-sm ${showAdvancedFilters ? 'btn-primary' : 'btn-ghost'}`} aria-expanded={showAdvancedFilters} onClick={() => setShowAdvancedFilters(value => !value)}>
               ⚙ Gelişmiş Filtreler{activeFilterEntries.length ? ` (${activeFilterEntries.length})` : ''}
             </button>
@@ -1038,10 +1120,6 @@ export default function StaffTab({ departments, onPersonClick }) {
 
           {showAdvancedFilters && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(155px, 1fr))', gap: 9, padding: 12, borderRadius: 10, background: 'var(--surface2)', border: '1px solid var(--border)' }}>
-              <select aria-label="Departman filtresi" className="form-select" value={filters.dept_id} onChange={e => setFilters(p => ({ ...p, dept_id: e.target.value }))}>
-                <option value="">Tüm departmanlar</option>
-                {departments.map(department => <option key={department.id} value={department.id}>{department.name}</option>)}
-              </select>
               <select aria-label="Rol filtresi" className="form-select" value={filters.role_id} onChange={e => setFilters(p => ({ ...p, role_id: e.target.value }))}>
                 <option value="">Tüm roller</option>
                 {staffRoles.map(role => <option key={role.id} value={role.id}>{role.name}</option>)}
@@ -1124,7 +1202,8 @@ export default function StaffTab({ departments, onPersonClick }) {
                 ))}
               </div>
             </details>
-            <button className="btn btn-ghost btn-xs" onClick={exportSelected}>CSV Dışa Aktar</button>
+            <button className="btn btn-ghost btn-xs" onClick={exportSelectedCsv} disabled={!filteredAndSorted.length}>CSV Listesi</button>
+            <button className="btn btn-primary btn-xs" onClick={exportSelectedExcel} disabled={!filteredAndSorted.length}>Detaylı Excel</button>
             <span aria-live="polite" style={{ color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: '9px', marginLeft: 'auto' }}>
               {filteredAndSorted.length} sonuç · {selected.size} seçili
             </span>
@@ -1148,8 +1227,9 @@ export default function StaffTab({ departments, onPersonClick }) {
               {selected.size > 4 ? 'Karşılaştırma için 2–4 kişi seçin' : `${selected.size} Kişiyi Karşılaştır`}
             </button>
           )}
-          <button className="btn btn-primary btn-xs" onClick={() => setShowBulkAssignment(true)}>Departman / Lokasyon Ata</button>
-          <button className="btn btn-ghost btn-xs" onClick={exportSelected}>Seçilileri Dışa Aktar</button>
+          <button className="btn btn-primary btn-xs" onClick={() => setShowBulkAssignment(true)}>Proje / Departman / Lokasyon Ata</button>
+          <button className="btn btn-ghost btn-xs" onClick={exportSelectedCsv}>Seçilileri CSV Al</button>
+          <button className="btn btn-primary btn-xs" onClick={exportSelectedExcel}>Seçilileri Excel Al</button>
           {canDeactivate && <button className="btn btn-danger btn-xs" onClick={deactivateSelected} disabled={bulkDeactivateMut.isPending}>Toplu Pasifleştir</button>}
           <button className="btn btn-ghost btn-xs" onClick={() => setSelected(new Set())} style={{ marginLeft: 'auto' }}>Seçimi Temizle</button>
         </div>
@@ -1171,7 +1251,7 @@ export default function StaffTab({ departments, onPersonClick }) {
                 <tr>
                   <th style={{ width: 34 }}><input aria-label="Sayfadaki personeli seç" type="checkbox" checked={pageAllSelected} onChange={togglePage} /></th>
                   <th>PERSONEL / RİSKLER</th>
-                  {visibleColumns.includes('assignment') && <th>GÖREV / LOKASYON</th>}
+                  {visibleColumns.includes('assignment') && <th>PROJE / GÖREV / TAM KONUM</th>}
                   {visibleColumns.includes('contact') && <th>İLETİŞİM</th>}
                   {visibleColumns.includes('today') && <th>BUGÜN</th>}
                   {visibleColumns.includes('leave') && <th>YILLIK İZİN</th>}
@@ -1225,9 +1305,12 @@ export default function StaffTab({ departments, onPersonClick }) {
                       </td>
                       {visibleColumns.includes('assignment') && (
                         <td>
+                          <div style={{ marginBottom: 5 }}><ProjectBadge project={staff} /></div>
                           <div><span style={{ color: dc.text, fontWeight: 700 }}>{staff.dept_name || 'Departman yok'}</span></div>
                           <div style={{ color: 'var(--text2)', marginTop: '3px' }}>{staff.role_name || 'Rol yok'}</div>
-                          <div style={{ color: 'var(--text3)', marginTop: '3px' }}>{staff.primary_work_location_name || 'Lokasyon yok'}</div>
+                          <div title={organizationPath(staff)} style={{ color: 'var(--text3)', marginTop: '3px', maxWidth: 210, lineHeight: 1.45 }}>
+                            {fullWorkLocation(staff)}
+                          </div>
                         </td>
                       )}
                       {visibleColumns.includes('contact') && (
@@ -1349,6 +1432,7 @@ export default function StaffTab({ departments, onPersonClick }) {
                       </div>
                       <div style={{ color: 'var(--text3)', fontSize: '10px', marginTop: '3px' }}>{staff.position || 'Pozisyon belirtilmemiş'}</div>
                       <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '7px' }}>
+                        <ProjectBadge project={staff} />
                         <span style={{ padding: '2px 7px', borderRadius: 12, background: dc.bg, color: dc.text, fontSize: '9px' }}>{staff.dept_name || 'Departman yok'}</span>
                         <span style={{ padding: '2px 7px', borderRadius: 12, background: 'var(--surface2)', color: 'var(--text2)', fontSize: '9px' }}>{staff.role_name || 'Rol yok'}</span>
                       </div>
@@ -1368,8 +1452,9 @@ export default function StaffTab({ departments, onPersonClick }) {
                       </div>
                     ))}
                   </div>
-                  <div style={{ marginTop: '10px', paddingTop: '9px', borderTop: '1px solid var(--border)', color: 'var(--text3)', fontSize: '10px' }}>
-                    {staff.primary_work_location_name || 'Lokasyon atanmamış'} · {staff.phone || 'Telefon yok'}
+                  <div style={{ marginTop: '10px', paddingTop: '9px', borderTop: '1px solid var(--border)', display: 'grid', gap: 4, color: 'var(--text3)', fontSize: '10px' }}>
+                    <div title={organizationPath(staff)}><strong style={{ color: 'var(--text2)' }}>Tam konum:</strong> {organizationPath(staff)}</div>
+                    <div><strong style={{ color: 'var(--text2)' }}>İletişim:</strong> {staff.phone || 'Telefon yok'}{staff.email ? ` · ${staff.email}` : ''}</div>
                   </div>
                   <div style={{ display: 'flex', gap: '6px', marginTop: '10px' }} onClick={event => event.stopPropagation()}>
                     <button className="btn btn-primary btn-xs" style={{ flex: 1 }} onClick={() => onPersonClick?.(staff.id)}>Personel Dosyası</button>
@@ -1423,6 +1508,7 @@ export default function StaffTab({ departments, onPersonClick }) {
       {showBulkAssignment && (
         <BulkAssignmentSheet
           count={selected.size}
+          projects={projects}
           departments={departments}
           workLocations={workLocations}
           isPending={bulkAssignmentMut.isPending}

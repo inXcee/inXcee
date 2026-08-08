@@ -14,6 +14,7 @@ import {
   buildShiftOverview,
   dayDetailSummary,
   groupMatchesSearch,
+  orderPeopleByLocation,
 } from '../logic/dayDetail.js'
 import { exportDayDetailExcel, openDayDetailPrint } from '../logic/dayDetailExport.js'
 
@@ -537,7 +538,7 @@ export default function DayDetailBoard({ weekDays = [], staffGrid = [], onPerson
                             <span style={{ color: 'var(--accent)', fontFamily: 'var(--mono)', fontSize: '11px' }}>{shift.count} kişi</span>
                           </div>
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(165px, 1fr))', gap: '4px' }}>
-                            {shift.people.map(person => (
+                            {orderPeopleByLocation(shift.people).map(person => (
                               <button
                                 key={person.staff_id}
                                 type="button"
@@ -568,35 +569,41 @@ export default function DayDetailBoard({ weekDays = [], staffGrid = [], onPerson
                         </div>
                       ))}
 
-                      {/* İzin/rapor/devamsız: dört ayrı bloklu ızgara yerine kova
-                          başına TEK satır. Sebep (izin türü, rapor, devamsızlık
-                          nedeni) ismin başlığında duruyor — ekranda dört kat yer
-                          kaplamasına gerek yok. */}
+                      {/* İzin/rapor/devamsız/izin günü de kişi kartı olarak:
+                          isim üstte, sebep altta. Tek satırlık akan listede
+                          sebep yalnız başlıkta (title) kalıyordu — ekranda
+                          görünmüyordu. Kartlar vardiya kartlarıyla aynı ölçüde,
+                          kova rengiyle çerçeveli. */}
                       {BUCKETS.map(bucket => {
                         const items = group[bucket.key] || []
                         if (!items.length) return null
                         return (
-                          <div key={bucket.key} style={{
-                            padding: '6px 0', borderTop: '1px dashed var(--border)',
-                            display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'baseline',
-                          }}>
-                            <span style={{ fontWeight: 700, fontSize: '11px', color: bucket.color, whiteSpace: 'nowrap' }}>
+                          <div key={bucket.key} style={{ padding: '7px 0', borderTop: '1px dashed var(--border)' }}>
+                            <div style={{ fontWeight: 700, marginBottom: '4px', fontSize: '11px', color: bucket.color }}>
                               <span aria-hidden="true">{bucket.icon}</span> {bucket.title} ({items.length})
-                            </span>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 10px' }}>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(165px, 1fr))', gap: '4px' }}>
                               {items.map(person => (
                                 <button
                                   key={person.staff_id}
                                   type="button"
                                   onClick={() => onPersonClick?.(person.staff_id)}
                                   aria-label={person.full_name}
-                                  title={[bucket.detail(person), personMeta(person)].filter(Boolean).join(' · ') || 'Personel detayını aç'}
+                                  title={personMeta(person) || 'Personel detayını aç'}
                                   style={{
-                                    border: 0, background: 'none', padding: '1px 0', cursor: 'pointer',
-                                    color: 'var(--text2)', textAlign: 'left', fontSize: '11.5px', lineHeight: 1.5,
+                                    border: `1px solid ${bucket.color}`, borderRadius: '7px', padding: '4px 7px',
+                                    background: 'var(--surface)', cursor: 'pointer',
+                                    color: 'var(--text2)', textAlign: 'left', minWidth: 0,
                                   }}
                                 >
-                                  {person.full_name}
+                                  <span style={{
+                                    display: 'block', fontSize: '11px', fontWeight: 650,
+                                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                  }}>{person.full_name}</span>
+                                  <span style={{
+                                    display: 'block', fontSize: '9px', color: bucket.color,
+                                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                  }}>{bucket.detail(person)}</span>
                                 </button>
                               ))}
                             </div>

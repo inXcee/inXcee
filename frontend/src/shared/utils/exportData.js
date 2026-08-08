@@ -45,21 +45,39 @@ export function exportRowsToCsv(columns, rows, filename = 'export.csv') {
 export async function exportRowsToXlsx(columns, rows, filename = 'export.xlsx', sheetName = 'Veri') {
   const ExcelJS = (await import('exceljs')).default
   const wb = new ExcelJS.Workbook()
+  wb.creator = 'YYS'
+  wb.created = new Date()
   const ws = wb.addWorksheet(sheetName)
+  const preparedRows = rows.map(row => Object.fromEntries(columns.map(column => [
+    column.key,
+    safeValue(column.format ? column.format(row) : row[column.key]),
+  ])))
   ws.columns = columns.map(c => ({
     header: c.label,
     key: c.key,
-    width: Math.max(c.label.length + 2, 14),
+    width: Math.min(42, Math.max(
+      12,
+      c.label.length + 2,
+      ...preparedRows.slice(0, 250).map(row => String(row[c.key] ?? '').length + 2),
+    )),
   }))
-  for (const row of rows) {
-    const out = {}
-    for (const c of columns) {
-      out[c.key] = safeValue(c.format ? c.format(row) : row[c.key])
-    }
-    ws.addRow(out)
+  preparedRows.forEach(row => ws.addRow(row))
+  ws.views = [{ state: 'frozen', ySplit: 1 }]
+  ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: columns.length } }
+  ws.pageSetup = { orientation: columns.length > 8 ? 'landscape' : 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0 }
+  const header = ws.getRow(1)
+  header.height = 24
+  header.font = { bold: true, color: { argb: 'FFFFFFFF' } }
+  header.alignment = { vertical: 'middle' }
+  header.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } }
+  header.eachCell(cell => {
+    cell.border = { bottom: { style: 'thin', color: { argb: 'FF8BA3BF' } } }
+  })
+  for (let index = 2; index <= ws.rowCount; index += 1) {
+    const row = ws.getRow(index)
+    row.alignment = { vertical: 'top', wrapText: false }
+    if (index % 2 === 0) row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF4F7FA' } }
   }
-  ws.getRow(1).font = { bold: true }
-  ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE5E7EB' } }
   const buf = await wb.xlsx.writeBuffer()
   triggerDownload(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), filename)
 }

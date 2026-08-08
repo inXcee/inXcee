@@ -9,6 +9,7 @@ import {
   DossierField,
   DossierHeader,
   DossierMetric,
+  DossierReadiness,
   DossierRisks,
   DossierSection,
   DossierUpcoming,
@@ -26,6 +27,8 @@ import { StaffNotesPanel, StaffTimelinePanel } from './dossier/StaffNotesTimelin
 import StaffUniformPanel from './dossier/StaffUniformPanel.jsx'
 import { StaffFormSheet } from '../shifts/tabs/StaffTab.jsx'
 import { useToastStore } from '../../shared/store/toastStore.js'
+import { exportRowsToXlsx } from '../../shared/utils/exportData.js'
+import './StaffDossierPage.css'
 
 const TABS = [
   ['overview', 'Genel Bakış'],
@@ -56,6 +59,56 @@ function localIsoDate() {
 
 function asList(value) {
   return Array.isArray(value) ? value : []
+}
+
+const DOSSIER_EXPORT_COLUMNS = [
+  ['full_name', 'Ad Soyad'], ['tc_no', 'TC Kimlik No'], ['status', 'Durum'],
+  ['position', 'Pozisyon'], ['project', 'Proje'], ['department', 'Departman'], ['role', 'Rol'],
+  ['site', 'Saha'], ['work_location', 'Ana Çalışma Noktası'], ['phone', 'Telefon'], ['email', 'E-posta'],
+  ['emergency_contact', 'Acil Kişi'], ['emergency_phone', 'Acil Telefon'], ['hire_date', 'İşe Giriş'],
+  ['contract_end', 'Sözleşme Bitişi'], ['birth_date', 'Doğum Tarihi'], ['blood_type', 'Kan Grubu'],
+  ['room', 'Konaklama'], ['document_completion', 'Belge Tamamlama'], ['open_followups', 'Açık Görev'],
+  ['risk_score', 'Risk Puanı'], ['dossier_path', 'Personel Dosyası'],
+].map(([key, label]) => ({ key, label }))
+
+function dossierExportRow(dossier, staffId) {
+  const person = dossier.person || {}
+  return {
+    full_name: person.full_name,
+    tc_no: person.tc_no,
+    status: Number(person.is_active) === 1 ? 'Aktif' : 'Pasif',
+    position: person.position,
+    project: person.project_name,
+    department: person.dept_name,
+    role: person.role_name,
+    site: person.primary_work_location_site,
+    work_location: person.primary_work_location_name,
+    phone: person.phone,
+    email: person.email,
+    emergency_contact: person.emergency_contact,
+    emergency_phone: person.emergency_phone,
+    hire_date: person.hire_date,
+    contract_end: person.contract_end,
+    birth_date: person.birth_date,
+    blood_type: person.blood_type,
+    room: dossier.room ? `${dossier.room.block}-${dossier.room.room_no} / ${dossier.room.bed_no || '—'}` : '',
+    document_completion: `%${dossier.documents?.completion_rate ?? 100}`,
+    open_followups: dossier.counters?.open_followups || 0,
+    risk_score: dossier.risk_score || 0,
+    dossier_path: `/shifts/personnel/${staffId}`,
+  }
+}
+
+async function copyText(value) {
+  if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(value)
+  const textarea = document.createElement('textarea')
+  textarea.value = value
+  textarea.style.position = 'fixed'
+  textarea.style.opacity = '0'
+  document.body.appendChild(textarea)
+  textarea.select()
+  document.execCommand('copy')
+  textarea.remove()
 }
 
 function staffEditForm(person) {
@@ -130,7 +183,7 @@ function StaffTrackingCenter({ dossier, staffId, onNavigate, onEdit }) {
   const todayStatus = todayShift?.shift_name || SHIFT_STATUS_LABELS[todayShift?.status] || todayShift?.status
   const nextStatus = nextShift?.shift_name || SHIFT_STATUS_LABELS[nextShift?.status] || nextShift?.status
   const todayHours = todayShift?.start_hour != null ? `${String(todayShift.start_hour).padStart(2, '0')}:00–${String(todayShift.end_hour).padStart(2, '0')}:00` : null
-  const assignmentMissing = !person.role_name || !person.primary_work_location_name
+  const assignmentMissing = !person.project_id || !person.department_id || !person.role_name || !person.primary_work_location_name
 
   return (
     <section aria-label="Personel takip merkezi" style={{
@@ -148,8 +201,8 @@ function StaffTrackingCenter({ dossier, staffId, onNavigate, onEdit }) {
         </div>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(175px, 1fr))', gap: 7 }}>
-        <TrackingItem eyebrow="GÖREV VE ANA NOKTA" title={`${person.dept_name || 'Departman yok'} · ${person.role_name || person.position || 'Rol yok'}`}
-          detail={person.primary_work_location_name || 'Ana çalışma noktası eksik'} warning={assignmentMissing} onClick={() => onNavigate('identity')} />
+        <TrackingItem eyebrow="PROJE, GÖREV VE ANA NOKTA" title={`${person.project_name || 'Proje yok'} · ${person.dept_name || 'Departman yok'}`}
+          detail={`${person.role_name || person.position || 'Rol yok'} · ${person.primary_work_location_name || 'Ana çalışma noktası eksik'}`} warning={assignmentMissing} onClick={() => onNavigate('identity')} />
         <TrackingItem eyebrow="BUGÜNKÜ PLAN" title={todayStatus || 'Vardiya planı yok'}
           detail={[todayHours, todayShift?.work_location_name || person.primary_work_location_name].filter(Boolean).join(' · ') || 'Plan oluşturmak için açın'}
           tone={todayShift ? 'var(--green)' : 'var(--text3)'} warning={!!todayShift && !todayShift.work_location_name && !person.primary_work_location_name} onClick={() => onNavigate('work')} />
@@ -483,6 +536,38 @@ export default function StaffDossierPage() {
     updateStaff.mutate(payload)
   }
 
+  const refreshDossier = async () => {
+    await queryClient.invalidateQueries({
+      predicate: query => query.queryKey.some(part => String(part) === String(staffId)),
+    })
+    useToastStore.getState().addToast('Personel dosyası yenilendi', 'success')
+  }
+  const copySummary = async () => {
+    const person = dossier.person
+    const lines = [
+      person.full_name,
+      [person.project_name, person.dept_name, person.role_name || person.position].filter(Boolean).join(' / '),
+      person.primary_work_location_name ? `Lokasyon: ${person.primary_work_location_name}` : null,
+      person.phone ? `Telefon: ${person.phone}` : null,
+      person.email ? `E-posta: ${person.email}` : null,
+      `Dosya: /shifts/personnel/${staffId}`,
+    ].filter(Boolean)
+    try {
+      await copyText(lines.join('\n'))
+      useToastStore.getState().addToast('Personel özeti panoya kopyalandı', 'success')
+    } catch {
+      useToastStore.getState().addToast('Personel özeti kopyalanamadı', 'error')
+    }
+  }
+  const exportDossier = async () => {
+    try {
+      await exportRowsToXlsx(DOSSIER_EXPORT_COLUMNS, [dossierExportRow(dossier, staffId)], `personel-dosyasi-${staffId}-${localIsoDate()}.xlsx`, 'Personel Dosyası')
+      useToastStore.getState().addToast('Personel dosyası Excel olarak hazırlandı', 'success')
+    } catch {
+      useToastStore.getState().addToast('Excel dosyası oluşturulamadı', 'error')
+    }
+  }
+
   const actions = (
     <>
       {dossier.access?.can_manage_followups && <button type="button" className="btn btn-primary btn-sm" onClick={openEdit}>✎ Dosyayı Düzenle</button>}
@@ -494,17 +579,31 @@ export default function StaffDossierPage() {
   )
 
   return (
-    <div className="fade-up" style={{ maxWidth: 1440, margin: '0 auto', display: 'grid', gap: 14 }}>
+    <div className="fade-up staff-dossier-page">
       <div>
         <button className="btn btn-ghost btn-sm" onClick={() => navigate(-1)}>← Geri</button>
       </div>
       <DossierHeader dossier={dossier} actions={actions} />
+      <div className="dossier-commandbar" aria-label="Personel dosyası hızlı işlemleri">
+        <div className="dossier-commandbar__meta">
+          <span className="dossier-commandbar__id">DOSYA #{staffId}</span>
+          <span>{dossier.person.project_name || 'Proje atanmamış'}</span>
+          <span>·</span>
+          <span>{dossier.person.primary_work_location_name || 'Lokasyon atanmamış'}</span>
+        </div>
+        <div className="dossier-commandbar__actions">
+          {dossier.person.phone && <a className="btn btn-ghost btn-xs" href={`tel:${dossier.person.phone}`}>Ara</a>}
+          {dossier.person.email && <a className="btn btn-ghost btn-xs" href={`mailto:${dossier.person.email}`}>E-posta</a>}
+          <button type="button" className="btn btn-ghost btn-xs" onClick={copySummary}>Özeti Kopyala</button>
+          <button type="button" className="btn btn-ghost btn-xs" onClick={exportDossier}>Excel</button>
+          <button type="button" className="btn btn-ghost btn-xs" onClick={refreshDossier}>Yenile</button>
+        </div>
+      </div>
+      <DossierReadiness dossier={dossier} onNavigate={setTab}
+        onEdit={dossier.access?.can_manage_followups ? openEdit : null} />
       <StaffTrackingCenter dossier={dossier} staffId={staffId} onNavigate={setTab}
         onEdit={dossier.access?.can_manage_followups ? openEdit : null} />
-      <div role="tablist" aria-label="Personel dosyası sekmeleri" onKeyDown={onTabKeyDown} style={{
-        display: 'flex', gap: 4, overflowX: 'auto', padding: 4,
-        background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 11,
-      }}>
+      <div role="tablist" aria-label="Personel dosyası sekmeleri" onKeyDown={onTabKeyDown} className="dossier-tabs">
         {TABS.map(([key, label]) => {
           const count = dossierTabCount(key, dossier)
           return (
