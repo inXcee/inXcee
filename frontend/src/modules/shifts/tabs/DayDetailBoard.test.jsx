@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import DayDetailBoard from './DayDetailBoard.jsx'
@@ -44,10 +44,22 @@ const renderBoard = () => {
   )
 }
 
+// Ortak test kurulumundaki IntersectionObserver stub'ı hiç tetiklenmez; yüzen
+// gün çubuğu "liste ekranda mı" bilgisini ondan aldığı için testte görünmez
+// kalıyordu. Burada hemen "görünür" bildiren bir gözlemci veriyoruz.
+const gercekIO = globalThis.IntersectionObserver
 beforeEach(() => {
   vi.clearAllMocks()
   api.get.mockResolvedValue({ data: detail })
+  globalThis.IntersectionObserver = class {
+    constructor(cb) { this.cb = cb }
+    observe() { this.cb([{ isIntersecting: true }]) }
+    unobserve() {}
+    disconnect() {}
+    takeRecords() { return [] }
+  }
 })
+afterEach(() => { globalThis.IntersectionObserver = gercekIO })
 
 describe('DayDetailBoard', () => {
   it('açık başlar; toplu özet, vardiya toplamı ve tüm bölümleri gösterir', async () => {
@@ -61,9 +73,22 @@ describe('DayDetailBoard', () => {
     expect(screen.getByText('GÜN KADROSU')).toBeInTheDocument()
     expect(screen.getByText('ÇALIŞAN')).toBeInTheDocument()
     expect(screen.getByText('RAPORLU')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Temizlik detayları' })).toBeInTheDocument()
+  })
+
+  // Analiz tabloları açılışta geliyordu; "bugün kim hangi vardiyada" sorusuna
+  // ulaşmak için üç tablo aşağı inmek gerekiyordu. Artık istendiğinde açılır.
+  it('analiz blokları varsayılan kapalı, açılınca gelir', async () => {
+    const user = userEvent.setup()
+    renderBoard()
+    await screen.findByRole('button', { name: 'Yemekhane detayları' })
+
+    expect(screen.queryByText('VARDİYA TOPLAMLARI')).not.toBeInTheDocument()
+    expect(screen.queryByText('VARDİYA × DEPARTMAN — KİŞİ SAYILARI')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Analiz/ }))
     expect(screen.getByText('VARDİYA TOPLAMLARI')).toBeInTheDocument()
     expect(screen.getByText('VARDİYA × DEPARTMAN — KİŞİ SAYILARI')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Temizlik detayları' })).toBeInTheDocument()
   })
 
   it('bölüme tıklayınca vardiya + kişi + izin/rapor/devamsız kovaları açılır', async () => {
@@ -124,5 +149,53 @@ describe('DayDetailBoard', () => {
     expect(screen.queryByRole('button', { name: 'Yemekhane detayları' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Temizlik detayları' })).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByRole('button', { name: 'Emre' })).toBeInTheDocument()
+  })
+
+  // Panel içindeki gün seçici liste uzayınca ekrandan çıkıyordu; kullanıcı
+  // "gün gün kim vardiyada" listesine bakarken günü hızlı değiştirmek istiyor.
+  // Yüzen çubuk kaydırma kabından bağımsız (position:fixed).
+  it('yüzen gün çubuğu listeye bakarken görünür', async () => {
+    renderBoard()
+    await screen.findByRole('button', { name: 'Yemekhane detayları' })
+    const cubuk = await screen.findByRole('group', { name: 'Gün değiştir' })
+    expect(cubuk).toBeInTheDocument()
+    expect(within(cubuk).getByRole('button', { name: 'Önceki gün' })).toBeDisabled()  // haftanın ilk günü
+    expect(within(cubuk).getByRole('button', { name: 'Sonraki gün' })).toBeEnabled()
+  })
+
+  it('yüzen çubuktan gün değişince o günün verisi çekilir', async () => {
+    const user = userEvent.setup()
+    renderBoard()
+    await screen.findByRole('button', { name: 'Yemekhane detayları' })
+    const cubuk = screen.getByRole('group', { name: 'Gün değiştir' })
+
+    await user.click(within(cubuk).getByRole('button', { name: 'Sonraki gün' }))
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/shifts/day-detail', expect.objectContaining({
+      params: { date: '2026-07-06', group_by: 'dept' },
+    })))
+  })
+
+  it('sağ/sol ok tuşu günü değiştirir', async () => {
+    const user = userEvent.setup()
+    renderBoard()
+    await screen.findByRole('button', { name: 'Yemekhane detayları' })
+
+    await user.keyboard('{ArrowRight}')
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/shifts/day-detail', expect.objectContaining({
+      params: { date: '2026-07-06', group_by: 'dept' },
+    })))
+  })
+
+  // Çubuk panelin içinde kalsaydı, .fade-up animasyonu transform uyguladığı
+  // sürece position:fixed viewport'a değil o kutuya bağlanırdı — sticky'yi
+  // bozan tuzağın aynısı. Portal ile body'ye taşınıyor.
+  it('yüzen çubuk panelin dışında, body altında render edilir', async () => {
+    const { container } = renderBoard()
+    await screen.findByRole('button', { name: 'Yemekhane detayları' })
+    const cubuk = screen.getByRole('group', { name: 'Gün değiştir' })
+
+    expect(container.contains(cubuk)).toBe(false)
+    expect(document.body.contains(cubuk)).toBe(true)
+    expect(cubuk.closest('.panel')).toBeNull()
   })
 })

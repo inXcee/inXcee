@@ -1,4 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+// Çubuk body'ye taşınır: .fade-up animasyonu bitene kadar transform uygular ve
+// transform'lu bir üst öğe position:fixed'i kendine bağlar — çubuk viewport
+// yerine o kutuya göre konumlanırdı.
+import { createPortal } from 'react-dom'
+import { stepDay, canStep, dayKeyDelta } from '../logic/dayNav.js'
 import { weekShiftMatrix, dayHeadcounts } from '../logic/departmentDigest.js'
 import { useQuery } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
@@ -46,6 +51,12 @@ export default function DayDetailBoard({ weekDays = [], staffGrid = [], onPerson
   const [openGroups, setOpenGroups] = useState(() => new Set())
   const [search, setSearch] = useState('')
   const [busy, setBusy] = useState('')
+  // Analiz blokları (hafta özeti, vardiya toplamları, vardiya × bölüm matrisi)
+  // VARSAYILAN KAPALI. Açıkken asıl soruya — "bugün kim hangi vardiyada" —
+  // ulaşmak için üç tablo aşağı inmek gerekiyordu.
+  const [analizAcik, setAnalizAcik] = useState(false)
+  const listeRef = useRef(null)
+  const [listeGorunuyor, setListeGorunuyor] = useState(false)
 
   const { data: detail, isPending, isFetching, isError, refetch } = useQuery({
     queryKey: ['shift-day-detail', date, groupBy],
@@ -131,6 +142,36 @@ export default function DayDetailBoard({ weekDays = [], staffGrid = [], onPerson
     }
   }
 
+  // Yüzen gün çubuğu yalnız listeye bakarken görünür. IntersectionObserver
+  // kullanılıyor çünkü sticky çözümü kapsayıcı sınırlarına takılıyordu:
+  // .panel'in overflow'u, aradaki scroll kabı ve tablonun kendi kutusu üst
+  // üste binince şerit ekrandan çıkıyordu. position:fixed bunların hiçbirine
+  // bağlı değil.
+  useEffect(() => {
+    const hedef = listeRef.current
+    if (!hedef || !open) { setListeGorunuyor(false); return undefined }
+    if (typeof IntersectionObserver === 'undefined') { setListeGorunuyor(true); return undefined }
+    const gozlemci = new IntersectionObserver(
+      ([giris]) => setListeGorunuyor(!!giris?.isIntersecting),
+      { rootMargin: '-60px 0px -40px 0px' },
+    )
+    gozlemci.observe(hedef)
+    return () => gozlemci.disconnect()
+  }, [open, hasData])
+
+  // Sol/sağ ok ile gün değiştir — listeye bakarken elin klavyedeyken.
+  useEffect(() => {
+    if (!open || !listeGorunuyor) return undefined
+    const dinle = event => {
+      const yon = dayKeyDelta(event, document.activeElement)
+      if (!yon) return
+      const sonraki = stepDay(weekDays, date, yon)
+      if (sonraki !== date) { event.preventDefault(); selectDate(sonraki) }
+    }
+    window.addEventListener('keydown', dinle)
+    return () => window.removeEventListener('keydown', dinle)
+  }, [open, listeGorunuyor, weekDays, date])
+
   const download = async (kind) => {
     setBusy(kind)
     try {
@@ -140,9 +181,7 @@ export default function DayDetailBoard({ weekDays = [], staffGrid = [], onPerson
   }
 
   return (
-    /* overflow:visible — .panel varsayılanı hidden ve yapışkan gün şeridini hem
-       kırpıyor hem kapsayıcıyı daraltıp yapışmasını engelliyor. */
-    <div className="panel" style={{ marginBottom: '12px', borderTop: '3px solid var(--accent)', overflow: 'visible' }}>
+    <div className="panel" style={{ marginBottom: '12px', borderTop: '3px solid var(--accent)' }}>
       <div className="panel-header" style={{ alignItems: 'center' }}>
         <div>
           <div className="panel-title">📅 GÜN DETAYI</div>
@@ -164,39 +203,15 @@ export default function DayDetailBoard({ weekDays = [], staffGrid = [], onPerson
 
       {open && (
         <>
-          {/* Gün + gruplama seçici — YAPIŞKAN.
-              Gün dökümü uzun bir liste; seçici yukarıda sabit kalmayınca başka
-              bir güne bakmak için sayfanın en başına dönmek gerekiyordu.
-              top=0: kaydırma kabı zaten sayfanın yapışkan başlık çubuğunun
-              altında başlıyor, ayrıca boşluk bırakmak gerekmiyor. */}
+          {/* Gün + gruplama seçici. Yapışkan (sticky) denendi ama kapsayıcı
+              sınırlarına takılıyordu — gün değiştirme işini artık ekranın
+              altındaki yüzen çubuk üstleniyor, burası sade duruyor. */}
           <div style={{
-            position: 'sticky', top: 0, zIndex: 5,
-            display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center',
-            margin: '0 -14px 10px', padding: '8px 14px',
-            background: 'color-mix(in srgb, var(--surface) 92%, transparent)',
-            backdropFilter: 'blur(8px)',
-            borderBottom: '1px solid var(--border)',
+            display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '10px',
           }}>
-            {weekDays.length > 0 && (
-              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                {weekDays.map(day => (
-                  <button
-                    key={day}
-                    className={`btn btn-sm ${day === date ? 'btn-primary' : 'btn-ghost'}`}
-                    onClick={() => selectDate(day)}
-                    aria-label={`${formatDate(day)} ${shortDay(day)}`}
-                  >
-                    <span>{shortDay(day)}</span>
-                    <strong style={{ marginLeft: '4px' }}>{day.slice(8, 10)}</strong>
-                    <span style={{
-                      marginLeft: 5, fontFamily: 'var(--mono)', fontSize: 9,
-                      opacity: day === date ? 0.85 : 0.6,
-                      color: gunToplamlari[day] ? undefined : 'var(--red)',
-                    }}>{gunToplamlari[day] ?? 0}</span>
-                  </button>
-                ))}
-              </div>
-            )}
+            {/* Gün düğmeleri aynı ekranda iki kez duruyordu (burada ve yüzen
+                çubukta). Sadeleştirmek için tek yerde bırakıldı. */}
+            <strong style={{ fontSize: 13 }}>{formatDate(date)} {shortDay(date)}</strong>
             <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text3)' }}>
               Tarih
               <input type="date" className="form-input" value={date} onChange={e => selectDate(e.target.value)} style={{ maxWidth: '160px' }} />
@@ -208,8 +223,21 @@ export default function DayDetailBoard({ weekDays = [], staffGrid = [], onPerson
             </div>
           </div>
 
+          {/* Analiz blokları tek düğmeye toplandı ve VARSAYILAN KAPALI: açıkken
+              "bugün kim hangi vardiyada" sorusuna ulaşmak için üç tablo aşağı
+              inmek gerekiyordu. */}
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => setAnalizAcik(a => !a)}
+            aria-expanded={analizAcik}
+            style={{ marginBottom: 10 }}
+          >
+            {analizAcik ? '▾' : '▸'} Analiz — hafta özeti, vardiya toplamları, bölüm matrisi
+          </button>
+
           {/* Hafta özeti — her günü tek tek açmadan tek bakışta */}
-          {haftaMatrisi.rows.length > 0 && (
+          {analizAcik && haftaMatrisi.rows.length > 0 && (
             <div style={{
               border: '1px solid var(--border)', borderRadius: 9, padding: '8px 10px',
               marginBottom: 12, background: 'var(--surface2)', overflowX: 'auto',
@@ -292,7 +320,7 @@ export default function DayDetailBoard({ weekDays = [], staffGrid = [], onPerson
           )}
 
           {/* Vardiya toplamları — tüm departmanların aynı vardiyadaki toplu görünümü */}
-          {hasData && shiftOverview.length > 0 && (
+          {analizAcik && hasData && shiftOverview.length > 0 && (
             <div style={{ marginBottom: '14px' }}>
               <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', letterSpacing: '1px', marginBottom: '6px' }}>
                 VARDİYA TOPLAMLARI
@@ -341,7 +369,7 @@ export default function DayDetailBoard({ weekDays = [], staffGrid = [], onPerson
           )}
 
           {/* Vardiya × Bölüm matrisi — hangi bölümde hangi vardiyada kaç kişi */}
-          {hasData && matrix.columns.length > 0 && (
+          {analizAcik && hasData && matrix.columns.length > 0 && (
             <div style={{ overflowX: 'auto', marginBottom: '14px' }}>
               <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', letterSpacing: '1px', marginBottom: '6px' }}>
                 VARDİYA × {groupLabel.toLocaleUpperCase('tr')} — KİŞİ SAYILARI
@@ -457,7 +485,7 @@ export default function DayDetailBoard({ weekDays = [], staffGrid = [], onPerson
             </div>
           )}
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <div ref={listeRef} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {visibleGroups.map(group => {
               const key = groupKey(group)
               const isOpen = openGroups.has(key) || !!search.trim()
@@ -569,6 +597,59 @@ export default function DayDetailBoard({ weekDays = [], staffGrid = [], onPerson
             })}
           </div>
         </>
+      )}
+
+      {/* YÜZEN GÜN ÇUBUĞU — listeye bakarken ekranın altında sabit durur.
+          Kullanıcı gün gün kimin vardiyada olduğuna bakarken günü hızlı
+          değiştirmek istiyor; panel içindeki seçici liste uzayınca yukarıda
+          kalıyordu. position:fixed kaydırma kabından da .panel'in
+          overflow'undan da bağımsız. */}
+      {open && listeGorunuyor && weekDays.length > 0 && createPortal(
+        <div
+          role="group"
+          aria-label="Gün değiştir"
+          style={{
+            position: 'fixed', left: '50%', bottom: 18, transform: 'translateX(-50%)',
+            zIndex: 60, display: 'flex', alignItems: 'center', gap: 4,
+            padding: '6px 8px', borderRadius: 999,
+            background: 'color-mix(in srgb, var(--surface) 92%, transparent)',
+            backdropFilter: 'blur(10px)',
+            border: '1px solid var(--border)', boxShadow: '0 8px 28px rgba(0,0,0,.35)',
+            maxWidth: 'calc(100vw - 24px)', overflowX: 'auto',
+          }}
+        >
+          <button
+            className="btn btn-ghost btn-sm"
+            disabled={!canStep(weekDays, date, -1)}
+            onClick={() => selectDate(stepDay(weekDays, date, -1))}
+            aria-label="Önceki gün"
+          >‹</button>
+          {weekDays.map(day => (
+            <button
+              key={day}
+              className={`btn btn-sm ${day === date ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => selectDate(day)}
+              aria-label={`${formatDate(day)} ${shortDay(day)}`}
+              aria-current={day === date ? 'true' : undefined}
+              style={{ whiteSpace: 'nowrap' }}
+            >
+              {shortDay(day)} <strong>{day.slice(8, 10)}</strong>
+              {/* Sıfır kadro sessiz kalmasın: o gün kimse yok demek. */}
+              <span style={{
+                marginLeft: 4, fontFamily: 'var(--mono)', fontSize: 9,
+                color: gunToplamlari[day] ? undefined : 'var(--red)',
+                opacity: day === date ? 0.9 : 0.65,
+              }}>{gunToplamlari[day] ?? 0}</span>
+            </button>
+          ))}
+          <button
+            className="btn btn-ghost btn-sm"
+            disabled={!canStep(weekDays, date, 1)}
+            onClick={() => selectDate(stepDay(weekDays, date, 1))}
+            aria-label="Sonraki gün"
+          >›</button>
+        </div>,
+        document.body,
       )}
     </div>
   )
