@@ -217,4 +217,49 @@ describe('DayDetailBoard', () => {
     expect(screen.getByRole('button', { name: 'Hasan' })).toHaveAttribute('title', expect.stringContaining('Haber vermedi'))
     expect(screen.getByRole('button', { name: 'Ayşe' })).toHaveAttribute('title', expect.stringContaining('Yıllık izin'))
   })
+
+  // "İkram ve Lokaller"i gün gün takip eden kişi her gün değişiminde bölümü
+  // yeniden açmak zorunda kalıyordu.
+  it('gün değişince açık bölüm açık kalır', async () => {
+    const user = userEvent.setup()
+    renderBoard()
+    await user.click(await screen.findByRole('button', { name: 'Yemekhane detayları' }))
+    expect(await screen.findByRole('button', { name: 'Ali' })).toBeInTheDocument()
+
+    const cubuk = screen.getByRole('group', { name: 'Gün değiştir' })
+    await user.click(within(cubuk).getByRole('button', { name: 'Sonraki gün' }))
+
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/shifts/day-detail', expect.objectContaining({
+      params: { date: '2026-07-06', group_by: 'dept' },
+    })))
+    expect(screen.getByRole('button', { name: 'Yemekhane detayları' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: 'Ali' })).toBeInTheDocument()
+  })
+
+  // Gruplama değişince anahtarların anlamı değişir (departman → site → nokta),
+  // eski açık anahtarlar karşılık gelmez.
+  it('gruplama değişince açık bölümler sıfırlanır', async () => {
+    const user = userEvent.setup()
+    renderBoard()
+    await user.click(await screen.findByRole('button', { name: 'Yemekhane detayları' }))
+    expect(await screen.findByRole('button', { name: 'Ali' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Site' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Yemekhane detayları' })).toHaveAttribute('aria-expanded', 'false'))
+  })
+
+  // Konumlar isim aralarına karışınca hangi konumun kime ait olduğu
+  // ayırt edilemiyordu: isim ve konum ayrı satırlarda olmalı.
+  it('kişi kartında isim ve konum ayrı satırlarda', async () => {
+    const user = userEvent.setup()
+    renderBoard()
+    await user.click(await screen.findByRole('button', { name: 'Yemekhane detayları' }))
+    const kart = await screen.findByRole('button', { name: 'Ali' })
+
+    const satirlar = [...kart.querySelectorAll('span')]
+    expect(satirlar.length).toBe(2)
+    satirlar.forEach(satir => expect(satir.style.display).toBe('block'))
+    expect(satirlar[0]).toHaveTextContent('Ali')
+    expect(satirlar[1]).toHaveTextContent('Aşçı · Mutfak')
+  })
 })

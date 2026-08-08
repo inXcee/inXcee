@@ -102,13 +102,15 @@ export default function DayDetailBoard({ weekDays = [], staffGrid = [], onPerson
   const hasData = groups.length > 0
   const groupLabel = GROUP_OPTIONS.find(([key]) => key === groupBy)?.[1] || 'Departman'
 
-  const selectDate = nextDate => {
-    setDate(nextDate)
-    setOpenGroups(new Set())
-    setSearch('')
-  }
+  // Gün değişince AÇIK BÖLÜMLER VE ARAMA KORUNUR. Eskiden sıfırlanıyordu:
+  // "İkram ve Lokaller"i gün gün takip eden kişi her gün değişiminde bölümü
+  // yeniden açmak zorunda kalıyordu. Bölüm anahtarları (departman adı) günler
+  // arasında aynı olduğu için taşımakta sakınca yok.
+  const selectDate = nextDate => setDate(nextDate)
 
   const selectGroup = nextGroup => {
+    // Gruplama değişince sıfırlanır — anahtarların anlamı değişiyor
+    // (departman → site → nokta), eski anahtarlar artık karşılık gelmiyor.
     setGroupBy(nextGroup)
     setOpenGroups(new Set())
     setSearch('')
@@ -518,11 +520,11 @@ export default function DayDetailBoard({ weekDays = [], staffGrid = [], onPerson
 
                   {isOpen && (
                     <div style={{ padding: '0 12px 10px' }}>
-                      {/* Vardiya kırılımı SADE: kişi başına iki satırlık kart yerine
-                          akan isim listesi. Kartlarla 12 kişilik bir vardiya bir
-                          ekranı doldurup asıl soruyu — kim var — zorlaştırıyordu.
-                          Konum etiketleri de kaldırıldı; zaten her ismin yanında
-                          yazıyor, üstte tekrar etmesi gürültüydü. */}
+                      {/* Kişi başına iki satırlık kart: isim üstte, rol · nokta
+                          altta. Akan isim listesi denendi ama konumlar isimlerin
+                          arasına karışıp okunamıyordu — hangi konumun hangi
+                          kişiye ait olduğu ayırt edilemiyordu. Kartlar eskisinden
+                          sıkı: dar sütun, az iç boşluk. */}
                       {group.shifts.map(shift => (
                         <div key={shift.shift_key || `${shift.shift_def_id ?? shift.shift_name}|${shift.start_hour || ''}|${shift.end_hour || ''}`} style={{ padding: '7px 0', borderTop: '1px dashed var(--border)' }}>
                           <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', flexWrap: 'wrap', marginBottom: '3px' }}>
@@ -534,7 +536,7 @@ export default function DayDetailBoard({ weekDays = [], staffGrid = [], onPerson
                             )}
                             <span style={{ color: 'var(--accent)', fontFamily: 'var(--mono)', fontSize: '11px' }}>{shift.count} kişi</span>
                           </div>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 10px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(165px, 1fr))', gap: '4px' }}>
                             {shift.people.map(person => (
                               <button
                                 key={person.staff_id}
@@ -543,13 +545,22 @@ export default function DayDetailBoard({ weekDays = [], staffGrid = [], onPerson
                                 aria-label={person.full_name}
                                 title="Personel detayını aç"
                                 style={{
-                                  border: 0, background: 'none', padding: '1px 0', cursor: 'pointer',
-                                  color: 'var(--text)', textAlign: 'left', fontSize: '11.5px', lineHeight: 1.5,
+                                  border: '1px solid var(--border)', borderRadius: '7px', padding: '4px 7px',
+                                  background: 'var(--surface2, var(--surface))', cursor: 'pointer',
+                                  color: 'var(--text)', textAlign: 'left', minWidth: 0,
                                 }}
                               >
-                                {person.full_name}
+                                <span style={{
+                                  display: 'block', fontSize: '11px', fontWeight: 650,
+                                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                }}>{person.full_name}</span>
+                                {/* Konum kendi satırında: yan yana yazılınca hangi
+                                    konumun kime ait olduğu ayırt edilemiyordu. */}
                                 {personMeta(person) && (
-                                  <span style={{ marginLeft: 4, fontSize: '9px', color: 'var(--text3)' }}>{personMeta(person)}</span>
+                                  <span style={{
+                                    display: 'block', fontSize: '9px', color: 'var(--text3)',
+                                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                  }}>{personMeta(person)}</span>
                                 )}
                               </button>
                             ))}
