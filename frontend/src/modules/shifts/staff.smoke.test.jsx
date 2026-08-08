@@ -75,6 +75,7 @@ describe('shifts staff smoke', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.clear()
+    window.history.replaceState({}, '', '/shifts?tab=staff')
     useAuthStore.setState({ user: null, token: null })
     api.get.mockImplementation(url => {
       if (url === '/shifts/staff') return Promise.resolve({ data: directoryStaff })
@@ -83,6 +84,14 @@ describe('shifts staff smoke', () => {
         { id: 8, name: 'FPU', code: 'FPU', staff_count: 1 },
         { id: 9, name: 'Kamp Alanı', code: 'KAMP', staff_count: 1 },
       ] })
+      if (url === '/personnel/tracking/overview') return Promise.resolve({ data: {
+        kpis: { active: 2, offboarding: 1, exited: 0, hired: 1, permanent_movements: 2, temporary_project_work: 1, shift_changes: 3, annual_leave_days: 2, sick_leave_days: 1, other_leave_days: 0, overtime_hours: 12, absent_days: 1, open_alerts: 1, overdue_alerts: 0, critical_alerts: 1 },
+        trends: [{ month: '2026-08', shift_changes: 3, movements: 2, exits: 0 }],
+      } })
+      if (url === '/personnel/tracking/people') return Promise.resolve({ data: { total: 1, items: [{ id: 44, full_name: 'Ayşe Yılmaz', employment_status: 'active', project_name: 'FPU', department_name: 'Operasyon', last_event_type: 'assignment_changed', last_event_at: '2026-08-01 10:00:00', annual_leave_days: 2, sick_leave_days: 1, sick_occurrences: 1, overtime_hours: 12, absent_days: 1, shift_changes: 3, permanent_movements: 2, open_alerts: 1 }] } })
+      if (url === '/personnel/tracking/events') return Promise.resolve({ data: { total: 1, items: [{ id: 501, staff_id: 44, full_name: 'Ayşe Yılmaz', event_type: 'assignment_changed', effective_at: '2026-08-01 10:00:00', before: { project: 'Eski' }, after: { project: 'FPU' }, reason: 'Proje transferi', actor_name: 'Müdür' }] } })
+      if (url === '/personnel/tracking/alerts') return Promise.resolve({ data: { items: [{ id: 61, staff_id: 44, full_name: 'Ayşe Yılmaz', severity: 'critical', status: 'open', title: 'Yüksek mesai', message: 'Aylık mesai eşiği yaklaşıyor', due_at: '2026-08-10' }] } })
+      if (url === '/personnel/tracking/settings') return Promise.resolve({ data: { rules: [] } })
       return Promise.resolve({ data: [] })
     })
   })
@@ -110,6 +119,21 @@ describe('shifts staff smoke', () => {
     expect(screen.getAllByRole('button', { name: 'Personel Dosyası' })).toHaveLength(2)
     expect(screen.getAllByText('FPU').length).toBeGreaterThan(0)
     expect(screen.getByText(/FPU \/ Operasyon \/ Filyos \/ Ana Saha/)).toBeInTheDocument()
+  })
+
+  it('filtrelenebilir personel takip merkezini ve hareket akışını açar', async () => {
+    useAuthStore.setState({ user: { id: 1, role: 'campus_manager' } })
+    renderWithProviders(<StaffTab departments={[{ id: 2, name: 'Operasyon' }]} onPersonClick={() => {}} />)
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Takip Merkezi' }))
+    expect(await screen.findByText('Personel karşılaştırması')).toBeInTheDocument()
+    expect(await screen.findByText('Kalıcı transfer')).toBeInTheDocument()
+    expect(await screen.findByText('Kim değişti?')).toBeInTheDocument()
+    expect(await screen.findByText('Aylık mesai eşiği yaklaşıyor')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Tam Dosya' })).toHaveAttribute('href', '/shifts/personnel/44?tab=work')
+    expect(screen.getByRole('tab', { name: 'Takip Merkezi' })).toHaveAttribute('aria-selected', 'true')
+    fireEvent.change(screen.getByLabelText('Takip merkezi departman filtresi'), { target: { value: '2' } })
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/personnel/tracking/people', expect.objectContaining({ params: expect.objectContaining({ department_id: '2' }) })))
   })
 
   it('hızlı personel dosyasında tamamlanma, organizasyon yolu ve pratik düzenleme sunar', async () => {

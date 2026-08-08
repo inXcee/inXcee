@@ -25,6 +25,8 @@ import {
 import StaffPerformancePanel from './dossier/StaffPerformancePanel.jsx'
 import { StaffNotesPanel, StaffTimelinePanel } from './dossier/StaffNotesTimeline.jsx'
 import StaffUniformPanel from './dossier/StaffUniformPanel.jsx'
+import StaffWorkTrackingPanel, { StaffMovementTimeline } from './dossier/StaffWorkTrackingPanel.jsx'
+import StaffOffboardingPanel from './dossier/StaffOffboardingPanel.jsx'
 import { StaffFormSheet } from '../shifts/tabs/StaffTab.jsx'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { exportRowsToXlsx } from '../../shared/utils/exportData.js'
@@ -337,56 +339,8 @@ function IdentityTab({ dossier, detail, isLoading }) {
   )
 }
 
-function WorkTab({ dossier, detail, isLoading }) {
-  const shifts = detail?.shiftHistory || []
-  const attendance = detail?.attendanceLogs || []
-  return (
-    <div style={{ display: 'grid', gap: 12 }}>
-      <DossierWorkMetrics dossier={dossier} />
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.5fr) minmax(280px, .8fr)', gap: 12 }}>
-        <DossierSection title="VARDİYA GEÇMİŞİ" subtitle={isLoading ? 'Yükleniyor…' : `Son ${Math.min(shifts.length, 40)} kayıt`}>
-          {isLoading ? <span className="page-spinner" /> : shifts.length ? (
-            <div style={{ overflowX: 'auto' }}>
-              <table className="data-table" style={{ minWidth: 680, fontSize: 10 }}>
-                <thead><tr><th>TARİH</th><th>VARDİYA</th><th>LOKASYON</th><th>DURUM</th><th>AÇIKLAMA</th></tr></thead>
-                <tbody>
-                  {shifts.slice(0, 40).map((shift, index) => (
-                    <tr key={`${shift.work_date}-${index}`}>
-                      <td>{shift.work_date}</td>
-                      <td>{shift.shift_name || '—'}</td>
-                      <td>{shift.work_location_name || '—'}</td>
-                      <td><span className={`badge ${shift.status === 'absent' ? 'badge-red' : shift.status === 'worked' ? 'badge-green' : 'badge-gray'}`}>{shift.status}</span></td>
-                      <td>{shift.detail_note || shift.absent_reason || shift.leave_type || '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : <div style={{ color: 'var(--text3)', fontSize: 11 }}>Vardiya kaydı bulunmuyor.</div>}
-        </DossierSection>
-        <div style={{ display: 'grid', gap: 12, alignContent: 'start' }}>
-          <DossierSection title="DEVAM KAYITLARI" subtitle={`${attendance.length} son kayıt`}>
-            {attendance.slice(0, 12).map(log => (
-              <div key={log.id} style={{ padding: '7px 0', borderBottom: '1px solid var(--border)', fontSize: 10 }}>
-                <div>{formatDossierDate(log.check_in_at, true)}</div>
-                <div style={{ color: 'var(--text3)', marginTop: 2 }}>Çıkış: {formatDossierDate(log.check_out_at, true)} · {log.actual_hours ?? '—'} saat</div>
-              </div>
-            ))}
-            {!attendance.length && <div style={{ color: 'var(--text3)', fontSize: 11 }}>Devam kaydı bulunmuyor.</div>}
-          </DossierSection>
-          <DossierSection title="YILLIK İZİN HAKKI" subtitle="İş Kanunu m.53 · kıdem bazlı">
-            <DossierAnnualLeave annual={dossier.annual_leave} />
-          </DossierSection>
-          <DossierSection title="İZİN VE MESAİ">
-            <DossierField label="İzin kaydı" value={`${detail?.leaveHistory?.length || 0} kayıt`} />
-            <DossierField label="Mesai kaydı" value={`${detail?.overtimeRecords?.length || 0} kayıt`} />
-            <DossierField label="Toplam mesai" value={`${detail?.stats?.totalOvertime || 0} saat`} />
-            <DossierField label="Devamsız gün" value={detail?.stats?.absentCount || 0} />
-          </DossierSection>
-        </div>
-      </div>
-    </div>
-  )
+function WorkTab({ staffId, dossier, detail, isLoading }) {
+  return <StaffWorkTrackingPanel staffId={staffId} dossier={dossier} legacyDetail={detail} isLegacyLoading={isLoading} />
 }
 
 function OperationsTab({ dossier, operations, isLoading }) {
@@ -624,7 +578,7 @@ export default function StaffDossierPage() {
       </div>
       {activeTab === 'overview' && <OverviewTab dossier={dossier} />}
       {activeTab === 'identity' && <IdentityTab dossier={dossier} detail={detailQuery.data} isLoading={detailQuery.isLoading} />}
-      {activeTab === 'work' && <WorkTab dossier={dossier} detail={detailQuery.data} isLoading={detailQuery.isLoading} />}
+      {activeTab === 'work' && <WorkTab staffId={staffId} dossier={dossier} detail={detailQuery.data} isLoading={detailQuery.isLoading} />}
       {activeTab === 'documents' && <StaffDocumentsPanel staffId={staffId} access={dossier.access} />}
       {activeTab === 'performance' && <StaffPerformancePanel staffId={staffId} canManage={dossier.access?.can_manage_followups} />}
       {activeTab === 'safety' && <StaffSafetyPanel staffId={staffId} />}
@@ -634,10 +588,15 @@ export default function StaffDossierPage() {
           <StaffUniformPanel staffId={staffId} access={dossier.access} />
         </div>
       )}
-      {activeTab === 'hr' && <StaffChecklistPanel staffId={staffId} canManage={dossier.access?.can_manage_followups} />}
+      {activeTab === 'hr' && (
+        <div style={{ display: 'grid', gap: 12 }}>
+          <StaffOffboardingPanel staffId={staffId} person={dossier.person} canManage={dossier.access?.can_manage_followups} />
+          <StaffChecklistPanel staffId={staffId} canManage={dossier.access?.can_manage_followups} />
+        </div>
+      )}
       {activeTab === 'operations' && <OperationsTab dossier={dossier} operations={operationsQuery.data} isLoading={operationsQuery.isLoading} />}
       {activeTab === 'notes' && <StaffNotesPanel staffId={staffId} access={dossier.access} />}
-      {activeTab === 'timeline' && <StaffTimelinePanel staffId={staffId} />}
+      {activeTab === 'timeline' && <div style={{ display: 'grid', gap: 12 }}><StaffMovementTimeline staffId={staffId} /><StaffTimelinePanel staffId={staffId} /></div>}
       {showEdit && (
         <StaffFormSheet
           editStaff={dossier.person}

@@ -7,6 +7,8 @@ vi.mock('../../shared/api/client.js', () => ({
   default: {
     get: vi.fn(),
     put: vi.fn(),
+    post: vi.fn(),
+    patch: vi.fn(),
   },
 }))
 
@@ -57,6 +59,7 @@ describe('StaffDossierPage smoke', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     api.put.mockResolvedValue({ data: { ok: true } })
+    api.post.mockResolvedValue({ data: { ok: true } })
     window.history.replaceState({}, '', '/shifts/personnel/7')
     api.get.mockImplementation(url => {
       if (url === '/personnel/7/dossier') return Promise.resolve({ data: DOSSIER })
@@ -90,6 +93,17 @@ describe('StaffDossierPage smoke', () => {
           maintenance: [],
         } })
       }
+      if (url === '/personnel/7/tracking') return Promise.resolve({ data: {
+        period: { from: '2026-05-01', to: '2026-08-08' },
+        staff: { ...DOSSIER.person, department_name: 'Operasyon' },
+        summary: { scheduled_days: 1, worked_days: 20, absent_days: 1, approved_leave_days: 2, sick_days: 1, overtime_hours: 4, shift_changes: 2, permanent_movements: 1 },
+        shifts: [{ id: 10, work_date: '2026-07-16', shift_name: 'Gündüz', status: 'worked', work_location_name: 'Ana Saha', work_project_name: 'FPU Projesi' }],
+        leaves: [{ id: 11, leave_type: 'sick', start_date: '2026-07-01', end_date: '2026-07-01', total_days: 1, status: 'approved', reason: 'Rapor' }],
+        overtime: [{ id: 12, work_date: '2026-07-02', hours: 4, status: 'approved', reason: 'Yoğunluk' }],
+        assignments: [{ id: 13, project_name: 'FPU Projesi', department_name: 'Operasyon', role_name: 'Lider', work_location_name: 'Ana Saha', effective_from: '2026-01-01' }],
+        events: [{ id: 14, event_type: 'assignment_changed', effective_at: '2026-01-01 09:00:00', before: { project: 'Kamp' }, after: { project: 'FPU Projesi' }, reason: 'Transfer', actor_name: 'Müdür' }],
+      } })
+      if (url === '/personnel/7/offboarding-impact') return Promise.resolve({ data: { staff: DOSSIER.person, exit_date: '2026-08-08', schedules: [], leaves: [], overtime_requests: [], future_assignments: [], equipment: [], followups: [], checklist: null, counts: {} } })
       return Promise.resolve({ data: {} })
     })
   })
@@ -119,9 +133,12 @@ describe('StaffDossierPage smoke', () => {
     expect(await screen.findByText('711******11')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('tab', { name: 'Çalışma ve Devam' }))
-    expect(await screen.findByText('VARDİYA GEÇMİŞİ')).toBeInTheDocument()
-    expect(screen.getByText('YILLIK İZİN HAKKI')).toBeInTheDocument()
-    expect(screen.getByText('HAK EDİLEN')).toBeInTheDocument()
+    expect(await screen.findByText('Çalışma ve Hareketler')).toBeInTheDocument()
+    expect(await screen.findByText('YILLIK İZİN HAKKI')).toBeInTheDocument()
+    expect(await screen.findByText('HAK EDİLEN')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: 'Atama Hareketleri' }))
+    expect(await screen.findByText('ATAMA HAREKETLERİ')).toBeInTheDocument()
+    expect(screen.getAllByText(/FPU Projesi · Operasyon/).length).toBeGreaterThan(0)
 
     fireEvent.click(screen.getByRole('tab', { name: 'Belgeler' }))
     expect(await screen.findByText('İSG Eğitim Belgesi')).toBeInTheDocument()
@@ -149,6 +166,19 @@ describe('StaffDossierPage smoke', () => {
     fireEvent.keyDown(tablist, { key: 'ArrowRight' })
     expect(await screen.findByText('GÖREV VE LOKASYON GEÇMİŞİ')).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Kimlik ve İletişim' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('kontrollü işten çıkış etki önizlemesini personel dosyasında gösterir', async () => {
+    renderWithProviders(
+      <Routes><Route path="/shifts/personnel/:staffId" element={<StaffDossierPage />} /></Routes>,
+      { route: '/shifts/personnel/7?tab=hr' },
+    )
+
+    expect(await screen.findByText('KONTROLLÜ İŞTEN ÇIKIŞ')).toBeInTheDocument()
+    expect(await screen.findByText('Gelecek vardiya')).toBeInTheDocument()
+    fireEvent.change(screen.getByPlaceholderText('Çıkış gerekçesi ve operasyon notu'), { target: { value: 'Proje tamamlandı' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Çıkış Sürecini Başlat' }))
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/personnel/7/offboarding/start', expect.objectContaining({ reason: 'Proje tamamlandı' })))
   })
 
   it('takip merkezi kartlarından doğru personel ayrıntısına tek tıkla geçer', async () => {

@@ -1,4 +1,5 @@
 import { Fragment, useState, useEffect, useMemo, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
 import { useProjects, NO_PROJECT } from '../../../shared/hooks/useProjects.js'
@@ -9,6 +10,7 @@ import { useSavedFilters, SavedFiltersBar } from '../../../shared/hooks/useSaved
 import { SkeletonGrid } from '../../../shared/components/Skeleton.jsx'
 import { exportRowsToCsv, exportRowsToXlsx } from '../../../shared/utils/exportData.js'
 import ProjectBadge from '../../../shared/components/ProjectBadge.jsx'
+import PersonnelTrackingCenter from '../../personnel/PersonnelTrackingCenter.jsx'
 import { toastErr, toastOk, deptColor, BottomSheet } from '../shared.jsx'
 
 function localIsoDate() {
@@ -683,6 +685,7 @@ function StaffCompareSheet({ staffRows, onPersonClick, onClose }) {
 
 export default function StaffTab({ departments, onPersonClick }) {
   const qc = useQueryClient()
+  const [searchParams, setSearchParams] = useSearchParams()
   const searchInputRef = useRef(null)
   const user = useAuthStore(s => s.user)
   const canEdit = ['campus_manager', 'shift_supervisor'].includes(user?.role)
@@ -1021,8 +1024,37 @@ export default function StaffTab({ departments, onPersonClick }) {
   const toggleRiskFilter = risk => setFilters(previous => ({ ...previous, risk: previous.risk === risk ? '' : risk, focus: '' }))
   const selectedStaffRows = staffList.filter(staff => selected.has(staff.id))
 
+  const trackingMode = searchParams.get('view') === 'tracking'
+  const setSectionMode = mode => {
+    setSearchParams(previous => {
+      const next = new URLSearchParams(previous)
+      if (mode === 'tracking') next.set('view', 'tracking')
+      else {
+        next.delete('view')
+        ;['range', 'from', 'to', 'project_id', 'department_id', 'status', 'event_type', 'q', 'alert'].forEach(key => next.delete(key))
+      }
+      return next
+    }, { replace: true })
+  }
+  const sectionSwitcher = (
+    <div className="staff-section-switcher" role="tablist" aria-label="Personel görünümü">
+      <button type="button" role="tab" aria-selected={!trackingMode} onClick={() => setSectionMode('list')}>Personel Listesi</button>
+      <button type="button" role="tab" aria-selected={trackingMode} onClick={() => setSectionMode('tracking')}>Takip Merkezi</button>
+    </div>
+  )
+
+  if (trackingMode) {
+    return (
+      <div className="fade-up">
+        {sectionSwitcher}
+        <PersonnelTrackingCenter projects={projects} departments={departments} onPersonClick={onPersonClick} />
+      </div>
+    )
+  }
+
   return (
     <div className="fade-up">
+      {sectionSwitcher}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px', marginBottom: '14px' }}>
         <SummaryCard value={staffList.length} label="TOPLAM PERSONEL" color="var(--text)" active={!hasActiveStaffFilter} onClick={clearAllFilters} />
         <SummaryCard value={riskStaffCount} label="RİSK / EKSİK KAYIT" color={riskStaffCount ? 'var(--red)' : 'var(--green)'} active={filters.risk === 'any'} onClick={() => toggleRiskFilter('any')} />
