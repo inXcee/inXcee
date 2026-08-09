@@ -6,6 +6,7 @@ import { getDB } from '../../shared/db/index.js'
 import { paginate } from '../../shared/paginate.js'
 import { logger } from '../../shared/logger.js'
 import { isIsoMonth } from '../../shared/validation/date.js'
+import { buildReadiness } from './readiness.js'
 import {
   departmentsService, shiftDefinitionsService, scheduleService, bulkAssignService,
   scheduleSegmentsService, createScheduleSegmentService, updateScheduleSegmentService, deleteScheduleSegmentService,
@@ -359,6 +360,13 @@ shiftsRouter.get('/occupancy', ...managerOrSupervisor, (req, res) => {
 })
 
 // Gün detayı: bölüm bölüm kadro + izin/rapor/devamsız (date + group_by=dept|site|location)
+// Hazırlık durumu: ana veriler ve kurallar yerinde mi. Ölçülemeyen kontrol
+// 'unknown' döner — "sorun yok" ile "bakamadım" karışmasın.
+shiftsRouter.get('/readiness', ...managerOrSupervisor, (req, res) => {
+  try { res.json(buildReadiness(getDB())) }
+  catch (e) { logger.error({ err: e.message }, '[shifts/readiness]'); res.status(500).json({ error: 'Hazırlık durumu alınamadı' }) }
+})
+
 shiftsRouter.get('/day-detail', ...managerOrSupervisor, (req, res) => {
   try { res.json(dayDetailService({ date: req.query.date, group_by: req.query.group_by })) }
   catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
