@@ -24,7 +24,7 @@ const STATUS_LABELS = {
 }
 
 const SUBTYPE_LABELS = {
-  annual: 'Yıllık izin', sick: 'Rapor', other: 'Diğer izin', critical: 'Kritik',
+  annual: 'Yıllık izin', sick: 'Rapor', other: 'Diğer izin', non_sick: 'Rapor hariç izin', critical: 'Kritik',
   warning: 'Uyarı', info: 'Bilgi', assignment_changed: 'Atama değişikliği',
   shift_changed: 'Vardiya değişikliği', employment_ended: 'İşten çıkış', recorded: 'Kayıtlı', unknown: 'Belirsiz',
 }

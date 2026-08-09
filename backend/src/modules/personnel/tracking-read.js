@@ -202,15 +202,12 @@ export function listTrackingPeople(filters = {}) {
       s.department_id, d.name AS department_name,
       CASE WHEN s.is_active=0 THEN 'exited'
         WHEN s.offboarding_started_at IS NOT NULL THEN 'offboarding' ELSE 'active' END AS employment_status,
-      COALESCE((SELECT SUM(lr.total_days) FROM leave_requests lr
-        WHERE lr.staff_id=s.id AND lr.status='approved' AND lr.leave_type='annual'
-          AND lr.end_date>=? AND lr.start_date<=?),0) AS annual_leave_days,
-      COALESCE((SELECT SUM(lr.total_days) FROM leave_requests lr
-        WHERE lr.staff_id=s.id AND lr.status='approved' AND lr.leave_type='sick'
-          AND lr.end_date>=? AND lr.start_date<=?),0) AS sick_leave_days,
-      COALESCE((SELECT COUNT(*) FROM leave_requests lr
-        WHERE lr.staff_id=s.id AND lr.status='approved' AND lr.leave_type='sick'
-          AND lr.end_date>=? AND lr.start_date<=?),0) AS sick_occurrences,
+      COALESCE(ls.annual_leave_days,0) AS annual_leave_days,
+      COALESCE(ls.sick_leave_days,0) AS sick_leave_days,
+      COALESCE(ls.other_leave_days,0) AS other_leave_days,
+      COALESCE(ls.leave_hours,0) AS leave_hours,
+      COALESCE(ls.leave_occurrences,0) AS leave_occurrences,
+      COALESCE(ls.sick_occurrences,0) AS sick_occurrences,
       COALESCE((SELECT SUM(ot.hours) FROM overtime_records ot
         WHERE ot.staff_id=s.id AND ot.work_date BETWEEN ? AND ?),0) AS overtime_hours,
       COALESCE((SELECT COUNT(*) FROM shift_schedule ss
@@ -229,12 +226,28 @@ export function listTrackingPeople(filters = {}) {
     FROM staff s
     LEFT JOIN projects p ON p.id=s.project_id
     LEFT JOIN departments d ON d.id=s.department_id
+    LEFT JOIN (
+      SELECT staff_id,
+        SUM(CASE WHEN leave_hours IS NULL AND leave_type='annual' THEN overlap_days ELSE 0 END) AS annual_leave_days,
+        SUM(CASE WHEN leave_hours IS NULL AND leave_type='sick' THEN overlap_days ELSE 0 END) AS sick_leave_days,
+        SUM(CASE WHEN leave_hours IS NULL AND leave_type NOT IN ('annual','sick') THEN overlap_days ELSE 0 END) AS other_leave_days,
+        SUM(CASE WHEN leave_hours IS NOT NULL THEN leave_hours ELSE 0 END) AS leave_hours,
+        COUNT(*) AS leave_occurrences,
+        SUM(CASE WHEN leave_type='sick' THEN 1 ELSE 0 END) AS sick_occurrences
+      FROM (
+        SELECT staff_id, leave_type, leave_hours,
+          MAX(0, julianday(MIN(end_date,?)) - julianday(MAX(start_date,?)) + 1) AS overlap_days
+        FROM leave_requests
+        WHERE status='approved' AND end_date>=? AND start_date<=?
+      ) scoped_leaves
+      GROUP BY staff_id
+    ) ls ON ls.staff_id=s.id
     WHERE ${staffFilter.sql}
     ORDER BY open_alerts DESC, s.full_name
     LIMIT ?
   `).all(
-    from, to, from, to, from, to, from, to, from, to,
-    from, to, from, to,
+    from, to, from, to, from, to, from, to,
+    to, from, from, to,
     ...staffFilter.params, limit,
   )
   return { period: { from, to }, items: rows, total: rows.length }

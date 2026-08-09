@@ -22,8 +22,13 @@ const overview = {
 
 const trackingPerson = {
   id: 44, full_name: 'Zeynep Kaya', employment_status: 'active', project_id: 8, project_name: 'FPU', department_id: 2,
-  department_name: 'Operasyon', annual_leave_days: 2, sick_leave_days: 1, sick_occurrences: 1, overtime_hours: 12,
+  department_name: 'Operasyon', annual_leave_days: 2, other_leave_days: 1, leave_hours: 4, sick_leave_days: 1, sick_occurrences: 1, overtime_hours: 12,
   absent_days: 0, shift_changes: 3, permanent_movements: 1, open_alerts: 1,
+}
+const trackingPersonLow = {
+  id: 45, full_name: 'Cem Akın', employment_status: 'active', project_id: null, project_name: null, department_id: 2,
+  department_name: 'Operasyon', annual_leave_days: 0, other_leave_days: 0, leave_hours: 0, sick_leave_days: 0,
+  sick_occurrences: 0, overtime_hours: 2, absent_days: 0, shift_changes: 0, permanent_movements: 0, open_alerts: 0,
 }
 
 const person = {
@@ -64,7 +69,7 @@ beforeEach(() => {
   useAuthStore.setState({ user: { id: 1, role: 'campus_manager', full_name: 'Müdür' } })
   api.get.mockImplementation((url, config = {}) => {
     if (url === '/personnel/tracking/overview') return Promise.resolve({ data: overview })
-    if (url === '/personnel/tracking/people') return Promise.resolve({ data: { total: 1, items: [trackingPerson] } })
+    if (url === '/personnel/tracking/people') return Promise.resolve({ data: { total: 2, items: [trackingPerson, trackingPersonLow] } })
     if (url === '/personnel/tracking/events') return Promise.resolve({ data: { total: 0, items: [] } })
     if (url === '/personnel/tracking/alerts') return Promise.resolve({ data: { items: [] } })
     if (url === '/personnel/tracking/drilldown') return Promise.resolve({ data: drilldown(config.params) })
@@ -159,6 +164,34 @@ describe('Personel Takip Merkezi ayrıntı paneli', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Zeynep Kaya fazla mesai detayını aç' }))
     await waitFor(() => expect(api.get).toHaveBeenCalledWith('/personnel/tracking/drilldown', expect.objectContaining({ params: expect.objectContaining({ metric: 'overtime', view: 'records', staff_id: '44', record_status: 'recorded' }) })))
     expect(screen.getByLabelText('geçerli adres')).toHaveTextContent('staff_id=44')
+  })
+
+  it('karşılaştırmayı en çok/en az sıralar, URL’de korur ve liderden ham kaydı açar', async () => {
+    renderWithProviders(<Harness />)
+    expect(await screen.findByRole('tab', { name: 'İzin' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByText(/1 personelde kayıt/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'En az ↑' }))
+    await waitFor(() => expect(screen.getByLabelText('geçerli adres')).toHaveTextContent('compare_order=asc'))
+    const rows = screen.getAllByRole('row')
+    expect(rows[1]).toHaveTextContent('Cem Akın')
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Mesai' }))
+    expect(screen.getByLabelText('geçerli adres')).toHaveTextContent('compare_metric=overtime')
+    fireEvent.click(await screen.findByRole('button', { name: 'Zeynep Kaya Mesai detayını aç' }))
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/personnel/tracking/drilldown', expect.objectContaining({
+      params: expect.objectContaining({ metric: 'overtime', view: 'records', staff_id: '44', sort: 'quantity', order: 'desc' }),
+    })))
+  })
+
+  it('sütun başlığından sıralar ve yalnız hareketi olan personeli gösterebilir', async () => {
+    renderWithProviders(<Harness />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Rapor sütununu en çoğa sırala' }))
+    expect(screen.getByLabelText('geçerli adres')).toHaveTextContent('compare_metric=report')
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Yalnız hareketi olanlar' }))
+    await waitFor(() => expect(screen.getByLabelText('geçerli adres')).toHaveTextContent('compare_nonzero=1'))
+    expect(screen.getByRole('row', { name: /Zeynep Kaya/ })).toBeInTheDocument()
+    expect(screen.queryByRole('row', { name: /Cem Akın/ })).not.toBeInTheDocument()
   })
 
   it('panel satırında kaynak ekran ve önceden doldurulmuş görev bağlantıları sunar', async () => {

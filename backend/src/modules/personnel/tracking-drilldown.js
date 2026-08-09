@@ -213,8 +213,9 @@ function leaveRecords(filters, period) {
   const subtype = String(filters.subtype || '')
   const subtypeSql = subtype === 'other'
     ? "AND lr.leave_type NOT IN ('annual','sick')"
+    : subtype === 'non_sick' ? "AND lr.leave_type<>'sick'"
     : subtype ? 'AND lr.leave_type=?' : ''
-  const subtypeParams = subtype && subtype !== 'other' ? [subtype] : []
+  const subtypeParams = subtype && !['other', 'non_sick'].includes(subtype) ? [subtype] : []
   return db.prepare(`
     SELECT lr.id AS record_id, lr.staff_id, s.full_name, s.position,
       s.project_id, p.name AS project_name, s.department_id, d.name AS department_name,

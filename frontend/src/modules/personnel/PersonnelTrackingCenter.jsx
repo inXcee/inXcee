@@ -20,6 +20,17 @@ const EVENT_LABELS = {
 const STATUS_LABELS = { active: 'Aktif', offboarding: 'Çıkış sürecinde', exited: 'İşten çıktı' }
 const SEVERITY_LABELS = { critical: 'Kritik', warning: 'Uyarı', info: 'Bilgi' }
 
+const COMPARISON_METRICS = {
+  leave: { label: 'İzin', unit: 'g', metric: 'leave', subtype: 'non_sick', value: person => Number(person.annual_leave_days || 0) + Number(person.other_leave_days || 0) },
+  report: { label: 'Rapor', unit: 'g', metric: 'leave', subtype: 'sick', value: person => Number(person.sick_leave_days || 0) },
+  overtime: { label: 'Mesai', unit: 's', metric: 'overtime', value: person => Number(person.overtime_hours || 0) },
+  absence: { label: 'Devamsızlık', unit: 'g', metric: 'absence', value: person => Number(person.absent_days || 0) },
+  shift: { label: 'Vardiya Δ', unit: '', metric: 'shift_change', value: person => Number(person.shift_changes || 0) },
+  transfer: { label: 'Transfer', unit: '', metric: 'transfer', value: person => Number(person.permanent_movements || 0) },
+  action: { label: 'Aksiyon', unit: '', metric: 'open_alerts', value: person => Number(person.open_alerts || 0) },
+}
+const COMPARISON_KEYS = Object.keys(COMPARISON_METRICS)
+
 function isoDate(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
@@ -89,10 +100,22 @@ function DistributionBars({ title, items, onItemClick, isItemDisabled }) {
   )
 }
 
-function MetricCell({ label, value, onClick, sub }) {
-  return <button type="button" className="tracking-metric-cell" aria-label={`${label} detayını aç`} onClick={event => { event.stopPropagation(); onClick(event) }}>
+function MetricCell({ label, value, onClick, sub, active = false }) {
+  return <button type="button" className={`tracking-metric-cell${active ? ' is-active' : ''}`} aria-label={`${label} detayını aç`} onClick={event => { event.stopPropagation(); onClick(event) }}>
     <strong>{value}</strong>{sub && <small>{sub}</small>}<i aria-hidden="true">→</i>
   </button>
+}
+
+function ComparisonColumnHeader({ metricKey, activeKey, order, onSelect }) {
+  const item = COMPARISON_METRICS[metricKey]
+  const active = metricKey === activeKey
+  const nextDirection = active && order === 'desc' ? 'en aza' : 'en çoğa'
+  return <th aria-sort={active ? (order === 'desc' ? 'descending' : 'ascending') : 'none'}>
+    <button type="button" className={`tracking-comparison-sort${active ? ' is-active' : ''}`}
+      aria-label={`${item.label} sütununu ${nextDirection} sırala`} onClick={() => onSelect(metricKey)}>
+      <span>{item.label.toLocaleUpperCase('tr-TR')}</span><i aria-hidden="true">{active ? (order === 'desc' ? '↓' : '↑') : '↕'}</i>
+    </button>
+  </th>
 }
 
 function RuleRow({ rule, onSave, pending }) {
@@ -141,6 +164,10 @@ function ActionRow({ alert, users, onPersonClick, onUpdate, onFollowup, pending 
 export default function PersonnelTrackingCenter({ projects = [], departments = [], onPersonClick }) {
   const [params, setParams] = useSearchParams()
   const metric = params.get('metric') || ''
+  const requestedComparison = params.get('compare_metric') || 'leave'
+  const comparisonKey = COMPARISON_METRICS[requestedComparison] ? requestedComparison : 'leave'
+  const comparisonOrder = params.get('compare_order') === 'asc' ? 'asc' : 'desc'
+  const comparisonNonzero = params.get('compare_nonzero') === '1'
   const metricOrigins = useRef(new Map())
   const previousMetric = useRef(metric)
   const queryClient = useQueryClient()
@@ -164,6 +191,15 @@ export default function PersonnelTrackingCenter({ projects = [], departments = [
     if (key !== 'page') next.delete('page')
     return next
   }, { replace: true })
+  const setComparison = changes => setParams(previous => {
+    const next = new URLSearchParams(previous)
+    Object.entries(changes).forEach(([key, value]) => value == null || value === '' ? next.delete(key) : next.set(key, String(value)))
+    return next
+  }, { replace: true })
+  const selectComparison = key => setComparison({
+    compare_metric: key,
+    compare_order: comparisonKey === key ? (comparisonOrder === 'desc' ? 'asc' : 'desc') : 'desc',
+  })
   const setRange = key => {
     const dates = rangeDates(key === 'custom' ? '30' : key)
     setParams(previous => {
@@ -190,6 +226,8 @@ export default function PersonnelTrackingCenter({ projects = [], departments = [
       if (options.projectId != null) next.set('metric_project_id', String(options.projectId))
       if (options.departmentId != null) next.set('metric_department_id', String(options.departmentId))
       if (options.subtype) next.set('metric_subtype', String(options.subtype))
+      if (options.sort) next.set('metric_sort', String(options.sort))
+      if (options.order) next.set('metric_order', String(options.order))
       return next
     })
   }
@@ -227,6 +265,23 @@ export default function PersonnelTrackingCenter({ projects = [], departments = [
 
   const kpi = overview.data?.kpis || {}
   const peopleRows = people.data?.items || []
+  const comparison = COMPARISON_METRICS[comparisonKey]
+  const comparisonRows = useMemo(() => peopleRows
+    .map(person => ({ ...person, comparison_value: comparison.value(person) }))
+    .filter(person => !comparisonNonzero || person.comparison_value > 0)
+    .sort((left, right) => {
+      const difference = left.comparison_value - right.comparison_value
+      if (difference !== 0) return comparisonOrder === 'asc' ? difference : -difference
+      return String(left.full_name || '').localeCompare(String(right.full_name || ''), 'tr', { sensitivity: 'base' })
+    }), [peopleRows, comparison, comparisonNonzero, comparisonOrder])
+  const comparisonActiveCount = comparisonRows.filter(person => person.comparison_value > 0).length
+  const comparisonLeaders = (comparisonOrder === 'desc'
+    ? comparisonRows.filter(person => person.comparison_value > 0)
+    : comparisonRows).slice(0, 3)
+  const openComparisonDetail = (person, event) => openMetric(comparison.metric, event, {
+    view: 'records', staffId: person.id, subtype: comparison.subtype,
+    sort: comparison.metric === 'open_alerts' ? 'occurred_at' : 'quantity', order: 'desc',
+  })
   const eventRows = events.data?.items || []
   const visiblePersonIds = useMemo(() => new Set(peopleRows.map(person => Number(person.id))), [peopleRows])
   const alertRows = (alerts.data?.items || []).filter(alert => ['open', 'acknowledged'].includes(alert.status) && visiblePersonIds.has(Number(alert.staff_id)))
@@ -334,21 +389,46 @@ export default function PersonnelTrackingCenter({ projects = [], departments = [
       </div>
 
       <section className="tracking-card">
-        <div className="tracking-card__header"><div><strong>Personel karşılaştırması</strong><span>Seçili dönemin izin, mesai, devamsızlık ve hareket toplamları</span></div></div>
-        {people.isLoading ? <SkeletonGrid count={5} minWidth={240} /> : <div className="tracking-table-wrap"><table className="data-table tracking-people-table"><thead><tr><th>PERSONEL</th><th>PROJE / DEPARTMAN</th><th>SON HAREKET</th><th>İZİN</th><th>RAPOR</th><th>MESAİ</th><th>DEVAMSIZLIK</th><th>VARDİYA Δ</th><th>TRANSFER</th><th>AKSİYON</th><th /></tr></thead><tbody>
-          {peopleRows.map(person => <tr key={person.id} onClick={() => onPersonClick?.(person.id)}>
-            <td><strong>{person.full_name}</strong><span className={`tracking-status tracking-status--${person.employment_status}`}>{STATUS_LABELS[person.employment_status]}</span></td>
+        <div className="tracking-card__header"><div><strong>Personel karşılaştırması</strong><span>En çok / en az kullananları bul, ham kayıtlara tek tıkla ulaş</span></div><b>{comparisonRows.length}</b></div>
+        {!people.isLoading && <div className="tracking-comparison-control" aria-label="Personel karşılaştırma ayarları">
+          <div className="tracking-comparison-metrics" role="tablist" aria-label="Karşılaştırma metriği">
+            {COMPARISON_KEYS.map(key => <button key={key} type="button" role="tab" aria-selected={comparisonKey === key}
+              onClick={() => setComparison({ compare_metric: key, compare_order: 'desc' })}>{COMPARISON_METRICS[key].label}</button>)}
+          </div>
+          <div className="tracking-comparison-options">
+            <button type="button" aria-pressed={comparisonOrder === 'desc'} onClick={() => setComparison({ compare_order: 'desc' })}>En çok ↓</button>
+            <button type="button" aria-pressed={comparisonOrder === 'asc'} onClick={() => setComparison({ compare_order: 'asc' })}>En az ↑</button>
+            <label><input type="checkbox" checked={comparisonNonzero} onChange={event => setComparison({ compare_nonzero: event.target.checked ? '1' : null })} /> Yalnız hareketi olanlar</label>
+          </div>
+        </div>}
+        {!people.isLoading && <div className="tracking-comparison-insights">
+          <div className="tracking-comparison-insights__summary"><span>SEÇİLİ ANALİZ</span><strong>{comparison.label}</strong><small>{comparisonActiveCount} personelde kayıt · {comparisonOrder === 'desc' ? 'en yüksekten' : 'en düşükten'} sıralı</small></div>
+          {comparisonLeaders.map((person, index) => <button type="button" key={person.id} onClick={event => openComparisonDetail(person, event)} aria-label={`${person.full_name} ${comparison.label} detayını aç`}>
+            <i>{index + 1}</i><span><strong>{person.full_name}</strong><small>{person.project_name || 'Proje yok'} · {person.department_name || 'Departman yok'}</small></span><b>{number(person.comparison_value, 1)}{comparison.unit}</b><em aria-hidden="true">→</em>
+          </button>)}
+          {!comparisonLeaders.length && <div className="tracking-comparison-insights__empty">Bu seçimde karşılaştırılacak personel yok.</div>}
+        </div>}
+        {people.isLoading ? <SkeletonGrid count={5} minWidth={240} /> : <div className="tracking-table-wrap"><table className="data-table tracking-people-table"><thead><tr><th>PERSONEL</th><th>PROJE / DEPARTMAN</th><th>SON HAREKET</th>
+          <ComparisonColumnHeader metricKey="leave" activeKey={comparisonKey} order={comparisonOrder} onSelect={selectComparison} />
+          <ComparisonColumnHeader metricKey="report" activeKey={comparisonKey} order={comparisonOrder} onSelect={selectComparison} />
+          <ComparisonColumnHeader metricKey="overtime" activeKey={comparisonKey} order={comparisonOrder} onSelect={selectComparison} />
+          <ComparisonColumnHeader metricKey="absence" activeKey={comparisonKey} order={comparisonOrder} onSelect={selectComparison} />
+          <ComparisonColumnHeader metricKey="shift" activeKey={comparisonKey} order={comparisonOrder} onSelect={selectComparison} />
+          <ComparisonColumnHeader metricKey="transfer" activeKey={comparisonKey} order={comparisonOrder} onSelect={selectComparison} />
+          <ComparisonColumnHeader metricKey="action" activeKey={comparisonKey} order={comparisonOrder} onSelect={selectComparison} /><th /></tr></thead><tbody>
+          {comparisonRows.map((person, index) => <tr key={person.id} onClick={() => onPersonClick?.(person.id)}>
+            <td><span className="tracking-comparison-rank">#{index + 1}</span><strong>{person.full_name}</strong><span className={`tracking-status tracking-status--${person.employment_status}`}>{STATUS_LABELS[person.employment_status]}</span></td>
             <td>{person.project_name || 'Proje yok'}<small>{person.department_name || 'Departman yok'}</small></td><td>{EVENT_LABELS[person.last_event_type] || '—'}<small>{dateTime(person.last_event_at)}</small></td>
-            <td><MetricCell label={`${person.full_name} yıllık izin`} value={`${number(person.annual_leave_days, 1)}g`} onClick={event => openMetric('leave', event, { view: 'records', staffId: person.id, subtype: 'annual' })} /></td>
-            <td><MetricCell label={`${person.full_name} rapor`} value={`${number(person.sick_leave_days, 1)}g`} sub={`${number(person.sick_occurrences)} olay`} onClick={event => openMetric('leave', event, { view: 'records', staffId: person.id, subtype: 'sick' })} /></td>
-            <td><MetricCell label={`${person.full_name} fazla mesai`} value={`${number(person.overtime_hours, 1)}s`} onClick={event => openMetric('overtime', event, { view: 'records', staffId: person.id })} /></td>
-            <td><MetricCell label={`${person.full_name} devamsızlık`} value={`${number(person.absent_days)}g`} onClick={event => openMetric('absence', event, { view: 'records', staffId: person.id })} /></td>
-            <td><MetricCell label={`${person.full_name} vardiya revizyonu`} value={number(person.shift_changes)} onClick={event => openMetric('shift_change', event, { view: 'records', staffId: person.id })} /></td>
-            <td><MetricCell label={`${person.full_name} kalıcı transfer`} value={number(person.permanent_movements)} onClick={event => openMetric('transfer', event, { view: 'records', staffId: person.id })} /></td>
-            <td><MetricCell label={`${person.full_name} açık aksiyon`} value={number(person.open_alerts)} onClick={event => openMetric('open_alerts', event, { view: 'records', staffId: person.id })} /></td>
+            <td><MetricCell active={comparisonKey === 'leave'} label={`${person.full_name} izin`} value={`${number(Number(person.annual_leave_days || 0) + Number(person.other_leave_days || 0), 1)}g`} sub={person.leave_hours ? `${number(person.leave_hours, 1)}s saatlik` : null} onClick={event => openMetric('leave', event, { view: 'records', staffId: person.id, subtype: 'non_sick' })} /></td>
+            <td><MetricCell active={comparisonKey === 'report'} label={`${person.full_name} rapor`} value={`${number(person.sick_leave_days, 1)}g`} sub={`${number(person.sick_occurrences)} olay`} onClick={event => openMetric('leave', event, { view: 'records', staffId: person.id, subtype: 'sick' })} /></td>
+            <td><MetricCell active={comparisonKey === 'overtime'} label={`${person.full_name} fazla mesai`} value={`${number(person.overtime_hours, 1)}s`} onClick={event => openMetric('overtime', event, { view: 'records', staffId: person.id })} /></td>
+            <td><MetricCell active={comparisonKey === 'absence'} label={`${person.full_name} devamsızlık`} value={`${number(person.absent_days)}g`} onClick={event => openMetric('absence', event, { view: 'records', staffId: person.id })} /></td>
+            <td><MetricCell active={comparisonKey === 'shift'} label={`${person.full_name} vardiya revizyonu`} value={number(person.shift_changes)} onClick={event => openMetric('shift_change', event, { view: 'records', staffId: person.id })} /></td>
+            <td><MetricCell active={comparisonKey === 'transfer'} label={`${person.full_name} kalıcı transfer`} value={number(person.permanent_movements)} onClick={event => openMetric('transfer', event, { view: 'records', staffId: person.id })} /></td>
+            <td><MetricCell active={comparisonKey === 'action'} label={`${person.full_name} açık aksiyon`} value={number(person.open_alerts)} onClick={event => openMetric('open_alerts', event, { view: 'records', staffId: person.id })} /></td>
             <td onClick={event => event.stopPropagation()}><button type="button" className="btn btn-ghost btn-xs" onClick={() => onPersonClick?.(person.id)}>Hızlı Kart</button><Link className="btn btn-primary btn-xs" to={`/shifts/personnel/${person.id}?tab=work`}>Tam Dosya</Link></td>
           </tr>)}
-        </tbody></table>{!peopleRows.length && <div className="tracking-empty">Filtrelerle eşleşen personel yok.</div>}</div>}
+        </tbody></table>{!comparisonRows.length && <div className="tracking-empty">Karşılaştırma ayarlarıyla eşleşen personel yok.</div>}</div>}
       </section>
 
       <div className="tracking-lower-grid">

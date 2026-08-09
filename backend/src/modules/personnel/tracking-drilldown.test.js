@@ -47,13 +47,32 @@ describe('Personel Takip Merkezi drilldown', () => {
 
     const query = 'from=2026-08-01&to=2026-08-31&q=Drilldown%20%C4%B0zin%20Ki%C5%9Fisi'
     const overview = await request(app).get(`/api/personnel/tracking/overview?${query}`).set(auth(managerToken))
+    const people = await request(app).get(`/api/personnel/tracking/people?${query}`).set(auth(managerToken))
     const approved = await request(app).get(`/api/personnel/tracking/drilldown?metric=leave&view=records&${query}`).set(auth(managerToken))
     const pending = await request(app).get(`/api/personnel/tracking/drilldown?metric=leave&view=records&record_status=pending&${query}`).set(auth(managerToken))
     expect(overview.body.kpis.annual_leave_days).toBe(3)
+    expect(people.body.items.find(row => row.id === staffId)).toMatchObject({ annual_leave_days: 3, leave_occurrences: 1 })
     expect(approved.body.summary.primary_value).toBe(3)
     expect(approved.body.items).toHaveLength(1)
     expect(approved.body.items[0]).toMatchObject({ staff_id: staffId, quantity: 3, unit: 'day', status: 'approved' })
     expect(pending.body.items[0]).toMatchObject({ staff_id: staffId, quantity: 2, status: 'pending' })
+  })
+
+  it('rapor hariç izin ayrıntısını yıllık ve diğer izinlerle sınırlar', async () => {
+    const db = getDB()
+    const staffId = createStaff('Drilldown İzin Ayrımı')
+    const insert = db.prepare("INSERT INTO leave_requests(staff_id,leave_type,start_date,end_date,total_days,status) VALUES(?,?,?,?,?,'approved')")
+    insert.run(staffId, 'annual', '2026-08-04', '2026-08-05', 2)
+    insert.run(staffId, 'sick', '2026-08-06', '2026-08-07', 2)
+    insert.run(staffId, 'unpaid', '2026-08-08', '2026-08-08', 1)
+
+    const res = await request(app)
+      .get('/api/personnel/tracking/drilldown?metric=leave&view=records&record_status=approved&subtype=non_sick&from=2026-08-01&to=2026-08-31&q=Drilldown%20%C4%B0zin%20Ayr%C4%B1m%C4%B1')
+      .set(auth(managerToken))
+
+    expect(res.status).toBe(200)
+    expect(res.body.summary.day_total).toBe(3)
+    expect(res.body.items.map(row => row.subtype).sort()).toEqual(['annual', 'unpaid'])
   })
 
   it('saatlik izni güne çevirmeden ayrı toplamda tutar', async () => {
