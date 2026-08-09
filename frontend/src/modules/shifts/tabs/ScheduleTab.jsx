@@ -20,6 +20,7 @@ import LiveOccupancyBoard from './LiveOccupancyBoard.jsx'
 import ScheduleImportModal from './ScheduleImportModal.jsx'
 import ReadinessBoard from './ReadinessBoard.jsx'
 import PublishBar from './PublishBar.jsx'
+import ActionCenterBoard from './ActionCenterBoard.jsx'
 import CoverageBoard from './CoverageBoard.jsx'
 import DayDetailBoard from './DayDetailBoard.jsx'
 import ProjectCrossoverBoard from './ProjectCrossoverBoard.jsx'
@@ -830,6 +831,9 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
 
       {/* Yayın durumu: hücreye dokunmak artık "kesin vardiya" demek değil. */}
       {scheduleView === 'weekly' && panels.publish !== false && <PublishBar weekStart={weekStart} />}
+
+      {/* Dağınık uyarılar tek listede: en acili hangisi görünsün. */}
+      {scheduleView === 'weekly' && panels.actionCenter !== false && <ActionCenterBoard />}
 
       <div style={{
         display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px',

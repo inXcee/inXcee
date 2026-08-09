@@ -8,6 +8,7 @@ import { logger } from '../../shared/logger.js'
 import { isIsoMonth } from '../../shared/validation/date.js'
 import { buildReadiness } from './readiness.js'
 import { getWeekVersion, publishWeek, withdrawWeek } from './scheduleVersions.js'
+import { buildActionCenter } from './actionCenter.js'
 import {
   departmentsService, shiftDefinitionsService, scheduleService, bulkAssignService,
   scheduleSegmentsService, createScheduleSegmentService, updateScheduleSegmentService, deleteScheduleSegmentService,
@@ -366,6 +367,12 @@ shiftsRouter.get('/occupancy', ...managerOrSupervisor, (req, res) => {
 shiftsRouter.get('/readiness', ...managerOrSupervisor, (req, res) => {
   try { res.json(buildReadiness(getDB())) }
   catch (e) { logger.error({ err: e.message }, '[shifts/readiness]'); res.status(500).json({ error: 'Hazırlık durumu alınamadı' }) }
+})
+
+// Aksiyon Merkezi: dağınık uyarılar tek listede, önem ve zaman dilimiyle.
+shiftsRouter.get('/action-center', ...managerOrSupervisor, (req, res) => {
+  try { res.json(buildActionCenter({ from: req.query.from, to: req.query.to })) }
+  catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
 
 // ── Çizelge yayın akışı (taslak → yayın → geri çekme) ──

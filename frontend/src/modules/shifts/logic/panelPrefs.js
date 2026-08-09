@@ -11,6 +11,7 @@ const KEY = 'shifts.schedulePanels.v1'
 export const SCHEDULE_PANELS = [
   { key: 'readiness', label: 'Hazırlık durumu', hint: 'Ana veriler ve kurallar yerinde mi' },
   { key: 'publish', label: 'Yayın durumu', hint: 'Hafta taslak mı, yayında mı; yayından beri değişenler' },
+  { key: 'actionCenter', label: 'Aksiyon merkezi', hint: 'Onay bekleyen, çakışan, eksik — tek listede' },
   { key: 'deptCards', label: 'Bölüm kartları', hint: 'Bölüm bölüm kişi ve durum sayıları' },
   { key: 'coverage', label: 'Kapsama / kadro hedefi', hint: 'Hedef-gerçekleşen ve departman kırılımı' },
   { key: 'dayDetail', label: 'Gün detayı', hint: 'Gün gün kim hangi vardiyada, nerede' },
