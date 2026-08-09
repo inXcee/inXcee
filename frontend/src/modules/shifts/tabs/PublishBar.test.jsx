@@ -47,16 +47,43 @@ describe('Yayın durumu şeridi', () => {
 
   // Asıl kazanç: yayından sonra değişen hücreler görünür olmalı, yoksa
   // personelin gördüğü çizelge ile ekrandaki sessizce ayrışır.
-  it('yayından beri değişiklik varsa uyarır ve dökümü açar', async () => {
+  it('yayından beri değişiklik varsa uyarır ve satır satır döker', async () => {
     const user = userEvent.setup()
     api.get.mockResolvedValue(durum({
       status: 'published', version: 2,
-      changes: { added: [{}, {}], changed: [{}], removed: [], total: 3 },
+      changes: {
+        added: [{ staff_id: 11, work_date: '2026-08-11', full_name: 'Ayşe Demir', shift_name: 'Gece' }],
+        changed: [{
+          before: { staff_id: 10, work_date: '2026-08-10', full_name: 'Ali Veli', shift_name: 'Gündüz' },
+          after: { staff_id: 10, work_date: '2026-08-10', full_name: 'Ali Veli', shift_name: 'Gece' },
+        }],
+        removed: [{ staff_id: 12, work_date: '2026-08-12', full_name: 'Can Öz', shift_name: 'Gündüz' }],
+        total: 3,
+      },
     }))
     ciz()
-    const uyari = await screen.findByRole('button', { name: /Yayından beri 3 değişiklik/ })
-    await user.click(uyari)
+    await user.click(await screen.findByRole('button', { name: /Yayından beri 3 değişiklik/ }))
+
+    // Sayı değil, KİM etkilendi görünmeli.
+    expect(screen.getByText(/Ayşe Demir · 2026-08-11 · Gece/)).toBeInTheDocument()
+    expect(screen.getByText(/Ali Veli · 2026-08-10 · Gündüz → Gece/)).toBeInTheDocument()
+    expect(screen.getByText(/Can Öz · 2026-08-12 · Gündüz/)).toBeInTheDocument()
     expect(screen.getByText(/Personelin gördüğü çizelge v2/)).toBeInTheDocument()
+  })
+
+  // Kırpma sessiz kalırsa liste tam sanılır.
+  it('uzun listede kırpılanı açıkça bildirir', async () => {
+    const user = userEvent.setup()
+    const cok = Array.from({ length: 12 }, (_, i) => ({
+      staff_id: i, work_date: '2026-08-11', full_name: `Kisi ${i}`, shift_name: 'Gece',
+    }))
+    api.get.mockResolvedValue(durum({
+      status: 'published', version: 1,
+      changes: { added: cok, changed: [], removed: [], total: 12 },
+    }))
+    ciz()
+    await user.click(await screen.findByRole('button', { name: /Yayından beri 12 değişiklik/ }))
+    expect(screen.getByText(/\+4 değişiklik daha/)).toBeInTheDocument()
   })
 
   it('değişiklik yoksa uyarı çıkmaz', async () => {

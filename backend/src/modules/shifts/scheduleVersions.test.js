@@ -19,7 +19,11 @@ beforeAll(() => {
     CREATE TABLE shift_schedule (
       id INTEGER PRIMARY KEY AUTOINCREMENT, staff_id INTEGER, work_date TEXT,
       shift_def_id INTEGER, status TEXT, leave_type TEXT, work_location_id INTEGER);
+    CREATE TABLE staff (id INTEGER PRIMARY KEY, full_name TEXT);
+    CREATE TABLE shift_definitions (id INTEGER PRIMARY KEY, name TEXT);
     INSERT INTO users(id, full_name) VALUES (1, 'Müdür');
+    INSERT INTO staff(id, full_name) VALUES (10, 'Ali Veli'), (11, 'Ayşe Demir'), (12, 'Can Öz'), (13, 'Deniz Ak');
+    INSERT INTO shift_definitions(id, name) VALUES (1, 'Gündüz'), (2, 'Gece');
   `)
   const mig = join(dirname(fileURLToPath(import.meta.url)), '../../shared/db/migrations/093_schedule_versions.sql')
   db.exec(readFileSync(mig, 'utf-8'))
@@ -136,6 +140,35 @@ describe('yayından beri değişiklikler', () => {
     publishWeek(HAFTA, 1, {}, db)
     db.prepare("UPDATE shift_schedule SET status='on_leave', leave_type='annual' WHERE staff_id=10").run()
     expect(diffSincePublish(HAFTA, db).changed).toHaveLength(1)
+  })
+
+  // Sayı tek başına yetmiyor: "3 değişiklik" görüp kimin etkilendiğini
+  // bilmeyen planlayıcı yine çizelgeyi taramak zorunda kalıyordu.
+  it('farkta personel adı ve vardiya adı gelir', () => {
+    satirEkle(10, '2026-08-10', 1)
+    publishWeek(HAFTA, 1, {}, db)
+    satirEkle(11, '2026-08-11', 2)
+    db.prepare('UPDATE shift_schedule SET shift_def_id = 2 WHERE staff_id = 10').run()
+
+    const fark = diffSincePublish(HAFTA, db)
+    expect(fark.added[0]).toMatchObject({ full_name: 'Ayşe Demir', shift_name: 'Gece' })
+    expect(fark.changed[0].before).toMatchObject({ full_name: 'Ali Veli', shift_name: 'Gündüz' })
+    expect(fark.changed[0].after).toMatchObject({ full_name: 'Ali Veli', shift_name: 'Gece' })
+  })
+
+  it('silinen satırda da isim gelir', () => {
+    satirEkle(12, '2026-08-10', 1)
+    publishWeek(HAFTA, 1, {}, db)
+    db.prepare('DELETE FROM shift_schedule WHERE staff_id = 12').run()
+    expect(diffSincePublish(HAFTA, db).removed[0]).toMatchObject({ full_name: 'Can Öz' })
+  })
+
+  // Silinmiş personel kaydı isim çözümünü patlatmamalı; sayı yine doğru olmalı.
+  it('adı bulunamayan personel numarayla gösterilir', () => {
+    satirEkle(999, '2026-08-10', 1)
+    publishWeek(HAFTA, 1, {}, db)
+    satirEkle(998, '2026-08-11', 1)
+    expect(diffSincePublish(HAFTA, db).added[0].full_name).toBe('#998')
   })
 
   it('yeniden yayınlayınca fark sıfırlanır', () => {

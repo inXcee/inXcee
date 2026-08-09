@@ -99,12 +99,44 @@ export function diffSincePublish(weekStart, db = getDB()) {
     if (!yeni.has(k)) silinen.push(satir)
   }
 
+  // Sayı tek başına yetmiyor: "3 değişiklik" görüp kimin etkilendiğini bilmeyen
+  // planlayıcı yine çizelgeyi tarıyor. İsim ve vardiya adı burada eklenir.
+  // ÖNCE ve SONRA satırlarının ikisi de sözlüğe girmeli: yalnız 'after'
+  // toplanınca "Gündüz → Gece" değişimi ekranda "— → Gece" görünüyordu.
+  const adlar = isimSozlugu(db, [
+    ...eklenen, ...silinen,
+    ...degisen.map(d => d.before), ...degisen.map(d => d.after),
+  ])
+  const zenginlestir = satir => ({
+    ...satir,
+    full_name: adlar.staff.get(satir.staff_id) || `#${satir.staff_id}`,
+    shift_name: adlar.shift.get(satir.shift_def_id) || null,
+  })
+
   return {
-    added: eklenen,
-    changed: degisen,
-    removed: silinen,
+    added: eklenen.map(zenginlestir),
+    changed: degisen.map(d => ({ before: zenginlestir(d.before), after: zenginlestir(d.after) })),
+    removed: silinen.map(zenginlestir),
     total: eklenen.length + degisen.length + silinen.length,
   }
+}
+
+// Tek seferde isim çözümü — satır başına sorgu atmak 800 hücrelik haftada
+// tabloyu dövmek olurdu.
+function isimSozlugu(db, satirlar) {
+  const staffIds = [...new Set(satirlar.map(r => r.staff_id).filter(Boolean))]
+  const shiftIds = [...new Set(satirlar.map(r => r.shift_def_id).filter(Boolean))]
+  const staff = new Map()
+  const shift = new Map()
+  if (staffIds.length) {
+    db.prepare(`SELECT id, full_name FROM staff WHERE id IN (${staffIds.map(() => '?').join(',')})`)
+      .all(...staffIds).forEach(r => staff.set(r.id, r.full_name))
+  }
+  if (shiftIds.length) {
+    db.prepare(`SELECT id, name FROM shift_definitions WHERE id IN (${shiftIds.map(() => '?').join(',')})`)
+      .all(...shiftIds).forEach(r => shift.set(r.id, r.name))
+  }
+  return { staff, shift }
 }
 
 export function publishWeek(weekStart, userId, { note } = {}, db = getDB()) {

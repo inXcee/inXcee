@@ -11,6 +11,9 @@ import { useToastStore } from '../../../shared/store/toastStore.js'
 // bildirilmiyordu. Burada haftanın durumu (taslak / yayında) ve yayından beri
 // biriken değişiklik sayısı görünür.
 
+// Uzun listede ekranı doldurmamak için her kova en fazla bu kadar satır gösterir.
+const DOKUM_SINIRI = 8
+
 const toastOk = m => useToastStore.getState().addToast(m, 'success')
 const toastErr = e => useToastStore.getState().addToast(e?.response?.data?.error || e?.message || 'İşlem başarısız', 'error')
 
@@ -55,6 +58,10 @@ export default function PublishBar({ weekStart }) {
   // Yayınlandıktan sonra değişen hücreler: personelin gördüğü çizelge artık
   // ekrandakinden farklı demektir.
   const farkVar = yayinda && fark && fark.total > 0
+  const kirpilan = !farkVar ? 0
+    : Math.max(0, fark.added.length - DOKUM_SINIRI)
+      + Math.max(0, fark.changed.length - DOKUM_SINIRI)
+      + Math.max(0, fark.removed.length - DOKUM_SINIRI)
 
   return (
     <div className="panel" style={{
@@ -119,7 +126,30 @@ export default function PublishBar({ weekStart }) {
             <span>Değişen: <strong style={{ color: 'var(--accent)' }}>{fark.changed.length}</strong></span>
             <span>Silinen: <strong style={{ color: 'var(--red)' }}>{fark.removed.length}</strong></span>
           </div>
-          <div style={{ marginTop: 6, color: 'var(--text3)' }}>
+          {/* Sayı tek başına yetmiyor: kimin etkilendiğini bilmeyen planlayıcı
+              yine bütün çizelgeyi tarıyor. */}
+          <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {fark.added.slice(0, DOKUM_SINIRI).map(r => (
+              <div key={`a-${r.staff_id}-${r.work_date}`}>
+                <span style={{ color: 'var(--green)' }}>+</span> {r.full_name} · {r.work_date} · {r.shift_name || 'vardiya yok'}
+              </div>
+            ))}
+            {fark.changed.slice(0, DOKUM_SINIRI).map(r => (
+              <div key={`d-${r.after.staff_id}-${r.after.work_date}`}>
+                <span style={{ color: 'var(--accent)' }}>~</span> {r.after.full_name} · {r.after.work_date} ·{' '}
+                {r.before.shift_name || r.before.status || '—'} → {r.after.shift_name || r.after.status || '—'}
+              </div>
+            ))}
+            {fark.removed.slice(0, DOKUM_SINIRI).map(r => (
+              <div key={`s-${r.staff_id}-${r.work_date}`}>
+                <span style={{ color: 'var(--red)' }}>−</span> {r.full_name} · {r.work_date} · {r.shift_name || 'vardiya yok'}
+              </div>
+            ))}
+            {/* Kırpma sessiz kalırsa liste tam sanılır. */}
+            {kirpilan > 0 && <div style={{ color: 'var(--text3)' }}>… +{kirpilan} değişiklik daha</div>}
+          </div>
+
+          <div style={{ marginTop: 8, color: 'var(--text3)' }}>
             Personelin gördüğü çizelge v{data.version}. Bu değişikliklerin geçerli olması için yeniden yayınlayın.
           </div>
         </div>
