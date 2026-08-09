@@ -49,13 +49,16 @@ function compactValue(value) {
   return String(value)
 }
 
-function distribution(rows, key, fallback) {
+function distribution(rows, key, fallback, idKey) {
   const counts = new Map()
   rows.forEach(row => {
     const label = row[key] || fallback
-    counts.set(label, (counts.get(label) || 0) + 1)
+    const mapKey = `${row[idKey] ?? 'none'}:${label}`
+    const current = counts.get(mapKey) || { label, id: row[idKey] ?? 'none', value: 0 }
+    current.value += 1
+    counts.set(mapKey, current)
   })
-  return [...counts.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value)
+  return [...counts.values()].sort((a, b) => b.value - a.value)
 }
 
 function KpiCard({ metric, label, value, sub, tone = 'blue', active, onClick }) {
@@ -68,22 +71,28 @@ function KpiCard({ metric, label, value, sub, tone = 'blue', active, onClick }) 
   )
 }
 
-function DistributionBars({ title, items }) {
+function DistributionBars({ title, items, onItemClick, isItemDisabled }) {
   const max = Math.max(1, ...items.map(item => item.value))
   return (
     <section className="tracking-card">
       <div className="tracking-card__header"><div><strong>{title}</strong><span>{items.reduce((sum, item) => sum + item.value, 0)} personel</span></div></div>
       <div className="tracking-bars">
         {items.slice(0, 8).map(item => (
-          <div className="tracking-bar" key={item.label}>
+          <button type="button" className="tracking-bar" key={`${item.id}-${item.label}`} disabled={isItemDisabled?.(item)} onClick={event => onItemClick?.(item, event)} aria-label={`${item.label}: ${item.value} personeli göster`}>
             <div><span title={item.label}>{item.label}</span><b>{item.value}</b></div>
             <i><span style={{ width: `${(item.value / max) * 100}%` }} /></i>
-          </div>
+          </button>
         ))}
         {!items.length && <div className="tracking-empty">Dağılım verisi yok.</div>}
       </div>
     </section>
   )
+}
+
+function MetricCell({ label, value, onClick, sub }) {
+  return <button type="button" className="tracking-metric-cell" aria-label={`${label} detayını aç`} onClick={event => { event.stopPropagation(); onClick(event) }}>
+    <strong>{value}</strong>{sub && <small>{sub}</small>}<i aria-hidden="true">→</i>
+  </button>
 }
 
 function RuleRow({ rule, onSave, pending }) {
@@ -167,15 +176,20 @@ export default function PersonnelTrackingCenter({ projects = [], departments = [
       return next
     }, { replace: true })
   }
-  const openMetric = (metricName, event) => {
+  const openMetric = (metricName, event, options = {}) => {
     metricOrigins.current.set(metricName, event.currentTarget)
     setParams(previous => {
       const next = new URLSearchParams(previous)
-      next.set('metric', metricName); next.set('metric_view', 'people'); next.set('metric_page', '1')
+      next.set('metric', metricName); next.set('metric_view', options.view || 'people'); next.set('metric_page', '1')
       if (metricName === 'leave') next.set('metric_status', 'approved')
       else if (metricName === 'overtime') next.set('metric_status', 'recorded')
       else next.delete('metric_status')
-      ;['staff_id', 'bucket', 'metric_sort', 'metric_order'].forEach(key => next.delete(key))
+      ;['staff_id', 'bucket', 'metric_sort', 'metric_order', 'metric_project_id', 'metric_department_id', 'metric_subtype'].forEach(key => next.delete(key))
+      if (options.staffId) next.set('staff_id', String(options.staffId))
+      if (options.bucket) next.set('bucket', String(options.bucket))
+      if (options.projectId != null) next.set('metric_project_id', String(options.projectId))
+      if (options.departmentId != null) next.set('metric_department_id', String(options.departmentId))
+      if (options.subtype) next.set('metric_subtype', String(options.subtype))
       return next
     })
   }
@@ -183,7 +197,7 @@ export default function PersonnelTrackingCenter({ projects = [], departments = [
     const currentMetric = metric
     setParams(previous => {
       const next = new URLSearchParams(previous)
-      ;['metric', 'metric_view', 'metric_status', 'metric_page', 'metric_sort', 'metric_order', 'staff_id', 'bucket'].forEach(key => next.delete(key))
+      ;['metric', 'metric_view', 'metric_status', 'metric_page', 'metric_sort', 'metric_order', 'staff_id', 'bucket', 'metric_project_id', 'metric_department_id', 'metric_subtype'].forEach(key => next.delete(key))
       return next
     }, { replace: true })
     requestAnimationFrame(() => metricOrigins.current.get(currentMetric)?.focus())
@@ -216,8 +230,8 @@ export default function PersonnelTrackingCenter({ projects = [], departments = [
   const eventRows = events.data?.items || []
   const visiblePersonIds = useMemo(() => new Set(peopleRows.map(person => Number(person.id))), [peopleRows])
   const alertRows = (alerts.data?.items || []).filter(alert => ['open', 'acknowledged'].includes(alert.status) && visiblePersonIds.has(Number(alert.staff_id)))
-  const projectDistribution = useMemo(() => distribution(peopleRows, 'project_name', 'Proje atanmamış'), [peopleRows])
-  const departmentDistribution = useMemo(() => distribution(peopleRows, 'department_name', 'Departman atanmamış'), [peopleRows])
+  const projectDistribution = useMemo(() => distribution(peopleRows, 'project_name', 'Proje atanmamış', 'project_id'), [peopleRows])
+  const departmentDistribution = useMemo(() => distribution(peopleRows, 'department_name', 'Departman atanmamış', 'department_id'), [peopleRows])
   const maxTrend = Math.max(1, ...(overview.data?.trends || []).map(item => Number(item.shift_changes || 0) + Number(item.movements || 0) + Number(item.exits || 0)))
   const exportReport = async () => {
     setIsExporting(true)
@@ -310,13 +324,13 @@ export default function PersonnelTrackingCenter({ projects = [], departments = [
           <div className="tracking-trend" aria-label="Aylık hareket grafiği">
             {(overview.data?.trends || []).map(item => {
               const total = Number(item.shift_changes || 0) + Number(item.movements || 0) + Number(item.exits || 0)
-              return <div key={item.month} className="tracking-trend__month"><div title={`${total} hareket`}><i style={{ height: `${Math.max(4, (total / maxTrend) * 100)}%` }} /></div><strong>{total}</strong><span>{item.month}</span></div>
+              return <button type="button" key={item.month} className="tracking-trend__month" aria-label={`${item.month}: ${total} hareketi göster`} onClick={event => openMetric('movement', event, { view: 'records', bucket: item.month })}><div title={`${total} hareket`}><i style={{ height: `${Math.max(4, (total / maxTrend) * 100)}%` }} /></div><strong>{total}</strong><span>{item.month}</span></button>
             })}
             {!overview.data?.trends?.length && <div className="tracking-empty">Seçili dönemde hareket yok.</div>}
           </div>
         </section>
-        <DistributionBars title="Proje dağılımı" items={projectDistribution} />
-        <DistributionBars title="Departman dağılımı" items={departmentDistribution} />
+        <DistributionBars title="Proje dağılımı" items={projectDistribution} onItemClick={(item, event) => openMetric('people', event, { projectId: item.id })} />
+        <DistributionBars title="Departman dağılımı" items={departmentDistribution} isItemDisabled={item => item.id === 'none'} onItemClick={(item, event) => openMetric('people', event, { departmentId: item.id })} />
       </div>
 
       <section className="tracking-card">
@@ -325,7 +339,13 @@ export default function PersonnelTrackingCenter({ projects = [], departments = [
           {peopleRows.map(person => <tr key={person.id} onClick={() => onPersonClick?.(person.id)}>
             <td><strong>{person.full_name}</strong><span className={`tracking-status tracking-status--${person.employment_status}`}>{STATUS_LABELS[person.employment_status]}</span></td>
             <td>{person.project_name || 'Proje yok'}<small>{person.department_name || 'Departman yok'}</small></td><td>{EVENT_LABELS[person.last_event_type] || '—'}<small>{dateTime(person.last_event_at)}</small></td>
-            <td>{number(person.annual_leave_days, 1)}g</td><td>{number(person.sick_leave_days, 1)}g<small>{number(person.sick_occurrences)} olay</small></td><td>{number(person.overtime_hours, 1)}s</td><td>{number(person.absent_days)}g</td><td>{number(person.shift_changes)}</td><td>{number(person.permanent_movements)}</td><td>{number(person.open_alerts)}</td>
+            <td><MetricCell label={`${person.full_name} yıllık izin`} value={`${number(person.annual_leave_days, 1)}g`} onClick={event => openMetric('leave', event, { view: 'records', staffId: person.id, subtype: 'annual' })} /></td>
+            <td><MetricCell label={`${person.full_name} rapor`} value={`${number(person.sick_leave_days, 1)}g`} sub={`${number(person.sick_occurrences)} olay`} onClick={event => openMetric('leave', event, { view: 'records', staffId: person.id, subtype: 'sick' })} /></td>
+            <td><MetricCell label={`${person.full_name} fazla mesai`} value={`${number(person.overtime_hours, 1)}s`} onClick={event => openMetric('overtime', event, { view: 'records', staffId: person.id })} /></td>
+            <td><MetricCell label={`${person.full_name} devamsızlık`} value={`${number(person.absent_days)}g`} onClick={event => openMetric('absence', event, { view: 'records', staffId: person.id })} /></td>
+            <td><MetricCell label={`${person.full_name} vardiya revizyonu`} value={number(person.shift_changes)} onClick={event => openMetric('shift_change', event, { view: 'records', staffId: person.id })} /></td>
+            <td><MetricCell label={`${person.full_name} kalıcı transfer`} value={number(person.permanent_movements)} onClick={event => openMetric('transfer', event, { view: 'records', staffId: person.id })} /></td>
+            <td><MetricCell label={`${person.full_name} açık aksiyon`} value={number(person.open_alerts)} onClick={event => openMetric('open_alerts', event, { view: 'records', staffId: person.id })} /></td>
             <td onClick={event => event.stopPropagation()}><button type="button" className="btn btn-ghost btn-xs" onClick={() => onPersonClick?.(person.id)}>Hızlı Kart</button><Link className="btn btn-primary btn-xs" to={`/shifts/personnel/${person.id}?tab=work`}>Tam Dosya</Link></td>
           </tr>)}
         </tbody></table>{!peopleRows.length && <div className="tracking-empty">Filtrelerle eşleşen personel yok.</div>}</div>}

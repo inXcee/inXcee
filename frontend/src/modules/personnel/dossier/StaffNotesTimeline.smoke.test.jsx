@@ -31,6 +31,13 @@ describe('StaffNotesPanel smoke', () => {
       expect(api.get).toHaveBeenCalledWith('/personnel/7/followups')
     })
   })
+
+  it('takip merkezinden gelen görev alanlarını önceden doldurur', async () => {
+    renderWithProviders(<StaffNotesPanel staffId={7} access={ACCESS} />, { route: '/shifts/personnel/7?tab=notes&new_followup=1&followup_title=Takip%3A%20Fazla%20mesai&followup_priority=high&followup_category=attendance' })
+    expect(await screen.findByDisplayValue('Takip: Fazla mesai')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('Yüksek')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('Devam')).toBeInTheDocument()
+  })
 })
 
 describe('StaffTimelinePanel smoke', () => {

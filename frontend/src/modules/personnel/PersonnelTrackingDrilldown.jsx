@@ -3,6 +3,10 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useDebounce } from '../../shared/hooks/useDebounce.js'
+import { useAuthStore } from '../../shared/store/authStore.js'
+import { useToastStore } from '../../shared/store/toastStore.js'
+import { exportPersonnelDrilldownExcel } from './logic/personnelTrackingExcel.js'
+import { printPersonnelDrilldown } from './logic/personnelTrackingDrilldownPrint.js'
 
 const METRIC_LABELS = {
   active: 'Aktif personel', offboarding: 'Çıkış sürecindeki personel', exited: 'İşten çıkanlar',
@@ -112,14 +116,33 @@ function Breakdowns({ breakdowns }) {
   ))}</div>
 }
 
-function PersonActions({ item, onPersonClick }) {
+function sourceRoute(item, metric) {
+  if (item.source_route) return item.source_route
+  if (metric === 'leave') return `/shifts?tab=leave&staff=${item.staff_id}`
+  if (metric === 'overtime') return `/shifts?tab=overtime&staff=${item.staff_id}`
+  if (['absence', 'shift_change', 'temporary_work'].includes(metric)) return `/shifts?tab=schedule&staff=${item.staff_id}`
+  return `/shifts/personnel/${item.staff_id}?tab=timeline`
+}
+
+function followupRoute(item, metric) {
+  const search = new URLSearchParams({
+    tab: 'notes', new_followup: '1', followup_title: `Takip: ${METRIC_LABELS[metric] || 'Personel metriği'}`,
+    followup_priority: ['overdue_critical', 'absence'].includes(metric) ? 'high' : 'medium',
+    followup_category: ['leave', 'overtime', 'absence', 'shift_change'].includes(metric) ? 'attendance' : ['offboarding', 'exited'].includes(metric) ? 'offboarding' : 'general',
+  })
+  return `/shifts/personnel/${item.staff_id}?${search}`
+}
+
+function PersonActions({ item, metric, onPersonClick }) {
   return <div className="tracking-drilldown__actions">
     <button type="button" className="btn btn-ghost btn-xs" onClick={() => onPersonClick?.(item.staff_id)}>Hızlı Kart</button>
     <Link className="btn btn-primary btn-xs" to={`/shifts/personnel/${item.staff_id}?tab=work`}>Tam Dosya</Link>
+    <Link className="btn btn-ghost btn-xs" to={sourceRoute(item, metric)}>Kaynağa Git</Link>
+    <Link className="btn btn-ghost btn-xs" to={followupRoute(item, metric)}>+ Görev</Link>
   </div>
 }
 
-function PeopleTable({ items, onPersonClick }) {
+function PeopleTable({ items, metric, onPersonClick }) {
   return <div className="tracking-drilldown__table-wrap"><table className="data-table tracking-drilldown__table"><thead><tr>
     <th>PERSONEL</th><th>PROJE / DEPARTMAN</th><th>KAYIT</th><th>TOPLAM</th><th>SON TARİH</th><th>DURUM</th><th>İŞLEMLER</th>
   </tr></thead><tbody>{items.map(item => <tr key={item.staff_id}>
@@ -127,11 +150,11 @@ function PeopleTable({ items, onPersonClick }) {
     <td>{item.project_name || 'Proje yok'}<small>{item.department_name || 'Departman yok'}</small></td>
     <td>{number(item.record_count, 0)}</td><td>{quantity(item)}</td><td>{date(item.last_occurred_at)}</td>
     <td><span className={`tracking-status tracking-status--${item.employment_status || item.status}`}>{STATUS_LABELS[item.status] || STATUS_LABELS[item.employment_status] || item.status || '—'}</span></td>
-    <td><PersonActions item={item} onPersonClick={onPersonClick} /></td>
+    <td><PersonActions item={item} metric={metric} onPersonClick={onPersonClick} /></td>
   </tr>)}</tbody></table></div>
 }
 
-function RecordsTable({ items, onPersonClick }) {
+function RecordsTable({ items, metric, onPersonClick }) {
   return <div className="tracking-drilldown__table-wrap"><table className="data-table tracking-drilldown__table tracking-drilldown__table--records"><thead><tr>
     <th>PERSONEL</th><th>TARİH</th><th>TÜR / DURUM</th><th>MİKTAR</th><th>PROJE / DEPARTMAN</th><th>NEDEN / İŞLEM</th><th>İŞLEMLER</th>
   </tr></thead><tbody>{items.map(item => <tr key={`${item.source_type}-${item.record_id}`}>
@@ -140,7 +163,7 @@ function RecordsTable({ items, onPersonClick }) {
     <td>{quantity(item)}</td><td>{item.work_project_name || item.project_name || 'Proje yok'}<small>{item.work_location_name || item.department_name || 'Departman / nokta yok'}</small></td>
     <td>{item.reason || 'Gerekçe yok'}<small>{item.actor_name ? `İşlemi yapan / onaylayan: ${item.actor_name}` : 'İşlem yapan bilgisi yok'}</small>
       {(item.before || item.after) && <small className="tracking-drilldown__change">{compactChange(item.before)} → {compactChange(item.after)}</small>}</td>
-    <td><PersonActions item={item} onPersonClick={onPersonClick} /></td>
+    <td><PersonActions item={item} metric={metric} onPersonClick={onPersonClick} /></td>
   </tr>)}</tbody></table></div>
 }
 
@@ -149,6 +172,9 @@ export default function PersonnelTrackingDrilldown({ metric, baseFilters, onClos
   const panelRef = useRef(null)
   const titleId = useId()
   const [search, setSearch] = useState('')
+  const [isExporting, setIsExporting] = useState(false)
+  const [isPrinting, setIsPrinting] = useState(false)
+  const user = useAuthStore(state => state.user)
   const debouncedSearch = useDebounce(search, 250)
   const view = params.get('metric_view') === 'records' ? 'records' : 'people'
   const page = Math.max(1, Number(params.get('metric_page')) || 1)
@@ -166,6 +192,9 @@ export default function PersonnelTrackingDrilldown({ metric, baseFilters, onClos
     ...baseFilters, metric, view, page, limit: 50, sort, order,
     ...(params.get('staff_id') ? { staff_id: params.get('staff_id') } : {}),
     ...(params.get('bucket') ? { bucket: params.get('bucket') } : {}),
+    ...(params.get('metric_project_id') ? { project_id: params.get('metric_project_id') } : {}),
+    ...(params.get('metric_department_id') && params.get('metric_department_id') !== 'none' ? { department_id: params.get('metric_department_id') } : {}),
+    ...(params.get('metric_subtype') ? { subtype: params.get('metric_subtype') } : {}),
     ...(recordStatus ? { record_status: recordStatus } : {}),
     ...(debouncedSearch ? { q: debouncedSearch } : {}),
   }), [baseFilters, debouncedSearch, metric, order, page, params, recordStatus, sort, view])
@@ -187,6 +216,31 @@ export default function PersonnelTrackingDrilldown({ metric, baseFilters, onClos
   const totalPages = Math.max(1, Math.ceil(Number(data?.total || 0) / Number(data?.limit || 50)))
   const statusOptions = STATUS_OPTIONS[metric] || []
   const periodText = data?.scope === 'current' ? 'Bugünkü durum' : `${data?.period?.from || baseFilters.from} – ${data?.period?.to || baseFilters.to}`
+  const filterLabels = [
+    periodText, request.project_id ? `Proje: ${request.project_id === 'none' ? 'Atanmamış' : `#${request.project_id}`}` : 'Tüm projeler',
+    request.department_id ? `Departman: #${request.department_id}` : 'Tüm departmanlar', request.staff_id ? `Personel: #${request.staff_id}` : null,
+    request.record_status ? `Kayıt durumu: ${STATUS_LABELS[request.record_status] || request.record_status}` : null,
+    request.subtype ? `Tür: ${SUBTYPE_LABELS[request.subtype] || request.subtype}` : null, request.bucket ? `Ay: ${request.bucket}` : null,
+    request.q ? `Arama: ${request.q}` : null,
+  ]
+  const generatedBy = user?.full_name || user?.username || 'YYS Kullanıcısı'
+  const exportDetail = async () => {
+    setIsExporting(true)
+    try {
+      const result = await exportPersonnelDrilldownExcel({ api, filters: request, filterLabels, generatedBy })
+      useToastStore.getState().addToast(`${result.people} kişi ve ${result.records} kayıt Excel'e aktarıldı`, 'success')
+    } catch (error) {
+      useToastStore.getState().addToast(error.response?.data?.error || error.message || 'Detay Excel’i oluşturulamadı', 'error')
+    } finally { setIsExporting(false) }
+  }
+  const printDetail = async () => {
+    setIsPrinting(true)
+    try {
+      await printPersonnelDrilldown({ api, filters: request, view, filterLabels, generatedBy })
+    } catch (error) {
+      useToastStore.getState().addToast(error.response?.data?.error || error.message || 'Yazdırma görünümü hazırlanamadı', 'error')
+    } finally { setIsPrinting(false) }
+  }
 
   return <div className="tracking-drilldown" aria-hidden="false">
     <div className="tracking-drilldown__backdrop" aria-hidden="true" onClick={onClose} />
@@ -226,12 +280,12 @@ export default function PersonnelTrackingDrilldown({ metric, baseFilters, onClos
           <button type="button" className="btn btn-ghost btn-xs" onClick={() => patchParams({ metric_order: order === 'asc' ? 'desc' : 'asc', metric_page: 1 })}>{order === 'asc' ? 'Artan ↑' : 'Azalan ↓'}</button>
         </div>
 
-        {data.items?.length > 0 ? (view === 'people' ? <PeopleTable items={data.items} onPersonClick={onPersonClick} /> : <RecordsTable items={data.items} onPersonClick={onPersonClick} />) : (
+        {data.items?.length > 0 ? (view === 'people' ? <PeopleTable items={data.items} metric={metric} onPersonClick={onPersonClick} /> : <RecordsTable items={data.items} metric={metric} onPersonClick={onPersonClick} />) : (
           <div className="tracking-drilldown__empty"><strong>Bu kapsamda kayıt yok.</strong><span>Sıfır değeri de doğrulanabilir kılmak için panel açık tutuldu. Dönemi veya filtreleri değiştirebilirsiniz.</span></div>
         )}
 
         <footer className="tracking-drilldown__footer">
-          <span>Sayfa {page} / {totalPages}</span><div><button type="button" className="btn btn-ghost btn-sm" disabled={page <= 1} onClick={() => patchParams({ metric_page: page - 1 })}>Önceki</button><button type="button" className="btn btn-primary btn-sm" disabled={page >= totalPages} onClick={() => patchParams({ metric_page: page + 1 })}>Sonraki</button></div>
+          <span>Sayfa {page} / {totalPages}</span><div className="tracking-drilldown__exports"><button type="button" className="btn btn-ghost btn-sm" disabled={isPrinting} onClick={printDetail}>{isPrinting ? 'Hazırlanıyor…' : 'Yazdır'}</button><button type="button" className="btn btn-ghost btn-sm" disabled={isExporting} onClick={exportDetail}>{isExporting ? 'Hazırlanıyor…' : 'Detay Excel'}</button></div><div><button type="button" className="btn btn-ghost btn-sm" disabled={page <= 1} onClick={() => patchParams({ metric_page: page - 1 })}>Önceki</button><button type="button" className="btn btn-primary btn-sm" disabled={page >= totalPages} onClick={() => patchParams({ metric_page: page + 1 })}>Sonraki</button></div>
         </footer>
       </>}
     </aside>

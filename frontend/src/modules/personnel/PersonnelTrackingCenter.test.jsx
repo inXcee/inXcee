@@ -17,7 +17,13 @@ const overview = {
     other_leave_days: 0, leave_hours: 4, overtime_hours: 12, absent_days: 0,
     open_alerts: 1, overdue_alerts: 0, critical_alerts: 0,
   },
-  trends: [],
+  trends: [{ month: '2026-08', shift_changes: 3, movements: 1, exits: 1 }],
+}
+
+const trackingPerson = {
+  id: 44, full_name: 'Zeynep Kaya', employment_status: 'active', project_id: 8, project_name: 'FPU', department_id: 2,
+  department_name: 'Operasyon', annual_leave_days: 2, sick_leave_days: 1, sick_occurrences: 1, overtime_hours: 12,
+  absent_days: 0, shift_changes: 3, permanent_movements: 1, open_alerts: 1,
 }
 
 const person = {
@@ -53,7 +59,7 @@ beforeEach(() => {
   useAuthStore.setState({ user: { id: 1, role: 'campus_manager', full_name: 'Müdür' } })
   api.get.mockImplementation((url, config = {}) => {
     if (url === '/personnel/tracking/overview') return Promise.resolve({ data: overview })
-    if (url === '/personnel/tracking/people') return Promise.resolve({ data: { total: 0, items: [] } })
+    if (url === '/personnel/tracking/people') return Promise.resolve({ data: { total: 1, items: [trackingPerson] } })
     if (url === '/personnel/tracking/events') return Promise.resolve({ data: { total: 0, items: [] } })
     if (url === '/personnel/tracking/alerts') return Promise.resolve({ data: { items: [] } })
     if (url === '/personnel/tracking/drilldown') return Promise.resolve({ data: drilldown(config.params) })
@@ -110,5 +116,30 @@ describe('Personel Takip Merkezi ayrıntı paneli', () => {
     expect(screen.getByLabelText('geçerli adres')).toHaveTextContent('project_id=8')
     expect(screen.getByLabelText('geçerli adres')).not.toHaveTextContent('metric=')
     await waitFor(() => expect(button).toHaveFocus())
+  })
+
+  it('aylık trend ve proje dağılımını URL korumalı ayrıntıya bağlar', async () => {
+    renderWithProviders(<Harness />)
+    fireEvent.click(await screen.findByRole('button', { name: '2026-08: 5 hareketi göster' }))
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/personnel/tracking/drilldown', expect.objectContaining({ params: expect.objectContaining({ metric: 'movement', view: 'records', bucket: '2026-08' }) })))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Detay panelini kapat' })[0])
+    fireEvent.click(await screen.findByRole('button', { name: 'FPU: 1 personeli göster' }))
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/personnel/tracking/drilldown', expect.objectContaining({ params: expect.objectContaining({ metric: 'people', project_id: '8' }) })))
+  })
+
+  it('personel tablosundaki mesai hücresini yalnız o kişinin ham kayıtlarıyla açar', async () => {
+    renderWithProviders(<Harness />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Zeynep Kaya fazla mesai detayını aç' }))
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/personnel/tracking/drilldown', expect.objectContaining({ params: expect.objectContaining({ metric: 'overtime', view: 'records', staff_id: '44', record_status: 'recorded' }) })))
+    expect(screen.getByLabelText('geçerli adres')).toHaveTextContent('staff_id=44')
+  })
+
+  it('panel satırında kaynak ekran ve önceden doldurulmuş görev bağlantıları sunar', async () => {
+    renderWithProviders(<Harness />, { route: '/shifts?metric=leave&metric_view=records&metric_status=approved' })
+    expect(await screen.findByRole('link', { name: 'Kaynağa Git' })).toHaveAttribute('href', '/shifts?tab=leave&staff=44')
+    const taskLink = screen.getByRole('link', { name: '+ Görev' })
+    expect(taskLink.getAttribute('href')).toContain('/shifts/personnel/44?')
+    expect(taskLink.getAttribute('href')).toContain('new_followup=1')
+    expect(taskLink.getAttribute('href')).toContain('followup_category=attendance')
   })
 })

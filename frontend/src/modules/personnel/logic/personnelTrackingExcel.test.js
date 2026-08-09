@@ -2,10 +2,14 @@ import { describe, expect, it, vi } from 'vitest'
 import ExcelJS from 'exceljs'
 import {
   PERSONNEL_DOSSIER_EXCEL_SHEETS,
+  PERSONNEL_DRILLDOWN_EXCEL_SHEETS,
   PERSONNEL_TRACKING_EXCEL_SHEETS,
+  buildPersonnelDrilldownWorkbook,
   buildPersonnelDossierWorkbook,
   buildPersonnelTrackingWorkbook,
   loadPersonnelTrackingExportData,
+  loadPersonnelDrilldownExportData,
+  personnelDrilldownFilename,
   personnelDossierFilename,
   personnelTrackingFilename,
   safeExcelText,
@@ -123,5 +127,35 @@ describe('personnelTrackingExcel', () => {
   it('uses stable, filesystem-safe filenames', () => {
     expect(personnelTrackingFilename('2026-08-01', '2026-08-31')).toBe('personel-takip-2026-08-01-2026-08-31.xlsx')
     expect(personnelDossierFilename(54, '2026-08-08')).toBe('personel-dosyasi-54-2026-08-08.xlsx')
+    expect(personnelDrilldownFilename('leave', '2026-08-01', '2026-08-31')).toBe('personel-detay-leave-2026-08-01-2026-08-31.xlsx')
+  })
+
+  it('loads all controlled drilldown pages for people and records', async () => {
+    const api = { get: vi.fn((url, { params }) => {
+      const total = params.view === 'people' ? 2 : 501
+      const count = params.view === 'records' && params.page === 1 ? 500 : params.view === 'records' ? 1 : 2
+      return Promise.resolve({ data: { metric: 'leave', period: { from: '2026-08-01', to: '2026-08-31' }, summary: {}, total, items: Array.from({ length: count }, (_, index) => ({ record_id: `${params.view}-${params.page}-${index}` })) } })
+    }) }
+    const data = await loadPersonnelDrilldownExportData(api, { metric: 'leave', page: 9, limit: 12, view: 'records' })
+    expect(data.people).toHaveLength(2)
+    expect(data.records).toHaveLength(501)
+    expect(api.get).toHaveBeenCalledTimes(3)
+    expect(api.get).toHaveBeenCalledWith('/personnel/tracking/drilldown', { params: expect.objectContaining({ view: 'records', page: 2, limit: 500 }) })
+  })
+
+  it('builds and reopens the formula-safe three-sheet KPI detail workbook', async () => {
+    const meta = { metric: 'leave', definition: 'İzin ve rapor detayı', scope: 'period', period: { from: '2026-08-01', to: '2026-08-31' }, summary: { primary_value: 2, primary_unit: 'day', people_count: 1, record_count: 1, day_total: 2, hour_total: 0 } }
+    const people = [{ staff_id: 54, full_name: '=FORMULA', project_name: 'FPU', department_name: 'Operasyon', record_count: 1, day_total: 2, hour_total: 0, total_quantity: 2, last_occurred_at: '2026-08-05' }]
+    const records = [{ record_id: 9, staff_id: 54, full_name: '=FORMULA', occurred_at: '2026-08-05', end_at: '2026-08-06', subtype: 'sick', quantity: 2, unit: 'day', status: 'approved', reason: '@rapor', before: { status: '=pending' }, after: { status: 'approved' } }]
+    const workbook = buildPersonnelDrilldownWorkbook(ExcelJS, { meta, people, records, filterLabels: ['Proje: FPU'], generatedBy: 'Müdür' })
+    expect(workbook.worksheets.map(sheet => sheet.name)).toEqual(PERSONNEL_DRILLDOWN_EXCEL_SHEETS)
+    expect(workbook.getWorksheet('Kişiler').getCell('B5').value).toBe("'=FORMULA")
+    expect(workbook.getWorksheet('Kayıtlar').getCell('O5').value).toBe("'@rapor")
+    workbook.eachSheet(sheet => expect(sheet.pageSetup.printArea).toMatch(/^A1:/))
+    const buffer = await workbook.xlsx.writeBuffer()
+    const reopened = new ExcelJS.Workbook()
+    await reopened.xlsx.load(buffer)
+    expect(reopened.worksheets.map(sheet => sheet.name)).toEqual(PERSONNEL_DRILLDOWN_EXCEL_SHEETS)
+    expect(reopened.getWorksheet('Kayıtlar').autoFilter).toBeTruthy()
   })
 })

@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
 import { useToastStore } from '../../../shared/store/toastStore.js'
@@ -91,17 +92,21 @@ function NotesCard({ staffId, canManage, canSensitive }) {
   )
 }
 
-function FollowupsCard({ staffId, canManage, users }) {
+function FollowupsCard({ staffId, canManage, users, prefill, onPrefillConsumed }) {
   const qc = useQueryClient()
   const { data, isLoading } = useFollowups(staffId)
   const [form, setForm] = useState({ title: '', priority: 'medium', category: 'general', assigned_user_id: '', due_at: '' })
+  useEffect(() => {
+    if (!prefill?.title) return
+    setForm(current => ({ ...current, title: prefill.title, priority: prefill.priority || 'medium', category: prefill.category || 'general' }))
+  }, [prefill?.category, prefill?.priority, prefill?.title])
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['staff-followups', String(staffId)] })
     qc.invalidateQueries({ queryKey: ['staff-dossier', String(staffId)] })
   }
   const add = useMutation({
     mutationFn: () => api.post(`/personnel/${staffId}/followups`, { ...form, assigned_user_id: form.assigned_user_id || null, due_at: form.due_at || null }),
-    onSuccess: () => { invalidate(); toast('Görev eklendi'); setForm({ title: '', priority: 'medium', category: 'general', assigned_user_id: '', due_at: '' }) },
+    onSuccess: () => { invalidate(); toast('Görev eklendi'); setForm({ title: '', priority: 'medium', category: 'general', assigned_user_id: '', due_at: '' }); onPrefillConsumed?.() },
     onError: (e) => toast(e.response?.data?.error || 'Eklenemedi', 'error'),
   })
   const act = async (id, action, label) => {
@@ -167,8 +172,17 @@ function FollowupsCard({ staffId, canManage, users }) {
 }
 
 export function StaffNotesPanel({ staffId, access }) {
+  const [params, setParams] = useSearchParams()
   const canManage = access?.can_manage_followups
   const canSensitive = access?.can_view_sensitive_fields
+  const prefill = params.get('new_followup') === '1' ? {
+    title: params.get('followup_title') || '', priority: params.get('followup_priority') || 'medium', category: params.get('followup_category') || 'general',
+  } : null
+  const consumePrefill = () => setParams(previous => {
+    const next = new URLSearchParams(previous)
+    ;['new_followup', 'followup_title', 'followup_priority', 'followup_category'].forEach(key => next.delete(key))
+    return next
+  }, { replace: true })
   // Görev ataması için kullanıcı listesi (yalnız yönetici görebilir; hata sessiz)
   const { data: users } = useQuery({
     queryKey: ['assignable-users'],
@@ -178,7 +192,7 @@ export function StaffNotesPanel({ staffId, access }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 12 }}>
       <NotesCard staffId={staffId} canManage={canManage} canSensitive={canSensitive} />
-      <FollowupsCard staffId={staffId} canManage={canManage} users={Array.isArray(users) ? users : users?.users} />
+      <FollowupsCard staffId={staffId} canManage={canManage} users={Array.isArray(users) ? users : users?.users} prefill={prefill} onPrefillConsumed={consumePrefill} />
     </div>
   )
 }

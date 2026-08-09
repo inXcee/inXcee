@@ -14,6 +14,8 @@ export const PERSONNEL_DOSSIER_EXCEL_SHEETS = [
   'Atama Geçmişi', 'Hareket Günlüğü',
 ]
 
+export const PERSONNEL_DRILLDOWN_EXCEL_SHEETS = ['Özet', 'Kişiler', 'Kayıtlar']
+
 const EVENT_LABELS = {
   tracking_started: 'Takip başlangıcı', employment_started: 'İşe giriş', assignment_changed: 'Atama değişikliği',
   temporary_project_work: 'Geçici çalışma', shift_changed: 'Vardiya revizyonu', leave_changed: 'İzin / rapor',
@@ -45,6 +47,7 @@ function isoDay(value = new Date()) {
 function filenamePart(value) { return String(value || '').replace(/[^0-9A-Za-zğüşöçıİĞÜŞÖÇ-]+/g, '-').replace(/^-+|-+$/g, '') }
 export function personnelTrackingFilename(from, to) { return `personel-takip-${filenamePart(from)}-${filenamePart(to)}.xlsx` }
 export function personnelDossierFilename(staffId, date = isoDay()) { return `personel-dosyasi-${filenamePart(staffId)}-${filenamePart(date)}.xlsx` }
+export function personnelDrilldownFilename(metric, from, to) { return `personel-detay-${filenamePart(metric)}-${filenamePart(from)}-${filenamePart(to)}.xlsx` }
 
 function compactObject(value) {
   if (value == null || value === '') return ''
@@ -421,4 +424,103 @@ export async function exportPersonnelDossierExcel({ dossier, tracking, staffId, 
   const filename = personnelDossierFilename(staffId)
   saveWorkbook(buffer, filename)
   return { filename, shifts: tracking.shifts?.length || 0, events: tracking.events?.length || 0 }
+}
+
+async function loadDrilldownView(api, filters, view, maxRows) {
+  const items = []
+  let first = null
+  let page = 1
+  while (items.length < maxRows) {
+    const response = await api.get('/personnel/tracking/drilldown', { params: { ...filters, view, page, limit: 500 } })
+    first ||= response.data
+    const batch = response.data?.items || []
+    items.push(...batch.slice(0, maxRows - items.length))
+    if (!batch.length || items.length >= Number(response.data?.total || 0) || batch.length < 500) break
+    page += 1
+  }
+  return { meta: first || {}, items }
+}
+
+export async function loadPersonnelDrilldownExportData(api, filters = {}, maxRows = 25000) {
+  const cleanFilters = Object.fromEntries(Object.entries(filters).filter(([key, value]) => value !== '' && value != null && !['page', 'limit', 'view'].includes(key)))
+  const [people, records] = await Promise.all([
+    loadDrilldownView(api, cleanFilters, 'people', maxRows),
+    loadDrilldownView(api, cleanFilters, 'records', maxRows),
+  ])
+  return {
+    meta: records.meta.metric ? records.meta : people.meta, people: people.items, records: records.items,
+    truncated: people.items.length < Number(people.meta.total || 0) || records.items.length < Number(records.meta.total || 0),
+  }
+}
+
+const drilldownPeopleColumns = [
+  { key: 'staff_id', label: 'Personel ID', width: 12, type: 'number' }, { key: 'full_name', label: 'Ad Soyad', width: 26 },
+  { key: 'position', label: 'Pozisyon', width: 21 }, { key: 'project_name', label: 'Proje', width: 21 },
+  { key: 'department_name', label: 'Departman', width: 20 }, { key: 'employment_status', label: 'Personel Durumu', width: 17 },
+  { key: 'record_count', label: 'Kayıt Sayısı', width: 14, type: 'number' }, { key: 'day_total', label: 'Gün Toplamı', width: 14, type: 'number' },
+  { key: 'hour_total', label: 'Saat Toplamı', width: 14, type: 'number' }, { key: 'total_quantity', label: 'Miktar Toplamı', width: 15, type: 'number' },
+  { key: 'last_occurred_at', label: 'Son Kayıt Tarihi', width: 18, type: 'date' }, { key: 'status', label: 'Kayıt Durumu', width: 16 },
+]
+
+const drilldownRecordColumns = [
+  { key: 'record_id', label: 'Kayıt ID', width: 12 }, { key: 'staff_id', label: 'Personel ID', width: 12, type: 'number' },
+  { key: 'full_name', label: 'Ad Soyad', width: 26 }, { key: 'position', label: 'Pozisyon', width: 20 },
+  { key: 'project_name', label: 'Kalıcı Proje', width: 20 }, { key: 'department_name', label: 'Departman', width: 20 },
+  { key: 'work_project_name', label: 'Çalışılan Proje', width: 20 }, { key: 'work_location_name', label: 'Çalışma Noktası', width: 21 },
+  { key: 'occurred_at', label: 'Başlangıç / Tarih', width: 18, type: 'date' }, { key: 'end_at', label: 'Bitiş', width: 18, type: 'date' },
+  { key: 'subtype', label: 'Tür', width: 18 }, { key: 'quantity', label: 'Miktar', width: 12, type: 'number' },
+  { key: 'unit', label: 'Birim', width: 11 }, { key: 'status', label: 'Durum', width: 15 },
+  { key: 'reason', label: 'Gerekçe / Açıklama', width: 34 }, { key: 'actor_name', label: 'Yapan / Onaylayan', width: 21 },
+  { key: 'before', label: 'Önce', width: 32, value: row => compactObject(row.before) }, { key: 'after', label: 'Sonra', width: 32, value: row => compactObject(row.after) },
+  { key: 'source_type', label: 'Kaynak Türü', width: 17 }, { key: 'source_id', label: 'Kaynak ID', width: 13 },
+]
+
+export function buildPersonnelDrilldownWorkbook(ExcelJS, options) {
+  const { meta = {}, people = [], records = [], filterLabels = [], generatedBy, generatedAt = new Date(), truncated = false } = options
+  const workbook = new ExcelJS.Workbook()
+  const metricTitle = safeExcelText(meta.definition || meta.metric || 'Personel takip ayrıntısı')
+  setDocumentProperties(workbook, `${metricTitle} Detay Raporu`, generatedBy)
+  const sheetMeta = { period: meta.period, filterLabels, generatedAt, generatedBy }
+
+  const summaryWs = workbook.addWorksheet('Özet', { views: [{ showGridLines: false }] })
+  setupSheet(summaryWs, COLORS.blue)
+  setupTitle(summaryWs, `PERSONEL TAKİP DETAYI — ${metricTitle}`, subtitle(sheetMeta), 10)
+  summaryWs.views = [{ state: 'frozen', ySplit: 2, showGridLines: false }]
+  const summary = meta.summary || {}
+  const metrics = [
+    ['Ana Toplam', summary.primary_value, null, COLORS.blue], ['Kişi', summary.people_count, null, COLORS.green],
+    ['Kayıt', summary.record_count, null, COLORS.purple], ['Gün', summary.day_total, null, COLORS.amber],
+    ['Saat', summary.hour_total, null, COLORS.teal], ['Tarihsiz Eski', summary.undated_count, null, COLORS.gray],
+  ]
+  metrics.forEach((metric, index) => summaryMetric(summaryWs, 4 + Math.floor(index / 3) * 3, 1 + (index % 3) * 3, ...metric))
+  summaryWs.getCell('A11').value = 'Kapsam'
+  summaryWs.getCell('B11').value = meta.scope === 'current' ? 'Bugünkü durum' : 'Seçili dönem'
+  summaryWs.getCell('A12').value = 'Filtreler'
+  summaryWs.mergeCells('B12:J12')
+  summaryWs.getCell('B12').value = safeExcelText(filterLabels.filter(Boolean).join(' · ') || 'Tüm kayıtlar')
+  summaryWs.getCell('A13').value = 'Dışa Aktarım'
+  summaryWs.mergeCells('B13:J13')
+  summaryWs.getCell('B13').value = truncated ? '25.000 satır güvenlik sınırına ulaşıldı; çıktı kontrollü biçimde sınırlandı.' : 'Tüm filtrelenmiş kişi ve kayıt sayfaları alındı.'
+  ;['A11', 'B11', 'A12', 'B12', 'A13', 'B13'].forEach(address => { summaryWs.getCell(address).border = border; summaryWs.getCell(address).fill = fill(COLORS.surface) })
+  for (let column = 1; column <= 10; column += 1) summaryWs.getColumn(column).width = 16
+  summaryWs.pageSetup.printArea = 'A1:J13'
+
+  const peopleWs = prepareSheet(workbook, 'Kişiler', 'KİŞİ BAZLI METRİK TOPLAMLARI', sheetMeta, drilldownPeopleColumns, COLORS.green)
+  appendRows(peopleWs, people, drilldownPeopleColumns)
+  addTotalRow(peopleWs, drilldownPeopleColumns, [7, 8, 9, 10])
+  const recordsWs = prepareSheet(workbook, 'Kayıtlar', 'HAM PERSONEL TAKİP KAYITLARI', sheetMeta, drilldownRecordColumns, COLORS.purple)
+  appendRows(recordsWs, records, drilldownRecordColumns)
+  addTotalRow(recordsWs, drilldownRecordColumns, [12])
+  return workbook
+}
+
+export async function exportPersonnelDrilldownExcel({ api, filters, filterLabels, generatedBy }) {
+  const data = await loadPersonnelDrilldownExportData(api, filters)
+  const ExcelJS = await import('exceljs')
+  const workbook = buildPersonnelDrilldownWorkbook(ExcelJS.default || ExcelJS, { ...data, filterLabels, generatedBy, generatedAt: new Date() })
+  const buffer = await workbook.xlsx.writeBuffer()
+  const period = data.meta?.period || filters
+  const filename = personnelDrilldownFilename(filters.metric, period.from, period.to)
+  saveWorkbook(buffer, filename)
+  return { filename, people: data.people.length, records: data.records.length, truncated: data.truncated }
 }
