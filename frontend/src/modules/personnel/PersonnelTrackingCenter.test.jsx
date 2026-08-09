@@ -1,0 +1,114 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { useLocation } from 'react-router-dom'
+import { renderWithProviders } from '../../test/renderWithProviders.jsx'
+import api from '../../shared/api/client.js'
+import { useAuthStore } from '../../shared/store/authStore.js'
+import PersonnelTrackingCenter from './PersonnelTrackingCenter.jsx'
+
+vi.mock('../../shared/api/client.js', () => ({
+  default: { get: vi.fn(), post: vi.fn(), patch: vi.fn() },
+}))
+
+const overview = {
+  kpis: {
+    active: 2, offboarding: 0, exited: 1, undated_exited: 2, hired: 1, permanent_movements: 1,
+    temporary_project_work: 1, shift_changes: 3, annual_leave_days: 2, sick_leave_days: 1,
+    other_leave_days: 0, leave_hours: 4, overtime_hours: 12, absent_days: 0,
+    open_alerts: 1, overdue_alerts: 0, critical_alerts: 0,
+  },
+  trends: [],
+}
+
+const person = {
+  staff_id: 44, full_name: 'Ayşe Yılmaz', position: 'Vardiya Lideri', project_name: 'FPU',
+  department_name: 'Operasyon', employment_status: 'active', status: 'approved', record_count: 2,
+  total_quantity: 3, day_total: 3, hour_total: 0, last_occurred_at: '2026-08-03',
+}
+
+function drilldown(params = {}) {
+  const view = params.view || 'people'
+  const empty = params.metric === 'absence'
+  return {
+    metric: params.metric, definition: params.metric === 'leave' ? 'Seçili dönemle çakışan izin ve rapor kayıtları' : 'Metrik tanımı',
+    scope: params.metric === 'active' ? 'current' : 'period', period: { from: '2026-07-11', to: '2026-08-09' }, view,
+    summary: { primary_value: empty ? 0 : 3, primary_unit: params.metric === 'leave' ? 'day' : 'record', people_count: empty ? 0 : 1, record_count: empty ? 0 : 2, day_total: params.metric === 'leave' ? 3 : 0, hour_total: 0, undated_count: params.metric === 'exited' ? 2 : 0 },
+    breakdowns: { status: empty ? [] : [{ key: 'approved', value: 2 }], subtype: [], project: [], department: [] },
+    items: empty ? [] : view === 'people' ? [person] : [{ ...person, record_id: 91, source_type: 'leave_request', occurred_at: '2026-08-01', end_at: '2026-08-03', subtype: 'annual', quantity: 3, unit: 'day', reason: 'Yıllık izin', actor_name: 'Müdür' }],
+    total: empty ? 0 : view === 'people' ? 1 : 2, page: Number(params.page || 1), limit: 50,
+  }
+}
+
+function LocationProbe() {
+  const location = useLocation()
+  return <output aria-label="geçerli adres">{location.pathname}{location.search}</output>
+}
+
+function Harness({ onPersonClick = vi.fn() }) {
+  return <><PersonnelTrackingCenter projects={[{ id: 8, name: 'FPU' }]} departments={[{ id: 2, name: 'Operasyon' }]} onPersonClick={onPersonClick} /><LocationProbe /></>
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  useAuthStore.setState({ user: { id: 1, role: 'campus_manager', full_name: 'Müdür' } })
+  api.get.mockImplementation((url, config = {}) => {
+    if (url === '/personnel/tracking/overview') return Promise.resolve({ data: overview })
+    if (url === '/personnel/tracking/people') return Promise.resolve({ data: { total: 0, items: [] } })
+    if (url === '/personnel/tracking/events') return Promise.resolve({ data: { total: 0, items: [] } })
+    if (url === '/personnel/tracking/alerts') return Promise.resolve({ data: { items: [] } })
+    if (url === '/personnel/tracking/drilldown') return Promise.resolve({ data: drilldown(config.params) })
+    return Promise.resolve({ data: [] })
+  })
+})
+
+describe('Personel Takip Merkezi ayrıntı paneli', () => {
+  it('KPI kartlarını gerçek buton yapar ve izin detayını onaylı kayıtlarla açar', async () => {
+    renderWithProviders(<Harness />, { route: '/shifts?tab=staff&view=tracking' })
+    const leaveButton = await screen.findByRole('button', { name: 'İzin / rapor ayrıntısını aç' })
+    expect(leaveButton).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(leaveButton)
+    expect(await screen.findByRole('dialog', { name: 'İzin ve raporlar' })).toBeInTheDocument()
+    expect(leaveButton).toHaveAttribute('aria-expanded', 'true')
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/personnel/tracking/drilldown', expect.objectContaining({ params: expect.objectContaining({ metric: 'leave', view: 'people', record_status: 'approved' }) })))
+    expect(screen.getByLabelText('geçerli adres')).toHaveTextContent('metric=leave')
+    expect(screen.getByLabelText('geçerli adres')).toHaveTextContent('metric_status=approved')
+    expect(await screen.findByText('Ayşe Yılmaz')).toBeInTheDocument()
+  })
+
+  it('URL içindeki metrik, kayıt görünümü ve durum seçimini yenilemede geri yükler', async () => {
+    renderWithProviders(<Harness />, { route: '/shifts?tab=staff&view=tracking&metric=overtime&metric_view=records&metric_status=recorded&metric_page=1' })
+    expect(await screen.findByRole('dialog', { name: 'Fazla mesai' })).toBeInTheDocument()
+    expect(await screen.findByRole('tab', { name: /Kayıtlar/ })).toHaveAttribute('aria-selected', 'true')
+    expect(await screen.findByRole('button', { name: 'Kayıtlı' })).toHaveAttribute('aria-pressed', 'true')
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/personnel/tracking/drilldown', expect.objectContaining({ params: expect.objectContaining({ metric: 'overtime', view: 'records', record_status: 'recorded' }) })))
+  })
+
+  it('sekme ve kayıt durumu seçimlerini URL ile API sorgusuna taşır', async () => {
+    renderWithProviders(<Harness />, { route: '/shifts?metric=leave&metric_view=people&metric_status=approved' })
+    await screen.findByRole('dialog', { name: 'İzin ve raporlar' })
+    fireEvent.click(await screen.findByRole('tab', { name: /Kayıtlar/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Bekleyen' }))
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/personnel/tracking/drilldown', expect.objectContaining({ params: expect.objectContaining({ view: 'records', record_status: 'pending' }) })))
+    expect(screen.getByLabelText('geçerli adres')).toHaveTextContent('metric_view=records')
+    expect(screen.getByLabelText('geçerli adres')).toHaveTextContent('metric_status=pending')
+  })
+
+  it('sıfır değerli KPI için anlamlı boş durum açar', async () => {
+    renderWithProviders(<Harness />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Devamsızlık ayrıntısını aç' }))
+    expect(await screen.findByRole('dialog', { name: 'Devamsızlıklar' })).toBeInTheDocument()
+    expect(await screen.findByText('Bu kapsamda kayıt yok.')).toBeInTheDocument()
+  })
+
+  it('Escape ile kapanır, temel filtreleri korur ve odağı açan karta döndürür', async () => {
+    renderWithProviders(<Harness />, { route: '/shifts?tab=staff&view=tracking&project_id=8' })
+    const button = await screen.findByRole('button', { name: 'Aktif ayrıntısını aç' })
+    fireEvent.click(button)
+    await screen.findByRole('dialog', { name: 'Aktif personel' })
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(screen.getByLabelText('geçerli adres')).toHaveTextContent('project_id=8')
+    expect(screen.getByLabelText('geçerli adres')).not.toHaveTextContent('metric=')
+    await waitFor(() => expect(button).toHaveFocus())
+  })
+})

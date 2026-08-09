@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
@@ -8,6 +8,7 @@ import { useToastStore } from '../../shared/store/toastStore.js'
 import { SkeletonGrid } from '../../shared/components/Skeleton.jsx'
 import { exportPersonnelTrackingExcel } from './logic/personnelTrackingExcel.js'
 import { describeTrackingErrors } from './logic/trackingErrors.js'
+import PersonnelTrackingDrilldown from './PersonnelTrackingDrilldown.jsx'
 import './PersonnelTrackingCenter.css'
 
 const EVENT_LABELS = {
@@ -57,11 +58,13 @@ function distribution(rows, key, fallback) {
   return [...counts.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value)
 }
 
-function KpiCard({ label, value, sub, tone = 'blue' }) {
+function KpiCard({ metric, label, value, sub, tone = 'blue', active, onClick }) {
   return (
-    <div className={`tracking-kpi tracking-kpi--${tone}`}>
+    <button type="button" className={`tracking-kpi tracking-kpi--${tone}${active ? ' tracking-kpi--active' : ''}`}
+      aria-expanded={active} aria-controls="personnel-tracking-drilldown" aria-label={`${label} ayrıntısını aç`} onClick={onClick}>
       <span>{label}</span><strong>{value}</strong>{sub && <small>{sub}</small>}
-    </div>
+      <i aria-hidden="true">Ayrıntı →</i><em className="sr-only">{metric}</em>
+    </button>
   )
 }
 
@@ -128,6 +131,9 @@ function ActionRow({ alert, users, onPersonClick, onUpdate, onFollowup, pending 
 
 export default function PersonnelTrackingCenter({ projects = [], departments = [], onPersonClick }) {
   const [params, setParams] = useSearchParams()
+  const metric = params.get('metric') || ''
+  const metricOrigins = useRef(new Map())
+  const previousMetric = useRef(metric)
   const queryClient = useQueryClient()
   const user = useAuthStore(state => state.user)
   const [showSettings, setShowSettings] = useState(false)
@@ -161,6 +167,32 @@ export default function PersonnelTrackingCenter({ projects = [], departments = [
       return next
     }, { replace: true })
   }
+  const openMetric = (metricName, event) => {
+    metricOrigins.current.set(metricName, event.currentTarget)
+    setParams(previous => {
+      const next = new URLSearchParams(previous)
+      next.set('metric', metricName); next.set('metric_view', 'people'); next.set('metric_page', '1')
+      if (metricName === 'leave') next.set('metric_status', 'approved')
+      else if (metricName === 'overtime') next.set('metric_status', 'recorded')
+      else next.delete('metric_status')
+      ;['staff_id', 'bucket', 'metric_sort', 'metric_order'].forEach(key => next.delete(key))
+      return next
+    })
+  }
+  const closeMetric = useCallback(() => {
+    const currentMetric = metric
+    setParams(previous => {
+      const next = new URLSearchParams(previous)
+      ;['metric', 'metric_view', 'metric_status', 'metric_page', 'metric_sort', 'metric_order', 'staff_id', 'bucket'].forEach(key => next.delete(key))
+      return next
+    }, { replace: true })
+    requestAnimationFrame(() => metricOrigins.current.get(currentMetric)?.focus())
+  }, [metric, setParams])
+
+  useEffect(() => {
+    if (previousMetric.current && !metric) requestAnimationFrame(() => metricOrigins.current.get(previousMetric.current)?.focus())
+    previousMetric.current = metric
+  }, [metric])
 
   const overview = useQuery({ queryKey: ['personnel-tracking-overview', requestFilters], queryFn: () => api.get('/personnel/tracking/overview', { params: requestFilters }).then(response => response.data) })
   const people = useQuery({ queryKey: ['personnel-tracking-people', requestFilters], queryFn: () => api.get('/personnel/tracking/people', { params: requestFilters }).then(response => response.data) })
@@ -257,10 +289,18 @@ export default function PersonnelTrackingCenter({ projects = [], departments = [
 
       {overview.isLoading ? <SkeletonGrid count={8} minWidth={130} /> : (
         <div className="tracking-kpis">
-          <KpiCard label="Aktif" value={number(kpi.active)} tone="green" /><KpiCard label="Çıkış sürecinde" value={number(kpi.offboarding)} tone="amber" /><KpiCard label="İşten çıkan" value={number(kpi.exited)} tone="muted" />
-          <KpiCard label="Yeni başlayan" value={number(kpi.hired)} /><KpiCard label="Kalıcı transfer" value={number(kpi.permanent_movements)} tone="purple" /><KpiCard label="Geçici proje" value={number(kpi.temporary_project_work)} tone="purple" />
-          <KpiCard label="Vardiya revizyonu" value={number(kpi.shift_changes)} /><KpiCard label="İzin / rapor" value={`${number(Number(kpi.annual_leave_days || 0) + Number(kpi.sick_leave_days || 0) + Number(kpi.other_leave_days || 0), 1)}g`} sub={`${number(kpi.sick_leave_days, 1)}g rapor`} tone="amber" />
-          <KpiCard label="Fazla mesai" value={`${number(kpi.overtime_hours, 1)}s`} /><KpiCard label="Devamsızlık" value={`${number(kpi.absent_days)}g`} tone="red" /><KpiCard label="Açık aksiyon" value={number(kpi.open_alerts)} tone="amber" /><KpiCard label="Gecikmiş / kritik" value={`${number(kpi.overdue_alerts)} / ${number(kpi.critical_alerts)}`} tone="red" />
+          <KpiCard metric="active" label="Aktif" value={number(kpi.active)} tone="green" active={metric === 'active'} onClick={event => openMetric('active', event)} />
+          <KpiCard metric="offboarding" label="Çıkış sürecinde" value={number(kpi.offboarding)} tone="amber" active={metric === 'offboarding'} onClick={event => openMetric('offboarding', event)} />
+          <KpiCard metric="exited" label="İşten çıkan" value={number(kpi.exited)} sub={kpi.undated_exited ? `${number(kpi.undated_exited)} tarihsiz eski kayıt` : 'Seçili dönem'} tone="muted" active={metric === 'exited'} onClick={event => openMetric('exited', event)} />
+          <KpiCard metric="hired" label="Yeni başlayan" value={number(kpi.hired)} active={metric === 'hired'} onClick={event => openMetric('hired', event)} />
+          <KpiCard metric="transfer" label="Kalıcı transfer" value={number(kpi.permanent_movements)} tone="purple" active={metric === 'transfer'} onClick={event => openMetric('transfer', event)} />
+          <KpiCard metric="temporary_work" label="Geçici proje" value={number(kpi.temporary_project_work)} tone="purple" active={metric === 'temporary_work'} onClick={event => openMetric('temporary_work', event)} />
+          <KpiCard metric="shift_change" label="Vardiya revizyonu" value={number(kpi.shift_changes)} active={metric === 'shift_change'} onClick={event => openMetric('shift_change', event)} />
+          <KpiCard metric="leave" label="İzin / rapor" value={`${number(Number(kpi.annual_leave_days || 0) + Number(kpi.sick_leave_days || 0) + Number(kpi.other_leave_days || 0), 1)}g`} sub={`${number(kpi.sick_leave_days, 1)}g rapor${kpi.leave_hours ? ` · ${number(kpi.leave_hours, 1)}s saatlik` : ''}`} tone="amber" active={metric === 'leave'} onClick={event => openMetric('leave', event)} />
+          <KpiCard metric="overtime" label="Fazla mesai" value={`${number(kpi.overtime_hours, 1)}s`} active={metric === 'overtime'} onClick={event => openMetric('overtime', event)} />
+          <KpiCard metric="absence" label="Devamsızlık" value={`${number(kpi.absent_days)}g`} tone="red" active={metric === 'absence'} onClick={event => openMetric('absence', event)} />
+          <KpiCard metric="open_alerts" label="Açık aksiyon" value={number(kpi.open_alerts)} tone="amber" active={metric === 'open_alerts'} onClick={event => openMetric('open_alerts', event)} />
+          <KpiCard metric="overdue_critical" label="Gecikmiş / kritik" value={`${number(kpi.overdue_alerts)} / ${number(kpi.critical_alerts)}`} tone="red" active={metric === 'overdue_critical'} onClick={event => openMetric('overdue_critical', event)} />
         </div>
       )}
 
@@ -310,6 +350,7 @@ export default function PersonnelTrackingCenter({ projects = [], departments = [
           </div>
         </section>
       </div>
+      {metric && <PersonnelTrackingDrilldown metric={metric} baseFilters={requestFilters} onClose={closeMetric} onPersonClick={onPersonClick} />}
     </div>
   )
 }
