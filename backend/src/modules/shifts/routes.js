@@ -7,6 +7,7 @@ import { paginate } from '../../shared/paginate.js'
 import { logger } from '../../shared/logger.js'
 import { isIsoMonth } from '../../shared/validation/date.js'
 import { buildReadiness } from './readiness.js'
+import { getWeekVersion, publishWeek, withdrawWeek } from './scheduleVersions.js'
 import {
   departmentsService, shiftDefinitionsService, scheduleService, bulkAssignService,
   scheduleSegmentsService, createScheduleSegmentService, updateScheduleSegmentService, deleteScheduleSegmentService,
@@ -365,6 +366,30 @@ shiftsRouter.get('/occupancy', ...managerOrSupervisor, (req, res) => {
 shiftsRouter.get('/readiness', ...managerOrSupervisor, (req, res) => {
   try { res.json(buildReadiness(getDB())) }
   catch (e) { logger.error({ err: e.message }, '[shifts/readiness]'); res.status(500).json({ error: 'Hazırlık durumu alınamadı' }) }
+})
+
+// ── Çizelge yayın akışı (taslak → yayın → geri çekme) ──
+// Hücre değişikliği anında bağlayıcı sayılmasın; yayından sonraki değişiklik
+// ayrıca görünsün diye yayın anında çizelgenin fotoğrafı alınır.
+shiftsRouter.get('/schedule/version', ...managerOrSupervisor, (req, res) => {
+  try { res.json(getWeekVersion(req.query.week)) }
+  catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
+shiftsRouter.post('/schedule/version/publish', ...managerOnly, (req, res) => {
+  try {
+    const sonuc = publishWeek(req.body?.week, req.user.id, { note: req.body?.note })
+    logAudit(req.user.id, 'schedule_publish', 'shifts', null, `${req.body?.week} v${sonuc.version} (${sonuc.entries} kayıt)`)
+    res.json(sonuc)
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
+shiftsRouter.post('/schedule/version/withdraw', ...managerOnly, (req, res) => {
+  try {
+    const sonuc = withdrawWeek(req.body?.week, req.user.id)
+    logAudit(req.user.id, 'schedule_withdraw', 'shifts', null, `${req.body?.week} v${sonuc.version}`)
+    res.json(sonuc)
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
 
 shiftsRouter.get('/day-detail', ...managerOrSupervisor, (req, res) => {

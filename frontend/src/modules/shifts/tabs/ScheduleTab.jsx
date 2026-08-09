@@ -19,6 +19,7 @@ import { DailyView, WeekFillSheet, CellAssignSheet } from './scheduleSheets.jsx'
 import LiveOccupancyBoard from './LiveOccupancyBoard.jsx'
 import ScheduleImportModal from './ScheduleImportModal.jsx'
 import ReadinessBoard from './ReadinessBoard.jsx'
+import PublishBar from './PublishBar.jsx'
 import CoverageBoard from './CoverageBoard.jsx'
 import DayDetailBoard from './DayDetailBoard.jsx'
 import ProjectCrossoverBoard from './ProjectCrossoverBoard.jsx'
@@ -826,6 +827,9 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
       {/* Hazırlık durumu EN ÜSTTE: ana veri eksikken yapılan planlama, puantaj
           ve bordro sessizce yanlış çalışıyor. */}
       {scheduleView === 'weekly' && panels.readiness !== false && <ReadinessBoard />}
+
+      {/* Yayın durumu: hücreye dokunmak artık "kesin vardiya" demek değil. */}
+      {scheduleView === 'weekly' && panels.publish !== false && <PublishBar weekStart={weekStart} />}
 
       <div style={{
         display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px',
