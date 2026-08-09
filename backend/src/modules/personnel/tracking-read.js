@@ -56,11 +56,23 @@ export function getTrackingOverview(filters = {}) {
     SELECT
       SUM(CASE WHEN s.is_active=1 AND s.offboarding_started_at IS NULL THEN 1 ELSE 0 END) AS active,
       SUM(CASE WHEN s.is_active=1 AND s.offboarding_started_at IS NOT NULL THEN 1 ELSE 0 END) AS offboarding,
-      SUM(CASE WHEN s.is_active=0 THEN 1 ELSE 0 END) AS exited,
-      SUM(CASE WHEN s.hire_date BETWEEN ? AND ? THEN 1 ELSE 0 END) AS hired
+      SUM(CASE WHEN s.is_active=0 AND (
+        s.exit_date BETWEEN ? AND ? OR (
+          s.exit_date IS NULL AND EXISTS (
+            SELECT 1 FROM personnel_tracking_events ee
+            WHERE ee.staff_id=s.id AND ee.event_type='employment_ended'
+              AND date(ee.effective_at) BETWEEN ? AND ?
+          )
+        )
+      ) THEN 1 ELSE 0 END) AS exited,
+      SUM(CASE WHEN s.hire_date BETWEEN ? AND ? THEN 1 ELSE 0 END) AS hired,
+      SUM(CASE WHEN s.is_active=0 AND s.exit_date IS NULL AND NOT EXISTS (
+        SELECT 1 FROM personnel_tracking_events ue
+        WHERE ue.staff_id=s.id AND ue.event_type='employment_ended'
+      ) THEN 1 ELSE 0 END) AS undated_exited
     FROM staff s
     WHERE ${staffFilter.sql}
-  `).get(from, to, ...staffFilter.params)
+  `).get(from, to, from, to, from, to, ...staffFilter.params)
 
   const eventParams = [from, to, ...staffFilter.params]
   let eventSql = `
@@ -94,15 +106,22 @@ export function getTrackingOverview(filters = {}) {
 
   const leave = db.prepare(`
     SELECT
-      COALESCE(SUM(CASE WHEN lr.leave_type='annual' THEN lr.total_days ELSE 0 END),0) AS annual_days,
-      COALESCE(SUM(CASE WHEN lr.leave_type='sick' THEN lr.total_days ELSE 0 END),0) AS sick_days,
-      COALESCE(SUM(CASE WHEN lr.leave_type NOT IN ('annual','sick') THEN lr.total_days ELSE 0 END),0) AS other_days,
+      COALESCE(SUM(CASE WHEN leave_type='annual' THEN overlap_days ELSE 0 END),0) AS annual_days,
+      COALESCE(SUM(CASE WHEN leave_type='sick' THEN overlap_days ELSE 0 END),0) AS sick_days,
+      COALESCE(SUM(CASE WHEN leave_type NOT IN ('annual','sick') THEN overlap_days ELSE 0 END),0) AS other_days,
+      COALESCE(SUM(leave_hours),0) AS leave_hours,
       COUNT(*) AS occurrences
-    FROM leave_requests lr
-    JOIN staff s ON s.id=lr.staff_id
-    WHERE lr.status='approved' AND lr.end_date>=? AND lr.start_date<=?
-      AND ${staffFilter.sql}
-  `).get(from, to, ...staffFilter.params)
+    FROM (
+      SELECT lr.leave_type, lr.leave_hours,
+        CASE WHEN lr.leave_hours IS NOT NULL THEN 0 ELSE
+          MAX(0, julianday(MIN(lr.end_date, ?)) - julianday(MAX(lr.start_date, ?)) + 1)
+        END AS overlap_days
+      FROM leave_requests lr
+      JOIN staff s ON s.id=lr.staff_id
+      WHERE lr.status='approved' AND lr.end_date>=? AND lr.start_date<=?
+        AND ${staffFilter.sql}
+    )
+  `).get(to, from, from, to, ...staffFilter.params)
 
   const operations = db.prepare(`
     SELECT
@@ -147,6 +166,7 @@ export function getTrackingOverview(filters = {}) {
       active: Number(staffCounts.active || 0),
       offboarding: Number(staffCounts.offboarding || 0),
       exited: Number(staffCounts.exited || 0),
+      undated_exited: Number(staffCounts.undated_exited || 0),
       hired: Number(staffCounts.hired || 0),
       permanent_movements: Number(permanentMovements || 0),
       temporary_project_work: Number(temporaryWork || 0),
@@ -154,6 +174,7 @@ export function getTrackingOverview(filters = {}) {
       annual_leave_days: Number(leave.annual_days || 0),
       sick_leave_days: Number(leave.sick_days || 0),
       other_leave_days: Number(leave.other_days || 0),
+      leave_hours: Number(leave.leave_hours || 0),
       leave_occurrences: Number(leave.occurrences || 0),
       overtime_hours: Number(operations.overtime_hours || 0),
       absent_days: Number(operations.absent_days || 0),
@@ -165,6 +186,8 @@ export function getTrackingOverview(filters = {}) {
     trends,
   }
 }
+
+export { period as trackingPeriod, currentStaffFilters }
 
 export function listTrackingPeople(filters = {}) {
   const db = getDB()

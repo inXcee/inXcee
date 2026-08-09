@@ -40,6 +40,7 @@ import {
 import {
   getTrackingOverview, listTrackingPeople, listTrackingEvents, getPersonTracking, getTrackingExportDetails,
 } from './tracking-read.js'
+import { getTrackingDrilldown } from './tracking-drilldown.js'
 
 export const personnelRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
@@ -79,6 +80,11 @@ personnelRouter.get('/tracking/export-details', ...mgr, (req, res) => {
 personnelRouter.get('/tracking/events', ...mgr, (req, res) => {
   try { res.json(listTrackingEvents(req.query)) }
   catch (error) { trackingError(res, error, '[personnel/tracking-events]') }
+})
+
+personnelRouter.get('/tracking/drilldown', ...mgr, (req, res) => {
+  try { res.json(getTrackingDrilldown(req.query)) }
+  catch (error) { trackingError(res, error, '[personnel/tracking-drilldown]') }
 })
 
 personnelRouter.get('/tracking/settings', ...mgr, (req, res) => {
