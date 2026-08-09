@@ -105,6 +105,28 @@ describe('Personel Takip Merkezi drilldown', () => {
     expect(deniedSort.status).toBe(400)
   })
 
+  it('proje ve departman kırılımlarını filtrelenebilir kimliklerle döndürür', async () => {
+    const db = getDB()
+    const projectId = db.prepare('SELECT id FROM projects ORDER BY id LIMIT 1').get().id
+    const departmentId = db.prepare('SELECT id FROM departments ORDER BY id LIMIT 1').get().id
+    const assignedId = createStaff('Drilldown Kırılım Atanmış', { project_id: projectId, department_id: departmentId })
+    createStaff('Drilldown Kırılım Atanmamış')
+
+    const assigned = await request(app)
+      .get(`/api/personnel/tracking/drilldown?metric=active&q=Drilldown%20K%C4%B1r%C4%B1l%C4%B1m&project_id=${projectId}&department_id=${departmentId}`)
+      .set(auth(managerToken))
+    expect(assigned.body.items.map(item => item.staff_id)).toEqual([assignedId])
+    expect(assigned.body.breakdowns.project[0]).toMatchObject({ id: projectId })
+    expect(assigned.body.breakdowns.department[0]).toMatchObject({ id: departmentId })
+
+    const unassigned = await request(app)
+      .get('/api/personnel/tracking/drilldown?metric=active&q=Drilldown%20K%C4%B1r%C4%B1l%C4%B1m&project_id=none&department_id=none')
+      .set(auth(managerToken))
+    expect(unassigned.body.total).toBe(1)
+    expect(unassigned.body.breakdowns.project[0]).toMatchObject({ key: 'unknown', id: null })
+    expect(unassigned.body.breakdowns.department[0]).toMatchObject({ key: 'unknown', id: null })
+  })
+
   it('ay kovasını hareket kayıtlarına uygular ve sayfalar', async () => {
     const db = getDB()
     const staffId = createStaff('Drilldown Hareket Kişisi')
@@ -112,8 +134,10 @@ describe('Personel Takip Merkezi drilldown', () => {
       db.prepare(`INSERT INTO personnel_tracking_events(staff_id,event_type,effective_at,source_type,source_id,revision_no,after_json) VALUES(?,?,?,?,?,1,'{}')`)
         .run(staffId, 'shift_changed', date, 'drilldown-test', id)
     }
+    db.prepare(`INSERT INTO personnel_tracking_events(staff_id,event_type,effective_at,source_type,source_id,revision_no,after_json) VALUES(?,?,?,?,?,1,'{}')`)
+      .run(staffId, 'assignment_changed', '2026-08-07', 'drilldown-test', 'aug-assignment')
     const res = await request(app)
-      .get('/api/personnel/tracking/drilldown?metric=movement&view=records&from=2026-01-01&to=2026-12-31&bucket=2026-08&limit=1&page=2&q=Drilldown%20Hareket')
+      .get('/api/personnel/tracking/drilldown?metric=movement&view=records&from=2026-01-01&to=2026-12-31&bucket=2026-08&subtype=shift_changed&limit=1&page=2&q=Drilldown%20Hareket')
       .set(auth(managerToken))
     expect(res.body).toMatchObject({ total: 2, page: 2, limit: 1 })
     expect(res.body.items).toHaveLength(1)

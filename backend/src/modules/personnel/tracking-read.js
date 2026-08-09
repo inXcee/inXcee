@@ -29,7 +29,8 @@ function currentStaffFilters(filters, alias = 's') {
   const params = []
   if (filters.project_id === 'none') where.push(`${alias}.project_id IS NULL`)
   else if (filters.project_id) { where.push(`${alias}.project_id=?`); params.push(Number(filters.project_id)) }
-  if (filters.department_id) { where.push(`${alias}.department_id=?`); params.push(Number(filters.department_id)) }
+  if (filters.department_id === 'none') where.push(`${alias}.department_id IS NULL`)
+  else if (filters.department_id) { where.push(`${alias}.department_id=?`); params.push(Number(filters.department_id)) }
   if (filters.status === 'active') where.push(`${alias}.is_active=1 AND ${alias}.offboarding_started_at IS NULL`)
   else if (filters.status === 'offboarding') where.push(`${alias}.is_active=1 AND ${alias}.offboarding_started_at IS NOT NULL`)
   else if (filters.status === 'exited') where.push(`${alias}.is_active=0`)

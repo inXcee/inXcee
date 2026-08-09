@@ -39,7 +39,12 @@ function drilldown(params = {}) {
     metric: params.metric, definition: params.metric === 'leave' ? 'Seçili dönemle çakışan izin ve rapor kayıtları' : 'Metrik tanımı',
     scope: params.metric === 'active' ? 'current' : 'period', period: { from: '2026-07-11', to: '2026-08-09' }, view,
     summary: { primary_value: empty ? 0 : 3, primary_unit: params.metric === 'leave' ? 'day' : 'record', people_count: empty ? 0 : 1, record_count: empty ? 0 : 2, day_total: params.metric === 'leave' ? 3 : 0, hour_total: 0, undated_count: params.metric === 'exited' ? 2 : 0 },
-    breakdowns: { status: empty ? [] : [{ key: 'approved', value: 2 }], subtype: [], project: [], department: [] },
+    breakdowns: {
+      status: empty ? [] : [{ key: 'approved', value: 2 }],
+      subtype: empty ? [] : [{ key: 'annual', count: 1, quantity: 3 }],
+      project: empty ? [] : [{ key: 'FPU', id: 8, count: 2, quantity: 3 }],
+      department: empty ? [] : [{ key: 'Operasyon', id: 2, count: 2, quantity: 3 }],
+    },
     items: empty ? [] : view === 'people' ? [person] : [{ ...person, record_id: 91, source_type: 'leave_request', occurred_at: '2026-08-01', end_at: '2026-08-03', subtype: 'annual', quantity: 3, unit: 'day', reason: 'Yıllık izin', actor_name: 'Müdür' }],
     total: empty ? 0 : view === 'people' ? 1 : 2, page: Number(params.page || 1), limit: 50,
   }
@@ -97,6 +102,28 @@ describe('Personel Takip Merkezi ayrıntı paneli', () => {
     await waitFor(() => expect(api.get).toHaveBeenCalledWith('/personnel/tracking/drilldown', expect.objectContaining({ params: expect.objectContaining({ view: 'records', record_status: 'pending' }) })))
     expect(screen.getByLabelText('geçerli adres')).toHaveTextContent('metric_view=records')
     expect(screen.getByLabelText('geçerli adres')).toHaveTextContent('metric_status=pending')
+  })
+
+  it('tür, proje ve departman kırılımlarını URL korumalı ayrıntı filtrelerine dönüştürür', async () => {
+    renderWithProviders(<Harness />, { route: '/shifts?metric=leave&metric_view=records&metric_status=approved' })
+    await screen.findByRole('dialog', { name: 'İzin ve raporlar' })
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Tür: Yıllık izin ile filtrele (1)' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Proje: FPU ile filtrele (2)' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Departman: Operasyon ile filtrele (2)' }))
+
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/personnel/tracking/drilldown', expect.objectContaining({
+      params: expect.objectContaining({ subtype: 'annual', project_id: '8', department_id: '2' }),
+    })))
+    const address = screen.getByLabelText('geçerli adres')
+    expect(address).toHaveTextContent('metric_subtype=annual')
+    expect(address).toHaveTextContent('metric_project_id=8')
+    expect(address).toHaveTextContent('metric_department_id=2')
+    expect(await screen.findByLabelText('Etkin ayrıntı filtreleri')).toBeInTheDocument()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Tür filtresini temizle' }))
+    await waitFor(() => expect(address).not.toHaveTextContent('metric_subtype='))
+    expect(address).toHaveTextContent('metric_project_id=8')
   })
 
   it('sıfır değerli KPI için anlamlı boş durum açar', async () => {

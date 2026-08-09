@@ -26,7 +26,7 @@ const STATUS_LABELS = {
 const SUBTYPE_LABELS = {
   annual: 'Yıllık izin', sick: 'Rapor', other: 'Diğer izin', critical: 'Kritik',
   warning: 'Uyarı', info: 'Bilgi', assignment_changed: 'Atama değişikliği',
-  shift_changed: 'Vardiya değişikliği', employment_ended: 'İşten çıkış', recorded: 'Kayıtlı',
+  shift_changed: 'Vardiya değişikliği', employment_ended: 'İşten çıkış', recorded: 'Kayıtlı', unknown: 'Belirsiz',
 }
 
 const UNIT_LABELS = { person: 'kişi', record: 'kayıt', day: 'gün', hour: 'saat', action: 'aksiyon' }
@@ -105,16 +105,45 @@ function Summary({ summary }) {
   return <div className="tracking-drilldown__summary">{cards.map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>
 }
 
-function Breakdowns({ breakdowns }) {
+function breakdownLabel(group, item) {
+  if (item.key === 'unknown') return group === 'project' ? 'Proje atanmamış' : group === 'department' ? 'Departman atanmamış' : 'Belirsiz'
+  return STATUS_LABELS[item.key] || SUBTYPE_LABELS[item.key] || item.key || item.label || 'Belirsiz'
+}
+
+function Breakdowns({ breakdowns, selections, onSelect }) {
   const groups = [
-    ['Durum', breakdowns.status], ['Tür', breakdowns.subtype], ['Proje', breakdowns.project], ['Departman', breakdowns.department],
-  ].filter(([, items]) => items?.length)
+    { key: 'status', label: 'Durum', items: breakdowns.status },
+    { key: 'subtype', label: 'Tür', items: breakdowns.subtype, param: 'metric_subtype' },
+    { key: 'project', label: 'Proje', items: breakdowns.project, param: 'metric_project_id' },
+    { key: 'department', label: 'Departman', items: breakdowns.department, param: 'metric_department_id' },
+  ].filter(group => group.items?.length)
   if (!groups.length) return null
-  return <div className="tracking-drilldown__breakdowns">{groups.map(([label, items]) => (
-    <div key={label}><b>{label}</b><span>{items.slice(0, 6).map(item => (
-      <em key={`${label}-${item.key ?? item.label}`}>{STATUS_LABELS[item.key] || SUBTYPE_LABELS[item.key] || item.key || item.label || 'Belirsiz'} <strong>{number(item.value ?? item.count, 0)}</strong></em>
-    ))}</span></div>
+  return <div className="tracking-drilldown__breakdowns">{groups.map(group => (
+    <div key={group.key}><b>{group.label}</b><span>{group.items.slice(0, 8).map(item => {
+      const value = ['project', 'department'].includes(group.key) ? String(item.id ?? 'none') : String(item.key || '')
+      const label = breakdownLabel(group.key, item)
+      if (!group.param || (group.key === 'subtype' && item.key === 'unknown')) return <em key={`${group.key}-${value}`}>{label} <strong>{number(item.value ?? item.count, 0)}</strong></em>
+      const active = selections[group.key] === value
+      return <button key={`${group.key}-${value}`} type="button" className={active ? 'is-active' : ''} aria-pressed={active}
+        aria-label={`${group.label}: ${label} ile filtrele (${number(item.value ?? item.count, 0)})`}
+        onClick={() => onSelect(group.param, active ? null : value)}>{label} <strong>{number(item.value ?? item.count, 0)}</strong></button>
+    })}</span></div>
   ))}</div>
+}
+
+function ActiveDetailFilters({ filters, onClear, onClearAll }) {
+  const active = [
+    filters.staffId ? ['staff_id', `Personel #${filters.staffId}`, 'Personel'] : null,
+    filters.projectId ? ['metric_project_id', `Proje: ${filters.projectLabel}`, 'Proje'] : null,
+    filters.departmentId ? ['metric_department_id', `Departman: ${filters.departmentLabel}`, 'Departman'] : null,
+    filters.subtype ? ['metric_subtype', `Tür: ${SUBTYPE_LABELS[filters.subtype] || filters.subtype}`, 'Tür'] : null,
+  ].filter(Boolean)
+  if (!active.length) return null
+  return <div className="tracking-drilldown__active-filters" aria-label="Etkin ayrıntı filtreleri">
+    <span>Daraltılan kapsam</span>
+    {active.map(([param, label, name]) => <button key={param} type="button" aria-label={`${name} filtresini temizle`} onClick={() => onClear(param)}>{label} <b>×</b></button>)}
+    {active.length > 1 && <button type="button" className="tracking-drilldown__clear-all" onClick={onClearAll}>Tümünü temizle</button>}
+  </div>
 }
 
 function sourceRoute(item, metric) {
@@ -180,6 +209,11 @@ export default function PersonnelTrackingDrilldown({ metric, baseFilters, onClos
   const view = params.get('metric_view') === 'records' ? 'records' : 'people'
   const page = Math.max(1, Number(params.get('metric_page')) || 1)
   const recordStatus = params.get('metric_status') || (metric === 'leave' ? 'approved' : metric === 'overtime' ? 'recorded' : '')
+  const staffId = params.get('staff_id') || ''
+  const bucket = params.get('bucket') || ''
+  const metricProjectId = params.get('metric_project_id') || ''
+  const metricDepartmentId = params.get('metric_department_id') || ''
+  const metricSubtype = params.get('metric_subtype') || ''
   const sort = params.get('metric_sort') || (view === 'people' ? 'full_name' : 'occurred_at')
   const order = params.get('metric_order') || (view === 'people' ? 'asc' : 'desc')
 
@@ -191,14 +225,14 @@ export default function PersonnelTrackingDrilldown({ metric, baseFilters, onClos
 
   const request = useMemo(() => ({
     ...baseFilters, metric, view, page, limit: 50, sort, order,
-    ...(params.get('staff_id') ? { staff_id: params.get('staff_id') } : {}),
-    ...(params.get('bucket') ? { bucket: params.get('bucket') } : {}),
-    ...(params.get('metric_project_id') ? { project_id: params.get('metric_project_id') } : {}),
-    ...(params.get('metric_department_id') && params.get('metric_department_id') !== 'none' ? { department_id: params.get('metric_department_id') } : {}),
-    ...(params.get('metric_subtype') ? { subtype: params.get('metric_subtype') } : {}),
+    ...(staffId ? { staff_id: staffId } : {}),
+    ...(bucket ? { bucket } : {}),
+    ...(metricProjectId ? { project_id: metricProjectId } : {}),
+    ...(metricDepartmentId ? { department_id: metricDepartmentId } : {}),
+    ...(metricSubtype ? { subtype: metricSubtype } : {}),
     ...(recordStatus ? { record_status: recordStatus } : {}),
     ...(debouncedSearch ? { q: debouncedSearch } : {}),
-  }), [baseFilters, debouncedSearch, metric, order, page, params, recordStatus, sort, view])
+  }), [baseFilters, bucket, debouncedSearch, metric, metricDepartmentId, metricProjectId, metricSubtype, order, page, recordStatus, sort, staffId, view])
 
   const query = useQuery({
     queryKey: ['personnel-tracking-drilldown', request],
@@ -217,9 +251,11 @@ export default function PersonnelTrackingDrilldown({ metric, baseFilters, onClos
   const totalPages = Math.max(1, Math.ceil(Number(data?.total || 0) / Number(data?.limit || 50)))
   const statusOptions = STATUS_OPTIONS[metric] || []
   const periodText = data?.scope === 'current' ? 'Bugünkü durum' : `${data?.period?.from || baseFilters.from} – ${data?.period?.to || baseFilters.to}`
+  const projectLabel = metricProjectId === 'none' ? 'Atanmamış' : breakdownLabel('project', data?.breakdowns?.project?.find(item => String(item.id ?? 'none') === metricProjectId) || { key: `#${metricProjectId}` })
+  const departmentLabel = metricDepartmentId === 'none' ? 'Atanmamış' : breakdownLabel('department', data?.breakdowns?.department?.find(item => String(item.id ?? 'none') === metricDepartmentId) || { key: `#${metricDepartmentId}` })
   const filterLabels = [
-    periodText, request.project_id ? `Proje: ${request.project_id === 'none' ? 'Atanmamış' : `#${request.project_id}`}` : 'Tüm projeler',
-    request.department_id ? `Departman: #${request.department_id}` : 'Tüm departmanlar', request.staff_id ? `Personel: #${request.staff_id}` : null,
+    periodText, request.project_id ? `Proje: ${projectLabel}` : 'Tüm projeler',
+    request.department_id ? `Departman: ${departmentLabel}` : 'Tüm departmanlar', request.staff_id ? `Personel: #${request.staff_id}` : null,
     request.record_status ? `Kayıt durumu: ${STATUS_LABELS[request.record_status] || request.record_status}` : null,
     request.subtype ? `Tür: ${SUBTYPE_LABELS[request.subtype] || request.subtype}` : null, request.bucket ? `Ay: ${request.bucket}` : null,
     request.q ? `Arama: ${request.q}` : null,
@@ -269,7 +305,11 @@ export default function PersonnelTrackingDrilldown({ metric, baseFilters, onClos
         {statusOptions.length > 0 && <div className="tracking-drilldown__statuses" aria-label="Kayıt durumu">
           {statusOptions.map(([key, label]) => <button key={key} type="button" aria-pressed={recordStatus === key} onClick={() => patchParams({ metric_status: key, metric_page: 1 })}>{label}</button>)}
         </div>}
-        <Breakdowns breakdowns={data.breakdowns || {}} />
+        <ActiveDetailFilters filters={{ staffId, projectId: metricProjectId, departmentId: metricDepartmentId, subtype: metricSubtype, projectLabel, departmentLabel }}
+          onClear={param => patchParams({ [param]: null, metric_page: 1 })}
+          onClearAll={() => patchParams({ staff_id: null, metric_project_id: null, metric_department_id: null, metric_subtype: null, metric_page: 1 })} />
+        <Breakdowns breakdowns={data.breakdowns || {}} selections={{ project: metricProjectId, department: metricDepartmentId, subtype: metricSubtype }}
+          onSelect={(param, value) => patchParams({ [param]: value, metric_page: 1 })} />
 
         <div className="tracking-drilldown__sort">
           <span>{number(data.total, 0)} sonuç</span>

@@ -369,14 +369,16 @@ function groupPeople(records) {
   return [...groups.values()]
 }
 
-function breakdown(records, key) {
+function breakdown(records, key, idKey = null) {
   const groups = new Map()
   for (const record of records) {
     const value = record[key] || 'unknown'
-    const current = groups.get(value) || { key: value, count: 0, quantity: 0 }
+    const id = idKey && record[idKey] != null ? Number(record[idKey]) : null
+    const groupKey = `${id ?? 'none'}:${value}`
+    const current = groups.get(groupKey) || { key: value, id, count: 0, quantity: 0 }
     current.count += 1
     current.quantity += Number(record.quantity || 0)
-    groups.set(value, current)
+    groups.set(groupKey, current)
   }
   return [...groups.values()].sort((a, b) => b.quantity - a.quantity || b.count - a.count)
 }
@@ -420,7 +422,10 @@ export function getTrackingDrilldown(filters = {}) {
   if (period.from > period.to) {
     return { metric, definition: CONFIG[metric].definition, scope: CONFIG[metric].scope, period, view, summary: { primary_value: 0, primary_unit: CONFIG[metric].unit, people_count: 0, record_count: 0, day_total: 0, hour_total: 0, undated_count: 0 }, breakdowns: { status: [], subtype: [], project: [], department: [] }, items: [], total: 0, page: 1, limit: 50 }
   }
-  const records = loadRecords(metric, filters, period)
+  const loadedRecords = loadRecords(metric, filters, period)
+  const records = filters.subtype && metric !== 'leave'
+    ? loadedRecords.filter(record => String(record.subtype || '') === String(filters.subtype))
+    : loadedRecords
   const people = groupPeople(records)
   const dayTotal = records.filter(row => row.unit === 'day').reduce((sum, row) => sum + row.quantity, 0)
   const hourTotal = records.filter(row => row.unit === 'hour').reduce((sum, row) => sum + row.quantity, 0)
@@ -441,7 +446,7 @@ export function getTrackingDrilldown(filters = {}) {
     },
     breakdowns: {
       status: breakdown(records, 'status'), subtype: breakdown(records, 'subtype'),
-      project: breakdown(records, 'project_name'), department: breakdown(records, 'department_name'),
+      project: breakdown(records, 'project_name', 'project_id'), department: breakdown(records, 'department_name', 'department_id'),
     },
     items: sorted.slice(start, start + limit), total: sorted.length, page, limit,
   }
