@@ -1135,21 +1135,29 @@ export function bulkStaffAssignmentService(data, userId) {
   const hasProject = Object.prototype.hasOwnProperty.call(data, 'project_id')
   const hasDepartment = Object.prototype.hasOwnProperty.call(data, 'department_id')
   const hasLocation = Object.prototype.hasOwnProperty.call(data, 'work_location_id')
-  if (!hasProject && !hasDepartment && !hasLocation) throw new Error('Proje, departman veya çalışma lokasyonu seçilmeli')
+  // Rol toplu atanabilmeli: canlıda 196 aktif personelin 195'inde rol yoktu ve
+  // toplu ekran rolü değiştiremediği için tek çare tek tek düzeltmekti.
+  const hasRole = Object.prototype.hasOwnProperty.call(data, 'role_id')
+  if (!hasProject && !hasDepartment && !hasLocation && !hasRole) {
+    throw new Error('Proje, departman, rol veya çalışma lokasyonu seçilmeli')
+  }
   const effectiveFrom = validateAssignmentDate(data.effective_from || todayLocal())
   const projectId = hasProject ? normalizeOptionalId(data.project_id) : undefined
   const departmentId = hasDepartment ? normalizeOptionalId(data.department_id) : undefined
   const workLocationId = hasLocation ? normalizeOptionalId(data.work_location_id) : undefined
+  const roleId = hasRole ? normalizeOptionalId(data.role_id) : undefined
 
   const save = getDB().transaction(() => staffIds.map(staffId => {
     const current = getStaffById(staffId)
     if (!current) throw new Error(`Personel bulunamadı: ${staffId}`)
-    if (hasProject || hasDepartment || hasLocation) {
+    if (hasProject || hasDepartment || hasLocation || hasRole) {
       createStaffAssignment({
         staff_id: staffId,
         project_id: hasProject ? projectId : current.project_id,
         department_id: hasDepartment ? departmentId : current.department_id,
-        role_id: current.role_id,
+        // Gönderilmeyen alan KORUNUR: departman güncellerken rolü sıfırlamak,
+        // düzeltileni bozmak olur.
+        role_id: hasRole ? roleId : current.role_id,
         work_location_id: hasLocation ? workLocationId : current.primary_work_location_id,
         effective_from: effectiveFrom,
         note: data.note?.trim() || 'Toplu personel ataması',

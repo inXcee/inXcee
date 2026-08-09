@@ -510,15 +510,17 @@ function SummaryCard({ value, label, color, active = false, onClick }) {
   )
 }
 
-function BulkAssignmentSheet({ count, projects, departments, workLocations, isPending, onSubmit, onClose }) {
+function BulkAssignmentSheet({ count, projects, departments, roles = [], workLocations, isPending, onSubmit, onClose }) {
   const [bulkForm, setBulkForm] = useState({
     project_id: '__keep__',
     department_id: '__keep__',
+    role_id: '__keep__',
     work_location_id: '__keep__',
     effective_from: localIsoDate(),
     note: '',
   })
-  const hasChange = bulkForm.project_id !== '__keep__' || bulkForm.department_id !== '__keep__' || bulkForm.work_location_id !== '__keep__'
+  const hasChange = bulkForm.project_id !== '__keep__' || bulkForm.department_id !== '__keep__'
+    || bulkForm.role_id !== '__keep__' || bulkForm.work_location_id !== '__keep__'
   const submit = () => {
     const payload = {
       effective_from: bulkForm.effective_from,
@@ -526,6 +528,7 @@ function BulkAssignmentSheet({ count, projects, departments, workLocations, isPe
     }
     if (bulkForm.project_id !== '__keep__') payload.project_id = bulkForm.project_id ? Number(bulkForm.project_id) : null
     if (bulkForm.department_id !== '__keep__') payload.department_id = bulkForm.department_id ? Number(bulkForm.department_id) : null
+    if (bulkForm.role_id !== '__keep__') payload.role_id = bulkForm.role_id ? Number(bulkForm.role_id) : null
     if (bulkForm.work_location_id !== '__keep__') payload.work_location_id = bulkForm.work_location_id ? Number(bulkForm.work_location_id) : null
     onSubmit(payload)
   }
@@ -550,6 +553,16 @@ function BulkAssignmentSheet({ count, projects, departments, workLocations, isPe
             <option value="__keep__">Değiştirme</option>
             <option value="">Atamayı kaldır</option>
             {departments.map(department => <option key={department.id} value={department.id}>{department.name}</option>)}
+          </select>
+        </div>
+        <div>
+          {/* Rol toplu atanabilir: canlıda 195 personelde rol boştu ve bu ekran
+              rolü değiştiremediği için tek çare tek tek düzeltmekti. */}
+          <label className="form-label">Rol</label>
+          <select aria-label="Toplu rol ataması" className="form-select" value={bulkForm.role_id} onChange={e => setBulkForm(p => ({ ...p, role_id: e.target.value }))}>
+            <option value="__keep__">Değiştirme</option>
+            <option value="">Rolü kaldır</option>
+            {roles.map(role => <option key={role.id} value={role.id}>{role.name}</option>)}
           </select>
         </div>
         <div>
@@ -1542,6 +1555,7 @@ export default function StaffTab({ departments, onPersonClick }) {
           count={selected.size}
           projects={projects}
           departments={departments}
+          roles={staffRoles}
           workLocations={workLocations}
           isPending={bulkAssignmentMut.isPending}
           onSubmit={data => bulkAssignmentMut.mutate(data)}

@@ -80,6 +80,7 @@ describe('shifts staff smoke', () => {
     api.get.mockImplementation(url => {
       if (url === '/shifts/staff') return Promise.resolve({ data: directoryStaff })
       if (url === '/shifts/staff/quality') return Promise.resolve({ data: { summary: {}, rows: [] } })
+      if (url === '/shifts/roles') return Promise.resolve({ data: [{ id: 3, name: 'Lider' }] })
       if (url === '/projects') return Promise.resolve({ data: [
         { id: 8, name: 'FPU', code: 'FPU', staff_count: 1 },
         { id: 9, name: 'Kamp Alanı', code: 'KAMP', staff_count: 1 },
@@ -188,6 +189,46 @@ describe('shifts staff smoke', () => {
       '/shifts/staff/bulk/assignment',
       expect.objectContaining({ staff_ids: [44], project_id: 9 }),
     ))
+  })
+
+  // Canlıda 196 aktif personelin 195'inde rol boştu ve bu ekran rolü
+  // değiştiremiyordu — tek çare tek tek düzeltmekti.
+  it('toplu atamada rol de seçilebilir', async () => {
+    useAuthStore.setState({ user: { id: 1, role: 'campus_manager' } })
+    renderWithProviders(<StaffTab departments={[{ id: 2, name: 'Operasyon' }]} onPersonClick={() => {}} />)
+
+    await screen.findByText('Ayşe Yılmaz')
+    fireEvent.click(screen.getByLabelText('Ayşe Yılmaz seç'))
+    fireEvent.click(screen.getByRole('button', { name: 'Proje / Departman / Lokasyon Ata' }))
+
+    const rolSecici = screen.getByLabelText('Toplu rol ataması')
+    // Rol listesi ayrı sorgudan geliyor; seçenek gelmeden değer atanırsa select
+    // boşta kalır ve istek role_id: null gider.
+    await screen.findByRole('option', { name: 'Lider' })
+    fireEvent.change(rolSecici, { target: { value: '3' } })
+    fireEvent.click(screen.getByRole('button', { name: '1 Personele Uygula' }))
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith(
+      '/shifts/staff/bulk/assignment',
+      expect.objectContaining({ staff_ids: [44], role_id: 3 }),
+    ))
+  })
+
+  // Rol seçilmediğinde istekte hiç görünmemeli: "Değiştirme" seçiliyken rolü
+  // null göndermek, düzeltileni bozar.
+  it('rol seçilmezse istekte role_id gitmez', async () => {
+    useAuthStore.setState({ user: { id: 1, role: 'campus_manager' } })
+    renderWithProviders(<StaffTab departments={[{ id: 2, name: 'Operasyon' }]} onPersonClick={() => {}} />)
+
+    await screen.findByText('Ayşe Yılmaz')
+    fireEvent.click(screen.getByLabelText('Ayşe Yılmaz seç'))
+    fireEvent.click(screen.getByRole('button', { name: 'Proje / Departman / Lokasyon Ata' }))
+    fireEvent.change(screen.getByLabelText('Toplu proje ataması'), { target: { value: '9' } })
+    fireEvent.click(screen.getByRole('button', { name: '1 Personele Uygula' }))
+
+    await waitFor(() => expect(api.post).toHaveBeenCalled())
+    const gonderilen = api.post.mock.calls.at(-1)[1]
+    expect(gonderilen).not.toHaveProperty('role_id')
   })
 
   it('özetler, hızlı odak, gelişmiş filtre ve yoğunluk kontrolleri etkileşimlidir', async () => {
