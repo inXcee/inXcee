@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
@@ -242,7 +243,7 @@ export default function PersonnelTrackingDrilldown({ metric, baseFilters, onClos
     } finally { setIsPrinting(false) }
   }
 
-  return <div className="tracking-drilldown" aria-hidden="false">
+  return createPortal(<div className="tracking-drilldown" aria-hidden="false">
     <div className="tracking-drilldown__backdrop" aria-hidden="true" onClick={onClose} />
     <aside id="personnel-tracking-drilldown" ref={panelRef} className="tracking-drilldown__panel" role="dialog" aria-modal="true" aria-labelledby={titleId}>
       <header className="tracking-drilldown__header">
@@ -289,5 +290,5 @@ export default function PersonnelTrackingDrilldown({ metric, baseFilters, onClos
         </footer>
       </>}
     </aside>
-  </div>
+  </div>, document.body)
 }
