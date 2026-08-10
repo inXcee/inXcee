@@ -10,6 +10,7 @@ import { buildReadiness } from './readiness.js'
 import { getWeekVersion, publishWeek, withdrawWeek } from './scheduleVersions.js'
 import { buildActionCenter } from './actionCenter.js'
 import { evaluatePayrollGate, buildOutputStamp } from './payrollGate.js'
+import { getDayOperations, findReplacements, addHandoverNote } from './dailyOperations.js'
 import {
   departmentsService, shiftDefinitionsService, scheduleService, bulkAssignService,
   scheduleSegmentsService, createScheduleSegmentService, updateScheduleSegmentService, deleteScheduleSegmentService,
@@ -368,6 +369,34 @@ shiftsRouter.get('/occupancy', ...managerOrSupervisor, (req, res) => {
 shiftsRouter.get('/readiness', ...managerOrSupervisor, (req, res) => {
   try { res.json(buildReadiness(getDB())) }
   catch (e) { logger.error({ err: e.message }, '[shifts/readiness]'); res.status(500).json({ error: 'Hazırlık durumu alınamadı' }) }
+})
+
+// Günlük Operasyon Merkezi: gün özeti, kapsama açıkları, devir teslim.
+shiftsRouter.get('/day-operations', ...managerOrSupervisor, (req, res) => {
+  try { res.json(getDayOperations(req.query.date)) }
+  catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
+// Biri gelmezse yerine kimi çağırabilirim — o gün boşta, izinli olmayan personel.
+shiftsRouter.get('/day-operations/replacements', ...managerOrSupervisor, (req, res) => {
+  try {
+    res.json({ items: findReplacements({
+      date: req.query.date,
+      department_id: req.query.department_id,
+      limit: req.query.limit,
+    }) })
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
+shiftsRouter.post('/day-operations/handover', ...managerOrSupervisor, (req, res) => {
+  try {
+    const sonuc = addHandoverNote({
+      date: req.body?.date, note: req.body?.note,
+      shift_def_id: req.body?.shift_def_id, userId: req.user.id,
+    })
+    logAudit(req.user.id, 'shift_handover_note', 'shifts', sonuc.id, sonuc.work_date)
+    res.status(201).json(sonuc)
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
 
 // Bordro güvenlik kapısı: dönem hazır değilken KESİN çıktı üretilmemeli.

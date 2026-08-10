@@ -21,6 +21,7 @@ import ScheduleImportModal from './ScheduleImportModal.jsx'
 import ReadinessBoard from './ReadinessBoard.jsx'
 import PublishBar from './PublishBar.jsx'
 import ActionCenterBoard from './ActionCenterBoard.jsx'
+import DayOperationsBoard from './DayOperationsBoard.jsx'
 import CoverageBoard from './CoverageBoard.jsx'
 import DayDetailBoard from './DayDetailBoard.jsx'
 import ProjectCrossoverBoard from './ProjectCrossoverBoard.jsx'
@@ -834,6 +835,9 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
 
       {/* Dağınık uyarılar tek listede: en acili hangisi görünsün. */}
       {scheduleView === 'weekly' && panels.actionCenter !== false && <ActionCenterBoard />}
+
+      {/* Bugün sahada ne eksik, kimi çağırabilirim, dün ne olmuştu. */}
+      {scheduleView === 'weekly' && panels.dayOperations !== false && <DayOperationsBoard weekDays={weekDays} />}
 
       <div style={{
         display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px',
