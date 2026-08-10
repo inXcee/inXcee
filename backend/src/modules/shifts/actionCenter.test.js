@@ -130,6 +130,43 @@ describe('diğer kaynaklar', () => {
   })
 })
 
+describe('kapanmamış puantaj', () => {
+  // Puantaj ekranı yalnız SEÇİLİ aya bakıyor; önceki aylardan devreden
+  // kapanmamış günler hiçbir yerde görünmüyordu (canlıda 1299 gün).
+  it('geçmişte kalmış planlı günleri AY BAZINDA toplar', () => {
+    db.prepare("INSERT INTO shift_schedule(staff_id,work_date,shift_def_id,status) VALUES(1,'2026-06-10',1,'scheduled')").run()
+    db.prepare("INSERT INTO shift_schedule(staff_id,work_date,shift_def_id,status) VALUES(2,'2026-06-11',1,'scheduled')").run()
+    db.prepare("INSERT INTO shift_schedule(staff_id,work_date,shift_def_id,status) VALUES(1,'2026-05-02',1,'scheduled')").run()
+
+    const kayitlar = bul(buildActionCenter({}, db), 'unclosed_timesheet')
+    expect(kayitlar).toHaveLength(2)                       // iki ay, 3 satır değil
+    const haziran = kayitlar.find(k => k.detail.includes('2026-06'))
+    expect(haziran.detail).toMatch(/2 gün/)
+    expect(haziran.staff_name).toBe('2 personel')
+    expect(haziran.severity).toBe('critical')
+  })
+
+  // 1299 kaydı tek tek listelemek aksiyon listesini boğar ve asıl acilleri gizler.
+  it('satır satır listelemez, ay başına tek satır verir', () => {
+    for (let i = 1; i <= 40; i += 1) {
+      db.prepare("INSERT INTO shift_schedule(staff_id,work_date,shift_def_id,status) VALUES(?, '2026-06-15',1,'scheduled')").run(i)
+    }
+    expect(bul(buildActionCenter({}, db), 'unclosed_timesheet')).toHaveLength(1)
+  })
+
+  // Gelecek tarihli plan kapanmamış sayılmaz — "1000 kritik eksik" tam da bu
+  // ayrım yapılmadığı için çıkıyor.
+  it('gelecek tarihli planlı günü saymaz', () => {
+    db.prepare("INSERT INTO shift_schedule(staff_id,work_date,shift_def_id,status) VALUES(1,?,1,'scheduled')").run(gunEkle(5))
+    expect(bul(buildActionCenter({}, db), 'unclosed_timesheet')).toHaveLength(0)
+  })
+
+  it('kesinleşmiş günleri saymaz', () => {
+    db.prepare("INSERT INTO shift_schedule(staff_id,work_date,shift_def_id,status) VALUES(1,'2026-06-10',1,'worked')").run()
+    expect(bul(buildActionCenter({}, db), 'unclosed_timesheet')).toHaveLength(0)
+  })
+})
+
 describe('sıralama, özet ve ölçülemeyen kaynak', () => {
   it('kritikler üstte sıralanır', () => {
     db.prepare("INSERT INTO leave_requests(staff_id,start_date,end_date,status) VALUES(1,?,?,'pending')").run(gunEkle(5), gunEkle(6))

@@ -208,6 +208,41 @@ export function buildActionCenter({ from, to } = {}, db = getDB()) {
     })
   })
 
+  // ── Kapanmamış puantaj (AY BAZINDA) ───────────────────────────────────────
+  //
+  // Puantaj ekranı yalnız SEÇİLİ aya bakıyor; önceki aylardan devreden
+  // kapanmamış günler hiçbir yerde görünmüyordu. Canlıda 2026-08-10 itibarıyla
+  // önceki aylarda 1299 gün hâlâ 'scheduled' — kimse farkında değil.
+  //
+  // Satır satır listelenmez: 1299 kayıt aksiyon listesini boğar ve asıl acil
+  // işleri görünmez kılar. Ay başına tek satır, kişi sayısıyla birlikte.
+  const kapanmamis = guvenliSorgu(db, `
+    SELECT substr(work_date, 1, 7) AS ay,
+           COUNT(*) AS gun_sayisi,
+           COUNT(DISTINCT staff_id) AS kisi_sayisi,
+           MAX(work_date) AS son_gun
+    FROM shift_schedule
+    WHERE work_date < ? AND status = 'scheduled'
+    GROUP BY ay
+    ORDER BY ay DESC
+    LIMIT 24
+  `, [referans], 'unclosed_timesheet', sorunlar)
+  kapanmamis?.forEach(r => {
+    // Geçmişte kalmış her ay gecikmiştir; bu ayınki de bugünden önceki günler.
+    ekle({
+      kind: 'unclosed_timesheet',
+      key: `unclosed_timesheet:${r.ay}`,
+      severity: 'critical',
+      timeframe: 'overdue',
+      date: r.son_gun,
+      staff_id: null,
+      staff_name: `${r.kisi_sayisi} personel`,
+      title: 'Kapanmamış puantaj günü',
+      detail: `${r.ay} · ${r.gun_sayisi} gün hâlâ "planlı" — çalışıldı/izinli olarak kapatılmamış`,
+      action: { label: 'Puantajda aç', route: `/shifts?tab=puantaj&month=${r.ay}` },
+    })
+  })
+
   // ── Süresi dolmuş belge ───────────────────────────────────────────────────
   const belgeler = guvenliSorgu(db, `
     SELECT d.staff_id, MIN(d.expires_on) AS expires_on, s.full_name
