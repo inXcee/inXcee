@@ -165,4 +165,22 @@ Bu plan bir oturumluk iş değildir — proje kuralı gereği **her seferde tek 
 uygulanır, testler geçmeden sonraki faza geçilmez, her faz ayrı commit'lenir.
 Fazlar arasında canlıya çıkılabilir; hiçbiri diğerini beklemez.
 
-**Durum:** Faz 1 uygulanıyor.
+**Durum (2026-08-10):**
+
+| Faz | Durum | Commit |
+|---|---|---|
+| 1 — Sistem Hazırlık Merkezi | Bitti, canlıda | 8a74a05 |
+| 2 — Taslak → Yayın → Geri çekme | Bitti, canlıda | e42f2b6 |
+| 2+ — Yayın farkı satır satır | Bitti, canlıda | e637274 |
+| 3 — Aksiyon Merkezi | Bitti, canlıda | 6b45f2f |
+| 4 — Devreden kapanmamış puantaj | Bitti | 9402a5a |
+| 5 — Bordro güvenlik kapısı | Bitti | 1732d69 |
+| 6-15 | Başlanmadı | — |
+
+**Faz 4 notu:** "geçmiş/gelecek ayrımı yok" varsayımıyla başlandı; ölçüm ayrımın
+ZATEN var olduğunu gösterdi (operasyonel/kapanış oranı ayrı hesaplanıyor).
+Gerçek boşluk farklı çıktı: puantaj ekranı yalnız seçili aya baktığı için önceki
+aylardan devreden 1299 kapanmamış gün hiçbir yerde görünmüyordu.
+
+**Faz 2'de tamamlanmayan parça:** personelin çizelgeyi gördüğünü onaylaması
+(mobil tarafta ekran gerektiriyor) — atlanmadı, ayrı artım olarak bekliyor.
