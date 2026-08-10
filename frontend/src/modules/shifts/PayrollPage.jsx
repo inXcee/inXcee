@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
+import PayrollGateBar from './PayrollGateBar.jsx'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
@@ -63,18 +64,33 @@ export default function PayrollPage() {
     onError: toastErr,
   })
 
-  async function downloadBankCsv() {
+  // Kapı 409 ile SEBEBİ söylüyor; blob yanıtında gövde okunmazsa kullanıcı
+  // yalnız "indirilemedi" görür ve nereye bakacağını bilemez.
+  async function bankaHatasiniCoz(error) {
+    const govde = error?.response?.data
+    if (!(govde instanceof Blob)) return govde?.error || error?.message
+    try { return JSON.parse(await govde.text())?.error } catch { return error?.message }
+  }
+
+  async function downloadBankCsv({ draft = false } = {}) {
     try {
-      const res = await api.get('/shifts/bank-transfer', { params: { month }, responseType: 'blob' })
+      const res = await api.get('/shifts/bank-transfer', {
+        params: draft ? { month, draft: 1 } : { month },
+        responseType: 'blob',
+      })
       const url = URL.createObjectURL(res.data)
       const a = document.createElement('a')
       a.href = url
-      a.download = `banka-transfer-${month}.csv`
+      a.download = `banka-transfer-${draft ? 'TASLAK-' : ''}${month}.csv`
       a.click()
       URL.revokeObjectURL(url)
-      toast('Banka transfer dosyası indirildi')
-    } catch {
-      toast('Banka dosyası indirilemedi', 'error')
+      toast(draft ? 'TASLAK banka dosyası indirildi' : 'Kesin banka dosyası indirildi')
+    } catch (error) {
+      if (error?.response?.status === 409) {
+        toast(`${await bankaHatasiniCoz(error)} — taslak için "Taslak CSV" kullanın`, 'error')
+        return
+      }
+      toast(await bankaHatasiniCoz(error) || 'Banka dosyası indirilemedi', 'error')
     }
   }
 
@@ -133,10 +149,16 @@ export default function PayrollPage() {
           <button onClick={() => setShowDeductions(d => !d)} className="btn btn-ghost btn-sm" style={{ borderRadius: 10 }}>
             {showDeductions ? '↩ BORDRO' : '💵 KESİNTİLER'}
           </button>
-          <button onClick={downloadBankCsv} className="btn btn-ghost btn-sm" style={{ borderRadius: 10 }}>🏦 BANKA CSV</button>
+          {/* Kesin dosya kapıdan geçmeden üretilmez; taslak her zaman alınabilir
+              ama üzerinde TASLAK yazar — yanlışlıkla bankaya gitmesin. */}
+          <button onClick={() => downloadBankCsv({ draft: true })} className="btn btn-ghost btn-sm" style={{ borderRadius: 10 }}>📝 TASLAK CSV</button>
+          <button onClick={() => downloadBankCsv({ draft: false })} className="btn btn-ghost btn-sm" style={{ borderRadius: 10 }}>🏦 KESİN BANKA CSV</button>
           <button onClick={exportCsv} className="btn btn-primary btn-sm" style={{ borderRadius: 10 }}>📊 CSV İNDİR</button>
         </div>
       </div>
+
+      {/* Dönem hazır mı: kesin bordro öncesi engeller ve düzeltme yolları. */}
+      <PayrollGateBar month={month} />
 
       {showDeductions && (
         <div style={{ marginBottom: 14, padding: 14, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14 }}>

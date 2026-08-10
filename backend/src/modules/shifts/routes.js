@@ -9,6 +9,7 @@ import { isIsoMonth } from '../../shared/validation/date.js'
 import { buildReadiness } from './readiness.js'
 import { getWeekVersion, publishWeek, withdrawWeek } from './scheduleVersions.js'
 import { buildActionCenter } from './actionCenter.js'
+import { evaluatePayrollGate, buildOutputStamp } from './payrollGate.js'
 import {
   departmentsService, shiftDefinitionsService, scheduleService, bulkAssignService,
   scheduleSegmentsService, createScheduleSegmentService, updateScheduleSegmentService, deleteScheduleSegmentService,
@@ -369,6 +370,12 @@ shiftsRouter.get('/readiness', ...managerOrSupervisor, (req, res) => {
   catch (e) { logger.error({ err: e.message }, '[shifts/readiness]'); res.status(500).json({ error: 'Hazırlık durumu alınamadı' }) }
 })
 
+// Bordro güvenlik kapısı: dönem hazır değilken KESİN çıktı üretilmemeli.
+shiftsRouter.get('/payroll/gate', ...managerOrSupervisor, (req, res) => {
+  try { res.json(evaluatePayrollGate(req.query.month)) }
+  catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
 // Aksiyon Merkezi: dağınık uyarılar tek listede, önem ve zaman dilimiyle.
 shiftsRouter.get('/action-center', ...managerOrSupervisor, (req, res) => {
   try { res.json(buildActionCenter({ from: req.query.from, to: req.query.to })) }
@@ -529,11 +536,30 @@ shiftsRouter.get('/bank-transfer', ...managerOrSupervisor, (req, res) => {
   try {
     const ym = req.query.month || new Date().toISOString().slice(0, 7)
     if (!isIsoMonth(ym)) return res.status(400).json({ error: 'month YYYY-MM formatında olmalı' })
+    // Kesin dosya ancak kapı geçilince üretilir. Taslak her zaman alınabilir
+    // ama dosyanın başında TASLAK yazar — yanlışlıkla bankaya gitmesin.
+    const taslak = req.query.draft === '1' || req.query.draft === 'true'
+    const kapi = evaluatePayrollGate(ym)
+    if (!taslak && !kapi.ready) {
+      return res.status(409).json({
+        error: 'Dönem kesin bordroya hazır değil',
+        gate: kapi,
+        hint: 'Taslak için ?draft=1 kullanın',
+      })
+    }
+
+    const damga = buildOutputStamp({ month: ym, userName: req.user.full_name || req.user.username, kind: taslak ? 'draft' : 'final' })
     const csv = bankTransferCsvService(ym)
+    // Damga dosyanın İÇİNDE: dosya adı değişebilir, içerik kanıt olarak kalır.
+    const baslik = `# ${damga.label} · Dönem: ${damga.month} · Oluşturan: ${damga.generated_by}`
+      + ` · Tarih: ${damga.generated_at} · Doğrulama No: ${damga.verification_no}
+`
+    const dosyaAdi = `banka-transfer-${taslak ? 'TASLAK-' : ''}${ym}.csv`
     res.setHeader('Content-Type', 'text/csv; charset=utf-8')
-    res.setHeader('Content-Disposition', `attachment; filename="banka-transfer-${ym}.csv"`)
-    logAudit(req.user.id, 'bank_transfer_csv', 'payroll', null, ym)
-    res.send(csv)
+    res.setHeader('Content-Disposition', `attachment; filename="${dosyaAdi}"`)
+    res.setHeader('X-Output-Verification', damga.verification_no)
+    logAudit(req.user.id, 'bank_transfer_csv', 'payroll', null, `${ym} · ${damga.label} · ${damga.verification_no}`)
+    res.send(baslik + csv)
   } catch (e) {
     console.error('[bank-transfer]', e)
     res.status(e.statusCode || 500).json({ error: e.message || 'Sunucu hatası' })

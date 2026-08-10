@@ -1807,6 +1807,14 @@ describe('L1 — Bordro PDF', () => {
     expect(r.status).toBe(403)
   })
 
+  // Dönem hazır değilken kesin banka dosyası üretilirse eksik ödeme çıkar.
+  it('GET /bank-transfer kesin dosyayı hazır olmayan dönemde 409 ile reddeder', async () => {
+    const r = await request(app).get(`/api/shifts/bank-transfer?month=${month}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+    expect(r.status).toBe(409)
+    expect(r.body.gate.blocking.length).toBeGreaterThan(0)
+  })
+
   it('GET /bank-transfer CSV döner (IBAN + net tutar)', async () => {
     // staff'a IBAN yaz — CSV'de görünmeli
     const upd = await request(app).put(`/api/shifts/staff/${staffId}`)
@@ -1814,10 +1822,13 @@ describe('L1 — Bordro PDF', () => {
       .send({ iban: 'TR12 0006 4000 0011 2345 6789 01' })
     expect(upd.status).toBe(200)
 
-    const r = await request(app).get(`/api/shifts/bank-transfer?month=${month}`)
+    // Kesin dosya artık bordro kapısından geçmeden üretilmiyor (Faz 5). CSV
+    // içeriğini doğrulamak için taslak alınır; kapının kendisi ayrıca test edilir.
+    const r = await request(app).get(`/api/shifts/bank-transfer?month=${month}&draft=1`)
       .set('Authorization', `Bearer ${managerToken}`)
     expect(r.status).toBe(200)
     expect(r.headers['content-type']).toContain('text/csv')
+    expect(r.text.startsWith('# TASLAK')).toBe(true)
     expect(r.text).toContain('Sira;Ad Soyad;TC No;IBAN;Tutar (TL);Aciklama')
     // net > 0 olan personel varsa IBAN satırda yer alır
     if (r.text.split('\r\n').length > 1) {
