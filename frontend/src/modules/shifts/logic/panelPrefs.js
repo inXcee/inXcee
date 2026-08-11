@@ -15,6 +15,7 @@ export const SCHEDULE_PANELS = [
   { key: 'dayOperations', label: 'Günlük operasyon', hint: 'Eksik kadro, yerine çağrılabilecekler, devir teslim' },
   { key: 'openShifts', label: 'Açık vardiyalar', hint: 'İlan, başvuru ve aday uygunluğu' },
   { key: 'suitability', label: 'Uygunluk matrisi', hint: 'Bu vardiyaya kimleri koyabilirim' },
+  { key: 'planning', label: 'Planlama önerisi', hint: 'Açık başına puanlı aday + senaryo karşılaştırması' },
   { key: 'deptCards', label: 'Bölüm kartları', hint: 'Bölüm bölüm kişi ve durum sayıları' },
   { key: 'coverage', label: 'Kapsama / kadro hedefi', hint: 'Hedef-gerçekleşen ve departman kırılımı' },
   { key: 'dayDetail', label: 'Gün detayı', hint: 'Gün gün kim hangi vardiyada, nerede' },

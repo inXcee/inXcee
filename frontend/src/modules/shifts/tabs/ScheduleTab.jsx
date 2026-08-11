@@ -24,6 +24,7 @@ import ActionCenterBoard from './ActionCenterBoard.jsx'
 import DayOperationsBoard from './DayOperationsBoard.jsx'
 import OpenShiftsBoard from './OpenShiftsBoard.jsx'
 import SuitabilityMatrixBoard from './SuitabilityMatrixBoard.jsx'
+import PlanningSuggestionsBoard from './PlanningSuggestionsBoard.jsx'
 import CoverageBoard from './CoverageBoard.jsx'
 import DayDetailBoard from './DayDetailBoard.jsx'
 import ProjectCrossoverBoard from './ProjectCrossoverBoard.jsx'
@@ -847,6 +848,10 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
 
       {scheduleView === 'weekly' && panels.suitability !== false && (
         <SuitabilityMatrixBoard weekDays={weekDays} shiftDefs={shiftDefs} departments={departments} />
+      )}
+
+      {scheduleView === 'weekly' && panels.planning !== false && (
+        <PlanningSuggestionsBoard weekDays={weekDays} departments={departments} />
       )}
 
       <div style={{

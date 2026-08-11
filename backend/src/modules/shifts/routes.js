@@ -22,6 +22,7 @@ import { evaluateSuitability } from './suitability.js'
 import {
   buildSuitabilityMatrix, listStaffConstraints, addStaffConstraint, deleteStaffConstraint,
 } from './suitabilityMatrix.js'
+import { buildPlanningSuggestions, comparePlanningScenarios, fairnessReport } from './planningSuggestions.js'
 import {
   departmentsService, shiftDefinitionsService, scheduleService, bulkAssignService,
   scheduleSegmentsService, createScheduleSegmentService, updateScheduleSegmentService, deleteScheduleSegmentService,
@@ -380,6 +381,35 @@ shiftsRouter.get('/occupancy', ...managerOrSupervisor, (req, res) => {
 shiftsRouter.get('/readiness', ...managerOrSupervisor, (req, res) => {
   try { res.json(buildReadiness(getDB())) }
   catch (e) { logger.error({ err: e.message }, '[shifts/readiness]'); res.status(500).json({ error: 'Hazırlık durumu alınamadı' }) }
+})
+
+// Planlama önerisi: açık başına puanlı aday listesi + gerekçe. Karar değildir.
+shiftsRouter.get('/planning-suggestions', ...managerOrSupervisor, (req, res) => {
+  try {
+    res.json(buildPlanningSuggestions({
+      date: req.query.date,
+      strategy: req.query.strategy || 'coverage',
+      dept_id: req.query.dept_id ? Number(req.query.dept_id) : null,
+    }))
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
+shiftsRouter.get('/planning-scenarios', ...managerOrSupervisor, (req, res) => {
+  try {
+    res.json(comparePlanningScenarios({
+      date: req.query.date,
+      dept_id: req.query.dept_id ? Number(req.query.dept_id) : null,
+    }))
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
+shiftsRouter.get('/fairness-report', ...managerOrSupervisor, (req, res) => {
+  try {
+    res.json(fairnessReport({
+      start: req.query.start, end: req.query.end,
+      dept_id: req.query.dept_id ? Number(req.query.dept_id) : null,
+    }))
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
 
 // Uygunluk matrisi: "bu vardiyaya KİMLERİ koyabilirim" — engelli de listede.

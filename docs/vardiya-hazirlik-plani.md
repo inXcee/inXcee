@@ -181,7 +181,8 @@ Fazlar arasında canlıya çıkılabilir; hiçbiri diğerini beklemez.
 | 9 — Mesai zinciri ve bütçe | Bitti | (bu commit) |
 | 10 — Açık vardiya ve başvuru | Bitti | (bu commit) |
 | 11 — Personel uygunluk matrisi | Bitti | (bu commit) |
-| 12-15 | Başlanmadı | — |
+| 12 — Akıllı planlama ve senaryolar | Bitti | (bu commit) |
+| 13-15 | Başlanmadı | — |
 
 **Faz 4 notu:** "geçmiş/gelecek ayrımı yok" varsayımıyla başlandı; ölçüm ayrımın
 ZATEN var olduğunu gösterdi (operasyonel/kapanış oranı ayrı hesaplanıyor).
