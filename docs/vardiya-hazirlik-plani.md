@@ -175,12 +175,20 @@ Fazlar arasında canlıya çıkılabilir; hiçbiri diğerini beklemez.
 | 3 — Aksiyon Merkezi | Bitti, canlıda | 6b45f2f |
 | 4 — Devreden kapanmamış puantaj | Bitti | 9402a5a |
 | 5 — Bordro güvenlik kapısı | Bitti | 1732d69 |
-| 6-15 | Başlanmadı | — |
+| 6 — Günlük Operasyon Merkezi | Bitti, canlıda | cc50ae5 |
+| 7 — Puantaj açıklanabilirlik zinciri | Bitti | (bu commit) |
+| 8-15 | Başlanmadı | — |
 
 **Faz 4 notu:** "geçmiş/gelecek ayrımı yok" varsayımıyla başlandı; ölçüm ayrımın
 ZATEN var olduğunu gösterdi (operasyonel/kapanış oranı ayrı hesaplanıyor).
 Gerçek boşluk farklı çıktı: puantaj ekranı yalnız seçili aya baktığı için önceki
 aylardan devreden 1299 kapanmamış gün hiçbir yerde görünmüyordu.
+
+**Faz 7 kapsamı:** zincirin okunur kısmı (planlanan vardiya → giriş/çıkış kanıtı
+→ izin/rapor → mesai → puantaj kodu → dönem onayı) yapıldı; her halka ok/eksik/
+ölçülemez durumuyla ve gerekçesiyle görünüyor. Fazın "otomatik öneri, toplu
+mutabakat, iki yönetici onaylı kapanış, bordro farkı önizlemesi" kalemleri Faz
+9 ve 13'e bırakıldı — önce zincirin okunması gerekiyordu.
 
 **Faz 2'de tamamlanmayan parça:** personelin çizelgeyi gördüğünü onaylaması
 (mobil tarafta ekran gerektiriyor) — atlanmadı, ayrı artım olarak bekliyor.

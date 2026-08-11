@@ -11,6 +11,7 @@ import { getWeekVersion, publishWeek, withdrawWeek } from './scheduleVersions.js
 import { buildActionCenter } from './actionCenter.js'
 import { evaluatePayrollGate, buildOutputStamp } from './payrollGate.js'
 import { getDayOperations, findReplacements, addHandoverNote } from './dailyOperations.js'
+import { buildTimesheetChain } from './timesheetChain.js'
 import {
   departmentsService, shiftDefinitionsService, scheduleService, bulkAssignService,
   scheduleSegmentsService, createScheduleSegmentService, updateScheduleSegmentService, deleteScheduleSegmentService,
@@ -369,6 +370,12 @@ shiftsRouter.get('/occupancy', ...managerOrSupervisor, (req, res) => {
 shiftsRouter.get('/readiness', ...managerOrSupervisor, (req, res) => {
   try { res.json(buildReadiness(getDB())) }
   catch (e) { logger.error({ err: e.message }, '[shifts/readiness]'); res.status(500).json({ error: 'Hazırlık durumu alınamadı' }) }
+})
+
+// Puantaj açıklanabilirlik zinciri: bir günün NEDEN öyle göründüğü.
+shiftsRouter.get('/timesheet-chain', ...managerOrSupervisor, (req, res) => {
+  try { res.json(buildTimesheetChain({ staff_id: req.query.staff_id, date: req.query.date })) }
+  catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
 
 // Günlük Operasyon Merkezi: gün özeti, kapsama açıkları, devir teslim.

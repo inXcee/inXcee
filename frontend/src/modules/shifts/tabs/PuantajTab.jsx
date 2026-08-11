@@ -6,6 +6,7 @@ import { useDebounce } from '../../../shared/hooks/useDebounce.js'
 import { useProjects, NO_PROJECT } from '../../../shared/hooks/useProjects.js'
 import { groupPuantajRows, GROUP_MODES } from '../logic/puantajSummary.js'
 import ProjectCrossoverBoard from './ProjectCrossoverBoard.jsx'
+import TimesheetChainPanel from './TimesheetChainPanel.jsx'
 import ProjectBadge from '../../../shared/components/ProjectBadge.jsx'
 import { SkeletonTable, SkeletonGrid } from '../../../shared/components/Skeleton.jsx'
 import { BottomSheet, ModalOverlay, formatShiftHours, LEAVE_TYPES, leaveTypeLabel, toastErr, toastOk } from '../shared.jsx'
@@ -2489,6 +2490,8 @@ function PuantajCellEditor({ editor, holidayName, onClose }) {
 
         {error && <div style={{ color: 'var(--red)', fontSize: '11px' }}>{error}</div>}
 
+        <TimesheetChainPanel staffId={staff.id} date={date} />
+
         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
           <button className="btn btn-ghost btn-sm" onClick={onClose} disabled={saving}>Vazgeç</button>
           <button className="btn btn-primary btn-sm" onClick={save} disabled={saving}>
@@ -2642,6 +2645,8 @@ function PuantajDayDetailEditor({ editor, holidayName, onClose }) {
         </div>
 
         {error && <div style={{ color: 'var(--red)', fontSize: '11px' }}>{error}</div>}
+
+        <TimesheetChainPanel staffId={staff.id} date={date} />
 
         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
           <button className="btn btn-ghost btn-sm" onClick={onClose} disabled={saving}>Vazgec</button>
