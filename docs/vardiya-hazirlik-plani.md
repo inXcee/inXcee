@@ -177,7 +177,8 @@ Fazlar arasında canlıya çıkılabilir; hiçbiri diğerini beklemez.
 | 5 — Bordro güvenlik kapısı | Bitti | 1732d69 |
 | 6 — Günlük Operasyon Merkezi | Bitti, canlıda | cc50ae5 |
 | 7 — Puantaj açıklanabilirlik zinciri | Bitti | (bu commit) |
-| 8-15 | Başlanmadı | — |
+| 8 — İzin etki analizi | Bitti | (bu commit) |
+| 9-15 | Başlanmadı | — |
 
 **Faz 4 notu:** "geçmiş/gelecek ayrımı yok" varsayımıyla başlandı; ölçüm ayrımın
 ZATEN var olduğunu gösterdi (operasyonel/kapanış oranı ayrı hesaplanıyor).

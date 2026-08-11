@@ -12,6 +12,7 @@ import { buildActionCenter } from './actionCenter.js'
 import { evaluatePayrollGate, buildOutputStamp } from './payrollGate.js'
 import { getDayOperations, findReplacements, addHandoverNote } from './dailyOperations.js'
 import { buildTimesheetChain } from './timesheetChain.js'
+import { buildLeaveImpact } from './leaveImpact.js'
 import {
   departmentsService, shiftDefinitionsService, scheduleService, bulkAssignService,
   scheduleSegmentsService, createScheduleSegmentService, updateScheduleSegmentService, deleteScheduleSegmentService,
@@ -370,6 +371,18 @@ shiftsRouter.get('/occupancy', ...managerOrSupervisor, (req, res) => {
 shiftsRouter.get('/readiness', ...managerOrSupervisor, (req, res) => {
   try { res.json(buildReadiness(getDB())) }
   catch (e) { logger.error({ err: e.message }, '[shifts/readiness]'); res.status(500).json({ error: 'Hazırlık durumu alınamadı' }) }
+})
+
+// İzin etki analizi: onay ÖNCESİ kapsama kaybı, ezilecek vardiya, bakiye.
+shiftsRouter.get('/leave-impact', ...managerOrSupervisor, (req, res) => {
+  try {
+    res.json(buildLeaveImpact({
+      staff_id: req.query.staff_id,
+      start: req.query.start,
+      end: req.query.end,
+      leave_type: req.query.leave_type || 'annual',
+    }))
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
 
 // Puantaj açıklanabilirlik zinciri: bir günün NEDEN öyle göründüğü.

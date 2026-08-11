@@ -7,6 +7,7 @@ import {
   toastErr, toastOk, LEAVE_TYPES, STATUS_MAP, formatDate, deptColor,
   ModalOverlay, StaffSearch,
 } from '../shared.jsx'
+import LeaveImpactPanel from './LeaveImpactPanel.jsx'
 
 const EMPTY_FORM = {
   staff_id: '', leave_type: 'annual', start_date: '', end_date: '', leave_hours: '', reason: '', files: [],
@@ -281,6 +282,16 @@ export default function LeaveTab({ departments, onPersonClick }) {
             {review.status === 'approved' ? 'İZİN ONAYI' : 'İZİN REDDİ'}
           </h3>
           <div style={{ color: 'var(--text2)', fontSize: '12px', marginBottom: '14px' }}>{review.leave.full_name} · {formatDate(review.leave.start_date)}</div>
+          {/* Onay kararı burada veriliyor; etki analizinin yeri de burası. */}
+          {review.status === 'approved' && (
+            <LeaveImpactPanel
+              staffId={review.leave.staff_id}
+              start={review.leave.start_date}
+              end={review.leave.end_date}
+              leaveType={review.leave.leave_type}
+            />
+          )}
+
           <label className="form-label">Amir notu {review.status === 'rejected' ? '(zorunlu)' : '(isteğe bağlı)'}</label>
           <textarea className="form-textarea" rows={3} value={review.note} onChange={event => setReview(previous => ({ ...previous, note: event.target.value }))} />
           <div style={{ display: 'flex', gap: '8px', marginTop: '14px' }}>
