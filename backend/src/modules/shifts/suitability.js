@@ -56,7 +56,7 @@ function kontrol(key, label, status, detail) {
 }
 
 // Tek kaynak: hem açık vardiya adayları hem uygunluk matrisi bunu kullanır.
-export function evaluateSuitability({ staff_id, date, shift_def_id = null, role_id = null } = {}, db = getDB()) {
+export function evaluateSuitability({ staff_id, date, shift_def_id = null, role_id = null, work_location_id = null } = {}, db = getDB()) {
   const staffId = Number(staff_id)
   const kontroller = []
   const ekle = (...a) => kontroller.push(kontrol(...a))
@@ -217,6 +217,53 @@ export function evaluateSuitability({ staff_id, date, shift_def_id = null, role_
     }
   } catch (err) {
     ekle('documents', 'Zorunlu belgeler', 'unknown', `Okunamadı: ${err.message}`)
+  }
+
+  // ── Çalışma kısıtları (sağlık / lokasyon / vardiya) ───────────────────────
+  // Bu bilgi amirin hafızasındaydı; amir değişince kayboluyordu.
+  try {
+    const kisitlar = db.prepare(`
+      SELECT constraint_type, ref_id, note, valid_from, valid_to
+      FROM staff_work_constraints
+      WHERE staff_id = ?
+        AND (valid_from IS NULL OR valid_from <= ?)
+        AND (valid_to IS NULL OR valid_to >= ?)
+    `).all(staffId, date, date)
+
+    const saglik = kisitlar.filter(k => k.constraint_type === 'health')
+    ekle('health', 'Sağlık kısıtı', saglik.length ? 'warn' : 'ok',
+      saglik.length ? saglik.map(k => k.note || 'kısıt notu yok').join(' · ') : 'Kayıtlı sağlık kısıtı yok')
+
+    const vardiyaEngel = kisitlar.filter(k => k.constraint_type === 'shift_block')
+    const vardiyaTercih = kisitlar.filter(k => k.constraint_type === 'shift_prefer')
+    if (shift_def_id != null && vardiyaEngel.some(k => Number(k.ref_id) === Number(shift_def_id))) {
+      const k = vardiyaEngel.find(x => Number(x.ref_id) === Number(shift_def_id))
+      ekle('shift_constraint', 'Vardiya kısıtı', 'block', k.note || 'Bu vardiyaya atanamaz')
+    } else if (shift_def_id != null && vardiyaTercih.some(k => Number(k.ref_id) === Number(shift_def_id))) {
+      ekle('shift_constraint', 'Vardiya kısıtı', 'ok', 'Tercih ettiği vardiya')
+    } else {
+      ekle('shift_constraint', 'Vardiya kısıtı', 'ok', 'Bu vardiyaya kısıt yok')
+    }
+
+    const izinli = kisitlar.filter(k => k.constraint_type === 'location_allow')
+    const yasak = kisitlar.filter(k => k.constraint_type === 'location_block')
+    if (work_location_id == null) {
+      // Lokasyonu bilinmeyen atamada kısıt ölçülemez; "kısıt yok" denmez.
+      ekle('location_constraint', 'Lokasyon kısıtı',
+        (izinli.length || yasak.length) ? 'unknown' : 'ok',
+        (izinli.length || yasak.length)
+          ? 'Personelin lokasyon kısıtı var ama atamanın lokasyonu belirtilmemiş'
+          : 'Lokasyon kısıtı yok')
+    } else if (yasak.some(k => Number(k.ref_id) === Number(work_location_id))) {
+      const k = yasak.find(x => Number(x.ref_id) === Number(work_location_id))
+      ekle('location_constraint', 'Lokasyon kısıtı', 'block', k.note || 'Bu noktada çalışamaz')
+    } else if (izinli.length && !izinli.some(k => Number(k.ref_id) === Number(work_location_id))) {
+      ekle('location_constraint', 'Lokasyon kısıtı', 'block', 'Yalnız tanımlı lokasyonlarda çalışabilir')
+    } else {
+      ekle('location_constraint', 'Lokasyon kısıtı', 'ok', 'Bu noktada çalışabilir')
+    }
+  } catch (err) {
+    ekle('constraints', 'Çalışma kısıtları', 'unknown', `Okunamadı: ${err.message}`)
   }
 
   const engeller = kontroller.filter(k => k.status === 'block')

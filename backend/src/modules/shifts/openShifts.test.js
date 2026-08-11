@@ -32,6 +32,9 @@ const kur = () => {
       display_name TEXT, department_id INTEGER, role_id INTEGER, requires_expiry INTEGER, is_active INTEGER);
     CREATE TABLE documents (id INTEGER PRIMARY KEY AUTOINCREMENT, staff_id INTEGER, document_kind TEXT,
       expires_on TEXT, archived_at TEXT);
+    CREATE TABLE staff_work_constraints (id INTEGER PRIMARY KEY AUTOINCREMENT, staff_id INTEGER,
+      constraint_type TEXT, ref_id INTEGER, note TEXT, valid_from TEXT, valid_to TEXT,
+      created_by INTEGER, created_at TEXT);
     CREATE TABLE shift_coverage_rules (id INTEGER PRIMARY KEY, name TEXT, min_staff INTEGER, dept_id INTEGER,
       shift_def_id INTEGER, work_location_id INTEGER, days_of_week TEXT, is_active INTEGER DEFAULT 1);
     CREATE TABLE open_shifts (id INTEGER PRIMARY KEY AUTOINCREMENT, work_date TEXT, shift_def_id INTEGER,

@@ -24,6 +24,9 @@ const kur = () => {
       display_name TEXT, department_id INTEGER, role_id INTEGER, requires_expiry INTEGER, is_active INTEGER);
     CREATE TABLE documents (id INTEGER PRIMARY KEY AUTOINCREMENT, staff_id INTEGER, document_kind TEXT,
       expires_on TEXT, archived_at TEXT);
+    CREATE TABLE staff_work_constraints (id INTEGER PRIMARY KEY AUTOINCREMENT, staff_id INTEGER,
+      constraint_type TEXT, ref_id INTEGER, note TEXT, valid_from TEXT, valid_to TEXT,
+      created_by INTEGER, created_at TEXT);
     INSERT INTO staff_roles(id, name) VALUES (1, 'Meydancı'), (2, 'Teknisyen');
     INSERT INTO staff(id, full_name, role_id, department_id) VALUES (10, 'Ali Veli', 1, 1);
     INSERT INTO shift_definitions(id, name, start_hour, end_hour)

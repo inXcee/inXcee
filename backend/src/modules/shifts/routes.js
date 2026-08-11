@@ -20,6 +20,9 @@ import {
 } from './openShifts.js'
 import { evaluateSuitability } from './suitability.js'
 import {
+  buildSuitabilityMatrix, listStaffConstraints, addStaffConstraint, deleteStaffConstraint,
+} from './suitabilityMatrix.js'
+import {
   departmentsService, shiftDefinitionsService, scheduleService, bulkAssignService,
   scheduleSegmentsService, createScheduleSegmentService, updateScheduleSegmentService, deleteScheduleSegmentService,
   workLocationsService, createWorkLocationService, updateWorkLocationService, deleteWorkLocationService,
@@ -377,6 +380,37 @@ shiftsRouter.get('/occupancy', ...managerOrSupervisor, (req, res) => {
 shiftsRouter.get('/readiness', ...managerOrSupervisor, (req, res) => {
   try { res.json(buildReadiness(getDB())) }
   catch (e) { logger.error({ err: e.message }, '[shifts/readiness]'); res.status(500).json({ error: 'Hazırlık durumu alınamadı' }) }
+})
+
+// Uygunluk matrisi: "bu vardiyaya KİMLERİ koyabilirim" — engelli de listede.
+shiftsRouter.get('/suitability-matrix', ...managerOrSupervisor, (req, res) => {
+  try {
+    res.json(buildSuitabilityMatrix({
+      date: req.query.date,
+      shift_def_id: req.query.shift_def_id ? Number(req.query.shift_def_id) : null,
+      role_id: req.query.role_id ? Number(req.query.role_id) : null,
+      work_location_id: req.query.work_location_id ? Number(req.query.work_location_id) : null,
+      dept_id: req.query.dept_id ? Number(req.query.dept_id) : null,
+      project_id: req.query.project_id ? Number(req.query.project_id) : null,
+      only_eligible: req.query.only_eligible === '1' || req.query.only_eligible === 'true',
+    }))
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
+// Çalışma kısıtları (sağlık / lokasyon / vardiya) — amirin hafızasından tabloya.
+shiftsRouter.get('/staff-constraints/:staffId', ...managerOrSupervisor, (req, res) => {
+  try { res.json({ items: listStaffConstraints(req.params.staffId) }) }
+  catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
+shiftsRouter.post('/staff-constraints', ...managerOrSupervisor, (req, res) => {
+  try { res.status(201).json(addStaffConstraint(req.body || {}, undefined, req.user.id)) }
+  catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
+shiftsRouter.delete('/staff-constraints/:id', ...managerOrSupervisor, (req, res) => {
+  try { res.json(deleteStaffConstraint(req.params.id)) }
+  catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
 
 // Açık vardiya: ilan → başvuru → aday uygunluğu → seçim (çizelgeye yazar).
