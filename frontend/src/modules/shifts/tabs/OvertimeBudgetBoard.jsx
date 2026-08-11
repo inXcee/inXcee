@@ -80,7 +80,7 @@ export default function OvertimeBudgetBoard({ period, deptId = null, projectId =
         <strong style={{ fontSize: 13 }}>⏱ MESAİ BÜTÇESİ VE ZİNCİRİ</strong>
         {acik && data && (
           <span style={{ marginLeft: 'auto', fontFamily: 'var(--mono)', fontSize: 11, color: kopukToplam ? 'var(--red)' : 'var(--green)' }}>
-            {kopukToplam ? `${kopukToplam} kopuk halka` : 'zincir sağlam'} · {data.totals.hours} saat
+            {kopukToplam ? `${kopukToplam} kopuk halka` : 'zincir sağlam'} · {data.totals?.hours ?? 0} saat
           </span>
         )}
       </button>
@@ -116,7 +116,7 @@ export default function OvertimeBudgetBoard({ period, deptId = null, projectId =
               )}
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 6, marginBottom: 10 }}>
-                <Kutu etiket="TOPLAM" deger={`${data.totals.hours} sa`} alt={`${data.totals.people} kişi · ${data.totals.records} kayıt`} />
+                <Kutu etiket="TOPLAM" deger={`${data.totals?.hours ?? 0} sa`} alt={`${data.totals?.people ?? 0} kişi · ${data.totals?.records ?? 0} kayıt`} />
                 {b.known
                   ? <Kutu
                     etiket="AYLIK TAVAN" deger={`${b.used_hours}/${b.limit_hours}`}
@@ -188,10 +188,10 @@ export default function OvertimeBudgetBoard({ period, deptId = null, projectId =
               {(data.person_limit?.over?.length > 0 || data.yearly_limit?.over?.length > 0) && (
                 <div style={{ marginBottom: 6 }}>
                   <div style={{ fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: 1, color: 'var(--red)' }}>TAVAN AŞANLAR</div>
-                  {data.person_limit.over.map(k => (
+                  {(data.person_limit?.over || []).map(k => (
                     <div key={`a-${k.staff_id}`} style={{ fontSize: 11 }}>{k.full_name} · aylık {k.hours} sa (+{k.over_by})</div>
                   ))}
-                  {data.yearly_limit.over.map(k => (
+                  {(data.yearly_limit?.over || []).map(k => (
                     <div key={`y-${k.staff_id}`} style={{ fontSize: 11 }}>{k.full_name} · yıllık {k.hours} sa (+{k.over_by})</div>
                   ))}
                 </div>

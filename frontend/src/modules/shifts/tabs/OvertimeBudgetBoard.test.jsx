@@ -119,3 +119,22 @@ describe('Mesai bütçesi ve zinciri panosu', () => {
     expect(screen.getByRole('button', { name: 'Tekrar dene' })).toBeInTheDocument()
   })
 })
+
+// Eksik alanli govde (surum uyusmazligi, kismi hata) tum sekmeyi dusurmemeli:
+// bu pano Mesai sekmesinin en ustunde duruyor.
+describe('eksik alanlı gövdeye dayanıklılık', () => {
+  it('boş gövdede çökmez', async () => {
+    api.get.mockResolvedValue({ data: {} })
+    ciz()
+    expect(await screen.findByText(/zincir sağlam/)).toBeInTheDocument()
+  })
+
+  it('yalnız yıllık tavan aşılmışsa çökmez', async () => {
+    api.get.mockResolvedValue(cevap({
+      person_limit: { known: false, reason: 'tanımsız' },
+      yearly_limit: { known: true, limit_hours: 270, over: [{ staff_id: 10, full_name: 'Ali Veli', hours: 280, over_by: 10 }] },
+    }))
+    ciz()
+    expect(await screen.findByText(/yıllık 280 sa/)).toBeInTheDocument()
+  })
+})
