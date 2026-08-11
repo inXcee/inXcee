@@ -4,6 +4,7 @@ import api from '../../../shared/api/client.js'
 import { useProjects, NO_PROJECT } from '../../../shared/hooks/useProjects.js'
 import { useAuthStore } from '../../../shared/store/authStore.js'
 import { toastErr, toastOk, formatDate, deptColor, ModalOverlay, StaffSearch } from '../shared.jsx'
+import OvertimeBudgetBoard from './OvertimeBudgetBoard.jsx'
 
 const STATUS_META = {
   pending: { label: 'Bekliyor', badge: 'badge-amber' },
@@ -136,6 +137,13 @@ export default function OvertimeTab({ departments, onPersonClick }) {
 
   return (
     <div className="fade-up">
+      {/* Bütçe ve zincir, talep listesinin ÜSTÜNDE: onay burada veriliyor. */}
+      <OvertimeBudgetBoard
+        period={month}
+        deptId={deptFilter ? Number(deptFilter) : null}
+        projectId={projectFilter && projectFilter !== NO_PROJECT ? Number(projectFilter) : null}
+        isManager={user?.role === 'campus_manager'}
+      />
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
         <input type="month" className="form-input" value={month} onChange={event => setMonth(event.target.value)} style={{ width: 'auto', padding: '5px 11px', fontSize: '12px' }} />
         <select className="form-select" value={projectFilter} aria-label="Mesai projesi"

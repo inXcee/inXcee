@@ -13,6 +13,7 @@ import { evaluatePayrollGate, buildOutputStamp } from './payrollGate.js'
 import { getDayOperations, findReplacements, addHandoverNote } from './dailyOperations.js'
 import { buildTimesheetChain } from './timesheetChain.js'
 import { buildLeaveImpact } from './leaveImpact.js'
+import { buildOvertimeOverview, upsertOvertimeBudget, listOvertimeBudgets } from './overtimeBudget.js'
 import {
   departmentsService, shiftDefinitionsService, scheduleService, bulkAssignService,
   scheduleSegmentsService, createScheduleSegmentService, updateScheduleSegmentService, deleteScheduleSegmentService,
@@ -371,6 +372,27 @@ shiftsRouter.get('/occupancy', ...managerOrSupervisor, (req, res) => {
 shiftsRouter.get('/readiness', ...managerOrSupervisor, (req, res) => {
   try { res.json(buildReadiness(getDB())) }
   catch (e) { logger.error({ err: e.message }, '[shifts/readiness]'); res.status(500).json({ error: 'Hazırlık durumu alınamadı' }) }
+})
+
+// Mesai zinciri ve bütçe: kopuk halkalar + tavana karşı tüketim.
+shiftsRouter.get('/overtime-overview', ...managerOrSupervisor, (req, res) => {
+  try {
+    res.json(buildOvertimeOverview({
+      period: req.query.period,
+      dept_id: req.query.dept_id ? Number(req.query.dept_id) : null,
+      project_id: req.query.project_id ? Number(req.query.project_id) : null,
+    }))
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
+shiftsRouter.get('/overtime-budgets', ...managerOrSupervisor, (req, res) => {
+  res.json({ items: listOvertimeBudgets() })
+})
+
+// Tavan koymak operasyonel bir karardır — yalnız yönetici.
+shiftsRouter.put('/overtime-budgets', ...managerOnly, (req, res) => {
+  try { res.json(upsertOvertimeBudget(req.body || {})) }
+  catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
 
 // İzin etki analizi: onay ÖNCESİ kapsama kaybı, ezilecek vardiya, bakiye.

@@ -178,7 +178,8 @@ Fazlar arasında canlıya çıkılabilir; hiçbiri diğerini beklemez.
 | 6 — Günlük Operasyon Merkezi | Bitti, canlıda | cc50ae5 |
 | 7 — Puantaj açıklanabilirlik zinciri | Bitti | (bu commit) |
 | 8 — İzin etki analizi | Bitti | (bu commit) |
-| 9-15 | Başlanmadı | — |
+| 9 — Mesai zinciri ve bütçe | Bitti | (bu commit) |
+| 10-15 | Başlanmadı | — |
 
 **Faz 4 notu:** "geçmiş/gelecek ayrımı yok" varsayımıyla başlandı; ölçüm ayrımın
 ZATEN var olduğunu gösterdi (operasyonel/kapanış oranı ayrı hesaplanıyor).
