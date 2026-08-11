@@ -23,6 +23,7 @@ import {
   buildSuitabilityMatrix, listStaffConstraints, addStaffConstraint, deleteStaffConstraint,
 } from './suitabilityMatrix.js'
 import { buildPlanningSuggestions, comparePlanningScenarios, fairnessReport } from './planningSuggestions.js'
+import { buildShiftReport } from './shiftReports.js'
 import {
   departmentsService, shiftDefinitionsService, scheduleService, bulkAssignService,
   scheduleSegmentsService, createScheduleSegmentService, updateScheduleSegmentService, deleteScheduleSegmentService,
@@ -381,6 +382,16 @@ shiftsRouter.get('/occupancy', ...managerOrSupervisor, (req, res) => {
 shiftsRouter.get('/readiness', ...managerOrSupervisor, (req, res) => {
   try { res.json(buildReadiness(getDB())) }
   catch (e) { logger.error({ err: e.message }, '[shifts/readiness]'); res.status(500).json({ error: 'Hazırlık durumu alınamadı' }) }
+})
+
+// Dönem raporu: planlanan/gerçekleşen, kapsama, devamsızlık, sıralamalar.
+shiftsRouter.get('/period-report', ...managerOrSupervisor, (req, res) => {
+  try {
+    res.json(buildShiftReport({
+      period: req.query.period,
+      dept_id: req.query.dept_id ? Number(req.query.dept_id) : null,
+    }))
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
 
 // Planlama önerisi: açık başına puanlı aday listesi + gerekçe. Karar değildir.
