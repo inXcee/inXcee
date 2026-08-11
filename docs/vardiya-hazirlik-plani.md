@@ -183,7 +183,8 @@ Fazlar arasında canlıya çıkılabilir; hiçbiri diğerini beklemez.
 | 11 — Personel uygunluk matrisi | Bitti | (bu commit) |
 | 12 — Akıllı planlama ve senaryolar | Bitti | (bu commit) |
 | 13 — Raporlama ve panolar | Bitti | (bu commit) |
-| 14-15 | Başlanmadı | — |
+| 14 — Modüller arası bağlar | Bitti | (bu commit) |
+| 15 | Başlanmadı | — |
 
 **Faz 4 notu:** "geçmiş/gelecek ayrımı yok" varsayımıyla başlandı; ölçüm ayrımın
 ZATEN var olduğunu gösterdi (operasyonel/kapanış oranı ayrı hesaplanıyor).

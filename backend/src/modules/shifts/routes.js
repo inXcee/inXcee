@@ -24,6 +24,7 @@ import {
 } from './suitabilityMatrix.js'
 import { buildPlanningSuggestions, comparePlanningScenarios, fairnessReport } from './planningSuggestions.js'
 import { buildShiftReport } from './shiftReports.js'
+import { buildCrossModuleLinks } from './crossModuleLinks.js'
 import {
   departmentsService, shiftDefinitionsService, scheduleService, bulkAssignService,
   scheduleSegmentsService, createScheduleSegmentService, updateScheduleSegmentService, deleteScheduleSegmentService,
@@ -382,6 +383,12 @@ shiftsRouter.get('/occupancy', ...managerOrSupervisor, (req, res) => {
 shiftsRouter.get('/readiness', ...managerOrSupervisor, (req, res) => {
   try { res.json(buildReadiness(getDB())) }
   catch (e) { logger.error({ err: e.message }, '[shifts/readiness]'); res.status(500).json({ error: 'Hazırlık durumu alınamadı' }) }
+})
+
+// Modüller arası bağ: vardiya ↔ servis ↔ yemek ↔ turnike ↔ çıkış.
+shiftsRouter.get('/cross-links', ...managerOrSupervisor, (req, res) => {
+  try { res.json(buildCrossModuleLinks({ date: req.query.date })) }
+  catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
 
 // Dönem raporu: planlanan/gerçekleşen, kapsama, devamsızlık, sıralamalar.
