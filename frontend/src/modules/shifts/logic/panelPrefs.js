@@ -13,6 +13,7 @@ export const SCHEDULE_PANELS = [
   { key: 'publish', label: 'Yayın durumu', hint: 'Hafta taslak mı, yayında mı; yayından beri değişenler' },
   { key: 'actionCenter', label: 'Aksiyon merkezi', hint: 'Onay bekleyen, çakışan, eksik — tek listede' },
   { key: 'dayOperations', label: 'Günlük operasyon', hint: 'Eksik kadro, yerine çağrılabilecekler, devir teslim' },
+  { key: 'openShifts', label: 'Açık vardiyalar', hint: 'İlan, başvuru ve aday uygunluğu' },
   { key: 'deptCards', label: 'Bölüm kartları', hint: 'Bölüm bölüm kişi ve durum sayıları' },
   { key: 'coverage', label: 'Kapsama / kadro hedefi', hint: 'Hedef-gerçekleşen ve departman kırılımı' },
   { key: 'dayDetail', label: 'Gün detayı', hint: 'Gün gün kim hangi vardiyada, nerede' },

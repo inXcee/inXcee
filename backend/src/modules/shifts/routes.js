@@ -15,6 +15,11 @@ import { buildTimesheetChain } from './timesheetChain.js'
 import { buildLeaveImpact } from './leaveImpact.js'
 import { buildOvertimeOverview, upsertOvertimeBudget, listOvertimeBudgets } from './overtimeBudget.js'
 import {
+  createOpenShift, listOpenShifts, applyToOpenShift, withdrawApplication,
+  listApplicants, selectApplicant, coverageComparison, markApplicationSeen,
+} from './openShifts.js'
+import { evaluateSuitability } from './suitability.js'
+import {
   departmentsService, shiftDefinitionsService, scheduleService, bulkAssignService,
   scheduleSegmentsService, createScheduleSegmentService, updateScheduleSegmentService, deleteScheduleSegmentService,
   workLocationsService, createWorkLocationService, updateWorkLocationService, deleteWorkLocationService,
@@ -372,6 +377,65 @@ shiftsRouter.get('/occupancy', ...managerOrSupervisor, (req, res) => {
 shiftsRouter.get('/readiness', ...managerOrSupervisor, (req, res) => {
   try { res.json(buildReadiness(getDB())) }
   catch (e) { logger.error({ err: e.message }, '[shifts/readiness]'); res.status(500).json({ error: 'Hazırlık durumu alınamadı' }) }
+})
+
+// Açık vardiya: ilan → başvuru → aday uygunluğu → seçim (çizelgeye yazar).
+shiftsRouter.get('/open-shifts', ...managerOrSupervisor, (req, res) => {
+  try {
+    res.json(listOpenShifts({
+      from: req.query.from || null,
+      to: req.query.to || null,
+      status: req.query.status === 'all' ? null : (req.query.status || 'open'),
+    }))
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
+shiftsRouter.post('/open-shifts', ...managerOrSupervisor, (req, res) => {
+  try { res.status(201).json(createOpenShift(req.body || {}, undefined, req.user.id)) }
+  catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
+shiftsRouter.get('/open-shifts/:id/applicants', ...managerOrSupervisor, (req, res) => {
+  try { res.json(listApplicants(Number(req.params.id))) }
+  catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
+shiftsRouter.post('/open-shifts/:id/apply', ...managerOrSupervisor, (req, res) => {
+  try { res.status(201).json(applyToOpenShift({ open_shift_id: Number(req.params.id), ...req.body })) }
+  catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
+shiftsRouter.post('/open-shifts/:id/withdraw', ...managerOrSupervisor, (req, res) => {
+  try { res.json(withdrawApplication({ open_shift_id: Number(req.params.id), ...req.body })) }
+  catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
+// Seçim atama yapar; engelli adayda 409 + gerekçe döner (force ile geçilir).
+shiftsRouter.post('/open-shifts/:id/select', ...managerOrSupervisor, (req, res) => {
+  try { res.json(selectApplicant({ open_shift_id: Number(req.params.id), ...req.body }, undefined, req.user.id)) }
+  catch (e) { res.status(e.statusCode || 400).json({ error: e.message, suitability: e.suitability }) }
+})
+
+shiftsRouter.post('/open-shifts/:id/seen', ...managerOrSupervisor, (req, res) => {
+  try { res.json(markApplicationSeen({ open_shift_id: Number(req.params.id), ...req.body })) }
+  catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
+shiftsRouter.get('/coverage-comparison', ...managerOrSupervisor, (req, res) => {
+  try { res.json(coverageComparison({ date: req.query.date })) }
+  catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
+// Uygunluk: çakışma, izin, dinlenme, haftalık süre, rol, zorunlu belge.
+shiftsRouter.get('/suitability', ...managerOrSupervisor, (req, res) => {
+  try {
+    res.json(evaluateSuitability({
+      staff_id: req.query.staff_id,
+      date: req.query.date,
+      shift_def_id: req.query.shift_def_id ? Number(req.query.shift_def_id) : null,
+      role_id: req.query.role_id ? Number(req.query.role_id) : null,
+    }))
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
 
 // Mesai zinciri ve bütçe: kopuk halkalar + tavana karşı tüketim.
