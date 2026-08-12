@@ -9,14 +9,19 @@ import EntryForm from './EntryForm.jsx'
 import IroningWorkView from './IroningWorkView.jsx'
 import KioskHome from './KioskHome.jsx'
 import LossCenterView from './LossCenterView.jsx'
+import MachineView from './MachineView.jsx'
+import HandoverView from './HandoverView.jsx'
+import HardwareToolsView from './HardwareToolsView.jsx'
 import RoomsView from './RoomsView.jsx'
+import { attachHidScanner } from './hardwareAdapters.js'
 import './LaundryKioskPage.css'
 
 const SESSION_KEY = 'laundry-kiosk-session'
 
 const TABS = [
   { key: 'home', icon: '⌂', label: 'Ana Sayfa', description: 'Günün özeti' },
-  { key: 'entry', icon: '＋', label: 'Hızlı Giriş', description: 'Yeni torba kaydı' },
+  { key: 'entry', icon: '＋', label: 'Kabul', description: 'Yeni torba kaydı' },
+  { key: 'machine', icon: '⚙', label: 'Makine', description: 'Yük planlama' },
   { key: 'ironing', icon: '♨', label: 'Ütü', description: 'Parça kontrolü' },
   { key: 'deliver', icon: '▣', label: 'Teslim', description: 'Hazır torbalar' },
 ]
@@ -26,6 +31,8 @@ const MORE_TABS = [
   { key: 'loss', icon: '!', label: 'Kayıp Merkezi', description: 'Torba ve kıyafet' },
   { key: 'rooms', icon: '⌂', label: 'Odalar', description: 'Oda geçmişi' },
   { key: 'status', icon: '≡', label: 'Tüm Kayıtlar', description: 'Detaylı durum' },
+  { key: 'handover', icon: '⇄', label: 'Vardiya Teslimi', description: 'Çift PIN doğrulama' },
+  { key: 'hardware', icon: '⌁', label: 'Donanım Testi', description: 'Okuyucu, kamera, yazıcı' },
 ]
 
 const ALL_TABS = [...TABS, ...MORE_TABS]
@@ -61,6 +68,7 @@ export default function LaundryKioskPage() {
   const [focusedRoom, setFocusedRoom] = useState(null)
   const [isOnline, setIsOnline] = useState(navigator.onLine)
   const [now, setNow] = useState(() => new Date())
+  const [scanNotice, setScanNotice] = useState(null)
   const searchTimer = useRef(null)
   const pinFieldRef = useRef(null)
 
@@ -83,6 +91,27 @@ export default function LaundryKioskPage() {
     url.searchParams.set('tab', activeTab)
     window.history.replaceState(null, '', url)
   }, [activeTab, avsToken])
+
+  async function openScannedCode(rawCode) {
+    const code = String(rawCode || '').trim()
+    if (!code || !avsToken) return
+    try {
+      const response = await kioskApi.get('/self-service/laundry-kiosk/bags?scope=all')
+      const bag = (response.data || []).find(item => item.bag_no === code || (item.garments || []).some(garment => garment.garment_code === code))
+      if (!bag) {
+        setScanNotice({ type: 'error', code, text: 'Kod kayıtlar arasında bulunamadı.' })
+        return
+      }
+      const target = bag.status === 'dirty' || bag.status === 'washing' ? 'machine' : bag.status === 'ironing' ? 'ironing' : bag.status === 'ready' ? 'deliver' : 'status'
+      setScanNotice({ type: 'ok', code, text: `${bag.block}-${bag.room_no} kaydı açıldı.` })
+      navigate(target, bag)
+    } catch { setScanNotice({ type: 'error', code, text: 'Kod sorgulanamadı.' }) }
+  }
+
+  useEffect(() => {
+    if (!avsToken) return undefined
+    return attachHidScanner(openScannedCode)
+  }, [avsToken]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!avsToken) return
@@ -309,7 +338,7 @@ export default function LaundryKioskPage() {
                   inputMode="numeric"
                   maxLength={6}
                   value={pinInput}
-                  onChange={event => setPinInput(event.target.value.replace(/\D/g, '').slice(0, 4))}
+                  onChange={event => setPinInput(event.target.value.replace(/\D/g, '').slice(0, 6))}
                   placeholder="••••"
                   autoComplete="off"
                   autoFocus
@@ -431,13 +460,17 @@ export default function LaundryKioskPage() {
         </aside>
 
         <main className={`kiosk-content kiosk-content--${activeTab}`}>
+          {scanNotice && <button type="button" className={`kiosk-scan-notice is-${scanNotice.type}`} onClick={() => setScanNotice(null)}><strong>{scanNotice.code}</strong><span>{scanNotice.text}</span><span>×</span></button>}
           {activeTab === 'home' && <KioskHome kioskApi={kioskApi} workerName={workerInfo?.full_name} onNavigate={navigate} />}
           {activeTab === 'entry' && <EntryForm kioskApi={kioskApi} focusedRoom={focusedRoom} onConsumeFocus={() => setFocusedRoom(null)} />}
+          {activeTab === 'machine' && <MachineView kioskApi={kioskApi} focusedBag={focusedBag} onConsumeFocus={() => setFocusedBag(null)} />}
           {activeTab === 'rooms' && <RoomsView kioskApi={kioskApi} onPickRoom={room => { setFocusedRoom(room); navigate('entry') }} />}
           {activeTab === 'loss' && <LossCenterView kioskApi={kioskApi} />}
           {activeTab === 'sorting' && <BurstBagCenterView kioskApi={kioskApi} />}
           {activeTab === 'ironing' && <IroningWorkView kioskApi={kioskApi} focusedBag={focusedBag} onConsumeFocus={() => setFocusedBag(null)} />}
           {activeTab === 'deliver' && <DeliverWorkView kioskApi={kioskApi} focusedBag={focusedBag} onConsumeFocus={() => setFocusedBag(null)} />}
+          {activeTab === 'handover' && <HandoverView kioskApi={kioskApi} workerName={workerInfo?.full_name} workerId={workerInfo?.id} onComplete={logout} />}
+          {activeTab === 'hardware' && <HardwareToolsView onCode={openScannedCode} lastScannedCode={scanNotice?.code} />}
           {activeTab === 'status' && (
             <DashboardView
               kioskApi={kioskApi}

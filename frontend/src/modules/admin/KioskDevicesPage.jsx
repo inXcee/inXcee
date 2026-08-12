@@ -170,6 +170,13 @@ export default function KioskDevicesPage() {
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 5 }}>{typeLabel(device.device_type)} · {device.mode} {device.location ? `· ${device.location}` : ''}</div>
                 <div style={{ fontSize: 10, color: 'var(--text4)', marginTop: 4 }}>Son bağlantı: {localDate(device.last_seen_at)} · Sürüm: {device.app_version || 'bilinmiyor'}</div>
+                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 7 }}>
+                  {['camera', 'hid_keyboard', 'browser_print', 'indexed_db'].map(capability => (
+                    <span key={capability} style={{ padding: '3px 6px', borderRadius: 999, background: device.capabilities?.[capability] ? 'rgba(22,163,74,.12)' : 'rgba(100,116,139,.12)', color: device.capabilities?.[capability] ? '#16a34a' : 'var(--text4)', fontFamily: 'var(--mono)', fontSize: 8 }}>
+                      {capability === 'camera' ? 'KAMERA' : capability === 'hid_keyboard' ? 'OKUYUCU' : capability === 'browser_print' ? 'YAZICI' : 'OFFLINE'} {device.capabilities?.[capability] ? '✓' : '—'}
+                    </span>
+                  ))}
+                </div>
               </div>
               <div style={{ minWidth: 155, fontFamily: 'var(--mono)', fontSize: 11 }}>
                 <div>Kuyruk: <strong>{device.queue_count || 0}</strong></div>
@@ -181,6 +188,7 @@ export default function KioskDevicesPage() {
                   {device.status === 'locked' ? <button className="btn btn-xs" onClick={() => patchMutation.mutate({ id: device.id, body: { status: 'active' } })}>Kilidi aç</button> : <button className="btn btn-xs" aria-label="Cihazı kilitle" onClick={() => commandMutation.mutate({ id: device.id, command_type: 'lock' })}>Kilitle</button>}
                   <button className="btn btn-xs" onClick={() => commandMutation.mutate({ id: device.id, command_type: 'config_refresh' })}>Ayar yenile</button>
                   <button className="btn btn-xs" onClick={() => commandMutation.mutate({ id: device.id, command_type: 'app_reload' })}>Uygulamayı yenile</button>
+                  {device.device_type === 'laundry_terminal' && <button className="btn btn-xs" onClick={() => window.open('/laundry-kiosk?tab=hardware', '_blank')}>Donanım testi</button>}
                   <button className="btn btn-xs" onClick={() => patchMutation.mutate({ id: device.id, body: { status: device.status === 'maintenance' ? 'active' : 'maintenance' } })}>{device.status === 'maintenance' ? 'Bakımı bitir' : 'Bakıma al'}</button>
                   <button className="btn btn-xs" style={{ color: '#dc2626' }} onClick={() => revoke(device.id)}>İptal et</button>
                 </div>

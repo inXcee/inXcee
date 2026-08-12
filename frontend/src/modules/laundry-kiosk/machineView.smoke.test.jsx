@@ -6,6 +6,12 @@ import MachineView from './MachineView.jsx'
 function makeKioskApi() {
   return {
     get: vi.fn((url) => {
+      if (url.includes('/load-suggestions')) return Promise.resolve({ data: {
+        machines: [{ id: 1, name: 'Makine 1', type: 'washer', status: 'idle', active_items: 0, timer_end: null, capacity_kg: 10 }],
+        programs: [{ value: 'standard', label: 'Standart 40°', minutes: 45 }],
+        items: [{ id: 10, estimated_weight_kg: 1.2 }, { id: 12, estimated_weight_kg: 0.4 }],
+        suggestions: [{ machine_id: 1, machine_name: 'Makine 1', item_ids: [10, 12], items: [{ id: 10 }, { id: 12 }], estimated_weight_kg: 1.6, fill_percent: 16, program: 'standard', timer_minutes: 45, color_group: 'mixed', fabric_care: 'standard', reasons: ['2 uyumlu torba', '1.6 / 10 kg kapasite', 'Standart bakım grubu'] }],
+      } })
       if (url.includes('/machines')) return Promise.resolve({ data: [{ id: 1, name: 'Makine 1', type: 'washer', status: 'idle', active_items: 0, timer_end: null }] })
       if (url.includes('status=dirty')) return Promise.resolve({ data: [
         { id: 10, bag_no: 'BAG-10', block: 'M1', room_no: '101', item_count: 3, urgent: 1, is_premium: 0 },
@@ -16,7 +22,7 @@ function makeKioskApi() {
     }),
     put: vi.fn(() => Promise.resolve({ data: { ok: true } })),
     post: vi.fn((url) => {
-      if (url.includes('batch-assign')) return Promise.resolve({ data: { success: [10, 12], failed: [] } })
+      if (url.includes('start-load')) return Promise.resolve({ data: { success: [10, 12], failed: [] } })
       return Promise.resolve({ data: { ok: true, next_status: 'ironing' } })
     }),
   }
@@ -41,8 +47,12 @@ describe('MachineView smoke', () => {
     fireEvent.click(screen.getByText('45 dk'))
     fireEvent.click(screen.getByRole('button', { name: /Makine 1 · 🫧 Çamaşır/ }))
     await waitFor(() => expect(api.post).toHaveBeenCalledWith(
-      '/self-service/laundry-kiosk/machines/1/batch-assign',
-      { item_ids: [10, 12], timer_minutes: 45 },
+      '/self-service/laundry-kiosk/machines/1/start-load',
+      {
+        item_ids: [10, 12], timer_minutes: 45, program: 'standard',
+        color_group: 'mixed', fabric_care: 'standard',
+        actual_weight_kg: undefined, override_reason: undefined,
+      },
     ))
     await waitFor(() => expect(screen.getByText(/2 torba makineye yüklendi/)).toBeInTheDocument())
   })
@@ -80,8 +90,12 @@ describe('MachineView smoke', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Makine 1 · 🫧 Çamaşır/ }))
     await waitFor(() => expect(api.post).toHaveBeenCalledWith(
-      '/self-service/laundry-kiosk/machines/1/batch-assign',
-      { item_ids: [10], timer_minutes: null },
+      '/self-service/laundry-kiosk/machines/1/start-load',
+      {
+        item_ids: [10], timer_minutes: null, program: 'standard',
+        color_group: 'mixed', fabric_care: 'standard',
+        actual_weight_kg: undefined, override_reason: undefined,
+      },
     ))
   })
 

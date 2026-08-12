@@ -673,6 +673,115 @@ describe('Laundry Kiosk endpoints', () => {
   })
 })
 
+describe('Laundry Kiosk Faz 3 operasyon akışı', () => {
+  let adminToken, outgoingToken, outgoingId, incomingId, machineId
+
+  async function createWorker(name, pin) {
+    const worker = (await request(app).post('/api/avs-workers')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ full_name: name, role_label: 'Çamaşırhane Personeli' })).body
+    await request(app).put(`/api/avs-workers/${worker.id}/pin`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ new_pin: pin })
+    return worker.id
+  }
+
+  async function createBag(extra = {}) {
+    const response = await request(app).post('/api/self-service/laundry-kiosk/bag')
+      .set('Authorization', `Bearer ${outgoingToken}`)
+      .send({
+        block: 'M1', room_no: '101', item_count: 3,
+        intake_signature: 'data:image/png;base64,dGVzdA==',
+        ...extra,
+      })
+    expect(response.status).toBe(201)
+    return response.body.id
+  }
+
+  beforeAll(async () => {
+    adminToken = (await request(app).post('/api/auth/login').send({ username: 'mudur', password: 'admin123' })).body.token
+    outgoingId = await createWorker('Faz3 Çıkan Personel', '2468')
+    incomingId = await createWorker('Faz3 Devralan Personel', '1357')
+    outgoingToken = (await request(app).post('/api/auth/avs-login').send({ worker_id: outgoingId, pin: '2468' })).body.token
+    const machine = await request(app).post('/api/laundry/machines')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ name: 'Faz3 Akıllı Makine', type: 'washer', capacity_kg: 12 })
+    machineId = machine.body.id
+  })
+
+  it('kapasite ve bakım grubuna göre açıklanabilir yük önerisi döndürür', async () => {
+    const bagId = await createBag({ urgent: true, notes: 'hassas yün' })
+    const response = await request(app).get('/api/self-service/laundry-kiosk/load-suggestions')
+      .set('Authorization', `Bearer ${outgoingToken}`)
+    expect(response.status).toBe(200)
+    expect(response.body.items.find(item => item.id === bagId)).toMatchObject({ care: 'delicate' })
+    const suggestion = response.body.suggestions.find(row => row.machine_id === machineId)
+    expect(suggestion.reasons.length).toBeGreaterThanOrEqual(3)
+    expect(suggestion.capacity_kg).toBe(12)
+  })
+
+  it('önerilen yükü program ve ağırlık kaydıyla makinede başlatır', async () => {
+    const bagId = await createBag({ notes: 'standart koyu renk' })
+    const response = await request(app)
+      .post(`/api/self-service/laundry-kiosk/machines/${machineId}/start-load`)
+      .set('Authorization', `Bearer ${outgoingToken}`)
+      .send({
+        item_ids: [bagId], program: 'standard', color_group: 'dark',
+        fabric_care: 'standard', actual_weight_kg: 1.1, timer_minutes: 45,
+      })
+    expect(response.status).toBe(201)
+    expect(response.body).toMatchObject({ machine_id: machineId, program: 'standard', selected_count: 1 })
+    expect(getDB().prepare('SELECT status,machine_id FROM laundry_items WHERE id=?').get(bagId))
+      .toMatchObject({ status: 'washing', machine_id: machineId })
+    expect(getDB().prepare('SELECT COUNT(*) AS count FROM laundry_machine_load_items WHERE load_id=?').get(response.body.id).count).toBe(1)
+  })
+
+  it('kapasite aşımını gerekçesiz kabul etmez', async () => {
+    getDB().prepare("UPDATE laundry_machines SET status='idle', timer_end=NULL WHERE id=?").run(machineId)
+    const bagId = await createBag({ item_count: 2 })
+    const response = await request(app)
+      .post(`/api/self-service/laundry-kiosk/machines/${machineId}/start-load`)
+      .set('Authorization', `Bearer ${outgoingToken}`)
+      .send({ item_ids: [bagId], program: 'standard', actual_weight_kg: 20 })
+    expect(response.status).toBe(409)
+    expect(response.body.error).toMatch(/gerekçe/)
+  })
+
+  it('offline kuyruk varken vardiya teslimini başlatmaz', async () => {
+    const response = await request(app).post('/api/self-service/laundry-kiosk/handovers/start')
+      .set('Authorization', `Bearer ${outgoingToken}`)
+      .send({ outgoing_pin: '2468', offline_queue_count: 2 })
+    expect(response.status).toBe(409)
+    expect(response.body.error).toMatch(/offline kuyruk/i)
+  })
+
+  it('çıkan ve devralan personelin ayrı PIN doğrulamasıyla vardiyayı kapatır', async () => {
+    const started = await request(app).post('/api/self-service/laundry-kiosk/handovers/start')
+      .set('Authorization', `Bearer ${outgoingToken}`)
+      .send({ outgoing_pin: '2468', offline_queue_count: 0 })
+    expect(started.status).toBe(201)
+    expect(started.body.summary).toHaveProperty('machines')
+
+    const sameWorker = await request(app)
+      .post(`/api/self-service/laundry-kiosk/handovers/${started.body.id}/finalize`)
+      .set('Authorization', `Bearer ${outgoingToken}`)
+      .send({ incoming_worker_id: outgoingId, incoming_pin: '2468', offline_queue_count: 0 })
+    expect(sameWorker.status).toBe(400)
+
+    const finalized = await request(app)
+      .post(`/api/self-service/laundry-kiosk/handovers/${started.body.id}/finalize`)
+      .set('Authorization', `Bearer ${outgoingToken}`)
+      .send({
+        incoming_worker_id: incomingId, incoming_pin: '1357', offline_queue_count: 0,
+        note: 'Aktif işler ve makineler devredildi.', issues: ['Makine 2 filtre kontrolü'],
+      })
+    expect(finalized.status).toBe(200)
+    expect(finalized.body).toMatchObject({ status: 'completed', incoming_worker: 'Faz3 Devralan Personel' })
+    expect(getDB().prepare('SELECT status,incoming_worker_id FROM laundry_shift_handovers WHERE id=?').get(started.body.id))
+      .toMatchObject({ status: 'completed', incoming_worker_id: incomingId })
+  })
+})
+
 describe('Laundry Kiosk makine akışı', () => {
   let avsToken, machineId
 

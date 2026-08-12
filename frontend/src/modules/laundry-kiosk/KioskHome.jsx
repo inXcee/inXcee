@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 
 const FLOW_STAGES = [
-  { key: 'dirty', label: 'Yıkama bekliyor', shortLabel: 'Bekliyor', icon: '🫧', target: 'status', tone: 'amber', help: 'Yıkamaya al' },
-  { key: 'washing', label: 'Yıkanıyor', shortLabel: 'Yıkamada', icon: '≈', target: 'status', tone: 'blue', help: 'Yıkandı olarak işaretle' },
+  { key: 'dirty', label: 'Yıkama bekliyor', shortLabel: 'Bekliyor', icon: '🫧', target: 'machine', tone: 'amber', help: 'Yük planla' },
+  { key: 'washing', label: 'Yıkanıyor', shortLabel: 'Yıkamada', icon: '≈', target: 'machine', tone: 'blue', help: 'Yıkandı olarak işaretle' },
   { key: 'ironing', label: 'Ütü bekliyor', shortLabel: 'Ütüde', icon: '♨', target: 'ironing', tone: 'violet', help: 'Parça kontrolü yap' },
   { key: 'ready', label: 'Teslime hazır', shortLabel: 'Hazır', icon: '▣', target: 'deliver', tone: 'green', help: 'Teslimatı tamamla' },
 ]
 
 const QUICK_ACTIONS = [
   { target: 'entry', icon: '＋', label: 'Torba Girişi', help: 'Yeni kayıt oluştur', tone: 'blue' },
-  { target: 'status', icon: '≈', label: 'Yıkama Takibi', help: 'Başlat / yıkandı işaretle', tone: 'cyan' },
+  { target: 'machine', icon: '⚙', label: 'Makine Planlama', help: 'Akıllı yük oluştur / tamamla', tone: 'cyan' },
   { target: 'ironing', icon: '♨', label: 'Ütü Kontrolü', help: 'Parçaları doğrula', tone: 'violet' },
   { target: 'deliver', icon: '▣', label: 'Teslimat', help: 'Hazır torbaları ver', tone: 'green' },
   { target: 'loss', icon: '!', label: 'Kayıp Merkezi', help: 'Kayıpları araştır / kapat', tone: 'red' },
@@ -24,8 +24,8 @@ const STATUS_LABELS = {
 }
 
 const STATUS_TARGETS = {
-  dirty: 'status',
-  washing: 'status',
+  dirty: 'machine',
+  washing: 'machine',
   ironing: 'ironing',
   ready: 'deliver',
 }

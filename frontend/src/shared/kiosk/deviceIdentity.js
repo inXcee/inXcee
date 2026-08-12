@@ -75,6 +75,9 @@ export function detectDeviceCapabilities() {
     web_crypto: Boolean(globalThis.crypto?.subtle),
     service_worker: 'serviceWorker' in navigator,
     camera: Boolean(navigator.mediaDevices?.getUserMedia),
+    hid_keyboard: true,
+    browser_print: typeof window.print === 'function',
+    local_qr: true,
     touch: navigator.maxTouchPoints > 0,
     online: navigator.onLine,
   }

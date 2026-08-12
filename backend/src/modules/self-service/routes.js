@@ -25,6 +25,10 @@ import { sendFoundMessage } from '../laundry/whatsapp.js'
 import { createImageUpload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { logger } from '../../shared/logger.js'
 import { getStaffTransport } from '../transport/self-service.js'
+import {
+  finalizeHandover, getCurrentHandover, getLoadSuggestions, listHandoverWorkers,
+  markLoadProgress, startHandover, startMachineLoad,
+} from './laundry-operations.js'
 
 export const selfServiceRouter = Router()
 
@@ -1767,6 +1771,59 @@ selfServiceRouter.get('/laundry-kiosk/machines', requireLaundryKioskOperator, (r
   catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
+// Kapasite, bakım grubu, renk, aciliyet ve kayıt yaşına göre açıklanabilir yük önerisi.
+selfServiceRouter.get('/laundry-kiosk/load-suggestions', requireLaundryKioskOperator, (req, res) => {
+  try { res.json(getLoadSuggestions()) }
+  catch (e) { logger.error('[laundry load suggestions]', e); res.status(500).json({ error: 'Yük önerileri alınamadı' }) }
+})
+
+selfServiceRouter.post('/laundry-kiosk/machines/:id/start-load', requireLaundryKioskOperator, (req, res) => {
+  try {
+    const actor = laundryActor(req)
+    const result = startMachineLoad({ ...req.body, machine_id: Number(req.params.id) }, actor)
+    for (const itemId of result.success) {
+      getDB().prepare("UPDATE laundry_items SET last_modified_worker_id=?, last_modified_at=datetime('now') WHERE id=?")
+        .run(actor.workerId || null, itemId)
+      stampHistoryWorker(getDB(), itemId, actor.workerId)
+    }
+    auditLaundryKiosk(getDB(), req, 'laundry_kiosk_load_started', result.id, {
+      machineId: result.machine_id, itemIds: result.success, program: result.program,
+      actualWeightKg: result.actual_weight_kg, overrideReason: result.override_reason,
+    })
+    res.status(201).json(result)
+  } catch (e) { res.status(e.status || 400).json({ error: e.message }) }
+})
+
+// Vardiya teslimi iki ayrı PIN doğrulamasıyla kapanır; kuyrukta kayıt varken
+// başlangıç veya tamamlama yapılamaz.
+selfServiceRouter.get('/laundry-kiosk/handovers/current', requireLaundryKioskOperator, (req, res) => {
+  try { res.json(getCurrentHandover(req)) }
+  catch (e) { res.status(e.status || 400).json({ error: e.message }) }
+})
+
+selfServiceRouter.get('/laundry-kiosk/handover-workers', requireLaundryKioskOperator, (req, res) => {
+  try { res.json(listHandoverWorkers(req.query.q || '')) }
+  catch (e) { res.status(500).json({ error: 'Personel listesi alınamadı' }) }
+})
+
+selfServiceRouter.post('/laundry-kiosk/handovers/start', requireLaundryKioskOperator, (req, res) => {
+  try {
+    const handover = startHandover(req, req.body || {})
+    auditLaundryKiosk(getDB(), req, 'laundry_kiosk_handover_started', handover.id, { summary: handover.summary })
+    res.status(201).json(handover)
+  } catch (e) { res.status(e.status || 400).json({ error: e.message }) }
+})
+
+selfServiceRouter.post('/laundry-kiosk/handovers/:id/finalize', requireLaundryKioskOperator, (req, res) => {
+  try {
+    const result = finalizeHandover(req, Number(req.params.id), req.body || {})
+    auditLaundryKiosk(getDB(), req, 'laundry_kiosk_handover_completed', result.id, {
+      incomingWorker: result.incoming_worker,
+    })
+    res.json(result)
+  } catch (e) { res.status(e.status || 400).json({ error: e.message }) }
+})
+
 // Makineye yükleme — ana modüldeki state machine'i kullanır (timer + deterjan
 // stok düşümü + history + queue temizliği ana akışla birebir aynı olsun diye).
 selfServiceRouter.put('/laundry-kiosk/machines/:id/assign', requireLaundryKioskOperator, (req, res) => {
@@ -2042,11 +2099,12 @@ selfServiceRouter.post('/laundry-kiosk/bags/:id/wash-complete', requireLaundryKi
       actor.userId,
       actor.workerId
     )
+    const load = markLoadProgress(item.id)
     db.prepare("UPDATE laundry_items SET last_modified_worker_id=?, last_modified_at=datetime('now') WHERE id=?")
       .run(actor.workerId, item.id)
     auditLaundryKiosk(db, req, 'laundry_wash_complete', item.id, {
       nextStatus: updated.status,
     })
-    res.json({ ok: true, next_status: updated.status })
+    res.json({ ok: true, next_status: updated.status, load })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })

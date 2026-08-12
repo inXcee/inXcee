@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 // Makine akışı: kirli torba(ları) seç → (opsiyonel süre) → makineye yükle;
 // makinedeki torbalar için "Yıkama Bitti" → backend needs_ironing'e göre
@@ -16,7 +16,7 @@ const bulkBtn = {
 }
 
 const TIMER_OPTIONS = [
-  { value: null, label: 'Süresiz' },
+  { value: null, label: 'Program süresi' },
   { value: 30,   label: '30 dk' },
   { value: 45,   label: '45 dk' },
   { value: 60,   label: '60 dk' },
@@ -40,16 +40,28 @@ export default function MachineView({ kioskApi, focusedBag, onConsumeFocus }) {
   const [msg, setMsg] = useState(null) // { type: 'ok'|'err', text }
   const [shelfMap, setShelfMap] = useState({}) // { bagId: rafMetni } — ütüsüz torbalar hazıra giderken
   const [dailyRuns, setDailyRuns] = useState({}) // { machineId: rows|null } — açılır gün-gün kırılım
+  const [suggestions, setSuggestions] = useState([])
+  const [programs, setPrograms] = useState([])
+  const [program, setProgram] = useState('standard')
+  const [colorGroup, setColorGroup] = useState('mixed')
+  const [fabricCare, setFabricCare] = useState('standard')
+  const [actualWeight, setActualWeight] = useState('')
+  const [overrideReason, setOverrideReason] = useState('')
 
   async function load() {
     setLoading(true)
     try {
-      const [m, dirty, washing] = await Promise.all([
-        kioskApi.get('/self-service/laundry-kiosk/machines'),
+      const [planning, dirty, washing] = await Promise.all([
+        kioskApi.get('/self-service/laundry-kiosk/load-suggestions'),
         kioskApi.get('/self-service/laundry-kiosk/bags?status=dirty'),
         kioskApi.get('/self-service/laundry-kiosk/bags?status=washing'),
       ])
-      setMachines(m.data); setDirtyBags(dirty.data); setWashingBags(washing.data)
+      setMachines(planning.data.machines || [])
+      setSuggestions(planning.data.suggestions || [])
+      setPrograms(planning.data.programs || [])
+      const weights = new Map((planning.data.items || []).map(item => [item.id, item.estimated_weight_kg]))
+      setDirtyBags((dirty.data || []).map(item => ({ ...item, estimated_weight_kg: weights.get(item.id) || 0 })))
+      setWashingBags(washing.data)
     } catch { setMsg({ type: 'err', text: 'Yüklenemedi' }) } finally { setLoading(false) }
   }
 
@@ -76,18 +88,40 @@ export default function MachineView({ kioskApi, focusedBag, onConsumeFocus }) {
     setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
   }
 
+  const estimatedWeight = useMemo(() => dirtyBags
+    .filter(item => selectedIds.includes(item.id))
+    .reduce((total, item) => total + Number(item.estimated_weight_kg || 0), 0), [dirtyBags, selectedIds])
+
+  function applySuggestion(suggestion) {
+    setSelectedIds(suggestion.item_ids || [])
+    setTimerMinutes(suggestion.timer_minutes)
+    setProgram(suggestion.program || 'standard')
+    setColorGroup(suggestion.color_group || 'mixed')
+    setFabricCare(suggestion.fabric_care || 'standard')
+    setActualWeight(String(suggestion.estimated_weight_kg || ''))
+    setOverrideReason('')
+    setMsg({ type: 'ok', text: `${suggestion.machine_name} için öneri yüklendi · ${suggestion.reasons.join(' · ')}` })
+  }
+
   async function assign(machineId) {
     if (selectedIds.length === 0) return setMsg({ type: 'err', text: 'Önce torba seçin' })
     setMsg(null)
     try {
-      const res = await kioskApi.post(`/self-service/laundry-kiosk/machines/${machineId}/batch-assign`, {
+      const res = await kioskApi.post(`/self-service/laundry-kiosk/machines/${machineId}/start-load`, {
         item_ids: selectedIds,
         timer_minutes: timerMinutes,
+        program,
+        color_group: colorGroup,
+        fabric_care: fabricCare,
+        actual_weight_kg: actualWeight === '' ? undefined : Number(actualWeight),
+        override_reason: overrideReason.trim() || undefined,
       })
       const ok = res.data.success?.length || 0
       const fail = res.data.failed?.length || 0
       setSelectedIds([])
       setTimerMinutes(null)
+      setActualWeight('')
+      setOverrideReason('')
       setMsg({
         type: fail > 0 ? 'err' : 'ok',
         text: fail > 0 ? `✓ ${ok} yüklendi · ${fail} başarısız (${res.data.failed[0]?.error || ''})` : `✓ ${ok} torba makineye yüklendi`,
@@ -141,6 +175,21 @@ export default function MachineView({ kioskApi, focusedBag, onConsumeFocus }) {
       </div>
 
       {msg && <div style={{ color: msg.type === 'ok' ? '#4ade80' : '#f87171', fontSize: 13 }}>{msg.text}</div>}
+
+      {suggestions.some(suggestion => suggestion.item_ids?.length) && (
+        <div>
+          <label style={lbl}>Akıllı Yük Önerileri</label>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(240px,1fr))', gap: 8 }}>
+            {suggestions.filter(suggestion => suggestion.item_ids?.length).map(suggestion => (
+              <button key={suggestion.machine_id} type="button" onClick={() => applySuggestion(suggestion)} style={{ ...btn('#14243b', '#dbeafe'), textAlign: 'left', border: '1px solid #29466d' }}>
+                <strong style={{ display: 'block' }}>{suggestion.machine_name} · %{suggestion.fill_percent} doluluk</strong>
+                <small style={{ display: 'block', marginTop: 5, color: '#8ca4c2', lineHeight: 1.45 }}>{suggestion.reasons.join(' · ')}</small>
+                <span style={{ display: 'block', marginTop: 7, color: '#60a5fa', fontSize: 11 }}>{suggestion.items.length} torba · {suggestion.estimated_weight_kg} kg · {suggestion.program}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Kirli torbalar — çoklu seçim ── */}
       <div>
@@ -198,6 +247,7 @@ export default function MachineView({ kioskApi, focusedBag, onConsumeFocus }) {
               <span>
                 {b.bag_no ? `${b.bag_no} · ` : ''}{b.block} — {b.room_no} · {b.item_count} parça
                 {b.urgent ? ' · ⚡ ACİL' : ''}{b.is_premium ? ' · 🟣' : ''}{b.intake_name ? ` · ${b.intake_name}` : ''}
+                {b.estimated_weight_kg ? ` · ~${b.estimated_weight_kg} kg` : ''}
               </span>
             </button>
           )
@@ -208,7 +258,12 @@ export default function MachineView({ kioskApi, focusedBag, onConsumeFocus }) {
       {selectedIds.length > 0 && (
         <>
           <div>
-            <label style={lbl}>Yıkama Süresi</label>
+            <label style={lbl}>Program ve Yıkama Süresi</label>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+              {(programs.length ? programs : [{ value: 'standard', label: 'Standart 40°' }, { value: 'delicate', label: 'Hassas 30°' }, { value: 'intensive', label: 'Yoğun 60°' }, { value: 'quick', label: 'Hızlı 30°' }]).map(option => (
+                <button key={option.value} type="button" onClick={() => { setProgram(option.value); if (option.minutes) setTimerMinutes(option.minutes) }} style={{ ...bulkBtn, background: program === option.value ? '#1d4ed8' : '#1e293b', color: program === option.value ? '#fff' : '#94a3b8' }}>{option.label}</button>
+              ))}
+            </div>
             <div style={{ display: 'flex', gap: 8 }}>
               {TIMER_OPTIONS.map(o => (
                 <button key={o.label} type="button" onClick={() => setTimerMinutes(o.value)}
@@ -223,6 +278,12 @@ export default function MachineView({ kioskApi, focusedBag, onConsumeFocus }) {
               ))}
             </div>
           </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 8 }}>
+            <label><span style={lbl}>Tahmini / Gerçek Ağırlık</span><input aria-label="Gerçek ağırlık" type="number" min="0" step="0.1" value={actualWeight} onChange={event => setActualWeight(event.target.value)} placeholder={`Tahmin ${estimatedWeight.toFixed(1)} kg`} style={{ width: '100%', boxSizing: 'border-box', background: '#07111f', border: '1px solid #334155', borderRadius: 9, color: '#fff', padding: 10 }} /></label>
+            <label><span style={lbl}>Renk Grubu</span><select value={colorGroup} onChange={event => setColorGroup(event.target.value)} style={{ width: '100%', background: '#07111f', border: '1px solid #334155', borderRadius: 9, color: '#fff', padding: 10 }}><option value="mixed">Karışık</option><option value="white">Beyaz</option><option value="dark">Koyu</option></select></label>
+            <label><span style={lbl}>Bakım</span><select value={fabricCare} onChange={event => setFabricCare(event.target.value)} style={{ width: '100%', background: '#07111f', border: '1px solid #334155', borderRadius: 9, color: '#fff', padding: 10 }}><option value="standard">Standart</option><option value="delicate">Hassas</option></select></label>
+          </div>
+          <label><span style={lbl}>Yetkili İstisna Gerekçesi</span><input value={overrideReason} onChange={event => setOverrideReason(event.target.value)} placeholder="Kapasite veya uyumluluk önerisi aşılacaksa zorunlu" style={{ width: '100%', boxSizing: 'border-box', background: '#07111f', border: '1px solid #334155', borderRadius: 9, color: '#fff', padding: 10 }} /></label>
           <div>
             <label style={lbl}>Makine Seç — {selectedIds.length} torba yüklenecek</label>
             {machines.length === 0 && <div style={{ color: '#475569', fontSize: 13 }}>Makine tanımlı değil</div>}
@@ -230,14 +291,14 @@ export default function MachineView({ kioskApi, focusedBag, onConsumeFocus }) {
               const busy = m.status === 'running' && (m.active_items || 0) > 0
               const ts = timerState(m.timer_end)
               return (
-                <button key={m.id} type="button" onClick={() => assign(m.id)}
+                <button key={m.id} type="button" onClick={() => assign(m.id)} disabled={m.status === 'running' || m.status === 'maintenance'}
                   style={{
                     ...btn('#1e293b', busy ? '#64748b' : '#cbd5e1'),
                     width: '100%', textAlign: 'left', marginBottom: 4,
                     borderLeft: `3px solid ${busy ? '#f59e0b' : '#22c55e'}`,
                   }}>
                   {m.name} · {m.type === 'washer' ? '🫧 Çamaşır' : '💨 Kurutucu'}
-                  {busy ? ` · ${m.active_items} aktif` : ' · Boş'}
+                  {busy ? ` · ${m.active_items || 0} aktif` : ' · Boş'} · {m.capacity_kg || 10} kg
                   {ts.label ? ` · ${ts.label}` : ''}
                   {m.needs_maintenance ? <span style={{ color: '#fbbf24', fontWeight: 700 }}> · 🔧 BAKIM ZAMANI</span> : ''}
                 </button>

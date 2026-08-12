@@ -5,6 +5,7 @@ import QuickGarmentInput from './QuickGarmentInput.jsx'
 import { listQueued, enqueueBag, flushQueue, buildBagFormData } from './offlineQueue.js'
 import { listRecentRooms, rememberRoom } from './recentRooms.js'
 import { downscalePhoto } from '../../shared/photo.js'
+import { printLaundryLabel } from './hardwareAdapters.js'
 
 function newRequestId() {
   return globalThis.crypto?.randomUUID?.() ||
@@ -360,6 +361,9 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
         bag_no: res.data.bag_no,
         garments: res.data.garments || [],
         idempotent: res.data.idempotent,
+        room: `${selection.block}-${selection.room_no}`,
+        owner: selection.person?.full_name || null,
+        item_count: derivedItemCount,
       })
     } catch (e) {
       if (!e.response && needsSig) {
@@ -412,6 +416,7 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
             <div style={{ fontSize: 11, color: '#64748b', letterSpacing: 2, marginBottom: 4 }}>TORBA NO</div>
             <div style={{ fontSize: 32, fontWeight: 700, color: '#38bdf8', fontFamily: 'monospace', letterSpacing: 4 }}>{success.bag_no}</div>
             <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>Torbayı görevliye teslim edin</div>
+            <button type="button" onClick={() => printLaundryLabel({ code: success.bag_no, room: success.room, owner: success.owner, itemCount: success.item_count }).catch(printError => setError(printError.message))} style={{ ...btnStyle('#0e7490', '#fff'), marginTop: 12, width: '100%' }}>QR etiketi yazdır</button>
           </div>
         )}
         {success.garments?.length > 0 && (
