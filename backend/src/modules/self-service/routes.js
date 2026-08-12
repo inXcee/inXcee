@@ -5,6 +5,7 @@ import { getDB } from '../../shared/db/index.js'
 import { createRequest } from '../maintenance/queries.js'
 import { changeKioskPin, issuePersonnelKioskSession } from '../../shared/auth/service.js'
 import { createLeaveService } from '../shifts/service.js'
+import { resolveScan, recordScan, AKSIYON } from '../laundry/cardScan.js'
 import { getLeaveBalance } from '../shifts/queries.js'
 import { createNotification } from '../../shared/notifications/service.js'
 import { validate } from '../../shared/middleware/validate.js'
@@ -39,6 +40,32 @@ export const selfServiceRouter = Router()
 // `laundry-` öneki gecelik yetim dosya temizliğinin dosyaları hangi modüle ait
 // olduğunu anlamasını sağlar (bkz. laundry/photo-retention.js).
 const upload = createImageUpload('laundry')
+
+// Çamaşır kartı kapısı. Çözümleme saf modülde (laundry/cardScan.js); burada
+// yalnız HTTP'ye bağlanır. Kaydetme asıl işlemle AYNI transaction'da yapılır ki
+// "okutma kaydedildi ama teslim yazılmadı" durumu oluşmasın.
+function cardGate(req, { action, room_id }) {
+  return resolveScan({
+    action,
+    room_id,
+    scanned_code: req.body?.card_code || null,
+    override_reason: req.body?.card_override_reason || null,
+  })
+}
+
+// Engellenen deneme de kayda geçer: tekrar eden başarısız okutma görünür olsun.
+function rejectCardGate(res, gate, actor) {
+  if (gate.scan) {
+    try {
+      recordScan(gate.scan, {
+        item_id: null,
+        operator_user_id: actor?.userId ?? null,
+        operator_worker_id: actor?.workerId ?? null,
+      })
+    } catch { /* kayıt yazılamazsa da işlemi bloklamaya devam et */ }
+  }
+  return res.status(409).json({ error: gate.message, card_gate: { code: gate.code, required: gate.required } })
+}
 
 // Az önce atılan history satırına kiosk operatörünü damgala (operatör
 // performans kırılımı için). 5 sn guard'ı: history yazmayan bir aksiyonda
@@ -1177,6 +1204,15 @@ selfServiceRouter.post('/laundry-kiosk/bag', requireLaundryKioskOperator, upload
       ? db.prepare('SELECT full_name FROM personnel WHERE id=?').get(Number(personnel_id))?.full_name
       : null
     const actor = laundryActor(req)
+
+    // Çamaşır kartı: kim bıraktı. Kapı transaction'dan ÖNCE — engelliyse yüklenen
+    // fotoğraf da temizlenmeli.
+    const kart = cardGate(req, { action: AKSIYON.INTAKE, room_id: room.id })
+    if (!kart.allowed) {
+      removeLaundryUpload(req)
+      return rejectCardGate(res, kart, actor)
+    }
+
     const blockIsPremium = isBlockPremiumQuery(block)
     if (!blockIsPremium && (!intake_signature || !String(intake_signature).trim())) {
       removeLaundryUpload(req)
@@ -1206,6 +1242,8 @@ selfServiceRouter.post('/laundry-kiosk/bag', requireLaundryKioskOperator, upload
         tracking_mode,
       })
       const bag_no = setBagNoQuery(id)
+      // Okutma torbayla AYNI transaction'da yazılır: biri olup diğeri olmasın.
+      recordScan(kart.scan, { item_id: id, operator_user_id: actor.userId, operator_worker_id: actor.workerId })
       const tracked = hasGarments
         ? insertTrackedGarmentsQuery(id, normalizedGarments, { source: 'kiosk' })
         : []
@@ -1791,7 +1829,7 @@ selfServiceRouter.post('/laundry-kiosk/bags/:id/deliver', requireLaundryKioskOpe
   try {
     const db = getDB()
     const item = db.prepare(`
-      SELECT li.id, li.status, li.item_count, li.tracking_mode, r.block
+      SELECT li.id, li.status, li.item_count, li.tracking_mode, li.room_id, r.block
       FROM laundry_items li JOIN rooms r ON r.id=li.room_id
       WHERE li.id=?
     `).get(Number(req.params.id))
@@ -1804,6 +1842,11 @@ selfServiceRouter.post('/laundry-kiosk/bags/:id/deliver', requireLaundryKioskOpe
       return res.status(400).json({ error: 'Teslim için garment_ids zorunludur' })
     }
     const actor = laundryActor(req)
+
+    // Çamaşır kartı: kim aldı. Torbanın odası üzerinden eşleşme kontrol edilir.
+    const kart = cardGate(req, { action: AKSIYON.DELIVERY, room_id: item.room_id })
+    if (!kart.allowed) return rejectCardGate(res, kart, actor)
+
     const delivered = deliverItemService(
       item.id,
       {
@@ -1827,11 +1870,14 @@ selfServiceRouter.post('/laundry-kiosk/bags/:id/deliver', requireLaundryKioskOpe
       actor.workerId,
       item.id
     )
+    // Kim aldı kaydı — teslim yazıldıktan sonra, aynı istek içinde.
+    recordScan(kart.scan, { item_id: item.id, operator_user_id: actor.userId, operator_worker_id: actor.workerId })
     auditLaundryKiosk(db, req, 'laundry_deliver', item.id, {
       deliveredCount,
       garmentIds: garmentIds || null,
     })
-    res.json({ ok: true, delivered_count: deliveredCount })
+    // Eşleşmeyen kart işlemi durdurmaz ama cevapta görünür: kiosk uyarı gösterir.
+    res.json({ ok: true, delivered_count: deliveredCount, card: kart.card || null, card_warning: kart.code === 'mismatch' ? kart.message : null })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 

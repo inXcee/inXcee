@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { unlinkSync } from 'node:fs'
 import { requireRole } from '../../shared/auth/middleware.js'
+import { getCardSettings, setCardSetting, listScanIssues, scanStats, AKSIYON } from './cardScan.js'
 import { createImageUpload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import * as svc from './service.js'
@@ -25,6 +26,34 @@ const slaWrite    = requireRole('laundry', 'campus_manager')
 // `laundry-` öneki gecelik yetim dosya temizliğinin dosyaları hangi modüle ait
 // olduğunu anlamasını sağlar (bkz. photo-retention.js).
 const upload = createImageUpload('laundry')
+
+// ── Çamaşır kartı ───────────────────────────────────────────────────────────
+// Zorunluluğu açıp kapatmak operasyonel bir karar: yalnız yönetici.
+laundryRouter.get('/card-settings', ...laundryRead, (req, res) => {
+  res.json(getCardSettings())
+})
+
+laundryRouter.put('/card-settings', ...requireRole('campus_manager'), (req, res) => {
+  try {
+    const { action, required } = req.body || {}
+    if (!Object.values(AKSIYON).includes(action)) {
+      return res.status(400).json({ error: 'action "intake" veya "delivery" olmalı' })
+    }
+    if (typeof required !== 'boolean') {
+      return res.status(400).json({ error: 'required alanı boolean olmalı' })
+    }
+    res.json(setCardSetting(action, required))
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
+// Amir ekranı: eşleşmeyen, tanınmayan ve gerekçeyle geçilen okutmalar.
+laundryRouter.get('/card-scans', ...laundryRead, (req, res) => {
+  res.json(listScanIssues({ from: req.query.from || null, to: req.query.to || null, limit: req.query.limit }))
+})
+
+laundryRouter.get('/card-scan-stats', ...laundryRead, (req, res) => {
+  res.json(scanStats({ from: req.query.from || null, to: req.query.to || null }))
+})
 
 function removeUploadedPhoto(req) {
   if (!req.file?.path) return
