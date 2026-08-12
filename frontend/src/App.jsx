@@ -2,6 +2,7 @@ import { Suspense, useEffect, useState } from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from './shared/store/authStore.js'
+import { canAccess } from './modules/admin/settingsNav.js'
 import { lazyWithRetry as lazy } from './shared/lazyWithRetry.js'
 import ErrorBoundary from './shared/components/ErrorBoundary.jsx'
 import ToastContainer from './shared/components/ToastContainer.jsx'
@@ -63,6 +64,7 @@ const LaundryHub = lazy(() => import('./modules/laundry/LaundryHub.jsx'))
 const AuditPage = lazy(() => import('./modules/admin/AuditPage.jsx'))
 const UsersPage = lazy(() => import('./modules/admin/UsersPage.jsx'))
 const SettingsPage = lazy(() => import('./modules/admin/SettingsPage.jsx'))
+const SettingsHomePage = lazy(() => import('./modules/admin/SettingsHomePage.jsx'))
 const SettingsLayout = lazy(() => import('./modules/admin/SettingsLayout.jsx'))
 const KioskPinPage = lazy(() => import('./modules/admin/KioskPinPage.jsx'))
 const AnnouncementsPage = lazy(() => import('./modules/admin/AnnouncementsPage.jsx'))
@@ -111,6 +113,15 @@ const KvkkPage = lazy(() => import('./modules/kvkk/KvkkPage.jsx'))
 function PrivateRoute({ children }) {
   const user = useAuthStore(s => s.user)
   return user ? children : <Navigate to="/login" />
+}
+
+// Ayarlar rotalarinin korumasi menuyle AYNI kaynaktan gelir. Ikisi ayri
+// yerlerde tutuldugunda ayrismisti: 2 sayfa menude gizliyken URL'den aciliyor
+// (sonra her istek 403), 1 sayfa menude gorunup tiklaninca ana sayfaya atiyordu.
+function SettingsRoute({ settingsKey, children }) {
+  const user = useAuthStore(s => s.user)
+  if (!canAccess(settingsKey, user?.role)) return <Navigate to="/settings" replace />
+  return children
 }
 
 function RoleRoute({ roles, children }) {
@@ -364,46 +375,46 @@ export default function App() {
             <Route path="stations" element={<RoleRoute roles={['campus_manager']}><StationsPage /></RoleRoute>} />
             <Route path="presence" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><PresencePage /></RoleRoute>} />
             <Route path="settings" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><SettingsLayout /></RoleRoute>}>
-              <Route index element={<Navigate to="personnel" replace />} />
-              <Route path="email" element={<RoleRoute roles={['campus_manager']}><SettingsPage /></RoleRoute>} />
-              <Route path="mail-compose" element={<RoleRoute roles={['campus_manager']}><MailComposePage /></RoleRoute>} />
-              <Route path="users" element={<RoleRoute roles={['campus_manager']}><UsersPage /></RoleRoute>} />
-              <Route path="kiosk-pins" element={<RoleRoute roles={['campus_manager']}><KioskPinPage /></RoleRoute>} />
-              <Route path="kiosk-devices" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><KioskDevicesPage /></RoleRoute>} />
-              <Route path="announcements" element={<RoleRoute roles={['campus_manager']}><AnnouncementsPage /></RoleRoute>} />
-              <Route path="avs-workers" element={<RoleRoute roles={['campus_manager']}><AvsWorkersPage /></RoleRoute>} />
-              <Route path="cards" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><CardsPage /></RoleRoute>} />
-              <Route path="stations" element={<RoleRoute roles={['campus_manager']}><StationsPage /></RoleRoute>} />
-              <Route path="audit" element={<RoleRoute roles={['campus_manager']}><AuditPage /></RoleRoute>} />
-              <Route path="error-log" element={<RoleRoute roles={['campus_manager']}><ErrorLogPage /></RoleRoute>} />
-              <Route path="backup" element={<RoleRoute roles={['campus_manager']}><BackupPage /></RoleRoute>} />
-              <Route path="kvkk-admin" element={<RoleRoute roles={['campus_manager']}><KvkkAdminPage /></RoleRoute>} />
-              <Route path="system" element={<RoleRoute roles={['campus_manager']}><SystemHealthPage /></RoleRoute>} />
-              <Route path="sessions" element={<RoleRoute roles={['campus_manager']}><SessionsPage /></RoleRoute>} />
-              <Route path="projects" element={<RoleRoute roles={['campus_manager']}><ProjectsPage /></RoleRoute>} />
+              <Route index element={<SettingsHomePage />} />
+              <Route path="email" element={<SettingsRoute settingsKey="email"><SettingsPage /></SettingsRoute>} />
+              <Route path="mail-compose" element={<SettingsRoute settingsKey="mail-compose"><MailComposePage /></SettingsRoute>} />
+              <Route path="users" element={<SettingsRoute settingsKey="users"><UsersPage /></SettingsRoute>} />
+              <Route path="kiosk-pins" element={<SettingsRoute settingsKey="kiosk-pins"><KioskPinPage /></SettingsRoute>} />
+              <Route path="kiosk-devices" element={<SettingsRoute settingsKey="kiosk-devices"><KioskDevicesPage /></SettingsRoute>} />
+              <Route path="announcements" element={<SettingsRoute settingsKey="announcements"><AnnouncementsPage /></SettingsRoute>} />
+              <Route path="avs-workers" element={<SettingsRoute settingsKey="avs-workers"><AvsWorkersPage /></SettingsRoute>} />
+              <Route path="cards" element={<SettingsRoute settingsKey="cards"><CardsPage /></SettingsRoute>} />
+              <Route path="stations" element={<SettingsRoute settingsKey="stations"><StationsPage /></SettingsRoute>} />
+              <Route path="audit" element={<SettingsRoute settingsKey="audit"><AuditPage /></SettingsRoute>} />
+              <Route path="error-log" element={<SettingsRoute settingsKey="error-log"><ErrorLogPage /></SettingsRoute>} />
+              <Route path="backup" element={<SettingsRoute settingsKey="backup"><BackupPage /></SettingsRoute>} />
+              <Route path="kvkk-admin" element={<SettingsRoute settingsKey="kvkk-admin"><KvkkAdminPage /></SettingsRoute>} />
+              <Route path="system" element={<SettingsRoute settingsKey="system"><SystemHealthPage /></SettingsRoute>} />
+              <Route path="sessions" element={<SettingsRoute settingsKey="sessions"><SessionsPage /></SettingsRoute>} />
+              <Route path="projects" element={<SettingsRoute settingsKey="projects"><ProjectsPage /></SettingsRoute>} />
               {/* Yonetim modulleri sekmeler olarak */}
-              <Route path="companies" element={<CompaniesPage />} />
-              <Route path="visitors" element={<VisitorsPage />} />
-              <Route path="surveys" element={<SurveysPage />} />
-              <Route path="feedback" element={<FeedbackPage />} />
-              <Route path="drills" element={<DrillsPage />} />
-              <Route path="documents" element={<DocumentsPage />} />
-              <Route path="expenses" element={<ExpensesPage />} />
-              <Route path="notification-groups" element={<NotificationGroupsPage />} />
-              <Route path="automation" element={<AutomationPage />} />
+              <Route path="companies" element={<SettingsRoute settingsKey="companies"><CompaniesPage /></SettingsRoute>} />
+              <Route path="visitors" element={<SettingsRoute settingsKey="visitors"><VisitorsPage /></SettingsRoute>} />
+              <Route path="surveys" element={<SettingsRoute settingsKey="surveys"><SurveysPage /></SettingsRoute>} />
+              <Route path="feedback" element={<SettingsRoute settingsKey="feedback"><FeedbackPage /></SettingsRoute>} />
+              <Route path="drills" element={<SettingsRoute settingsKey="drills"><DrillsPage /></SettingsRoute>} />
+              <Route path="documents" element={<SettingsRoute settingsKey="documents"><DocumentsPage /></SettingsRoute>} />
+              <Route path="expenses" element={<SettingsRoute settingsKey="expenses"><ExpensesPage /></SettingsRoute>} />
+              <Route path="notification-groups" element={<SettingsRoute settingsKey="notification-groups"><NotificationGroupsPage /></SettingsRoute>} />
+              <Route path="automation" element={<SettingsRoute settingsKey="automation"><AutomationPage /></SettingsRoute>} />
               {/* Operasyondan tasinan modulleri */}
-              <Route path="personnel" element={<PersonnelListPage />} />
-              <Route path="risk" element={<RiskListPage />} />
-              <Route path="hr" element={<HrPage />} />
-              <Route path="safety" element={<SafetyPage />} />
-              <Route path="discipline" element={<DisciplinePage />} />
-              <Route path="performance" element={<PerformancePage />} />
-              <Route path="meals" element={<MealsPage />} />
-              <Route path="comms" element={<CommsPage />} />
-              <Route path="payroll" element={<PayrollPage />} />
-              <Route path="combined-absences" element={<CombinedAbsencesPage />} />
-              <Route path="holidays" element={<HolidaysPage />} />
-              <Route path="archived-personnel" element={<ArchivedPersonnelPage />} />
+              <Route path="personnel" element={<SettingsRoute settingsKey="personnel"><PersonnelListPage /></SettingsRoute>} />
+              <Route path="risk" element={<SettingsRoute settingsKey="risk"><RiskListPage /></SettingsRoute>} />
+              <Route path="hr" element={<SettingsRoute settingsKey="hr"><HrPage /></SettingsRoute>} />
+              <Route path="safety" element={<SettingsRoute settingsKey="safety"><SafetyPage /></SettingsRoute>} />
+              <Route path="discipline" element={<SettingsRoute settingsKey="discipline"><DisciplinePage /></SettingsRoute>} />
+              <Route path="performance" element={<SettingsRoute settingsKey="performance"><PerformancePage /></SettingsRoute>} />
+              <Route path="meals" element={<SettingsRoute settingsKey="meals"><MealsPage /></SettingsRoute>} />
+              <Route path="comms" element={<SettingsRoute settingsKey="comms"><CommsPage /></SettingsRoute>} />
+              <Route path="payroll" element={<SettingsRoute settingsKey="payroll"><PayrollPage /></SettingsRoute>} />
+              <Route path="combined-absences" element={<SettingsRoute settingsKey="combined-absences"><CombinedAbsencesPage /></SettingsRoute>} />
+              <Route path="holidays" element={<SettingsRoute settingsKey="holidays"><HolidaysPage /></SettingsRoute>} />
+              <Route path="archived-personnel" element={<SettingsRoute settingsKey="archived-personnel"><ArchivedPersonnelPage /></SettingsRoute>} />
             </Route>
           </Route>
           <Route path="/mobile" element={<MobileLogin />} />

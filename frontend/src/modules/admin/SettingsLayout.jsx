@@ -1,124 +1,309 @@
-import { Outlet, NavLink } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../shared/store/authStore.js'
+import { useIsNarrow } from '../../shared/hooks/useMediaQuery.js'
+import {
+  visibleGroups, searchSettings, settingsPath, loadFavorites, toggleFavorite,
+  loadRecents, pushRecent, itemsByKeys, ALL_ITEMS,
+} from './settingsNav.js'
 
-const MGMT = ['campus_manager', 'shift_supervisor']
-const ADMIN = ['campus_manager']
-const TECH = ['campus_manager', 'shift_supervisor', 'technical']
+// Ayarlar 37 kalemlik düz bir listeydi: arama yok, açıklama yok, gruplar hep
+// açık, aradığını bulmak 37 etiketi gözle taramak demekti.
+//
+// Buradaki dört değişiklik o işi kısaltıyor:
+//   1) Arama — Türkçe karakter duyarsız, açıklama ve eş anlamlılarda da arar
+//   2) Sık kullanılan + son ziyaret — en çok gidilen 3-4 sayfa hep üstte
+//   3) Katlanabilir gruplar — ilgilenmediğin bölüm yer kaplamaz
+//   4) Dar ekranda kenar çubuğu açılır menüye döner (sabit 230px sığmıyordu)
+//
+// Menü kalemleri settingsNav.js'ten gelir; rota koruması da aynı kaynaktan
+// beslendiği için "menüde yok ama URL'den açılıyor" durumu oluşamaz.
 
-const TAB_GROUPS = [
-  {
-    label: 'OPERASYON',
-    tabs: [
-      { to: '/settings/projects',           label: 'Projeler',           icon: '🏗', roles: MGMT },
-      { to: '/settings/personnel',          label: 'Personel',           icon: '👤', roles: MGMT },
-      { to: '/settings/risk',               label: 'Risk Listesi',       icon: '⚠',  roles: MGMT },
-      { to: '/settings/hr',                 label: 'İK Akışları',        icon: '📋', roles: MGMT },
-      { to: '/settings/safety',             label: 'İş Güvenliği',       icon: '🦺', roles: TECH },
-      { to: '/settings/discipline',         label: 'Disiplin',           icon: '⚠',  roles: MGMT },
-      { to: '/settings/performance',        label: 'Performans',         icon: '⭐', roles: MGMT },
-      { to: '/settings/meals',              label: 'Yemekhane',          icon: '🍽', roles: MGMT },
-      { to: '/settings/comms',              label: 'İletişim',           icon: '📨', roles: MGMT },
-      { to: '/settings/payroll',            label: 'Bordro Özet',        icon: '💰', roles: MGMT },
-      { to: '/settings/combined-absences',  label: 'Devamsızlık',        icon: '✗',  roles: MGMT },
-      { to: '/settings/holidays',           label: 'Resmi Tatiller',     icon: '🎉', roles: MGMT },
-      { to: '/settings/archived-personnel', label: 'Arşiv',              icon: '🗄', roles: MGMT },
-    ],
-  },
-  {
-    label: 'YÖNETİM',
-    tabs: [
-      { to: '/settings/cards',               label: 'Kartlar',            icon: '🪪', roles: MGMT },
-      { to: '/settings/stations',            label: 'Okutma İstasyonları', icon: '⌖', roles: ADMIN },
-      { to: '/settings/companies',           label: 'Firmalar',           icon: '⌂',  roles: ADMIN },
-      { to: '/settings/visitors',            label: 'Ziyaretçiler',       icon: '👥', roles: ADMIN },
-      { to: '/settings/surveys',             label: 'Memnuniyet',         icon: '★',  roles: ADMIN },
-      { to: '/settings/feedback',            label: 'Geri Bildirim',      icon: '💬', roles: MGMT },
-      { to: '/settings/drills',              label: 'Tatbikatlar',        icon: '🔥', roles: ADMIN },
-      { to: '/settings/documents',           label: 'Belgeler',           icon: '📄', roles: ADMIN },
-      { to: '/settings/expenses',            label: 'Bütçe',              icon: '₺',  roles: ADMIN },
-      { to: '/settings/notification-groups', label: 'Bildirim Grupları',  icon: '👥', roles: ADMIN },
-      { to: '/settings/automation',          label: 'Otomasyon',          icon: '⚙',  roles: ADMIN },
-    ],
-  },
-  {
-    label: 'SİSTEM',
-    tabs: [
-      { to: '/settings/email',         label: 'Genel & E-Posta',  icon: '⎓',  roles: ADMIN },
-      { to: '/settings/mail-compose',  label: 'Mail Gönder',      icon: '✉',  roles: ADMIN },
-      { to: '/settings/users',         label: 'Kullanicilar',     icon: '⌂',  roles: ADMIN },
-      { to: '/settings/kiosk-pins',    label: 'Kiosk PIN',        icon: '⌖',  roles: ADMIN },
-      { to: '/settings/kiosk-devices', label: 'Kiosk Cihazları',  icon: '▣',  roles: MGMT },
-      { to: '/settings/announcements', label: 'Duyurular',        icon: '📢', roles: ADMIN },
-      { to: '/settings/avs-workers',   label: 'AVS Calisanlari',  icon: '👷', roles: ADMIN },
-      { to: '/settings/sessions',      label: 'Açık Oturumlar',   icon: '🔑', roles: ADMIN },
-      { to: '/settings/audit',         label: 'Audit Log',        icon: '☷',  roles: ADMIN },
-      { to: '/settings/error-log',     label: 'Hata Loglari',     icon: '⚠',  roles: ADMIN },
-      { to: '/settings/backup',        label: 'Yedekleme',        icon: '⛁',  roles: ADMIN },
-      { to: '/settings/kvkk-admin',    label: 'KVKK',             icon: '§',  roles: ADMIN },
-      { to: '/settings/system',        label: 'Sistem Sagligi',   icon: '♥',  roles: ADMIN },
-    ],
-  },
-]
+const KAPALI_KEY = 'settings.collapsedGroups.v1'
+
+function loadCollapsed() {
+  try {
+    const d = JSON.parse(localStorage.getItem(KAPALI_KEY) || '[]')
+    return Array.isArray(d) ? d : []
+  } catch {
+    return []   // bozuk kayıt menüyü kilitlemesin
+  }
+}
+
+function saveCollapsed(list) {
+  try {
+    localStorage.setItem(KAPALI_KEY, JSON.stringify(list))
+  } catch {
+    /* depolama kapalı — tercih kaydedilmez, menü çalışmaya devam eder */
+  }
+}
+
+function Yildiz({ dolu, onClick, label }) {
+  return (
+    <button
+      type="button"
+      onClick={e => { e.preventDefault(); e.stopPropagation(); onClick() }}
+      aria-label={label}
+      title={label}
+      style={{
+        background: 'none', border: 0, cursor: 'pointer', padding: '0 2px',
+        color: dolu ? 'var(--accent)' : 'var(--text4)', fontSize: 12, lineHeight: 1, flexShrink: 0,
+      }}
+    >
+      {dolu ? '★' : '☆'}
+    </button>
+  )
+}
+
+function MenuSatiri({ item, favori, onToggleFav, onNavigate, gosterGrup = false }) {
+  return (
+    <NavLink to={settingsPath(item.key)} onClick={onNavigate} style={{ textDecoration: 'none', display: 'block' }}>
+      {({ isActive }) => (
+        <div
+          title={item.desc}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 9,
+            padding: '7px 10px', borderRadius: 7, marginBottom: 2,
+            cursor: 'pointer', transition: 'background 0.15s',
+            background: isActive ? 'rgba(240,165,0,0.10)' : 'transparent',
+            borderLeft: isActive ? '2px solid var(--accent)' : '2px solid transparent',
+            color: isActive ? 'var(--text)' : 'var(--text2)',
+            fontSize: 13, fontWeight: isActive ? 600 : 400,
+          }}
+        >
+          <span style={{ fontSize: 14, width: 18, textAlign: 'center', flexShrink: 0 }}>{item.icon}</span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {item.label}
+            </span>
+            {gosterGrup && (
+              <span style={{ display: 'block', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text4)' }}>
+                {item.groupLabel}
+              </span>
+            )}
+          </span>
+          <Yildiz
+            dolu={favori}
+            onClick={() => onToggleFav(item.key)}
+            label={favori ? `${item.label} sık kullanılanlardan çıkar` : `${item.label} sık kullanılanlara ekle`}
+          />
+        </div>
+      )}
+    </NavLink>
+  )
+}
 
 export default function SettingsLayout() {
   const role = useAuthStore(s => s.user?.role)
-  const visibleGroups = TAB_GROUPS
-    .map(g => ({ ...g, tabs: g.tabs.filter(t => !role || t.roles.includes(role)) }))
-    .filter(g => g.tabs.length > 0)
-  return (
-    <div style={{ display: 'flex', minHeight: 'calc(100vh - 60px)' }}>
-      <aside style={{
-        width: 230,
-        padding: '24px 10px',
-        borderRight: '1px solid var(--border)',
-        background: 'var(--surface)',
-        flexShrink: 0,
-        overflowY: 'auto',
-      }}>
+  const konum = useLocation()
+  const navigate = useNavigate()
+  const dar = useIsNarrow(900)
+
+  const [arama, setArama] = useState('')
+  const [favoriler, setFavoriler] = useState(loadFavorites)
+  const [sonlar, setSonlar] = useState(loadRecents)
+  const [kapali, setKapali] = useState(loadCollapsed)
+  const [menuAcik, setMenuAcik] = useState(false)
+  const aramaRef = useRef(null)
+
+  const aktifKey = konum.pathname.split('/')[2] || ''
+  const aktifItem = ALL_ITEMS.find(i => i.key === aktifKey)
+
+  // Ziyaret edilen sayfa "son gidilenler"e düşer; bir dahaki sefere üstte olur.
+  useEffect(() => {
+    if (aktifKey) setSonlar(pushRecent(aktifKey))
+  }, [aktifKey])
+
+  // Dar ekranda sayfa değişince menü kendini kapatsın; açık kalırsa içeriği örter.
+  useEffect(() => { setMenuAcik(false) }, [konum.pathname])
+
+  // Ctrl/Cmd+K aramaya odaklanır — 37 kalemde fare ile gezmek yerine yaz-git.
+  useEffect(() => {
+    const dinle = e => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setMenuAcik(true)
+        setTimeout(() => aramaRef.current?.focus(), 0)
+      }
+    }
+    window.addEventListener('keydown', dinle)
+    return () => window.removeEventListener('keydown', dinle)
+  }, [])
+
+  const gruplar = useMemo(() => visibleGroups(role), [role])
+  const sonuclar = useMemo(() => (arama.trim() ? searchSettings(arama, role) : null), [arama, role])
+  const favoriItems = useMemo(() => itemsByKeys(favoriler, role), [favoriler, role])
+  const sonItems = useMemo(
+    () => itemsByKeys(sonlar, role).filter(i => !favoriler.includes(i.key) && i.key !== aktifKey).slice(0, 4),
+    [sonlar, role, favoriler, aktifKey])
+
+  const favToggle = key => setFavoriler(toggleFavorite(key))
+  const grupToggle = key => {
+    const yeni = kapali.includes(key) ? kapali.filter(k => k !== key) : [...kapali, key]
+    setKapali(yeni)
+    saveCollapsed(yeni)
+  }
+
+  // Aramada tek sonuç kaldıysa Enter doğrudan oraya götürsün.
+  const aramaEnter = e => {
+    if (e.key === 'Enter' && sonuclar?.length) {
+      navigate(settingsPath(sonuclar[0].key))
+      setArama('')
+    }
+    if (e.key === 'Escape') setArama('')
+  }
+
+  const kenarIcerik = (
+    <>
+      <div style={{ padding: '0 10px', marginBottom: 10 }}>
         <div style={{
           fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text4)',
-          letterSpacing: 2.5, padding: '0 10px', marginBottom: 10,
+          letterSpacing: 2.5, marginBottom: 8,
         }}>
           AYARLAR
         </div>
-        {visibleGroups.map((grp, gi) => (
-          <div key={grp.label} style={{ marginBottom: 16 }}>
-            <div style={{
-              fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--accent)',
-              letterSpacing: 2, padding: '0 10px', marginBottom: 6,
-              marginTop: gi === 0 ? 0 : 4,
-            }}>
-              {grp.label}
+        <input
+          ref={aramaRef}
+          className="form-input"
+          type="search"
+          aria-label="Ayarlarda ara"
+          placeholder="Ara…  (Ctrl+K)"
+          value={arama}
+          onChange={e => setArama(e.target.value)}
+          onKeyDown={aramaEnter}
+          style={{ width: '100%', fontSize: 12, padding: '6px 9px' }}
+        />
+      </div>
+
+      {sonuclar
+        ? (
+          <div style={{ padding: '0 4px' }}>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--accent)', letterSpacing: 2, padding: '0 8px 6px' }}>
+              {sonuclar.length} SONUÇ
             </div>
-            {grp.tabs.map(t => (
-              <NavLink
-                key={t.to}
-                to={t.to}
-                style={{ textDecoration: 'none', display: 'block' }}
-              >
-                {({ isActive }) => (
-                  <div
+            {sonuclar.length === 0
+              ? (
+                <div style={{ fontSize: 12, color: 'var(--text3)', padding: '4px 10px' }}>
+                  “{arama}” için sonuç yok.
+                </div>
+              )
+              : sonuclar.map(i => (
+                <MenuSatiri
+                  key={i.key} item={i} gosterGrup
+                  favori={favoriler.includes(i.key)}
+                  onToggleFav={favToggle}
+                  onNavigate={() => setArama('')}
+                />
+              ))}
+          </div>
+        )
+        : (
+          <div style={{ padding: '0 4px' }}>
+            {favoriItems.length > 0 && (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--accent)', letterSpacing: 2, padding: '0 8px 6px' }}>
+                  ★ SIK KULLANILAN
+                </div>
+                {favoriItems.map(i => (
+                  <MenuSatiri key={i.key} item={i} favori onToggleFav={favToggle} />
+                ))}
+              </div>
+            )}
+
+            {sonItems.length > 0 && (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text4)', letterSpacing: 2, padding: '0 8px 6px' }}>
+                  SON GİDİLENLER
+                </div>
+                {sonItems.map(i => (
+                  <MenuSatiri key={i.key} item={i} favori={false} onToggleFav={favToggle} />
+                ))}
+              </div>
+            )}
+
+            {gruplar.map(g => {
+              const acik = !kapali.includes(g.key)
+              // Kapalı grupta aktif sayfa varsa kullanıcı nerede olduğunu
+              // kaybetmesin diye grup yine de açılır.
+              const aktifIcerir = g.items.some(i => i.key === aktifKey)
+              const gosterilir = acik || aktifIcerir
+              return (
+                <div key={g.key} style={{ marginBottom: 12 }}>
+                  <button
+                    type="button"
+                    onClick={() => grupToggle(g.key)}
+                    aria-expanded={gosterilir}
+                    title={g.hint}
                     style={{
-                      display: 'flex', alignItems: 'center', gap: 10,
-                      padding: '9px 12px', borderRadius: 7, marginBottom: 2,
-                      cursor: 'pointer', transition: 'all 0.15s',
-                      background: isActive ? 'rgba(240,165,0,0.1)' : 'transparent',
-                      borderLeft: isActive ? '2px solid var(--accent)' : '2px solid transparent',
-                      color: isActive ? 'var(--text)' : 'var(--text2)',
-                      fontFamily: 'var(--sans)', fontSize: 13,
-                      fontWeight: isActive ? 600 : 400,
+                      display: 'flex', alignItems: 'center', gap: 6, width: '100%',
+                      background: 'none', border: 0, cursor: 'pointer', textAlign: 'left',
+                      fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--accent)',
+                      letterSpacing: 2, padding: '0 8px 6px',
                     }}
                   >
-                    <span style={{ fontSize: 14, width: 18, textAlign: 'center', flexShrink: 0 }}>{t.icon}</span>
-                    <span>{t.label}</span>
-                  </div>
-                )}
-              </NavLink>
-            ))}
+                    <span style={{ width: 8 }}>{gosterilir ? '▾' : '▸'}</span>
+                    <span style={{ flex: 1 }}>{g.label}</span>
+                    {!gosterilir && <span style={{ color: 'var(--text4)' }}>{g.items.length}</span>}
+                  </button>
+                  {gosterilir && g.items.map(i => (
+                    <MenuSatiri key={i.key} item={i} favori={favoriler.includes(i.key)} onToggleFav={favToggle} />
+                  ))}
+                </div>
+              )
+            })}
           </div>
-        ))}
+        )}
+    </>
+  )
+
+  if (dar) {
+    return (
+      <div style={{ minHeight: 'calc(100vh - 60px)' }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
+          borderBottom: '1px solid var(--border)', background: 'var(--surface)',
+          position: 'sticky', top: 0, zIndex: 30,
+        }}>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => setMenuAcik(o => !o)}
+            aria-expanded={menuAcik}
+            aria-label="Ayarlar menüsü"
+          >
+            ☰ Ayarlar
+          </button>
+          <span style={{ fontSize: 13, fontWeight: 600, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {aktifItem ? `${aktifItem.icon} ${aktifItem.label}` : 'Genel bakış'}
+          </span>
+        </div>
+
+        {menuAcik && (
+          <div style={{
+            borderBottom: '1px solid var(--border)', background: 'var(--surface)',
+            padding: '12px 6px', maxHeight: '70vh', overflowY: 'auto',
+          }}>
+            {kenarIcerik}
+          </div>
+        )}
+
+        <main>
+          <Outlet />
+        </main>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ display: 'flex', minHeight: 'calc(100vh - 60px)' }}>
+      <aside style={{
+        width: 240, padding: '20px 6px',
+        borderRight: '1px solid var(--border)', background: 'var(--surface)',
+        flexShrink: 0, overflowY: 'auto', maxHeight: 'calc(100vh - 60px)',
+        position: 'sticky', top: 0,
+      }}>
+        {kenarIcerik}
       </aside>
-      <main style={{ flex: 1, overflowY: 'auto' }}>
+      <main style={{ flex: 1, minWidth: 0, overflowY: 'auto' }}>
         <Outlet />
       </main>
     </div>
