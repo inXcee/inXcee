@@ -1,14 +1,19 @@
 import axios from 'axios'
 import { useAuthStore } from '../store/authStore.js'
 import { useToastStore } from '../store/toastStore.js'
+import { readDeviceIdentityCached } from '../kiosk/deviceIdentity.js'
 
 const api = axios.create({ baseURL: '/api', timeout: 45000, withCredentials: true })
 
-api.interceptors.request.use(cfg => {
+api.interceptors.request.use(async cfg => {
   // Staff oturumları httpOnly cookie ile taşınır (withCredentials: true).
   // Kiosk/mobile token'ları hala header'da — token varsa ekle.
   const token = useAuthStore.getState().token
   if (token && !cfg.headers.Authorization) cfg.headers.Authorization = `Bearer ${token}`
+  const deviceIdentity = await readDeviceIdentityCached()
+  if (deviceIdentity?.device_key && !cfg.headers['X-Kiosk-Device-Key']) {
+    cfg.headers['X-Kiosk-Device-Key'] = deviceIdentity.device_key
+  }
   return cfg
 })
 
@@ -20,6 +25,10 @@ api.interceptors.response.use(
   async error => {
     const { addToast } = useToastStore.getState()
     const original = error.config
+
+    if (error.response?.data?.code && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('kiosk-session-state', { detail: error.response.data }))
+    }
 
     if (error.response?.status === 401 && !original._retry) {
       if (isRefreshing) {

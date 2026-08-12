@@ -2,6 +2,8 @@ const DB_NAME = 'yys-kiosk-device'
 const DB_VERSION = 1
 const STORE_NAME = 'identity'
 const CURRENT_KEY = 'current'
+let cachedIdentity
+let identityPromise
 
 function openDeviceDatabase() {
   return new Promise((resolve, reject) => {
@@ -34,14 +36,34 @@ export function readDeviceIdentity() {
   return runTransaction('readonly', store => store.get(CURRENT_KEY))
 }
 
+export function readDeviceIdentityCached() {
+  if (cachedIdentity !== undefined) return Promise.resolve(cachedIdentity)
+  if (typeof indexedDB === 'undefined') return Promise.resolve(null)
+  if (!identityPromise) {
+    identityPromise = readDeviceIdentity()
+      .then(identity => {
+        cachedIdentity = identity || null
+        identityPromise = null
+        return cachedIdentity
+      })
+      .catch(() => {
+        cachedIdentity = null
+        identityPromise = null
+        return null
+      })
+  }
+  return identityPromise
+}
+
 export function saveDeviceIdentity(identity) {
+  cachedIdentity = { ...identity, saved_at: new Date().toISOString() }
   return runTransaction('readwrite', store => store.put({
-    ...identity,
-    saved_at: new Date().toISOString(),
+    ...cachedIdentity,
   }, CURRENT_KEY))
 }
 
 export function clearDeviceIdentity() {
+  cachedIdentity = null
   if (typeof indexedDB === 'undefined') return Promise.resolve()
   return runTransaction('readwrite', store => store.delete(CURRENT_KEY))
 }

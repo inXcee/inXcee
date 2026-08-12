@@ -245,6 +245,11 @@ export function createCommand(deviceId, input, actorUserId) {
   `).run(deviceId, input.command_type, JSON.stringify(input.payload || {}), actorUserId)
   if (input.command_type === 'lock') {
     db.prepare("UPDATE kiosk_devices SET status='locked', updated_at=CURRENT_TIMESTAMP WHERE id=?").run(deviceId)
+    db.prepare(`
+      UPDATE auth_sessions
+      SET locked_at=CURRENT_TIMESTAMP, lock_reason='remote_command'
+      WHERE device_id=? AND revoked_at IS NULL
+    `).run(deviceId)
   }
   addEvent(db, deviceId, 'command_created', { command_type: input.command_type }, actorUserId)
   return commandById(Number(result.lastInsertRowid))

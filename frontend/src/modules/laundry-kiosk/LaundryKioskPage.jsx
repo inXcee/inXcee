@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import api from '../../shared/api/client.js'
 import { readKioskSession, writeKioskSession, clearKioskSession } from '../../shared/kioskSession.js'
+import KioskSessionGate from '../../shared/components/KioskSessionGate.jsx'
 import DashboardView from './DashboardView.jsx'
 import BurstBagCenterView from './BurstBagCenterView.jsx'
 import DeliverWorkView from './DeliverWorkView.jsx'
@@ -42,6 +43,8 @@ export default function LaundryKioskPage() {
   const storedSession = readStoredSession()
   const [avsToken, setAvsToken] = useState(storedSession?.token || null)
   const [workerInfo, setWorkerInfo] = useState(storedSession?.worker || null)
+  const [sessionPolicy, setSessionPolicy] = useState(storedSession?.session || null)
+  const [mustChangePin, setMustChangePin] = useState(Boolean(storedSession?.must_change_pin))
   const [loginError, setLoginError] = useState('')
   const [nameQuery, setNameQuery] = useState('')
   const [nameResults, setNameResults] = useState([])
@@ -92,14 +95,19 @@ export default function LaundryKioskPage() {
           role_label: 'Çamaşırhane Personeli',
         }
         setWorkerInfo(restoredWorker)
-        writeKioskSession(SESSION_KEY, { token: avsToken, worker: restoredWorker })
+        writeKioskSession(SESSION_KEY, {
+          token: avsToken,
+          worker: restoredWorker,
+          session: sessionPolicy,
+          must_change_pin: mustChangePin,
+        })
       }
     }).catch(() => {
       clearKioskSession(SESSION_KEY)
       setAvsToken(null)
       setWorkerInfo(null)
     })
-  }, [avsToken, workerInfo])
+  }, [avsToken, workerInfo, sessionPolicy, mustChangePin])
 
   const kioskApi = {
     get: url => api.get(url, { headers: { Authorization: `Bearer ${avsToken}` } }),
@@ -158,7 +166,7 @@ export default function LaundryKioskPage() {
       setPinInput(value => value.slice(0, -1))
       return
     }
-    setPinInput(value => `${value}${key}`.slice(0, 4))
+    setPinInput(value => `${value}${key}`.slice(0, 6))
   }
 
   const handleLogin = async event => {
@@ -177,12 +185,11 @@ export default function LaundryKioskPage() {
       await api.get('/self-service/laundry-kiosk/session', {
         headers: { Authorization: `Bearer ${response.data.token}` },
       })
-      writeKioskSession(SESSION_KEY, {
-        token: response.data.token,
-        worker: response.data.worker,
-      })
+      writeKioskSession(SESSION_KEY, response.data)
       setAvsToken(response.data.token)
       setWorkerInfo(response.data.worker)
+      setSessionPolicy(response.data.session)
+      setMustChangePin(Boolean(response.data.must_change_pin))
       setActiveTab('home')
     } catch (error) {
       // Yanlış PIN artık hesabı kilitlemiyor: alan temizlenip odak geri veriliyor
@@ -196,9 +203,12 @@ export default function LaundryKioskPage() {
   }
 
   const logout = () => {
+    if (avsToken) api.post('/auth/logout', null, { headers: { Authorization: `Bearer ${avsToken}` } }).catch(() => {})
     clearKioskSession(SESSION_KEY)
     setAvsToken(null)
     setWorkerInfo(null)
+    setSessionPolicy(null)
+    setMustChangePin(false)
     setSelectedWorker(null)
     setNameQuery('')
     setPinInput('')
@@ -234,7 +244,7 @@ export default function LaundryKioskPage() {
               <div>
                 <span className="kiosk-eyebrow">HOŞ GELDİNİZ</span>
                 <h2>Personel girişi</h2>
-                <p>Adınızı seçin ve 4 haneli PIN kodunuzu girin.</p>
+                <p>Adınızı seçin; kalıcı 4 haneli veya teslim edilen geçici 6 haneli PIN’i girin.</p>
               </div>
             </div>
 
@@ -290,14 +300,14 @@ export default function LaundryKioskPage() {
 
             {selectedWorker && (
               <div className="kiosk-pin-section">
-                <label htmlFor="kiosk-pin">4 haneli PIN</label>
+                <label htmlFor="kiosk-pin">4 haneli PIN · ilk girişte geçici 6 hane</label>
                 <input
                   id="kiosk-pin"
                   ref={pinFieldRef}
                   className="kiosk-pin-input"
                   type="password"
                   inputMode="numeric"
-                  maxLength={4}
+                  maxLength={6}
                   value={pinInput}
                   onChange={event => setPinInput(event.target.value.replace(/\D/g, '').slice(0, 4))}
                   placeholder="••••"
@@ -305,7 +315,7 @@ export default function LaundryKioskPage() {
                   autoFocus
                 />
                 <div className="kiosk-pin-dots" aria-hidden="true">
-                  {[0, 1, 2, 3].map(index => <span key={index} className={pinInput.length > index ? 'is-filled' : ''} />)}
+                  {[0, 1, 2, 3, 4, 5].map(index => <span key={index} className={pinInput.length > index ? 'is-filled' : ''} />)}
                 </div>
                 <div className="kiosk-keypad" aria-label="PIN tuş takımı">
                   {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(number => (
@@ -322,7 +332,7 @@ export default function LaundryKioskPage() {
 
             {loginError && <div className="kiosk-login-error" role="alert">⚠ {loginError}</div>}
 
-            <button className="kiosk-login-submit" type="submit" disabled={!selectedWorker || pinInput.length !== 4 || loginBusy}>
+            <button className="kiosk-login-submit" type="submit" disabled={!selectedWorker || ![4, 6].includes(pinInput.length) || loginBusy}>
               {loginBusy ? 'Giriş yapılıyor…' : 'Kiosku Aç'}
               {!loginBusy && <span>→</span>}
             </button>
@@ -340,6 +350,15 @@ export default function LaundryKioskPage() {
 
   return (
     <div className="laundry-kiosk-shell">
+      <KioskSessionGate
+        token={avsToken} session={sessionPolicy} mustChange={mustChangePin}
+        onSessionChange={next => {
+          setSessionPolicy(next)
+          setMustChangePin(Boolean(next?.must_change_pin))
+          writeKioskSession(SESSION_KEY, { token: avsToken, worker: workerInfo, session: next, must_change_pin: Boolean(next?.must_change_pin) })
+        }}
+        onLogout={logout}
+      />
       <header className="kiosk-topbar">
         <div className="kiosk-topbar-brand">
           <span className="kiosk-brand-mark kiosk-brand-mark--small">🧺</span>

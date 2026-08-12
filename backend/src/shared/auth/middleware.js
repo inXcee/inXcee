@@ -17,14 +17,27 @@ function extractToken(req) {
   return null
 }
 
+function authFailure(res, error) {
+  if (error?.code === 'PIN_CHANGE_REQUIRED') {
+    return res.status(423).json({ error: 'Devam etmek için kalıcı PIN belirleyin', code: error.code })
+  }
+  if (error?.code === 'SESSION_LOCKED') {
+    return res.status(423).json({ error: 'Kiosk oturumu kilitli', code: error.code })
+  }
+  if (error?.code === 'SESSION_EXPIRED') {
+    return res.status(401).json({ error: 'Kiosk oturum süresi doldu', code: error.code })
+  }
+  return res.status(401).json({ error: 'Geçersiz token' })
+}
+
 export function requireAuth(req, res, next) {
   const token = extractToken(req)
   if (!token) return res.status(401).json({ error: 'Token gerekli' })
   try {
     req.user = verifyToken(token)
     next()
-  } catch {
-    res.status(401).json({ error: 'Geçersiz token' })
+  } catch (error) {
+    authFailure(res, error)
   }
 }
 
@@ -39,8 +52,8 @@ export function requireSSEAuth(req, res, next) {
   try {
     req.user = verifyToken(token)
     next()
-  } catch {
-    res.status(401).json({ error: 'Geçersiz token' })
+  } catch (error) {
+    authFailure(res, error)
   }
 }
 
@@ -58,8 +71,8 @@ export function requireAvsKiosk(req, res, next) {
     req.user = verifyToken(h.slice(7))
     if (req.user.role !== 'avs_kiosk') return res.status(403).json({ error: 'AVS kiosk token gerekli' })
     next()
-  } catch {
-    res.status(401).json({ error: 'Geçersiz token' })
+  } catch (error) {
+    authFailure(res, error)
   }
 }
 
@@ -103,8 +116,8 @@ export function requireKioskOrStaff(req, res, next) {
       return res.status(403).json({ error: 'Kiosk veya personel token gerekli' })
     }
     next()
-  } catch {
-    res.status(401).json({ error: 'Geçersiz token' })
+  } catch (error) {
+    authFailure(res, error)
   }
 }
 

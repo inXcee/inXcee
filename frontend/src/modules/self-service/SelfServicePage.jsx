@@ -3,6 +3,10 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useTranslation } from '../../shared/i18n/index.js'
 import LanguageSwitcher from '../../shared/components/LanguageSwitcher.jsx'
+import KioskSessionGate from '../../shared/components/KioskSessionGate.jsx'
+import { clearKioskSession, readKioskSession, writeKioskSession } from '../../shared/kioskSession.js'
+
+const SESSION_KEY = 'resident-kiosk-session'
 
 const STATUS_LABELS = { clean:'Temiz', dirty:'Kirli', collected:'Toplandı', washing:'Yıkanıyor', ready:'Hazır', distributed:'Teslim Edildi' }
 const STATUS_COLORS = { clean:'text-green-400', dirty:'text-red-400', collected:'text-yellow-400', washing:'text-blue-400', ready:'text-green-400', distributed:'text-slate-400' }
@@ -28,7 +32,10 @@ export default function SelfServicePage() {
   const { t } = useTranslation()
   const [tcNo, setTcNo]   = useState('')
   const [pin, setPin]     = useState('')
-  const [kioskToken, setKioskToken] = useState(null)
+  const storedSession = readKioskSession(SESSION_KEY)
+  const [kioskToken, setKioskToken] = useState(storedSession?.token || null)
+  const [sessionPolicy, setSessionPolicy] = useState(storedSession?.session || null)
+  const [mustChangePin, setMustChangePin] = useState(Boolean(storedSession?.must_change_pin))
   const [loginError, setLoginError] = useState('')
   const [activeTab, setActiveTab]   = useState('info')
 
@@ -70,10 +77,21 @@ export default function SelfServicePage() {
     post: (url, data) => api.post(url, data, { headers: { Authorization: `Bearer ${kioskToken}` } }),
   }
 
+  const logoutKiosk = () => {
+    if (kioskToken) api.post('/auth/logout', null, { headers: { Authorization: `Bearer ${kioskToken}` } }).catch(() => {})
+    clearKioskSession(SESSION_KEY)
+    setKioskToken(null)
+    setSessionPolicy(null)
+    setMustChangePin(false)
+  }
+
   const handleLogin = async (e) => {
     e.preventDefault(); setLoginError('')
     try {
       const res = await api.post('/auth/kiosk-login', { tc_no: tcNo, pin })
+      writeKioskSession(SESSION_KEY, res.data)
+      setSessionPolicy(res.data.session)
+      setMustChangePin(Boolean(res.data.must_change_pin))
       setKioskToken(res.data.token)
     } catch (err) { setLoginError(err.response?.data?.error || 'Giriş başarısız') }
   }
@@ -96,6 +114,9 @@ export default function SelfServicePage() {
     if (!selectedPerson) return setLoginError('Listeden bir kişi seçin')
     try {
       const res = await api.post('/auth/kiosk-login', { personnel_id: selectedPerson.id, pin: namePin })
+      writeKioskSession(SESSION_KEY, res.data)
+      setSessionPolicy(res.data.session)
+      setMustChangePin(Boolean(res.data.must_change_pin))
       setKioskToken(res.data.token)
     } catch (err) { setLoginError(err.response?.data?.error || 'Giriş başarısız') }
   }
@@ -229,13 +250,13 @@ export default function SelfServicePage() {
               </div>
               <div>
                 <label htmlFor="kiosk-pin" className="block text-sm text-slate-400 mb-2">{t('kiosk.pin')}</label>
-                <input id="kiosk-pin" type="password" inputMode="numeric" maxLength={4} value={pin}
-                  onChange={e => setPin(e.target.value.replace(/\D/g,'').slice(0,4))}
+                <input id="kiosk-pin" type="password" inputMode="numeric" maxLength={6} value={pin}
+                  onChange={e => setPin(e.target.value.replace(/\D/g,'').slice(0,6))}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-center text-2xl tracking-widest focus:outline-none focus:border-amber-500"
                   placeholder="····" required autoComplete="off" />
               </div>
               {loginError && <div role="alert" className="text-red-400 text-sm text-center">{loginError}</div>}
-              <button type="submit" disabled={tcNo.length < 11 || pin.length !== 4}
+              <button type="submit" disabled={tcNo.length < 11 || ![4, 6].includes(pin.length)}
                 className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white rounded-xl py-3 text-base font-medium transition-colors">
                 {t('kiosk.login_button')}
               </button>
@@ -282,15 +303,15 @@ export default function SelfServicePage() {
               {selectedPerson && (
                 <div>
                   <label htmlFor="kiosk-name-pin" className="block text-sm text-slate-400 mb-2">{t('kiosk.pin')}</label>
-                  <input id="kiosk-name-pin" type="password" inputMode="numeric" maxLength={4} value={namePin}
-                    onChange={e => setNamePin(e.target.value.replace(/\D/g,'').slice(0,4))}
+                  <input id="kiosk-name-pin" type="password" inputMode="numeric" maxLength={6} value={namePin}
+                    onChange={e => setNamePin(e.target.value.replace(/\D/g,'').slice(0,6))}
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-center text-2xl tracking-widest focus:outline-none focus:border-amber-500"
                     placeholder="····" autoFocus autoComplete="off" />
                 </div>
               )}
 
               {loginError && <div role="alert" className="text-red-400 text-sm text-center">{loginError}</div>}
-              <button type="submit" disabled={!selectedPerson || namePin.length !== 4}
+              <button type="submit" disabled={!selectedPerson || ![4, 6].includes(namePin.length)}
                 className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white rounded-xl py-3 text-base font-medium transition-colors">
                 {t('kiosk.login_button')}
               </button>
@@ -304,6 +325,15 @@ export default function SelfServicePage() {
   // ─── Ana Ekran ──────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col max-w-lg mx-auto p-4">
+      <KioskSessionGate
+        token={kioskToken} session={sessionPolicy} mustChange={mustChangePin}
+        onSessionChange={next => {
+          setSessionPolicy(next)
+          setMustChangePin(Boolean(next?.must_change_pin))
+          writeKioskSession(SESSION_KEY, { token: kioskToken, session: next, must_change_pin: Boolean(next?.must_change_pin) })
+        }}
+        onLogout={logoutKiosk}
+      />
       {/* Header */}
       <div className="flex items-center justify-between py-4 mb-4">
         <div>
@@ -312,7 +342,7 @@ export default function SelfServicePage() {
             <div className="text-xs text-slate-500">{myInfo.room.block} Blok - Oda {myInfo.room.room_no} · Yatak {myInfo.room.bed_no}</div>
           )}
         </div>
-        <button onClick={() => setKioskToken(null)} className="text-xs text-slate-500 hover:text-slate-300 px-3 py-1 bg-slate-800 rounded-lg">{t('kiosk.logout')}</button>
+        <button onClick={logoutKiosk} className="text-xs text-slate-500 hover:text-slate-300 px-3 py-1 bg-slate-800 rounded-lg">{t('kiosk.logout')}</button>
       </div>
 
       {/* Tabs */}

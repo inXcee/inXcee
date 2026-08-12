@@ -416,7 +416,7 @@ selfServiceRouter.post('/set-pin', requireKioskOrStaff, (req, res) => {
   const result = changeKioskPin(req.user.personnelId, currentPin, newPin)
   if (result.error) return res.status(result.status).json({ error: result.error })
   // Eski oturumlar iptal oldu; bu cihaz açık kalsın diye yeni token veriyoruz.
-  const fresh = issuePersonnelKioskSession(req.user.personnelId)
+  const fresh = issuePersonnelKioskSession(req.user.personnelId, { previousJti: req.user.jti })
   res.json(fresh ? { ...result, token: fresh.token } : result)
 })
 

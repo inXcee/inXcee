@@ -51,11 +51,10 @@ export default function LoginScreen({
           {selected && (
             <div>
               <label className="block text-sm text-slate-400 mb-3 text-center">{t('avs_kiosk.pin')}</label>
-              <PinPad value={pin} onChange={setPin} length={4}
-                onComplete={(completedPin) => onLogin(null, completedPin)} error={loginError} />
+              <PinPad value={pin} onChange={setPin} length={6} error={loginError} />
             </div>
           )}
-          <button type="submit" disabled={!selected || pin.length !== 4}
+          <button type="submit" disabled={!selected || ![4, 6].includes(pin.length)}
             className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white rounded-xl py-3 text-base font-medium transition-colors">
             {t('avs_kiosk.login_button')}
           </button>

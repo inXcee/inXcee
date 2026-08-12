@@ -75,3 +75,29 @@ export const commandAckSchema = z.object({
   status: z.enum(['completed', 'failed']),
   result: jsonObject.optional().default({}),
 }).strict()
+
+export const pinIssueSchema = z.object({
+  principals: z.array(z.object({
+    kind: z.enum(['staff', 'personnel']),
+    id: z.coerce.number().int().positive(),
+  }).strict()).min(1).max(200),
+}).strict()
+
+export const pinDeliverySchema = z.object({
+  delivered_to: z.string().trim().min(2).max(160),
+  delivery_method: z.enum(['in_person', 'printed', 'sealed_envelope', 'other']),
+}).strict()
+
+export const bulkPinDeliverySchema = pinDeliverySchema.extend({
+  issuance_ids: z.array(z.coerce.number().int().positive()).min(1).max(200),
+}).strict()
+
+export const sessionSettingsSchema = z.object({
+  kiosk_shared_idle_minutes: z.coerce.number().int().min(1).max(120).optional(),
+  kiosk_shared_absolute_hours: z.coerce.number().int().min(1).max(48).optional(),
+  kiosk_laundry_idle_minutes: z.coerce.number().int().min(1).max(240).optional(),
+  kiosk_laundry_absolute_hours: z.coerce.number().int().min(1).max(48).optional(),
+  kiosk_personal_session_days: z.coerce.number().int().min(1).max(90).optional(),
+  kiosk_personal_reauth_hours: z.coerce.number().int().min(1).max(48).optional(),
+  kiosk_initial_pin_hours: z.coerce.number().int().min(1).max(168).optional(),
+}).strict().refine(value => Object.keys(value).length > 0, 'En az bir ayar gerekli')

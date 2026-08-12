@@ -7,6 +7,10 @@ import {
   enrollmentCodeSchema,
   enrollDeviceSchema,
   heartbeatSchema,
+  bulkPinDeliverySchema,
+  pinDeliverySchema,
+  pinIssueSchema,
+  sessionSettingsSchema,
   updateDeviceSchema,
 } from './schemas.js'
 import {
@@ -23,6 +27,18 @@ import {
   rotateDeviceKey,
   updateDevice,
 } from './service.js'
+import {
+  deliverPin,
+  endKioskSession,
+  endPrincipalSessions,
+  getSessionSettings,
+  issuePins,
+  listKioskSessions,
+  listPinPrincipals,
+  markPinDeliveries,
+  revokePin,
+  updateSessionSettings,
+} from './pins.js'
 
 export const kioskManagementRouter = Router()
 export const kioskDeviceRouter = Router()
@@ -36,6 +52,57 @@ kioskManagementRouter.get('/overview', ...view, (_req, res) => {
 
 kioskManagementRouter.get('/devices', ...view, (_req, res) => {
   res.json(listDevices())
+})
+
+kioskManagementRouter.get('/pins', ...view, (req, res) => {
+  res.json(listPinPrincipals(req.query))
+})
+
+kioskManagementRouter.post('/pins/issue', ...manage, validate(pinIssueSchema), (req, res) => {
+  const result = issuePins(req.user.id, req.validated.principals)
+  if (!result.count) return res.status(404).json({ error: 'Aktif personel bulunamadı' })
+  res.status(201).json(result)
+})
+
+kioskManagementRouter.post('/pins/deliver-bulk', ...manage, validate(bulkPinDeliverySchema), (req, res) => {
+  const { issuance_ids, ...input } = req.validated
+  res.json(markPinDeliveries(req.user.id, issuance_ids, input))
+})
+
+kioskManagementRouter.post('/pins/:id/deliver', ...manage, validate(pinDeliverySchema), (req, res) => {
+  const result = deliverPin(Number(req.params.id), req.user.id, req.validated)
+  if (result.error) return res.status(result.status).json({ error: result.error })
+  res.json(result)
+})
+
+kioskManagementRouter.post('/pins/:id/revoke', ...manage, (req, res) => {
+  const result = revokePin(Number(req.params.id), req.user.id, req.body?.reason)
+  if (result.error) return res.status(result.status).json({ error: result.error })
+  res.json(result)
+})
+
+kioskManagementRouter.get('/sessions', ...view, (_req, res) => {
+  res.json(listKioskSessions())
+})
+
+kioskManagementRouter.post('/sessions/:jti/revoke', ...manage, (req, res) => {
+  if (!endKioskSession(req.params.jti, req.user.id)) return res.status(404).json({ error: 'Oturum bulunamadı' })
+  res.json({ ok: true })
+})
+
+kioskManagementRouter.post('/principals/:kind/:id/logout', ...manage, (req, res) => {
+  if (!endPrincipalSessions(req.params.kind, Number(req.params.id), req.user.id)) {
+    return res.status(404).json({ error: 'Personel bulunamadı' })
+  }
+  res.json({ ok: true })
+})
+
+kioskManagementRouter.get('/session-settings', ...view, (_req, res) => {
+  res.json(getSessionSettings())
+})
+
+kioskManagementRouter.patch('/session-settings', ...manage, validate(sessionSettingsSchema), (req, res) => {
+  res.json(updateSessionSettings(req.user.id, req.validated))
 })
 
 kioskManagementRouter.post('/enrollment-codes', ...manage, validate(enrollmentCodeSchema), (req, res) => {

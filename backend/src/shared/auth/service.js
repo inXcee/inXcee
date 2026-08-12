@@ -34,17 +34,17 @@ function makeToken(payload) {
 
 // Kiosk token'ı da jti taşır — süresiz bir token ancak iptal edilebiliyorsa
 // güvenlidir; çıkış düğmesi bu jti'yi blacklist'e yazarak oturumu gerçekten kapatır.
-function makeKioskToken(payload) {
-  return signSession(payload, KIOSK_TOKEN_TTL_MS)
+function makeKioskToken(payload, sessionOptions = {}) {
+  return signSession(payload, KIOSK_TOKEN_TTL_MS, sessionOptions)
 }
 
 // Token üretiminin tek noktası: jti + ims verir ve oturumu kaydeder. Kayıt
 // burada olduğu için hiçbir giriş yolu listeden düşmez.
-function signSession(payload, ttlMs) {
+function signSession(payload, ttlMs, sessionOptions = {}) {
   const jti = crypto.randomUUID()
   const expiresAt = Math.floor((Date.now() + ttlMs) / 1000)
   const token = jwt.sign({ ...payload, jti, ims: Date.now() }, SECRET, { expiresIn: asSeconds(ttlMs) })
-  recordSession(jti, payload, expiresAt)
+  recordSession(jti, payload, expiresAt, sessionOptions)
   return { token, jti }
 }
 
@@ -57,18 +57,108 @@ function principalOf(payload) {
   return null
 }
 
-function recordSession(jti, payload, expiresAt) {
+function recordSession(jti, payload, expiresAt, sessionOptions = {}) {
   const principal = principalOf(payload)
   if (!principal?.id) return
   try {
     getDB().prepare(`
-      INSERT INTO auth_sessions(jti, principal_kind, principal_id, full_name, role, expires_at)
-      VALUES(?,?,?,?,?,?)
-    `).run(jti, principal.kind, principal.id, payload.full_name || null, payload.role || null, expiresAt)
+      INSERT INTO auth_sessions(
+        jti, principal_kind, principal_id, full_name, role, expires_at,
+        device_id, session_mode, absolute_expires_at, reauthenticated_at, pin_change_required
+      ) VALUES(?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP,?)
+    `).run(
+      jti, principal.kind, principal.id, payload.full_name || null, payload.role || null, expiresAt,
+      sessionOptions.deviceId || null, sessionOptions.mode || null,
+      sessionOptions.absoluteExpiresAt || expiresAt, sessionOptions.pinChangeRequired ? 1 : 0,
+    )
   } catch { /* kayıt tutulamazsa giriş akışı bozulmasın */ }
 }
 
 // Token jti'sini blacklist'e ekle (logout, refresh sonrası eski token)
+function numberSetting(key, fallback) {
+  try {
+    const value = Number(getDB().prepare('SELECT value FROM system_settings WHERE key=?').get(key)?.value)
+    return Number.isFinite(value) && value > 0 ? value : fallback
+  } catch { return fallback }
+}
+
+export function resolveKioskDevice(rawKey) {
+  if (!rawKey || typeof rawKey !== 'string') return null
+  const tokenHash = crypto.createHash('sha256').update(rawKey).digest('hex')
+  return getDB().prepare(`
+    SELECT id, name, device_type, mode, status FROM kiosk_devices
+    WHERE token_hash=? AND is_active=1 AND status<>'revoked'
+  `).get(tokenHash) || null
+}
+
+export function kioskSessionPolicy(device = null) {
+  if (device?.mode === 'personal') {
+    const days = numberSetting('kiosk_personal_session_days', 30)
+    return {
+      mode: 'personal', idle_minutes: null, absolute_minutes: days * 24 * 60,
+      sensitive_reauth_minutes: numberSetting('kiosk_personal_reauth_hours', 12) * 60,
+    }
+  }
+  if (device?.device_type === 'laundry_terminal') {
+    return {
+      mode: 'shared', idle_minutes: numberSetting('kiosk_laundry_idle_minutes', 10),
+      absolute_minutes: numberSetting('kiosk_laundry_absolute_hours', 12) * 60,
+      sensitive_reauth_minutes: null,
+    }
+  }
+  return {
+    mode: 'shared', idle_minutes: numberSetting('kiosk_shared_idle_minutes', 2),
+    absolute_minutes: numberSetting('kiosk_shared_absolute_hours', 8) * 60,
+    sensitive_reauth_minutes: null,
+  }
+}
+
+function pendingInitialPin(kind, id) {
+  try {
+    return getDB().prepare(`
+      SELECT * FROM kiosk_pin_issuances
+      WHERE principal_kind=? AND principal_id=? AND revoked_at IS NULL AND completed_at IS NULL
+      ORDER BY id DESC LIMIT 1
+    `).get(kind, id) || null
+  } catch { return null }
+}
+
+function kioskLoginOptions(kind, id, device) {
+  const issuance = pendingInitialPin(kind, id)
+  if (issuance) {
+    const expiresAt = new Date(`${issuance.expires_at.replace(' ', 'T')}Z`).getTime()
+    if (expiresAt <= Date.now()) return { error: 'Geçici PIN süresi dolmuş. Yöneticinizden yeni PIN alın.', status: 410 }
+    if (issuance.first_used_at) return { error: 'Geçici PIN daha önce kullanılmış. Yöneticinizden yeni PIN alın.', status: 410 }
+  }
+  const policy = kioskSessionPolicy(device)
+  return {
+    issuance,
+    policy,
+    sessionOptions: {
+      deviceId: device?.id || null,
+      mode: policy.mode,
+      absoluteExpiresAt: Math.floor((Date.now() + policy.absolute_minutes * 60_000) / 1000),
+      pinChangeRequired: Boolean(issuance),
+    },
+  }
+}
+
+function finishKioskLogin(tokenResult, loginOptions, personKey, person) {
+  if (loginOptions.issuance) {
+    getDB().prepare('UPDATE kiosk_pin_issuances SET first_used_at=CURRENT_TIMESTAMP WHERE id=? AND first_used_at IS NULL')
+      .run(loginOptions.issuance.id)
+  }
+  return {
+    token: tokenResult.token,
+    [personKey]: person,
+    must_change_pin: Boolean(loginOptions.issuance),
+    session: {
+      ...loginOptions.policy,
+      absolute_expires_at: new Date(loginOptions.sessionOptions.absoluteExpiresAt * 1000).toISOString(),
+    },
+  }
+}
+
 function blacklistJti(jti, expiresAt) {
   if (!jti) return
   const db = getDB()
@@ -141,7 +231,7 @@ function noteFailedPin(table, id, fullName) {
   return { error: 'PIN hatalı', status: 401 }
 }
 
-export function loginKiosk(tcNo, pin) {
+export function loginKiosk(tcNo, pin, { device = null } = {}) {
   const db = getDB()
   const p = db.prepare('SELECT * FROM personnel WHERE tc_no=? AND check_out_date IS NULL').get(tcNo)
   if (!p) return { error: 'TC No bulunamadı veya çıkış yapılmış', status: 401 }
@@ -149,9 +239,11 @@ export function loginKiosk(tcNo, pin) {
   if (!bcrypt.compareSync(pin, p.kiosk_pin)) {
     return noteFailedPin('personnel', p.id, p.full_name)
   }
+  const loginOptions = kioskLoginOptions('personnel', p.id, device)
+  if (loginOptions.error) return loginOptions
   db.prepare('UPDATE personnel SET pin_attempts=0, pin_locked_until=NULL WHERE id=?').run(p.id)
-  const { token } = makeKioskToken({ personnelId: p.id, role: 'kiosk', full_name: p.full_name })
-  return { token, personnel: { id: p.id, full_name: p.full_name } }
+  const tokenResult = makeKioskToken({ personnelId: p.id, role: 'kiosk', full_name: p.full_name }, loginOptions.sessionOptions)
+  return finishKioskLogin(tokenResult, loginOptions, 'personnel', { id: p.id, full_name: p.full_name })
 }
 
 export function searchKioskPersonnel(q) {
@@ -164,7 +256,7 @@ export function searchKioskPersonnel(q) {
   ).all(term)
 }
 
-export function loginKioskById(personnelId, pin) {
+export function loginKioskById(personnelId, pin, { device = null } = {}) {
   const db = getDB()
   const p = db.prepare('SELECT * FROM personnel WHERE id=? AND check_out_date IS NULL').get(personnelId)
   if (!p) return { error: 'Personel bulunamadı veya çıkış yapılmış', status: 401 }
@@ -172,9 +264,11 @@ export function loginKioskById(personnelId, pin) {
   if (!bcrypt.compareSync(pin, p.kiosk_pin)) {
     return noteFailedPin('personnel', p.id, p.full_name)
   }
+  const loginOptions = kioskLoginOptions('personnel', p.id, device)
+  if (loginOptions.error) return loginOptions
   db.prepare('UPDATE personnel SET pin_attempts=0, pin_locked_until=NULL WHERE id=?').run(p.id)
-  const { token } = makeKioskToken({ personnelId: p.id, role: 'kiosk', full_name: p.full_name })
-  return { token, personnel: { id: p.id, full_name: p.full_name } }
+  const tokenResult = makeKioskToken({ personnelId: p.id, role: 'kiosk', full_name: p.full_name }, loginOptions.sessionOptions)
+  return finishKioskLogin(tokenResult, loginOptions, 'personnel', { id: p.id, full_name: p.full_name })
 }
 
 export function searchAvsWorkers(q) {
@@ -187,7 +281,7 @@ export function searchAvsWorkers(q) {
   ).all(`%${q}%`)
 }
 
-export function loginAvsKiosk(workerId, pin) {
+export function loginAvsKiosk(workerId, pin, { device = null } = {}) {
   const db = getDB()
   const w = db.prepare('SELECT * FROM staff WHERE id=? AND is_active=1').get(workerId)
   if (!w) return { error: 'Çalışan bulunamadı veya pasif', status: 401 }
@@ -195,9 +289,11 @@ export function loginAvsKiosk(workerId, pin) {
   if (!bcrypt.compareSync(pin, w.kiosk_pin)) {
     return noteFailedPin('staff', w.id, w.full_name)
   }
+  const loginOptions = kioskLoginOptions('staff', w.id, device)
+  if (loginOptions.error) return loginOptions
   db.prepare('UPDATE staff SET pin_attempts=0, pin_locked_until=NULL WHERE id=?').run(w.id)
-  const { token } = makeKioskToken({ workerId: w.id, role: 'avs_kiosk', full_name: w.full_name })
-  return { token, worker: { id: w.id, full_name: w.full_name, role_label: w.role_label } }
+  const tokenResult = makeKioskToken({ workerId: w.id, role: 'avs_kiosk', full_name: w.full_name }, loginOptions.sessionOptions)
+  return finishKioskLogin(tokenResult, loginOptions, 'worker', { id: w.id, full_name: w.full_name, role_label: w.role_label })
 }
 
 export function setKioskPin(personnelId, newPin) {
@@ -288,18 +384,45 @@ export function issueSessionFor(userId) {
 
 // Kiosk karşılıkları: PIN'ini değiştiren personel, önünde durduğu kiosktan
 // atılmasın. PIN doğrulaması çağıran tarafta zaten yapıldı.
-export function issueAvsKioskSession(workerId) {
-  const w = getDB().prepare('SELECT id, full_name, role_label FROM staff WHERE id=? AND is_active=1').get(workerId)
-  if (!w) return null
-  const { token } = makeKioskToken({ workerId: w.id, role: 'avs_kiosk', full_name: w.full_name })
-  return { token, worker: { id: w.id, full_name: w.full_name, role_label: w.role_label } }
+function continuationOptions(previousJti) {
+  const previous = previousJti ? sessionState(previousJti) : null
+  const device = previous?.device_id
+    ? getDB().prepare('SELECT id, device_type, mode FROM kiosk_devices WHERE id=?').get(previous.device_id)
+    : null
+  const policy = kioskSessionPolicy(device)
+  return {
+    deviceId: device?.id || null,
+    mode: policy.mode,
+    absoluteExpiresAt: Math.floor((Date.now() + policy.absolute_minutes * 60_000) / 1000),
+  }
 }
 
-export function issuePersonnelKioskSession(personnelId) {
+export function issueAvsKioskSession(workerId, { previousJti = null } = {}) {
+  const w = getDB().prepare('SELECT id, full_name, role_label FROM staff WHERE id=? AND is_active=1').get(workerId)
+  if (!w) return null
+  const sessionOptions = continuationOptions(previousJti)
+  const { token } = makeKioskToken({ workerId: w.id, role: 'avs_kiosk', full_name: w.full_name }, sessionOptions)
+  return {
+    token,
+    worker: { id: w.id, full_name: w.full_name, role_label: w.role_label },
+    session: { ...kioskSessionPolicy(sessionOptions.deviceId ? resolveDeviceById(sessionOptions.deviceId) : null), absolute_expires_at: new Date(sessionOptions.absoluteExpiresAt * 1000).toISOString() },
+  }
+}
+
+function resolveDeviceById(deviceId) {
+  return deviceId ? getDB().prepare('SELECT id, device_type, mode FROM kiosk_devices WHERE id=?').get(deviceId) : null
+}
+
+export function issuePersonnelKioskSession(personnelId, { previousJti = null } = {}) {
   const p = getDB().prepare('SELECT id, full_name FROM personnel WHERE id=? AND check_out_date IS NULL').get(personnelId)
   if (!p) return null
-  const { token } = makeKioskToken({ personnelId: p.id, role: 'kiosk', full_name: p.full_name })
-  return { token, personnel: { id: p.id, full_name: p.full_name } }
+  const sessionOptions = continuationOptions(previousJti)
+  const { token } = makeKioskToken({ personnelId: p.id, role: 'kiosk', full_name: p.full_name }, sessionOptions)
+  return {
+    token,
+    personnel: { id: p.id, full_name: p.full_name },
+    session: { ...kioskSessionPolicy(resolveDeviceById(sessionOptions.deviceId)), absolute_expires_at: new Date(sessionOptions.absoluteExpiresAt * 1000).toISOString() },
+  }
 }
 
 // "Şu an kim içeride" — oturum değil KİŞİ bazında. last_seen_at ~5 dakikada bir
@@ -405,10 +528,146 @@ export function revokeSessionsFor(kind, id) {
     .run(kind, id)
 }
 
-export function verifyToken(token) {
+function sessionState(jti) {
+  if (!jti) return null
+  return getDB().prepare(`
+    SELECT jti, principal_kind, principal_id, device_id, session_mode,
+           absolute_expires_at, locked_at, lock_reason, reauthenticated_at,
+           pin_change_required, revoked_at
+    FROM auth_sessions WHERE jti=?
+  `).get(jti) || null
+}
+
+function sessionPolicyResponse(row) {
+  if (!row) return null
+  const device = row.device_id
+    ? getDB().prepare('SELECT id, device_type, mode FROM kiosk_devices WHERE id=?').get(row.device_id)
+    : null
+  const policy = kioskSessionPolicy(device)
+  return {
+    ...policy,
+    locked: Boolean(row.locked_at),
+    lock_reason: row.lock_reason || null,
+    must_change_pin: Boolean(row.pin_change_required),
+    absolute_expires_at: row.absolute_expires_at
+      ? new Date(row.absolute_expires_at * 1000).toISOString()
+      : null,
+  }
+}
+
+export function lockKioskSession(payload, reason = 'idle') {
+  if (!payload?.jti || !['kiosk', 'avs_kiosk'].includes(payload.role)) {
+    return { error: 'Kiosk oturumu gerekli', status: 403 }
+  }
+  const db = getDB()
+  const result = db.prepare(`
+    UPDATE auth_sessions SET locked_at=CURRENT_TIMESTAMP, lock_reason=?
+    WHERE jti=? AND revoked_at IS NULL
+  `).run(String(reason || 'idle').slice(0, 120), payload.jti)
+  if (!result.changes) return { error: 'Oturum bulunamadı', status: 404 }
+  return { ok: true, session: sessionPolicyResponse(sessionState(payload.jti)) }
+}
+
+function pinOwner(payload) {
+  if (payload.role === 'avs_kiosk') return { kind: 'staff', id: payload.workerId, table: 'staff' }
+  if (payload.role === 'kiosk') return { kind: 'personnel', id: payload.personnelId, table: 'personnel' }
+  return null
+}
+
+export function unlockKioskSession(payload, pin) {
+  const owner = pinOwner(payload)
+  if (!owner || !/^\d{4}$/.test(String(pin || ''))) return { error: '4 haneli PIN gerekli', status: 400 }
+  const db = getDB()
+  const principal = db.prepare(`SELECT kiosk_pin FROM ${owner.table} WHERE id=?`).get(owner.id)
+  if (!principal?.kiosk_pin || !bcrypt.compareSync(String(pin), principal.kiosk_pin)) {
+    return noteFailedPin(owner.table, owner.id, payload.full_name)
+  }
+  const state = sessionState(payload.jti)
+  if (!state || state.revoked_at) return { error: 'Oturum bulunamadı', status: 401 }
+  if (state.pin_change_required) return { error: 'Önce kalıcı PIN belirlenmeli', status: 423, code: 'PIN_CHANGE_REQUIRED' }
+  db.prepare(`
+    UPDATE auth_sessions
+    SET locked_at=NULL, lock_reason=NULL, reauthenticated_at=CURRENT_TIMESTAMP, last_seen_at=CURRENT_TIMESTAMP
+    WHERE jti=?
+  `).run(payload.jti)
+  return { ok: true, session: sessionPolicyResponse(sessionState(payload.jti)) }
+}
+
+export function completeInitialKioskPin(payload, newPin) {
+  const owner = pinOwner(payload)
+  if (!owner) return { error: 'Kiosk oturumu gerekli', status: 403 }
+  if (!/^\d{4}$/.test(String(newPin || ''))) return { error: 'Yeni PIN 4 haneli rakam olmalı', status: 400 }
+  const db = getDB()
+  const state = sessionState(payload.jti)
+  if (!state || state.revoked_at) return { error: 'Oturum bulunamadı', status: 401 }
+  if (!state.pin_change_required) return { error: 'Bu oturumda PIN değişikliği beklenmiyor', status: 409 }
+  const issuance = db.prepare(`
+    SELECT id FROM kiosk_pin_issuances
+    WHERE principal_kind=? AND principal_id=? AND revoked_at IS NULL AND completed_at IS NULL
+    ORDER BY id DESC LIMIT 1
+  `).get(owner.kind, owner.id)
+  if (!issuance) return { error: 'Geçici PIN kaydı bulunamadı', status: 409 }
+  const hash = bcrypt.hashSync(String(newPin), 10)
+  db.transaction(() => {
+    db.prepare(`UPDATE ${owner.table} SET kiosk_pin=?, pin_attempts=0, pin_locked_until=NULL WHERE id=?`).run(hash, owner.id)
+    db.prepare('UPDATE kiosk_pin_issuances SET completed_at=CURRENT_TIMESTAMP WHERE id=?').run(issuance.id)
+    const others = db.prepare(`
+      SELECT jti, expires_at FROM auth_sessions
+      WHERE principal_kind=? AND principal_id=? AND jti<>? AND revoked_at IS NULL
+    `).all(owner.kind, owner.id, payload.jti)
+    for (const row of others) blacklistJti(row.jti, row.expires_at)
+    db.prepare(`
+      UPDATE auth_sessions SET revoked_at=CURRENT_TIMESTAMP
+      WHERE principal_kind=? AND principal_id=? AND jti<>? AND revoked_at IS NULL
+    `).run(owner.kind, owner.id, payload.jti)
+    db.prepare(`
+      UPDATE auth_sessions
+      SET pin_change_required=0, locked_at=NULL, lock_reason=NULL,
+          reauthenticated_at=CURRENT_TIMESTAMP, last_seen_at=CURRENT_TIMESTAMP
+      WHERE jti=?
+    `).run(payload.jti)
+  })()
+  return { ok: true, session: sessionPolicyResponse(sessionState(payload.jti)) }
+}
+
+export function getKioskSession(payload) {
+  const owner = pinOwner(payload)
+  if (!owner) return { error: 'Kiosk oturumu gerekli', status: 403 }
+  const state = sessionState(payload.jti)
+  if (!state || state.revoked_at) return { error: 'Oturum bulunamadı', status: 401 }
+  return { session: sessionPolicyResponse(state) }
+}
+
+export function verifyToken(token, { allowLocked = false, allowPinChange = false } = {}) {
   const payload = jwt.verify(token, SECRET)
   if (isBlacklisted(payload.jti)) throw new Error('Token iptal edildi')
   assertPrincipalActive(payload)
+  if (['kiosk', 'avs_kiosk'].includes(payload.role)) {
+    const state = sessionState(payload.jti)
+    if (state) {
+      if (state.revoked_at) {
+        const error = new Error('Oturum iptal edildi')
+        error.code = 'SESSION_REVOKED'
+        throw error
+      }
+      if (state.absolute_expires_at && state.absolute_expires_at <= Math.floor(Date.now() / 1000)) {
+        getDB().prepare('UPDATE auth_sessions SET revoked_at=CURRENT_TIMESTAMP WHERE jti=?').run(payload.jti)
+        const error = new Error('Kiosk oturum süresi doldu')
+        error.code = 'SESSION_EXPIRED'
+        throw error
+      }
+      if (state.pin_change_required && !allowPinChange) {
+        const error = new Error('Kalıcı PIN belirlenmeli')
+        error.code = 'PIN_CHANGE_REQUIRED'
+        throw error
+      }
+      if (state.locked_at && !allowLocked) {
+        const error = new Error('Kiosk oturumu kilitli')
+        error.code = 'SESSION_LOCKED'
+        throw error
+      }
+    }
+  }
   touchSession(payload.jti)
   return payload
 }

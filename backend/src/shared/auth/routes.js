@@ -3,7 +3,7 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
 import { z } from 'zod'
 import crypto from 'node:crypto'
 import bcrypt from 'bcryptjs'
-import { login, loginKiosk, loginKioskById, searchKioskPersonnel, loginAvsKiosk, searchAvsWorkers, changeOwnPassword, refreshToken, verify2faChallenge, logoutToken, getMe, WEB_TOKEN_TTL_MS, revokeSessionsFor, issueSessionFor } from './service.js'
+import { login, loginKiosk, loginKioskById, searchKioskPersonnel, loginAvsKiosk, searchAvsWorkers, changeOwnPassword, refreshToken, verify2faChallenge, logoutToken, getMe, WEB_TOKEN_TTL_MS, revokeSessionsFor, issueSessionFor, resolveKioskDevice, verifyToken, lockKioskSession, unlockKioskSession, completeInitialKioskPin, getKioskSession } from './service.js'
 import { get2faStatus, start2faSetupWithQr, enable2fa, disable2fa, getBackupCodeStatus, regenerateBackupCodes } from './totp.js'
 import { getSetting } from '../../modules/email/queries.js'
 import { sendPasswordResetEmail } from '../../modules/email/service.js'
@@ -48,6 +48,23 @@ const pinLimiter = rateLimit({
   skip: () => process.env.NODE_ENV === 'test',
   keyGenerator: (req) => `ip:${ipKeyGenerator(req.ip)}`,
 })
+
+function loginDevice(req) {
+  const rawKey = req.headers['x-kiosk-device-key']
+  if (rawKey) {
+    const device = resolveKioskDevice(rawKey)
+    if (!device) return { error: 'Geçersiz kiosk cihaz anahtarı', status: 401 }
+    if (device.status === 'locked') return { error: 'Kiosk cihazı yönetici tarafından kilitli', status: 423 }
+    return { device }
+  }
+  const required = getDB().prepare("SELECT value FROM system_settings WHERE key='kiosk_device_required'").get()?.value === '1'
+  return required ? { error: 'Kayıtlı kiosk cihazı gerekli', status: 403 } : { device: null }
+}
+
+function bearerToken(req) {
+  const header = req.headers.authorization
+  return header?.startsWith('Bearer ') ? header.slice(7) : null
+}
 
 const loginSchema = z.object({
   username: z.string().min(1, 'Kullanıcı adı gerekli').max(64),
@@ -120,14 +137,16 @@ authRouter.post('/passkey/login', async (req, res) => {
 
 authRouter.post('/kiosk-login', pinLimiter, (req, res) => {
   const { tc_no, pin, personnel_id } = req.body
+  const deviceResult = loginDevice(req)
+  if (deviceResult.error) return res.status(deviceResult.status).json({ error: deviceResult.error })
   if (personnel_id) {
     if (!pin) return res.status(400).json({ error: 'PIN gerekli' })
-    const result = loginKioskById(Number(personnel_id), pin)
+    const result = loginKioskById(Number(personnel_id), pin, { device: deviceResult.device })
     if (result.error) return res.status(result.status).json({ error: result.error })
     return res.json(result)
   }
   if (!tc_no || !pin) return res.status(400).json({ error: 'TC No ve PIN gerekli' })
-  const result = loginKiosk(tc_no, pin)
+  const result = loginKiosk(tc_no, pin, { device: deviceResult.device })
   if (result.error) return res.status(result.status).json({ error: result.error })
   res.json(result)
 })
@@ -153,9 +172,55 @@ authRouter.get('/avs-search', pinLimiter, (req, res) => {
 authRouter.post('/avs-login', pinLimiter, (req, res) => {
   const { worker_id, pin } = req.body
   if (!worker_id || !pin) return res.status(400).json({ error: 'worker_id ve pin gerekli' })
-  const result = loginAvsKiosk(Number(worker_id), pin)
+  const deviceResult = loginDevice(req)
+  if (deviceResult.error) return res.status(deviceResult.status).json({ error: deviceResult.error })
+  const result = loginAvsKiosk(Number(worker_id), pin, { device: deviceResult.device })
   if (result.error) return res.status(result.status).json({ error: result.error })
   res.json(result)
+})
+
+authRouter.get('/kiosk-session', (req, res) => {
+  const token = bearerToken(req)
+  if (!token) return res.status(401).json({ error: 'Token gerekli' })
+  try {
+    const payload = verifyToken(token, { allowLocked: true, allowPinChange: true })
+    const result = getKioskSession(payload)
+    if (result.error) return res.status(result.status).json({ error: result.error })
+    res.json(result)
+  } catch { res.status(401).json({ error: 'Geçersiz token' }) }
+})
+
+authRouter.post('/kiosk-lock', (req, res) => {
+  const token = bearerToken(req)
+  if (!token) return res.status(401).json({ error: 'Token gerekli' })
+  try {
+    const payload = verifyToken(token, { allowLocked: true, allowPinChange: true })
+    const result = lockKioskSession(payload, req.body?.reason)
+    if (result.error) return res.status(result.status).json({ error: result.error })
+    res.json(result)
+  } catch { res.status(401).json({ error: 'Geçersiz token' }) }
+})
+
+authRouter.post('/kiosk-unlock', pinLimiter, (req, res) => {
+  const token = bearerToken(req)
+  if (!token) return res.status(401).json({ error: 'Token gerekli' })
+  try {
+    const payload = verifyToken(token, { allowLocked: true, allowPinChange: true })
+    const result = unlockKioskSession(payload, req.body?.pin)
+    if (result.error) return res.status(result.status).json({ error: result.error, code: result.code })
+    res.json(result)
+  } catch { res.status(401).json({ error: 'Geçersiz token' }) }
+})
+
+authRouter.post('/kiosk-first-pin-change', pinLimiter, (req, res) => {
+  const token = bearerToken(req)
+  if (!token) return res.status(401).json({ error: 'Token gerekli' })
+  try {
+    const payload = verifyToken(token, { allowLocked: true, allowPinChange: true })
+    const result = completeInitialKioskPin(payload, req.body?.new_pin)
+    if (result.error) return res.status(result.status).json({ error: result.error })
+    res.json(result)
+  } catch { res.status(401).json({ error: 'Geçersiz token' }) }
 })
 
 authRouter.post('/refresh', (req, res) => {

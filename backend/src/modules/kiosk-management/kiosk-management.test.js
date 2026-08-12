@@ -3,6 +3,7 @@ import request from 'supertest'
 import app from '../../app.js'
 import { getDB, initDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
+import bcrypt from 'bcryptjs'
 
 const auth = token => ({ Authorization: `Bearer ${token}` })
 
@@ -172,7 +173,105 @@ describe('kiosk migration', () => {
     const authColumns = db.pragma('table_info(auth_sessions)').map(column => column.name)
     const stationColumns = db.pragma('table_info(scan_stations)').map(column => column.name)
     expect(authColumns).toContain('device_id')
+    expect(authColumns).toContain('locked_at')
+    expect(authColumns).toContain('pin_change_required')
     expect(stationColumns).toContain('device_id')
     expect(db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_kiosk_devices_last_seen'").get()).toBeTruthy()
+    expect(db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='kiosk_pin_issuances'").get()).toBeTruthy()
+  })
+})
+
+describe('kiosk PIN dağıtımı ve güvenli oturum', () => {
+  let worker
+  let issuance
+  let temporaryPin
+  let kioskToken
+
+  it('vardiya amiri PIN üretemez; yönetici rastgele 6 haneli tek kullanımlık PIN üretir', async () => {
+    worker = getDB().prepare("SELECT id, full_name FROM staff WHERE is_active=1 ORDER BY id LIMIT 1").get()
+    const payload = { principals: [{ kind: 'staff', id: worker.id }] }
+    const forbidden = await request(app).post('/api/kiosk-management/pins/issue').set(auth(supervisorToken)).send(payload)
+    expect(forbidden.status).toBe(403)
+
+    const response = await request(app).post('/api/kiosk-management/pins/issue').set(auth(managerToken)).send(payload)
+    expect(response.status).toBe(201)
+    expect(response.body.count).toBe(1)
+    issuance = response.body.items[0]
+    temporaryPin = issuance.pin
+    expect(temporaryPin).toMatch(/^\d{6}$/)
+
+    const stored = getDB().prepare('SELECT kiosk_pin FROM staff WHERE id=?').get(worker.id)
+    expect(stored.kiosk_pin).not.toContain(temporaryPin)
+    expect(bcrypt.compareSync(temporaryPin, stored.kiosk_pin)).toBe(true)
+
+    const listed = await request(app).get('/api/kiosk-management/pins').set(auth(managerToken))
+    expect(listed.status).toBe(200)
+    expect(JSON.stringify(listed.body)).not.toContain(temporaryPin)
+  })
+
+  it('teslim eden, teslim alan, yöntem ve zamanı kaydeder', async () => {
+    const response = await request(app)
+      .post(`/api/kiosk-management/pins/${issuance.issuance_id}/deliver`)
+      .set(auth(managerToken))
+      .send({ delivered_to: worker.full_name, delivery_method: 'printed' })
+    expect(response.status).toBe(200)
+    const row = getDB().prepare('SELECT * FROM kiosk_pin_issuances WHERE id=?').get(issuance.issuance_id)
+    expect(row.delivered_at).toBeTruthy()
+    expect(row.delivered_by).toBeTruthy()
+    expect(row.delivered_to).toBe(worker.full_name)
+  })
+
+  it('geçici PIN ile yalnız bir kez giriş verir ve kalıcı PIN değişmeden diğer API’leri kilitler', async () => {
+    const login = await request(app).post('/api/auth/avs-login').send({ worker_id: worker.id, pin: temporaryPin })
+    expect(login.status).toBe(200)
+    expect(login.body.must_change_pin).toBe(true)
+    expect(login.body.session).toMatchObject({ mode: 'shared', idle_minutes: 2 })
+    kioskToken = login.body.token
+
+    const protectedResponse = await request(app).get('/api/avs-self-service/overview').set(auth(kioskToken))
+    expect(protectedResponse.status).toBe(423)
+    expect(protectedResponse.body.code).toBe('PIN_CHANGE_REQUIRED')
+
+    const reused = await request(app).post('/api/auth/avs-login').send({ worker_id: worker.id, pin: temporaryPin })
+    expect(reused.status).toBe(410)
+  })
+
+  it('ilk girişte 4 haneli kalıcı PIN belirler, oturumu açar ve eski geçici PIN’i geçersiz bırakır', async () => {
+    const changed = await request(app)
+      .post('/api/auth/kiosk-first-pin-change')
+      .set(auth(kioskToken))
+      .send({ new_pin: '7319' })
+    expect(changed.status).toBe(200)
+    expect(changed.body.session.must_change_pin).toBe(false)
+    const issuanceRow = getDB().prepare('SELECT * FROM kiosk_pin_issuances WHERE id=?').get(issuance.issuance_id)
+    expect(issuanceRow.completed_at).toBeTruthy()
+
+    const protectedResponse = await request(app).get('/api/avs-self-service/overview').set(auth(kioskToken))
+    expect(protectedResponse.status).toBe(200)
+    const oldPin = await request(app).post('/api/auth/avs-login').send({ worker_id: worker.id, pin: temporaryPin })
+    expect(oldPin.status).toBe(401)
+  })
+
+  it('sunucu tarafında kilitler; doğru kalıcı PIN ile aynı oturumu açar', async () => {
+    const locked = await request(app).post('/api/auth/kiosk-lock').set(auth(kioskToken)).send({ reason: 'idle' })
+    expect(locked.status).toBe(200)
+    const blocked = await request(app).get('/api/avs-self-service/overview').set(auth(kioskToken))
+    expect(blocked.status).toBe(423)
+    expect(blocked.body.code).toBe('SESSION_LOCKED')
+
+    const wrong = await request(app).post('/api/auth/kiosk-unlock').set(auth(kioskToken)).send({ pin: '0000' })
+    expect(wrong.status).toBe(401)
+    const unlocked = await request(app).post('/api/auth/kiosk-unlock').set(auth(kioskToken)).send({ pin: '7319' })
+    expect(unlocked.status).toBe(200)
+    expect(unlocked.body.session.locked).toBe(false)
+    expect((await request(app).get('/api/avs-self-service/overview').set(auth(kioskToken))).status).toBe(200)
+  })
+
+  it('mutlak oturum süresini sunucuda zorlar', async () => {
+    const session = getDB().prepare("SELECT jti FROM auth_sessions WHERE principal_kind='staff' AND principal_id=? AND revoked_at IS NULL ORDER BY created_at DESC LIMIT 1").get(worker.id)
+    getDB().prepare('UPDATE auth_sessions SET absolute_expires_at=? WHERE jti=?').run(Math.floor(Date.now() / 1000) - 1, session.jti)
+    const response = await request(app).get('/api/avs-self-service/overview').set(auth(kioskToken))
+    expect(response.status).toBe(401)
+    expect(response.body.code).toBe('SESSION_EXPIRED')
   })
 })

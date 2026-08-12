@@ -920,7 +920,7 @@ avsSelfServiceRouter.post('/change-pin', requireAvsKiosk, (req, res) => {
   `).run(req.user.workerId, JSON.stringify({ workerId: req.user.workerId }))
   // PIN değişikliği bu personelin tüm oturumlarını iptal etti; önündeki kioskta
   // kalabilsin diye taze bir token dönüyoruz.
-  const fresh = issueAvsKioskSession(req.user.workerId)
+  const fresh = issueAvsKioskSession(req.user.workerId, { previousJti: req.user.jti })
   res.json(fresh ? { ...result, token: fresh.token } : result)
 })
 

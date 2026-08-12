@@ -25,6 +25,7 @@ import InventoryTab from './tabs/InventoryTab.jsx'
 import HomeTab from './tabs/HomeTab.jsx'
 import { downscalePhoto, dataUrlToBlob } from '../../shared/photo.js'
 import { readKioskSession, writeKioskSession, clearKioskSession } from '../../shared/kioskSession.js'
+import KioskSessionGate from '../../shared/components/KioskSessionGate.jsx'
 
 const SESSION_KEY = 'avs-kiosk-session'
 
@@ -57,13 +58,16 @@ export default function AvsSelfServicePage() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   // Oturum cihaz yeniden başlasa da durur; yalnızca çıkış düğmesi kapatır.
-  const [avsToken, setAvsToken] = useState(() => readKioskSession(SESSION_KEY)?.token || null)
+  const initialSession = useRef(readKioskSession(SESSION_KEY)).current
+  const [avsToken, setAvsToken] = useState(initialSession?.token || null)
+  const [sessionPolicy, setSessionPolicy] = useState(initialSession?.session || null)
+  const [mustChangePin, setMustChangePin] = useState(Boolean(initialSession?.must_change_pin))
   const [activeTab, setActiveTab] = useState('home')
 
   // İsimle giriş
   const [nameQuery, setNameQuery] = useState('')
   const [results, setResults] = useState([])
-  const [selected, setSelected] = useState(null)
+  const [selected, setSelected] = useState(initialSession?.worker || null)
   const [pin, setPin] = useState('')
   const [loginError, setLoginError] = useState('')
   const searchTimeout = useRef(null)
@@ -108,8 +112,12 @@ export default function AvsSelfServicePage() {
   const hasSessionDrafts = taskDraftCount > 0 || faultHasDraft || maintenanceDraftCount > 0
 
   const handleLogout = useCallback(() => {
+    const activeToken = readKioskSession(SESSION_KEY)?.token
+    if (activeToken) api.post('/auth/logout', null, { headers: { Authorization: `Bearer ${activeToken}` } }).catch(() => {})
     clearKioskSession(SESSION_KEY)
     setAvsToken(null)
+    setSessionPolicy(null)
+    setMustChangePin(false)
     setSelected(null)
     setPin('')
     setNameQuery('')
@@ -394,7 +402,12 @@ export default function AvsSelfServicePage() {
       // PIN değişikliği bu personelin tüm oturumlarını iptal eder; sunucu yerine
       // taze bir token döner. Saklamazsak bu cihaz da bir sonraki istekte düşer.
       if (res?.data?.token) {
-        writeKioskSession(SESSION_KEY, { token: res.data.token })
+        writeKioskSession(SESSION_KEY, {
+          token: res.data.token,
+          worker: selected,
+          session: sessionPolicy,
+          must_change_pin: false,
+        })
         setAvsToken(res.data.token)
       }
       setPinMsg({ type: 'ok', text: t('avs_kiosk.profile.pin_success') })
@@ -530,7 +543,9 @@ export default function AvsSelfServicePage() {
     const pinToUse = completedPin ?? pin
     try {
       const res = await api.post('/auth/avs-login', { worker_id: selected.id, pin: pinToUse })
-      writeKioskSession(SESSION_KEY, { token: res.data.token, worker: res.data.worker })
+      writeKioskSession(SESSION_KEY, res.data)
+      setSessionPolicy(res.data.session)
+      setMustChangePin(Boolean(res.data.must_change_pin))
       setAvsToken(res.data.token)
       setActiveTab('home')
     } catch (err) { setLoginError(err.response?.data?.error || t('avs_kiosk.login_failed')) }
@@ -573,6 +588,15 @@ export default function AvsSelfServicePage() {
   // ─── Ana ekran ──────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col max-w-lg mx-auto p-4 pb-24">
+      <KioskSessionGate
+        token={avsToken} session={sessionPolicy} mustChange={mustChangePin}
+        onSessionChange={next => {
+          setSessionPolicy(next)
+          setMustChangePin(Boolean(next?.must_change_pin))
+          writeKioskSession(SESSION_KEY, { token: avsToken, worker: selected, session: next, must_change_pin: Boolean(next?.must_change_pin) })
+        }}
+        onLogout={handleLogout}
+      />
       <KioskHeader userName={selected?.full_name} onLogout={requestLogout}
         onRefresh={handleRefresh} refreshing={!!activeQuery?.isFetching}
         onBell={openFeed} unread={unread} />
