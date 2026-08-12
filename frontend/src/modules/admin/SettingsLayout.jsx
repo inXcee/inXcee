@@ -47,6 +47,7 @@ const TAB_GROUPS = [
       { to: '/settings/mail-compose',  label: 'Mail Gönder',      icon: '✉',  roles: ADMIN },
       { to: '/settings/users',         label: 'Kullanicilar',     icon: '⌂',  roles: ADMIN },
       { to: '/settings/kiosk-pins',    label: 'Kiosk PIN',        icon: '⌖',  roles: ADMIN },
+      { to: '/settings/kiosk-devices', label: 'Kiosk Cihazları',  icon: '▣',  roles: MGMT },
       { to: '/settings/announcements', label: 'Duyurular',        icon: '📢', roles: ADMIN },
       { to: '/settings/avs-workers',   label: 'AVS Calisanlari',  icon: '👷', roles: ADMIN },
       { to: '/settings/sessions',      label: 'Açık Oturumlar',   icon: '🔑', roles: ADMIN },

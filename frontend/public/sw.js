@@ -1,5 +1,5 @@
 const STATIC_CACHE = 'yys-static-v2'
-const API_CACHE = 'yys-api-v2'
+const API_CACHE = 'yys-api-v3'
 const PRECACHE = ['/', '/index.html']
 
 // API endpoint'leri ki cache'lenmez:
@@ -11,6 +11,11 @@ const NO_CACHE_API = [
   '/api/mobile/auth',
   '/api/auth',
   '/api/push',
+  '/api/self-service',
+  '/api/avs-self-service',
+  '/api/kiosk-device',
+  '/api/kiosk-management',
+  '/api/stations',
 ]
 
 self.addEventListener('install', e => {

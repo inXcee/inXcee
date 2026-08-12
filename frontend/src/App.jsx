@@ -8,6 +8,7 @@ import ToastContainer from './shared/components/ToastContainer.jsx'
 import ConfirmDialog from './shared/components/ConfirmDialog.jsx'
 import InputDialog from './shared/components/InputDialog.jsx'
 import PwaInstallPrompt from './shared/components/PwaInstallPrompt.jsx'
+import KioskDeviceAgent from './shared/kiosk/KioskDeviceAgent.jsx'
 import LoginPage from './modules/auth/LoginPage.jsx'
 import api from './shared/api/client.js'
 import Layout from './shared/components/Layout.jsx'
@@ -101,6 +102,8 @@ const KvkkAdminPage = lazy(() => import('./modules/admin/KvkkAdminPage.jsx'))
 const SystemHealthPage = lazy(() => import('./modules/admin/SystemHealthPage.jsx'))
 const SessionsPage = lazy(() => import('./modules/admin/SessionsPage.jsx'))
 const ProjectsPage = lazy(() => import('./modules/admin/ProjectsPage.jsx'))
+const KioskDevicesPage = lazy(() => import('./modules/admin/KioskDevicesPage.jsx'))
+const KioskEnrollmentPage = lazy(() => import('./modules/kiosk-enrollment/KioskEnrollmentPage.jsx'))
 const NotificationPrefsPage = lazy(() => import('./modules/notification-prefs/NotificationPrefsPage.jsx'))
 const NotificationsCenterPage = lazy(() => import('./modules/notifications/NotificationsCenterPage.jsx'))
 const KvkkPage = lazy(() => import('./modules/kvkk/KvkkPage.jsx'))
@@ -282,6 +285,7 @@ export default function App() {
       <ConfirmDialog />
       <InputDialog />
       <PwaInstallPrompt />
+      <KioskDeviceAgent />
       <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}><span className="page-spinner" /></div>}>
         <AuthRestorer>
         <SetupGate>
@@ -296,6 +300,7 @@ export default function App() {
           <Route path="/display" element={<DisplayPage />} />
           <Route path="/display/kitchen" element={<KitchenDisplayPage />} />
           <Route path="/station" element={<StationPage />} />
+          <Route path="/kiosk-enroll" element={<KioskEnrollmentPage />} />
           <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
             <Route index element={<DashboardPage />} />
             <Route path="campus-map" element={<CampusMapPage />} />
@@ -352,6 +357,7 @@ export default function App() {
             <Route path="notifications/preferences" element={<NotificationPrefsPage />} />
             <Route path="users" element={<RoleRoute roles={['campus_manager']}><UsersPage /></RoleRoute>} />
             <Route path="kiosk-pins" element={<RoleRoute roles={['campus_manager']}><KioskPinPage /></RoleRoute>} />
+            <Route path="kiosk-devices" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><KioskDevicesPage /></RoleRoute>} />
             <Route path="announcements" element={<RoleRoute roles={['campus_manager']}><AnnouncementsPage /></RoleRoute>} />
             <Route path="avs-workers" element={<RoleRoute roles={['campus_manager']}><AvsWorkersPage /></RoleRoute>} />
             <Route path="cards" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><CardsPage /></RoleRoute>} />
@@ -363,6 +369,7 @@ export default function App() {
               <Route path="mail-compose" element={<RoleRoute roles={['campus_manager']}><MailComposePage /></RoleRoute>} />
               <Route path="users" element={<RoleRoute roles={['campus_manager']}><UsersPage /></RoleRoute>} />
               <Route path="kiosk-pins" element={<RoleRoute roles={['campus_manager']}><KioskPinPage /></RoleRoute>} />
+              <Route path="kiosk-devices" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><KioskDevicesPage /></RoleRoute>} />
               <Route path="announcements" element={<RoleRoute roles={['campus_manager']}><AnnouncementsPage /></RoleRoute>} />
               <Route path="avs-workers" element={<RoleRoute roles={['campus_manager']}><AvsWorkersPage /></RoleRoute>} />
               <Route path="cards" element={<RoleRoute roles={['campus_manager','shift_supervisor']}><CardsPage /></RoleRoute>} />

@@ -1,4 +1,5 @@
 import bcrypt from 'bcryptjs'
+import { createHash } from 'node:crypto'
 import { verifyToken } from './service.js'
 import { getDB } from '../db/index.js'
 import { avsRoleGroup } from './avsRoles.js'
@@ -121,5 +122,24 @@ export function requireStation(req, res, next) {
     next()
   } catch {
     res.status(500).json({ error: 'İstasyon doğrulama hatası' })
+  }
+}
+
+// Kiosk cihaz anahtarı yüksek entropili ve yalnız kayıt anında gösterilir.
+// Sunucuda raw anahtar değil SHA-256 özeti tutulur; iptal edilmiş cihaz kabul edilmez.
+export function requireKioskDevice(req, res, next) {
+  const key = req.headers['x-kiosk-device-key']
+  if (!key || typeof key !== 'string') return res.status(401).json({ error: 'Kiosk cihaz anahtarı gerekli' })
+  try {
+    const tokenHash = createHash('sha256').update(key).digest('hex')
+    const device = getDB().prepare(`
+      SELECT * FROM kiosk_devices
+      WHERE token_hash=? AND is_active=1 AND status<>'revoked'
+    `).get(tokenHash)
+    if (!device) return res.status(401).json({ error: 'Geçersiz kiosk cihaz anahtarı' })
+    req.kioskDevice = device
+    next()
+  } catch {
+    res.status(500).json({ error: 'Kiosk cihaz doğrulama hatası' })
   }
 }
