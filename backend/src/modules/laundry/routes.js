@@ -10,6 +10,9 @@ import { logger } from '../../shared/logger.js'
 import { logAudit } from '../../shared/audit.js'
 import { validate } from '../../shared/middleware/validate.js'
 import { createGarmentTypeSchema, updateGarmentTypeSchema, createBagSchema } from './schemas.js'
+import {
+  approvePartialDelivery, createIncident, getCostReport, listIncidents, updateIncident,
+} from './phase5.js'
 
 export const laundryRouter = Router()
 
@@ -27,6 +30,51 @@ function removeUploadedPhoto(req) {
   if (!req.file?.path) return
   try { unlinkSync(req.file.path) } catch {}
 }
+
+laundryRouter.get('/incidents', ...laundryRead, (req, res) => {
+  try { res.json(listIncidents(req.query)) }
+  catch (e) { res.status(e.status || 500).json({ error: e.message }) }
+})
+
+laundryRouter.post('/incidents', ...laundryFull, upload.single('photo'), verifyMagicBytes, (req, res) => {
+  try {
+    const incident = createIncident({
+      ...req.body,
+      photo_url: req.file ? `/uploads/${req.file.filename}` : null,
+    }, { userId: req.user.id })
+    logAudit(req.user.id, 'laundry_incident_create', 'laundry', incident.id, incident.case_no)
+    res.status(201).json(incident)
+  } catch (e) {
+    removeUploadedPhoto(req)
+    res.status(e.status || 400).json({ error: e.message })
+  }
+})
+
+laundryRouter.patch('/incidents/:id', ...laundryFull, (req, res) => {
+  try {
+    const incident = updateIncident(
+      Number(req.params.id),
+      req.body || {},
+      { userId: req.user.id },
+      { allowCompensation: req.user.role === 'campus_manager' },
+    )
+    logAudit(req.user.id, 'laundry_incident_update', 'laundry', incident.id, incident.status)
+    res.json(incident)
+  } catch (e) { res.status(e.status || 400).json({ error: e.message }) }
+})
+
+laundryRouter.post('/deliveries/:id/approve', ...requireRole('campus_manager'), (req, res) => {
+  try {
+    const delivery = approvePartialDelivery(Number(req.params.id), req.user.id)
+    logAudit(req.user.id, 'laundry_third_party_delivery_approve', 'laundry', delivery.id, delivery.recipient_name)
+    res.json(delivery)
+  } catch (e) { res.status(e.status || 400).json({ error: e.message }) }
+})
+
+laundryRouter.get('/costs/report', ...laundryRead, (req, res) => {
+  try { res.json(getCostReport(req.query)) }
+  catch { res.status(500).json({ error: 'Maliyet raporu alınamadı' }) }
+})
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ITEMS

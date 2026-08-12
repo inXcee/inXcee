@@ -261,13 +261,13 @@ describe('Laundry kiosk hızlı operasyon', () => {
     fireEvent.click(screen.getByRole('button', { name: /Ayşe Test/ }))
     fireEvent.click(screen.getByRole('button', { name: /1 Parçayı Teslim Et/ }))
 
-    await waitFor(() => expect(api.post).toHaveBeenCalledWith(
-      '/self-service/laundry-kiosk/bags/20/deliver',
-      {
-        delivered_name: 'Ayşe Test',
-        garment_ids: [201],
-        signature: null,
-      }
-    ))
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1))
+    const [url, payload] = api.post.mock.calls[0]
+    expect(url).toBe('/self-service/laundry-kiosk/deliver-partial')
+    expect(payload).toBeInstanceOf(FormData)
+    expect(payload.get('item_id')).toBe('20')
+    expect(JSON.parse(payload.get('garment_ids'))).toEqual([201])
+    expect(payload.get('delivered_name')).toBe('Ayşe Test')
+    expect(payload.get('recipient_type')).toBe('owner')
   })
 })

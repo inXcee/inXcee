@@ -12,6 +12,7 @@ import LossCenterView from './LossCenterView.jsx'
 import MachineView from './MachineView.jsx'
 import HandoverView from './HandoverView.jsx'
 import HardwareToolsView from './HardwareToolsView.jsx'
+import CostCenterView from './CostCenterView.jsx'
 import RoomsView from './RoomsView.jsx'
 import { attachHidScanner } from './hardwareAdapters.js'
 import './LaundryKioskPage.css'
@@ -33,6 +34,7 @@ const MORE_TABS = [
   { key: 'status', icon: '≡', label: 'Tüm Kayıtlar', description: 'Detaylı durum' },
   { key: 'handover', icon: '⇄', label: 'Vardiya Teslimi', description: 'Çift PIN doğrulama' },
   { key: 'hardware', icon: '⌁', label: 'Donanım Testi', description: 'Okuyucu, kamera, yazıcı' },
+  { key: 'cost', icon: '₺', label: 'Maliyet Merkezi', description: 'Kg, sarf, su ve enerji' },
 ]
 
 const ALL_TABS = [...TABS, ...MORE_TABS]
@@ -142,6 +144,7 @@ export default function LaundryKioskPage() {
     get: url => api.get(url, { headers: { Authorization: `Bearer ${avsToken}` } }),
     post: (url, data) => api.post(url, data, { headers: { Authorization: `Bearer ${avsToken}` } }),
     put: (url, data) => api.put(url, data, { headers: { Authorization: `Bearer ${avsToken}` } }),
+    patch: (url, data) => api.patch(url, data, { headers: { Authorization: `Bearer ${avsToken}` } }),
   }
 
   const navigate = (target, bag) => {
@@ -471,6 +474,7 @@ export default function LaundryKioskPage() {
           {activeTab === 'deliver' && <DeliverWorkView kioskApi={kioskApi} focusedBag={focusedBag} onConsumeFocus={() => setFocusedBag(null)} />}
           {activeTab === 'handover' && <HandoverView kioskApi={kioskApi} workerName={workerInfo?.full_name} workerId={workerInfo?.id} onComplete={logout} />}
           {activeTab === 'hardware' && <HardwareToolsView onCode={openScannedCode} lastScannedCode={scanNotice?.code} />}
+          {activeTab === 'cost' && <CostCenterView kioskApi={kioskApi} />}
           {activeTab === 'status' && (
             <DashboardView
               kioskApi={kioskApi}

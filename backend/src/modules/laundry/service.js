@@ -896,12 +896,13 @@ export function listSuppliesService(includeInactive = false) {
   return q.listSuppliesQuery(includeInactive)
 }
 
-export function createSupplyService({ name, unit, current_stock, warning_threshold, critical_threshold }, userId) {
+export function createSupplyService({ name, unit, current_stock, warning_threshold, critical_threshold, unit_cost }, userId) {
   if (!name || !name.trim()) throw new Error('Ürün adı zorunlu')
   if (warning_threshold > 0 && critical_threshold > 0 && critical_threshold >= warning_threshold) {
     throw new Error('Kritik eşik uyarı eşiğinden küçük olmalı')
   }
-  const id = q.insertSupplyQuery({ name: name.trim(), unit, current_stock, warning_threshold, critical_threshold })
+  if (unit_cost != null && (!Number.isFinite(Number(unit_cost)) || Number(unit_cost) < 0)) throw new Error('Birim maliyet geçersiz')
+  const id = q.insertSupplyQuery({ name: name.trim(), unit, current_stock, warning_threshold, critical_threshold, unit_cost: Number(unit_cost || 0) })
   logAudit(userId, 'supply_create', 'laundry', id, name.trim())
   return q.getSupplyQuery(id)
 }
@@ -909,6 +910,7 @@ export function createSupplyService({ name, unit, current_stock, warning_thresho
 export function updateSupplyService(id, fields, userId) {
   const supply = q.getSupplyQuery(id)
   if (!supply) throw new Error('Ürün bulunamadı')
+  if (fields.unit_cost != null && (!Number.isFinite(Number(fields.unit_cost)) || Number(fields.unit_cost) < 0)) throw new Error('Birim maliyet geçersiz')
   const updated = q.updateSupplyQuery(id, fields)
   logAudit(userId, 'supply_update', 'laundry', id, JSON.stringify(fields))
   return updated

@@ -44,7 +44,7 @@ export default function LossCenterView({ kioskApi }) {
   async function load(showLoader = true) {
     if (showLoader) setLoading(true)
     try {
-      const response = await kioskApi.get('/self-service/laundry-kiosk/losses?scope=all')
+      const response = await kioskApi.get('/self-service/laundry-kiosk/incidents?scope=all')
       setData(response.data)
     } catch (error) {
       useToastStore.getState().addToast(error.response?.data?.error || 'Kayıp kayıtları yüklenemedi', 'error')
@@ -96,6 +96,22 @@ export default function LossCenterView({ kioskApi }) {
     }
   }
 
+  async function toggleChecklist(incident, item) {
+    const key = `check-${incident.incident_id}-${item.item_key}`
+    setBusyId(key)
+    try {
+      await kioskApi.patch(`/self-service/laundry-kiosk/incidents/${incident.incident_id}`, {
+        checklist_key: item.item_key,
+        checklist_complete: !item.is_complete,
+      })
+      await load(false)
+    } catch (error) {
+      useToastStore.getState().addToast(error.response?.data?.error || 'Kontrol maddesi güncellenemedi', 'error')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   const summary = data.summary || {}
   return (
     <section className="loss-center">
@@ -114,7 +130,7 @@ export default function LossCenterView({ kioskApi }) {
         <div className="is-critical"><span>Açık olay</span><strong>{summary.open_total || 0}</strong><small>Hâlâ bulunmayı bekliyor</small></div>
         <div><span>Kayıp torba</span><strong>{summary.lost_bags || 0}</strong><small>Torbanın tamamı bulunamadı</small></div>
         <div><span>Kayıp kıyafet</span><strong>{summary.lost_garments || 0}</strong><small>Torba içinden eksik parça</small></div>
-        <div className="is-resolved"><span>Çözülen olay</span><strong>{summary.resolved_total || 0}</strong><small>Geçmiş kaydı korunuyor</small></div>
+        <div className="is-resolved"><span>Çözülen olay</span><strong>{summary.resolved_total || 0}</strong><small>{summary.overdue_total || 0} SLA gecikmesi · {summary.critical_total || 0} kritik</small></div>
       </div>
 
       {summary.open_total > 0 && (
@@ -151,7 +167,8 @@ export default function LossCenterView({ kioskApi }) {
               <div className="loss-card-icon">{incident.kind === 'bag' ? '▰' : '👕'}</div>
               <div className="loss-card-main">
                 <div className="loss-card-title">
-                  <span className={`loss-kind loss-kind--${incident.kind}`}>{incident.kind === 'bag' ? 'KAYIP TORBA' : 'KAYIP KIYAFET'}</span>
+                  <span className={`loss-kind loss-kind--${incident.kind}`}>{incident.kind_code === 'damaged_garment' ? 'HASAR VAKASI' : incident.kind === 'bag' ? 'KAYIP TORBA' : 'KAYIP KIYAFET'}</span>
+                  <code>{incident.case_no}</code>
                   <code>{incident.bag_no || `#${incident.item_id}`}</code>
                   <strong>{incident.block}-{incident.room_no}</strong>
                   <em className={isOpen ? 'is-open' : 'is-resolved'}>{isOpen ? 'ARAŞTIRILIYOR' : 'BULUNDU'}</em>
@@ -164,11 +181,25 @@ export default function LossCenterView({ kioskApi }) {
                   <div><span>Geçen süre</span><strong>{durationSince(incident.reported_at, incident.resolved_at)}</strong></div>
                   <div><span>Çamaşırı veren</span><strong>{incident.intake_name || 'Belirtilmedi'}</strong></div>
                   <div><span>Bildiren personel</span><strong>{incident.reported_by || 'Bilinmiyor'}</strong></div>
+                  <div><span>Önem / SLA</span><strong>{incident.severity} · {incident.is_overdue ? 'GECİKTİ' : formatDateTime(incident.sla_due_at)}</strong></div>
+                  <div><span>Sorumlu</span><strong>{incident.owner_name || 'Atanmadı'}</strong></div>
                 </div>
                 <div className="loss-card-note"><span>ARAŞTIRMA NOTU</span><strong>{incident.note || 'Ek açıklama girilmedi.'}</strong></div>
+                {incident.checklist?.length > 0 && (
+                  <div className="incident-checklist">
+                    {incident.checklist.map(item => (
+                      <button type="button" key={item.item_key}
+                        className={item.is_complete ? 'is-complete' : ''}
+                        disabled={busyId === `check-${incident.incident_id}-${item.item_key}` || !isOpen}
+                        onClick={() => toggleChecklist(incident, item)}>
+                        <span>{item.is_complete ? '✓' : '○'}</span><strong>{item.label}</strong>
+                      </button>
+                    ))}
+                  </div>
+                )}
                 {!isOpen && <div className="loss-resolution">✓ {formatDateTime(incident.resolved_at)} tarihinde {incident.resolved_by || 'Sistem'} tarafından bulundu.</div>}
               </div>
-              {isOpen && (
+              {isOpen && incident.kind_code !== 'damaged_garment' && (
                 <button type="button" className="loss-found-button" onClick={() => markFound(incident)} disabled={busyId === key}>
                   <span>✓</span><strong>{busyId === key ? 'Kaydediliyor…' : 'Bulundu'}</strong><small>Olayı kapat</small>
                 </button>

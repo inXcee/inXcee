@@ -100,6 +100,9 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
   const [bagLoss, setBagLoss] = useState(null)
   const [missingGarment, setMissingGarment] = useState(null)
   const [lossForm, setLossForm] = useState({ lastSeen: 'Teslim kontrolünde', note: '' })
+  const [recipientType, setRecipientType] = useState('owner')
+  const [thirdPartyReason, setThirdPartyReason] = useState('')
+  const [deliveryPhoto, setDeliveryPhoto] = useState(null)
   // Oda bazlı toplu teslim — aynı odanın birden çok torbası tek isim + tek imzayla
   const [roomBulk, setRoomBulk] = useState(null) // { block, room_no, bags, people }
 
@@ -202,6 +205,9 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
       setBagLoss(null)
       setMissingGarment(null)
       setLossForm({ lastSeen: 'Teslim kontrolünde', note: '' })
+      setRecipientType('owner')
+      setThirdPartyReason('')
+      setDeliveryPhoto(null)
       signatureRef.current?.clear()
     } catch (requestError) {
       setError(requestError.response?.data?.error || 'Torba ayrıntısı yüklenemedi')
@@ -223,8 +229,9 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
 
   const readyGarments = (detail?.garments || []).filter(garment => garment.status === 'ready')
   const trackIndividually = (detail?.garments || []).length > 0
-  const allSelected = trackIndividually
-    ? readyGarments.length > 0 && readyGarments.every(garment => selectedIds.has(garment.id))
+  const allSelected = readyGarments.length > 0 && readyGarments.every(garment => selectedIds.has(garment.id))
+  const canDeliver = trackIndividually
+    ? selectedIds.size > 0
     : verifiedCount === detail?.bag.item_count
 
   function toggleGarment(id) {
@@ -238,12 +245,16 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
   }
 
   async function deliver() {
-    if (!detail || !allSelected) {
-      setError('Teslimden önce tüm hazır parçaları doğrulayın')
+    if (!detail || !canDeliver) {
+      setError('Teslim edilecek en az bir hazır parçayı seçin')
       return
     }
     if (!deliveredName.trim()) {
       setError('Teslim alan kişiyi seçin veya adını yazın')
+      return
+    }
+    if (recipientType === 'third_party' && thirdPartyReason.trim().length < 10) {
+      setError('Üçüncü kişiye teslim için en az 10 karakter gerekçe yazın')
       return
     }
     let signature = null
@@ -257,21 +268,45 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
     setSubmitting(true)
     setError('')
     try {
-      const response = await kioskApi.post(
-        `/self-service/laundry-kiosk/bags/${detail.bag.id}/deliver`,
-        {
-          delivered_name: deliveredName.trim(),
-          garment_ids: trackIndividually ? [...selectedIds] : undefined,
-          signature,
-        }
-      )
-      setBags(current => current.filter(bag => bag.id !== detail.bag.id))
-      setDetail(null)
+      const response = trackIndividually
+        ? await (() => {
+          const form = new FormData()
+          form.append('item_id', String(detail.bag.id))
+          form.append('garment_ids', JSON.stringify([...selectedIds]))
+          form.append('delivered_name', deliveredName.trim())
+          form.append('recipient_type', recipientType)
+          if (thirdPartyReason.trim()) form.append('third_party_reason', thirdPartyReason.trim())
+          if (signature) form.append('signature', signature)
+          if (deliveryPhoto) form.append('photo', deliveryPhoto, 'teslim.jpg')
+          return kioskApi.post('/self-service/laundry-kiosk/deliver-partial', form)
+        })()
+        : await kioskApi.post(`/self-service/laundry-kiosk/bags/${detail.bag.id}/deliver`, {
+          delivered_name: deliveredName.trim(), signature,
+        })
+      if (response.data.approval_required) {
+        setError(`Yönetici onayı bekleniyor · Teslim #${response.data.id}`)
+        setDetail(null)
+        await loadBags()
+        return
+      }
+      const remaining = Number(response.data.remaining_count || 0)
+      if (remaining > 0) {
+        await loadBags()
+        await selectBag(detail.bag)
+      } else {
+        setBags(current => current.filter(bag => bag.id !== detail.bag.id))
+        setDetail(null)
+      }
       setSelectedIds(new Set())
-      setDeliveredName('')
-      setPeople([])
       setVerifiedCount(0)
-      setError(`✓ ${response.data.delivered_count} parça teslim edildi`)
+      setRecipientType('owner')
+      setThirdPartyReason('')
+      setDeliveryPhoto(null)
+      if (remaining === 0) {
+        setDeliveredName('')
+        setPeople([])
+      }
+      setError(`✓ ${response.data.delivered_count} parça teslim edildi${remaining ? ` · ${remaining} parça açık kaldı` : ''}`)
     } catch (requestError) {
       setError(requestError.response?.data?.error || 'Teslim kaydedilemedi; tekrar deneyin')
     } finally {
@@ -557,6 +592,38 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
           placeholder="Teslim alan ad soyad" style={textInput} />
       </div>
 
+      <div style={deliveryOptions}>
+        <div style={eyebrow}>TESLİM YETKİSİ VE KANIT</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 8 }}>
+          <button type="button" onClick={() => setRecipientType('owner')}
+            aria-pressed={recipientType === 'owner'}
+            style={recipientType === 'owner' ? optionButtonActive : optionButton}>
+            Kişinin kendisi
+          </button>
+          <button type="button" onClick={() => setRecipientType('third_party')}
+            aria-pressed={recipientType === 'third_party'}
+            style={recipientType === 'third_party' ? optionButtonActive : optionButton}>
+            Yetkili üçüncü kişi
+          </button>
+        </div>
+        {recipientType === 'third_party' && (
+          <div style={{ display: 'grid', gap: 7 }}>
+            <textarea value={thirdPartyReason}
+              onChange={event => setThirdPartyReason(event.target.value)}
+              placeholder="Yetkilendirme ve teslim gerekçesi (zorunlu)"
+              maxLength={500} rows={3} style={{ ...textInput, resize: 'vertical' }} />
+            <small style={{ color: '#fbbf24' }}>Teslim, kampüs yöneticisi onaylayana kadar parçaları açık tutar.</small>
+          </div>
+        )}
+        <label style={{ color: '#cbd5e1', fontSize: 11, fontWeight: 800 }}>
+          İsteğe bağlı teslim fotoğrafı
+          <input type="file" accept="image/*" capture="environment"
+            onChange={event => setDeliveryPhoto(event.target.files?.[0] || null)}
+            style={{ ...textInput, display: 'block', marginTop: 6 }} />
+        </label>
+        {deliveryPhoto && <small style={{ color: '#86efac' }}>✓ {deliveryPhoto.name}</small>}
+      </div>
+
       {trackIndividually ? (
         <div>
           <div style={{ ...headerRow, marginBottom: 8 }}>
@@ -688,19 +755,21 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
         </div>
       )}
 
-      <button type="button" onClick={deliver} disabled={!allSelected || submitting}
+      <button type="button" onClick={deliver} disabled={!canDeliver || submitting}
         style={{
           minHeight: 56,
           border: 0,
           borderRadius: 13,
-          background: allSelected && !submitting ? '#15803d' : '#1e293b',
-          color: allSelected && !submitting ? '#fff' : '#475569',
+          background: canDeliver && !submitting ? '#15803d' : '#1e293b',
+          color: canDeliver && !submitting ? '#fff' : '#475569',
           fontSize: 15,
           fontWeight: 900,
         }}>
         {submitting
           ? 'Teslim kaydediliyor…'
-          : `✓ ${trackIndividually ? selectedIds.size : verifiedCount} Parçayı Teslim Et`}
+          : recipientType === 'third_party'
+            ? `↗ ${trackIndividually ? selectedIds.size : verifiedCount} Parçayı Onaya Gönder`
+            : `✓ ${trackIndividually ? selectedIds.size : verifiedCount} Parçayı Teslim Et`}
       </button>
 
       <button type="button" onClick={() => {
@@ -782,6 +851,9 @@ const bagButton = { minHeight: 76, width: '100%', border: '1px solid #334155', b
 const empty = { padding: 24, borderRadius: 13, border: '1px dashed #334155', color: '#64748b', textAlign: 'center' }
 const thumbnail = { width: 48, height: 48, borderRadius: 10, objectFit: 'cover', border: '1px solid #475569', flexShrink: 0 }
 const textInput = { width: '100%', boxSizing: 'border-box', minHeight: 48, borderRadius: 11, border: '1px solid #334155', background: '#1e293b', color: '#f8fafc', padding: '10px 12px', outline: 'none' }
+const deliveryOptions = { display: 'grid', gap: 10, padding: 13, border: '1px solid #334155', borderRadius: 13, background: '#111c2e' }
+const optionButton = { minHeight: 46, borderRadius: 10, border: '1px solid #334155', background: '#1e293b', color: '#94a3b8', fontWeight: 850, cursor: 'pointer' }
+const optionButtonActive = { ...optionButton, borderColor: '#22c55e', background: 'rgba(22,101,52,.25)', color: '#bbf7d0' }
 const linkButton = { minHeight: 48, border: 0, background: 'transparent', color: '#60a5fa', fontWeight: 800, cursor: 'pointer' }
 const countCard = { borderRadius: 14, padding: 18, background: '#111827', border: '1px solid #334155', display: 'flex', flexDirection: 'column', gap: 14, textAlign: 'center' }
 const lostButton = { minHeight: 48, borderRadius: 12, border: '1px dashed #7f1d1d', background: '#1f1015', color: '#fca5a5', fontWeight: 800 }

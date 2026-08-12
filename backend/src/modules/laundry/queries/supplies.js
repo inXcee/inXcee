@@ -27,16 +27,16 @@ export function getSupplyQuery(id) {
   return db.prepare(`SELECT * FROM laundry_supplies WHERE id = ?`).get(id)
 }
 
-export function insertSupplyQuery({ name, unit, current_stock, warning_threshold, critical_threshold }) {
+export function insertSupplyQuery({ name, unit, current_stock, warning_threshold, critical_threshold, unit_cost }) {
   const db = getDB()
   const r = db.prepare(`
-    INSERT INTO laundry_supplies(name, unit, current_stock, warning_threshold, critical_threshold)
-    VALUES(?, ?, ?, ?, ?)
-  `).run(name, unit || 'kg', current_stock || 0, warning_threshold || 0, critical_threshold || 0)
+    INSERT INTO laundry_supplies(name, unit, current_stock, warning_threshold, critical_threshold, unit_cost)
+    VALUES(?, ?, ?, ?, ?, ?)
+  `).run(name, unit || 'kg', current_stock || 0, warning_threshold || 0, critical_threshold || 0, unit_cost || 0)
   return r.lastInsertRowid
 }
 
-export function updateSupplyQuery(id, { name, unit, warning_threshold, critical_threshold, is_active }) {
+export function updateSupplyQuery(id, { name, unit, warning_threshold, critical_threshold, is_active, unit_cost }) {
   const db = getDB()
   db.prepare(`
     UPDATE laundry_supplies
@@ -45,9 +45,10 @@ export function updateSupplyQuery(id, { name, unit, warning_threshold, critical_
         warning_threshold = COALESCE(?, warning_threshold),
         critical_threshold = COALESCE(?, critical_threshold),
         is_active = COALESCE(?, is_active),
+        unit_cost = COALESCE(?, unit_cost),
         updated_at = datetime('now')
     WHERE id = ?
-  `).run(name ?? null, unit ?? null, warning_threshold ?? null, critical_threshold ?? null, is_active ?? null, id)
+  `).run(name ?? null, unit ?? null, warning_threshold ?? null, critical_threshold ?? null, is_active ?? null, unit_cost ?? null, id)
   return db.prepare(`SELECT * FROM laundry_supplies WHERE id = ?`).get(id)
 }
 

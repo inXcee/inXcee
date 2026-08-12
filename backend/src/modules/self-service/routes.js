@@ -29,6 +29,10 @@ import {
   finalizeHandover, getCurrentHandover, getLoadSuggestions, listHandoverWorkers,
   markLoadProgress, startHandover, startMachineLoad,
 } from './laundry-operations.js'
+import {
+  createIncident, createPartialDelivery, getCostReport, listIncidents,
+  recordLoadCost, updateIncident,
+} from '../laundry/phase5.js'
 
 export const selfServiceRouter = Router()
 
@@ -605,6 +609,71 @@ selfServiceRouter.get('/laundry-kiosk/losses', requireLaundryKioskOperator, (req
     logger.error('[kiosk losses]', e)
     res.status(500).json({ error: 'Kayıp kayıtları alınamadı' })
   }
+})
+
+selfServiceRouter.get('/laundry-kiosk/incidents', requireLaundryKioskOperator, (req, res) => {
+  try {
+    const data = listIncidents({
+      scope: String(req.query.scope || 'open'),
+      kind: req.query.kind ? String(req.query.kind) : undefined,
+      severity: req.query.severity ? String(req.query.severity) : undefined,
+    })
+    res.json({
+      ...data,
+      incidents: data.incidents.map(row => ({
+        ...row,
+        incident_id: row.id,
+        kind_code: row.kind,
+        kind: row.kind === 'lost_bag' ? 'bag' : 'garment',
+        status_code: row.status,
+        status: ['open', 'investigating'].includes(row.status) ? 'open' : 'resolved',
+        note: row.description,
+        reported_at: row.created_at,
+        reported_by: row.created_by_name,
+        resolved_by: row.approved_by_name || null,
+      })),
+    })
+  } catch (e) {
+    logger.error('[kiosk incidents]', e)
+    res.status(e.status || 500).json({ error: e.message || 'Vakalar alınamadı' })
+  }
+})
+
+selfServiceRouter.post(
+  '/laundry-kiosk/incidents',
+  requireLaundryKioskOperator,
+  upload.single('photo'),
+  verifyMagicBytes,
+  (req, res) => {
+    try {
+      const incident = createIncident({
+        ...req.body,
+        photo_url: req.file ? `/uploads/${req.file.filename}` : null,
+      }, laundryActor(req))
+      auditLaundryKiosk(getDB(), req, 'laundry_incident_created', incident.id, {
+        caseNo: incident.case_no, kind: incident.kind, severity: incident.severity,
+      })
+      res.status(201).json(incident)
+    } catch (e) {
+      removeLaundryUpload(req)
+      res.status(e.status || 400).json({ error: e.message })
+    }
+  }
+)
+
+selfServiceRouter.patch('/laundry-kiosk/incidents/:id', requireLaundryKioskOperator, (req, res) => {
+  try {
+    const incident = updateIncident(Number(req.params.id), req.body || {}, laundryActor(req))
+    auditLaundryKiosk(getDB(), req, 'laundry_incident_updated', incident.id, {
+      status: incident.status, checklistKey: req.body?.checklist_key || null,
+    })
+    res.json(incident)
+  } catch (e) { res.status(e.status || 400).json({ error: e.message }) }
+})
+
+selfServiceRouter.get('/laundry-kiosk/costs', requireLaundryKioskOperator, (req, res) => {
+  try { res.json(getCostReport({ from: req.query.from, to: req.query.to })) }
+  catch { res.status(500).json({ error: 'Maliyet raporu alınamadı' }) }
 })
 
 selfServiceRouter.get('/laundry-kiosk/burst-bags', requireLaundryKioskOperator, (req, res) => {
@@ -1564,6 +1633,18 @@ selfServiceRouter.post(
         removeLaundryUpload(req)
         return res.status(404).json({ error: 'Kıyafet bulunamadı' })
       }
+      if (reason === 'missing' || reason === 'damaged') {
+        createIncident({
+          kind: reason === 'missing' ? 'lost_garment' : 'damaged_garment',
+          severity: reason === 'missing' ? 'high' : 'normal',
+          item_id: bagId,
+          garment_id: garmentId,
+          description: note || (reason === 'missing'
+            ? 'Kıyafet teslim kontrolünde bulunamadı'
+            : 'Kıyafette hasar tespit edildi'),
+          photo_url: req.file ? `/uploads/${req.file.filename}` : null,
+        }, actor)
+      }
       return res.status(201).json({ garment, progress: getGarmentProgressQuery(bagId) })
     } catch (e) {
       removeLaundryUpload(req)
@@ -1640,6 +1721,9 @@ selfServiceRouter.post('/laundry-kiosk/bags/:id/lost', requireLaundryKioskOperat
     dbL.prepare("UPDATE laundry_items SET last_modified_worker_id=?, last_modified_at=datetime('now') WHERE id=?")
       .run(actor.workerId || null, Number(req.params.id))
     stampHistoryWorker(dbL, Number(req.params.id), actor.workerId)
+    createIncident({
+      kind: 'lost_bag', severity: 'high', item_id: Number(req.params.id), description: notes,
+    }, actor)
     auditLaundryKiosk(dbL, req, 'laundry_kiosk_lost', Number(req.params.id), { notes })
     res.json({ ok: true })
   } catch (e) { res.status(400).json({ error: e.message }) }
@@ -1649,6 +1733,55 @@ selfServiceRouter.post('/laundry-kiosk/bags/:id/lost', requireLaundryKioskOperat
 // kaydı + history + premium parça teslimi + audit hub ile birebir aynı.
 // Kiosk'a özgü kolonlar (delivered_name/file_count/occupant_signature/worker)
 // servis çağrısından sonra ayrıca yazılır.
+selfServiceRouter.post(
+  '/laundry-kiosk/deliver-partial',
+  requireLaundryKioskOperator,
+  upload.single('photo'),
+  verifyMagicBytes,
+  (req, res) => {
+    try {
+      let garmentIds = req.body?.garment_ids
+      if (typeof garmentIds === 'string') {
+        try { garmentIds = JSON.parse(garmentIds) } catch { garmentIds = [] }
+      }
+      const itemId = Number(req.body?.item_id)
+      const db = getDB()
+      const item = db.prepare(`
+        SELECT li.id,r.block FROM laundry_items li JOIN rooms r ON r.id=li.room_id WHERE li.id=?
+      `).get(itemId)
+      if (!item) throw Object.assign(new Error('Torba bulunamadı'), { status: 404 })
+      const signature = String(req.body?.signature || '').trim()
+      if (blockNeedsSignature(item.block) && !signature) {
+        throw Object.assign(new Error(`${item.block} blok tesliminde imza zorunludur`), { status: 400 })
+      }
+      const delivery = createPartialDelivery({
+        item_id: itemId,
+        garment_ids: Array.isArray(garmentIds) ? garmentIds : [],
+        recipient_name: req.body?.delivered_name,
+        recipient_personnel_id: req.body?.recipient_personnel_id || null,
+        recipient_type: req.body?.recipient_type,
+        third_party_reason: req.body?.third_party_reason,
+        signature_data: signature || null,
+        photo_url: req.file ? `/uploads/${req.file.filename}` : null,
+      }, laundryActor(req))
+      auditLaundryKiosk(db, req, 'laundry_partial_delivery', delivery.id, {
+        itemId, garmentIds: delivery.garment_ids, status: delivery.status,
+      })
+      if (delivery.approval_required) {
+        createNotification({
+          message: `Üçüncü kişiye çamaşır teslim onayı: ${delivery.bag_no} · ${delivery.recipient_name}`,
+          type: 'warning', module: 'laundry', target_role: 'campus_manager',
+          dedup_key: `laundry_third_party_delivery_${delivery.id}`,
+        })
+      }
+      res.status(delivery.approval_required ? 202 : 200).json(delivery)
+    } catch (e) {
+      removeLaundryUpload(req)
+      res.status(e.status || 400).json({ error: e.message })
+    }
+  }
+)
+
 selfServiceRouter.post('/laundry-kiosk/bags/:id/deliver', requireLaundryKioskOperator, (req, res) => {
   const { delivered_name, signature } = req.body
   const garmentIds = Array.isArray(req.body?.garment_ids)
@@ -1959,6 +2092,13 @@ selfServiceRouter.post('/laundry-kiosk/bags/:id/found', requireLaundryKioskOpera
     db.prepare("UPDATE laundry_items SET last_modified_worker_id=?, last_modified_at=datetime('now') WHERE id=?")
       .run(actor.workerId || null, item.id)
     stampHistoryWorker(db, item.id, actor.workerId)
+    const incident = db.prepare("SELECT id FROM laundry_incidents WHERE item_id=? AND kind='lost_bag' AND status IN ('open','investigating') ORDER BY id DESC LIMIT 1").get(item.id)
+    if (incident) {
+      for (const row of db.prepare('SELECT item_key FROM laundry_incident_checklist WHERE incident_id=?').all(incident.id)) {
+        updateIncident(incident.id, { checklist_key: row.item_key, checklist_complete: true }, actor)
+      }
+      updateIncident(incident.id, { resolution: 'found', resolution_note: 'Torba bulundu ve yeniden teslime hazırlandı' }, actor)
+    }
     auditLaundryKiosk(db, req, 'laundry_kiosk_found', item.id, {})
     try {
       const full = getItemService(item.id)
@@ -2022,6 +2162,13 @@ selfServiceRouter.post('/laundry-kiosk/bags/:bagId/garments/:garmentId/found', r
       auditLaundryKiosk(db, req, 'laundry_kiosk_garment_found', garmentId, { bagId, exceptionId: exception.id })
       return { itemId: bagId, garmentId, garmentStatus: nextStatus }
     }).immediate()
+    const incident = db.prepare("SELECT id FROM laundry_incidents WHERE item_id=? AND garment_id=? AND kind='lost_garment' AND status IN ('open','investigating') ORDER BY id DESC LIMIT 1").get(bagId, garmentId)
+    if (incident) {
+      for (const row of db.prepare('SELECT item_key FROM laundry_incident_checklist WHERE incident_id=?').all(incident.id)) {
+        updateIncident(incident.id, { checklist_key: row.item_key, checklist_complete: true }, actor)
+      }
+      updateIncident(incident.id, { resolution: 'found', resolution_note: 'Kıyafet bulundu' }, actor)
+    }
     try {
       const full = getItemService(bagId)
       if (full) await sendFoundMessage(full)
@@ -2100,11 +2247,12 @@ selfServiceRouter.post('/laundry-kiosk/bags/:id/wash-complete', requireLaundryKi
       actor.workerId
     )
     const load = markLoadProgress(item.id)
+    const cost = load?.remaining === 0 ? recordLoadCost(load.load_id) : null
     db.prepare("UPDATE laundry_items SET last_modified_worker_id=?, last_modified_at=datetime('now') WHERE id=?")
       .run(actor.workerId, item.id)
     auditLaundryKiosk(db, req, 'laundry_wash_complete', item.id, {
       nextStatus: updated.status,
     })
-    res.json({ ok: true, next_status: updated.status, load })
+    res.json({ ok: true, next_status: updated.status, load, cost })
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
