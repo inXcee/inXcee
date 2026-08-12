@@ -1,131 +1,77 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import 'fake-indexeddb/auto'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { _getRawQueueForTests, _resetForTests, getBlob } from '../../shared/utils/offlineDB.js'
 import {
-  listQueued, enqueueBag, removeQueuedAt, buildBagFormData, dataUrlToBlob, flushQueue,
-  MAX_QUEUE, QUEUE_TTL_MS,
+  buildBagFormData,
+  enqueueBag,
+  flushQueue,
+  listQueued,
+  migrateLegacyLaundryQueue,
 } from './offlineQueue.js'
 
-const TINY_JPEG = 'data:image/jpeg;base64,/9j/4AAQSkZJRg=='
-
-beforeEach(() => localStorage.clear())
-afterEach(() => vi.restoreAllMocks())
-
-describe('offlineQueue temel', () => {
-  it('enqueue/list/remove döngüsü', () => {
-    expect(listQueued()).toEqual([])
-    enqueueBag({ payload: { block: 'M1' }, label: 'M1-101 · 2 parça' })
-    enqueueBag({ payload: { block: 'A' }, label: 'A-5 · 1 parça' })
-    expect(listQueued()).toHaveLength(2)
-    expect(listQueued()[0].label).toBe('M1-101 · 2 parça')
-    expect(listQueued()[0].queued_at).toBeTruthy()
-    removeQueuedAt(0)
-    expect(listQueued()).toHaveLength(1)
-    expect(listQueued()[0].payload.block).toBe('A')
-  })
-
-  it('bozuk localStorage boş liste döner', () => {
-    localStorage.setItem('kiosk-offline-bags', 'bozuk{json')
-    expect(listQueued()).toEqual([])
-  })
+beforeEach(async () => {
+  localStorage.clear()
+  await _resetForTests()
 })
 
-describe('offlineQueue — hassas veri kuyruğa girmez', () => {
-  it('fotoğraf kuyruğa alınmaz', () => {
-    enqueueBag({ payload: { block: 'M1' }, photoDataUrl: TINY_JPEG, label: 'a' })
-    expect(listQueued()[0].photoDataUrl).toBeUndefined()
-  })
-
-  it('imza payload içinden temizlenir', () => {
-    enqueueBag({ payload: { block: 'M1', intake_signature: 'data:image/png;base64,AAA' }, label: 'a' })
-    expect(listQueued()[0].payload.intake_signature).toBeUndefined()
-    expect(listQueued()[0].payload.block).toBe('M1')
-  })
-})
-
-describe('offlineQueue — TTL ve limit', () => {
-  it('24 saatten eski kayıtlar okunurken elenir', () => {
-    const eski = new Date(Date.now() - QUEUE_TTL_MS - 60_000).toISOString()
-    const yeni = new Date().toISOString()
-    localStorage.setItem('kiosk-offline-bags', JSON.stringify([
-      { payload: { block: 'ESKI' }, label: 'eski', queued_at: eski },
-      { payload: { block: 'YENI' }, label: 'yeni', queued_at: yeni },
-    ]))
-    const q = listQueued()
-    expect(q).toHaveLength(1)
-    expect(q[0].payload.block).toBe('YENI')
-  })
-
-  it('kuyruk dolduğunda açık hata verir, en eskiyi sessizce atmaz', () => {
-    for (let i = 0; i < MAX_QUEUE; i++) enqueueBag({ payload: { block: `B${i}` }, label: `l${i}` })
-    expect(listQueued()).toHaveLength(MAX_QUEUE)
-    expect(() => enqueueBag({ payload: { block: 'TASAN' }, label: 'tasan' })).toThrow(/dolu/i)
-    expect(listQueued()).toHaveLength(MAX_QUEUE)
-    expect(listQueued()[0].payload.block).toBe('B0') // en eski korundu
-  })
-
-  it('localStorage kotası dolarsa hata yüzeye çıkar', () => {
-    vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
-      throw new DOMException('quota', 'QuotaExceededError')
+describe('şifreli çamaşır kuyruğu', () => {
+  it('payload, fotoğraf ve imzayı AES-GCM kayıt içinde korur', async () => {
+    const photo = 'data:image/jpeg;base64,Zm90bw=='
+    await enqueueBag({
+      payload: { client_request_id: 'bag-offline-0001', room_no: '101', intake_signature: 'data:image/png;base64,aW16YQ==' },
+      photoDataUrl: photo,
+      label: 'A1-101',
     })
-    expect(() => enqueueBag({ payload: { block: 'M1' }, label: 'a' })).toThrow(/kaydedilemedi/i)
+
+    const queue = await listQueued()
+    expect(queue[0].payload).toMatchObject({ room_no: '101', intake_signature: expect.stringContaining('base64') })
+    expect(queue[0].blobIds).toHaveLength(1)
+    expect(await getBlob(queue[0].blobIds[0])).toBeInstanceOf(Blob)
+
+    const raw = await _getRawQueueForTests()
+    expect(raw[0]).not.toHaveProperty('payload')
+    expect(JSON.stringify(raw[0])).not.toContain('101')
+    expect(raw[0].encrypted_payload.encrypted).toBeTruthy()
+  })
+
+  it('başarılı sync kaydı görünür kuyruktan çıkarır fakat receipt durumunu korur', async () => {
+    await enqueueBag({ payload: { client_request_id: 'bag-offline-0002', room_no: '102' } })
+    const result = await flushQueue(async (form, key) => ({ data: { bag_no: 'T-1', key, room: form.get('room_no') } }))
+    expect(result).toMatchObject({ sent: 1, remaining: 0 })
+    expect(await listQueued()).toEqual([])
+    const raw = await _getRawQueueForTests()
+    expect(raw[0].status).toBe('synced')
+  })
+
+  it('ağ hatasında kaydı silmez; sunucu reddini inceleme durumunda saklar', async () => {
+    await enqueueBag({ payload: { client_request_id: 'bag-offline-0003', room_no: '103' } })
+    await flushQueue(async () => { throw new Error('offline') })
+    expect((await listQueued())[0]).toMatchObject({ status: 'pending', retries: 1 })
+
+    await flushQueue(async () => {
+      const error = new Error('Geçersiz oda')
+      error.response = { status: 422, data: { error: 'Geçersiz oda' } }
+      throw error
+    })
+    expect((await listQueued())[0]).toMatchObject({ status: 'rejected', error: 'Geçersiz oda' })
+  })
+
+  it('eski localStorage kuyruğunu kayıp olmadan IndexedDB içine taşır', async () => {
+    localStorage.setItem('kiosk-offline-bags', JSON.stringify([{
+      queued_at: '2026-08-12T10:00:00.000Z', label: 'Eski kayıt', payload: { client_request_id: 'legacy-bag-1', room_no: '201' },
+    }]))
+    expect(await migrateLegacyLaundryQueue()).toMatchObject({ migrated: 1, failed: 0 })
+    expect(localStorage.getItem('kiosk-offline-bags')).toBeNull()
+    expect((await listQueued())[0].payload.room_no).toBe('201')
   })
 })
 
-describe('buildBagFormData', () => {
-  it('objeler JSON string, null/boş alanlar atlanır, foto eklenir', () => {
-    const fd = buildBagFormData(
-      { block: 'M1', item_count: 3, garments: [{ type_name: 'Gömlek' }], notes: null, urgent: false },
-      TINY_JPEG,
-    )
-    expect(fd.get('block')).toBe('M1')
-    expect(fd.get('item_count')).toBe('3')
-    expect(JSON.parse(fd.get('garments'))).toEqual([{ type_name: 'Gömlek' }])
-    expect(fd.get('notes')).toBe(null) // atlandı
-    expect(fd.get('urgent')).toBe('false')
-    const photo = fd.get('photo')
-    expect(photo).toBeTruthy()
-    expect(photo.type).toBe('image/jpeg')
-  })
-
-  it('dataUrlToBlob mime ve içeriği korur', () => {
-    const blob = dataUrlToBlob(TINY_JPEG)
-    expect(blob.type).toBe('image/jpeg')
-    expect(blob.size).toBeGreaterThan(0)
-  })
-})
-
-describe('flushQueue', () => {
-  it('hepsi gönderilir, kuyruk boşalır', async () => {
-    enqueueBag({ payload: { block: 'M1' }, label: 'a' })
-    enqueueBag({ payload: { block: 'M2' }, label: 'b' })
-    const post = vi.fn(() => Promise.resolve({}))
-    const r = await flushQueue(post)
-    expect(r.sent).toBe(2)
-    expect(r.remaining).toBe(0)
-    expect(listQueued()).toEqual([])
-  })
-
-  it('ağ hatasında (response yok) kalanlar kuyrukta bekler', async () => {
-    enqueueBag({ payload: { block: 'M1' }, label: 'a' })
-    enqueueBag({ payload: { block: 'M2' }, label: 'b' })
-    const post = vi.fn()
-      .mockResolvedValueOnce({})
-      .mockRejectedValueOnce(Object.assign(new Error('net'), {})) // response yok
-    const r = await flushQueue(post)
-    expect(r.sent).toBe(1)
-    expect(r.remaining).toBe(1)
-    expect(listQueued()[0].payload.block).toBe('M2')
-  })
-
-  it('sunucu reddi (4xx) kuyruğu tıkamaz — düşürülür ve raporlanır', async () => {
-    enqueueBag({ payload: { block: 'M1' }, label: 'kötü' })
-    enqueueBag({ payload: { block: 'M2' }, label: 'iyi' })
-    const post = vi.fn()
-      .mockRejectedValueOnce({ response: { data: { error: 'Oda bulunamadı' } } })
-      .mockResolvedValueOnce({})
-    const r = await flushQueue(post)
-    expect(r.sent).toBe(1)
-    expect(r.rejected).toEqual([{ label: 'kötü', error: 'Oda bulunamadı' }])
-    expect(r.remaining).toBe(0)
-    expect(listQueued()).toEqual([])
+describe('FormData', () => {
+  it('JSON, imza ve fotoğrafı gönderime hazırlar', () => {
+    const form = buildBagFormData({ garments: [{ type: 'Gömlek' }], intake_signature: 'sig', _label: 'gizli' }, new Blob(['x'], { type: 'image/jpeg' }))
+    expect(form.get('garments')).toContain('Gömlek')
+    expect(form.get('intake_signature')).toBe('sig')
+    expect(form.get('_label')).toBeNull()
+    expect(form.get('photo')).toBeInstanceOf(File)
   })
 })

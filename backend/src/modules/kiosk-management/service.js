@@ -235,6 +235,25 @@ export function heartbeat(device, input) {
   return publicDevice(db.prepare(`SELECT ${DEVICE_FIELDS} FROM kiosk_devices WHERE id=?`).get(device.id))
 }
 
+export function syncStatuses(deviceId, clientActionIds) {
+  const placeholders = clientActionIds.map(() => '?').join(',')
+  const rows = getDB().prepare(`
+    SELECT client_action_id, action_type, status, result, created_at, completed_at
+    FROM kiosk_sync_receipts
+    WHERE device_id=? AND client_action_id IN (${placeholders})
+  `).all(deviceId, ...clientActionIds)
+  const byId = new Map(rows.map(row => [row.client_action_id, {
+    ...row,
+    result: parseObject(row.result),
+  }]))
+  return {
+    items: clientActionIds.map(clientActionId => byId.get(clientActionId) || {
+      client_action_id: clientActionId,
+      status: 'unknown',
+    }),
+  }
+}
+
 export function createCommand(deviceId, input, actorUserId) {
   const db = getDB()
   const device = db.prepare('SELECT id, status FROM kiosk_devices WHERE id=? AND is_active=1').get(deviceId)

@@ -17,7 +17,14 @@ export default function HandoverView({ kioskApi, workerName, workerId, onComplet
   const [issues, setIssues] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState(null)
-  const queued = listQueued().length
+  const [queued, setQueued] = useState(0)
+
+  useEffect(() => {
+    const refreshQueue = () => listQueued().then(queue => setQueued(queue.length)).catch(() => setQueued(0))
+    refreshQueue()
+    window.addEventListener('yys-queue-changed', refreshQueue)
+    return () => window.removeEventListener('yys-queue-changed', refreshQueue)
+  }, [])
 
   async function load() {
     try {

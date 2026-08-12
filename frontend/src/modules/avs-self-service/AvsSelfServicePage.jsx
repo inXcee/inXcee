@@ -26,6 +26,7 @@ import HomeTab from './tabs/HomeTab.jsx'
 import { downscalePhoto, dataUrlToBlob } from '../../shared/photo.js'
 import { readKioskSession, writeKioskSession, clearKioskSession } from '../../shared/kioskSession.js'
 import KioskSessionGate from '../../shared/components/KioskSessionGate.jsx'
+import { clearDraft, loadDraft, saveDraft } from '../../shared/utils/offlineDB.js'
 
 const SESSION_KEY = 'avs-kiosk-session'
 
@@ -88,6 +89,7 @@ export default function AvsSelfServicePage() {
   const [maintenanceDrafts, setMaintenanceDrafts] = useState({})
   const [taskUploadProgress, setTaskUploadProgress] = useState({})
   const [taskBlock, setTaskBlock] = useState('')
+  const loadedDraftKey = useRef(null)
 
   // Task 17 — Profil PIN değiştir
   const [pinForm, setPinForm] = useState({ current_pin: '', new_pin: '', new_pin2: '' })
@@ -115,6 +117,7 @@ export default function AvsSelfServicePage() {
     const activeToken = readKioskSession(SESSION_KEY)?.token
     if (activeToken) api.post('/auth/logout', null, { headers: { Authorization: `Bearer ${activeToken}` } }).catch(() => {})
     clearKioskSession(SESSION_KEY)
+    if (loadedDraftKey.current) clearDraft(loadedDraftKey.current).catch(() => {})
     setAvsToken(null)
     setSessionPolicy(null)
     setMustChangePin(false)
@@ -139,6 +142,35 @@ export default function AvsSelfServicePage() {
     setFeedOpen(false)
     setLogoutConfirmOpen(false)
   }, [])
+
+  useEffect(() => {
+    const workerId = selected?.id || initialSession?.worker?.id
+    if (!avsToken || !workerId) return undefined
+    const draftKey = `avs-session-drafts:${workerId}`
+    let cancelled = false
+    loadDraft(draftKey).then(draft => {
+      if (cancelled) return
+      if (draft?.faultForm) setFaultForm({ ...EMPTY_FAULT_FORM, ...draft.faultForm })
+      if (draft?.faultPhoto) setFaultPhoto(draft.faultPhoto)
+      if (draft?.taskPhotoDrafts) setTaskPhotoDrafts(draft.taskPhotoDrafts)
+      if (draft?.maintenanceDrafts) setMaintenanceDrafts(draft.maintenanceDrafts)
+      loadedDraftKey.current = draftKey
+    }).catch(() => { loadedDraftKey.current = draftKey })
+    return () => { cancelled = true }
+  }, [avsToken, selected?.id, initialSession?.worker?.id])
+
+  useEffect(() => {
+    if (!loadedDraftKey.current) return undefined
+    const timer = window.setTimeout(() => {
+      saveDraft(loadedDraftKey.current, {
+        faultForm,
+        faultPhoto,
+        taskPhotoDrafts,
+        maintenanceDrafts,
+      }).catch(() => {})
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [faultForm, faultPhoto, taskPhotoDrafts, maintenanceDrafts])
 
   const requestLogout = () => {
     if (hasSessionDrafts) setLogoutConfirmOpen(true)

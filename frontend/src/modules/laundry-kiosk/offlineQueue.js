@@ -1,97 +1,113 @@
-// Kiosk çevrimdışı giriş kuyruğu — şantiye interneti koptuğunda torba
-// girişleri localStorage'a alınır, bağlantı gelince sırayla gönderilir.
-// Sadece GİRİŞ kuyruklanır (yeni kayıt, çakışma riski yok); durum geçişleri
-// kuyruklanmaz (bayat veriyle yanlış geçiş riskli).
-//
-// GÜVENLİK: fotoğraf ve imza kuyruğa ALINMAZ. localStorage şifresizdir ve
-// kiosk cihazı paylaşımlıdır; hassas veri hiç diske yazılmasın diye çevrimdışı
-// girişte bu alanlar toplanmaz (bkz. EntryForm çevrimdışı uyarısı).
-const KEY = 'kiosk-offline-bags'
+import {
+  enqueue,
+  getBlob,
+  getQueue,
+  updateQueueItem,
+  OFFLINE_QUEUE_LIMIT,
+  OFFLINE_QUEUE_WARNING,
+} from '../../shared/utils/offlineDB.js'
 
-export const MAX_QUEUE = 20
-export const QUEUE_TTL_MS = 24 * 60 * 60 * 1000
+const LEGACY_KEY = 'kiosk-offline-bags'
+const ACTION_TYPE = 'laundry_intake'
 
-function readRaw() {
-  try { return JSON.parse(localStorage.getItem(KEY) || '[]') } catch { return [] }
-}
-
-// Okurken TTL uygulanır: bayat giriş sunucuya gitmesin (oda/kişi değişmiş olabilir).
-export function listQueued() {
-  const cutoff = Date.now() - QUEUE_TTL_MS
-  return readRaw().filter(entry => {
-    const at = Date.parse(entry?.queued_at || '')
-    return Number.isFinite(at) ? at >= cutoff : false
-  })
-}
-
-// Kota hatası YUTULMAZ — sessiz veri kaybı yerine çağıran kullanıcıya gösterir.
-function save(q) {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(q))
-  } catch {
-    throw new Error('Çevrimdışı kayıt kaydedilemedi — cihaz depolaması dolu')
-  }
-}
-
-// entry: { payload: {...json alanları}, label: 'M1-205 · 3 parça' }
-// photoDataUrl ve payload.intake_signature bilerek atılır (yukarıdaki güvenlik notu).
-export function enqueueBag(entry) {
-  const q = listQueued()
-  if (q.length >= MAX_QUEUE) {
-    throw new Error(`Çevrimdışı kuyruk dolu (${MAX_QUEUE} kayıt) — bağlantı gelince gönderin`)
-  }
-  const { photoDataUrl, payload = {}, ...rest } = entry
-  const { intake_signature, ...safePayload } = payload
-  q.push({ ...rest, payload: safePayload, queued_at: new Date().toISOString() })
-  save(q)
-  return q.length
-}
-
-export function removeQueuedAt(index) {
-  const q = listQueued()
-  q.splice(index, 1)
-  save(q)
-  return q
-}
+export const MAX_QUEUE = OFFLINE_QUEUE_LIMIT
+export const QUEUE_WARNING = OFFLINE_QUEUE_WARNING
 
 export function dataUrlToBlob(dataUrl) {
-  const [head, b64] = dataUrl.split(',')
-  const mime = (head.match(/data:(.*?);/) || [])[1] || 'image/jpeg'
-  const bin = atob(b64)
-  const bytes = new Uint8Array(bin.length)
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+  const [head, encoded] = String(dataUrl || '').split(',')
+  const mime = (head?.match(/data:(.*?);/) || [])[1] || 'image/jpeg'
+  const binary = atob(encoded || '')
+  const bytes = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
   return new Blob([bytes], { type: mime })
 }
 
-// JSON alanlarını FormData'ya çevirir (objeler JSON string olur — backend parse eder).
-// photoDataUrl yalnızca ÇEVRİMİÇİ gönderimde kullanılır; kuyruktan gelen kayıtta olmaz.
-export function buildBagFormData(payload, photoDataUrl) {
-  const fd = new FormData()
-  for (const [k, v] of Object.entries(payload)) {
-    if (v === null || v === undefined || v === '') continue
-    fd.append(k, typeof v === 'object' ? JSON.stringify(v) : String(v))
+export async function migrateLegacyLaundryQueue() {
+  let legacy = []
+  try {
+    const parsed = JSON.parse(localStorage.getItem(LEGACY_KEY) || '[]')
+    legacy = Array.isArray(parsed) ? parsed : []
+  } catch {
+    return { migrated: 0, failed: 1 }
   }
-  if (photoDataUrl) fd.append('photo', dataUrlToBlob(photoDataUrl), 'torba.jpg')
-  return fd
-}
+  if (!legacy.length) return { migrated: 0, failed: 0 }
 
-// postFn(formData) → Promise. Ağ hatasında (response yok) kalanlar kuyrukta
-// bekler; sunucu reddi (4xx) kuyruğu tıkamasın diye düşürülür ve raporlanır.
-export async function flushQueue(postFn) {
-  const q = listQueued()
-  let sent = 0
-  const rejected = []
-  let i = 0
-  for (; i < q.length; i++) {
+  const existing = new Set((await getQueue({ includeCompleted: true })).map(item => item.id))
+  let migrated = 0
+  for (const entry of legacy) {
+    const payload = entry?.payload || {}
+    const idempotencyKey = payload.client_request_id || `legacy-laundry-${entry.queued_at || migrated}`
+    if (existing.has(idempotencyKey)) continue
     try {
-      await postFn(buildBagFormData(q[i].payload))
-      sent++
-    } catch (err) {
-      if (!err?.response) break // ağ yok — bu ve sonrakiler kuyrukta kalır
-      rejected.push({ label: q[i].label, error: err.response?.data?.error || 'Reddedildi' })
+      await enqueue(ACTION_TYPE, { ...payload, _label: entry.label || 'Eski çamaşır kabulü' }, [], {
+        idempotencyKey,
+        occurredAt: entry.queued_at || new Date().toISOString(),
+      })
+      migrated += 1
+    } catch {
+      return { migrated, failed: legacy.length - migrated }
     }
   }
-  const remaining = q.slice(i) // ağ koptuysa: başarısız olan + denenmemişler kuyrukta kalır
-  save(remaining)
-  return { sent, rejected, remaining: remaining.length }
+  localStorage.removeItem(LEGACY_KEY)
+  return { migrated, failed: 0 }
+}
+
+export async function listQueued() {
+  const queue = await getQueue()
+  return queue.filter(item => item.type === ACTION_TYPE)
+}
+
+export async function enqueueBag(entry, options = {}) {
+  const { photoDataUrl, payload = {}, label = 'Çamaşır kabulü' } = entry
+  const blobs = photoDataUrl ? [dataUrlToBlob(photoDataUrl)] : []
+  await enqueue(ACTION_TYPE, { ...payload, _label: label }, blobs, {
+    ...options,
+    idempotencyKey: payload.client_request_id || options.idempotencyKey,
+  })
+  return (await listQueued()).length
+}
+
+export function buildBagFormData(payload, photo) {
+  const formData = new FormData()
+  for (const [key, value] of Object.entries(payload || {})) {
+    if (key.startsWith('_') || value === null || value === undefined || value === '') continue
+    formData.append(key, typeof value === 'object' ? JSON.stringify(value) : String(value))
+  }
+  if (photo) formData.append('photo', typeof photo === 'string' ? dataUrlToBlob(photo) : photo, 'torba.jpg')
+  return formData
+}
+
+export async function flushQueue(postFn) {
+  const queue = await listQueued()
+  let sent = 0
+  const rejected = []
+  const conflicts = []
+  for (const item of queue.filter(entry => ['pending', 'sending'].includes(entry.status || 'pending'))) {
+    try {
+      await updateQueueItem(item.id, { status: 'sending', last_attempt_at: new Date().toISOString() })
+      const photo = item.blobIds?.[0] ? await getBlob(item.blobIds[0]) : null
+      const result = await postFn(buildBagFormData(item.payload, photo), item.id)
+      await updateQueueItem(item.id, {
+        status: 'synced',
+        error: null,
+        server_result: result?.data || { synced_at: new Date().toISOString() },
+      })
+      sent += 1
+    } catch (error) {
+      const retries = (item.retries || 0) + 1
+      const httpStatus = error?.response?.status
+      const status = httpStatus === 409
+        ? 'conflict'
+        : httpStatus >= 400 && httpStatus < 500
+          ? 'rejected'
+          : retries >= 3 ? 'manual_review' : 'pending'
+      const reason = error?.response?.data?.error || error?.message || 'Senkronizasyon başarısız'
+      await updateQueueItem(item.id, { status, retries, error: reason, last_attempt_at: new Date().toISOString() })
+      if (status === 'conflict') conflicts.push({ label: item.payload?._label, error: reason })
+      if (status === 'rejected' || status === 'manual_review') rejected.push({ label: item.payload?._label, error: reason, status })
+      if (!httpStatus) break
+    }
+  }
+  const remaining = await listQueued()
+  return { sent, rejected, conflicts, remaining: remaining.length }
 }

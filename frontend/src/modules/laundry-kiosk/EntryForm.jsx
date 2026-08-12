@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import RoomGridPicker from './RoomGridPicker.jsx'
 import QuickGarmentInput from './QuickGarmentInput.jsx'
-import { listQueued, enqueueBag, flushQueue, buildBagFormData } from './offlineQueue.js'
+import { listQueued, enqueueBag, flushQueue, buildBagFormData, migrateLegacyLaundryQueue } from './offlineQueue.js'
 import { listRecentRooms, rememberRoom } from './recentRooms.js'
 import { downscalePhoto } from '../../shared/photo.js'
 import { printLaundryLabel } from './hardwareAdapters.js'
@@ -111,26 +111,33 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess] = useState(null) // { bag_no } | { queued: true }
   const [photoDataUrl, setPhotoDataUrl] = useState(null)
-  const [queuedCount, setQueuedCount] = useState(() => listQueued().length)
+  const [queuedCount, setQueuedCount] = useState(0)
   const [flushMsg, setFlushMsg] = useState(null)
   const [lastBagGarments, setLastBagGarments] = useState(null) // { count, garments } | null
 
   // Çevrimdışı kuyruğu boşalt — açılışta + bağlantı gelince
   const tryFlush = useCallback(async () => {
-    if (listQueued().length === 0) return
-    const result = await flushQueue((fd) => kioskApi.post('/self-service/laundry-kiosk/bag', fd))
+    if ((await listQueued()).length === 0) return
+    const result = await flushQueue((fd, idempotencyKey) => kioskApi.post('/self-service/laundry-kiosk/bag', fd, {
+      headers: { 'X-Idempotency-Key': idempotencyKey },
+    }))
     setQueuedCount(result.remaining)
-    if (result.sent > 0 || result.rejected.length > 0) {
+    if (result.sent > 0 || result.rejected.length > 0 || result.conflicts.length > 0) {
       setFlushMsg(
         `✓ ${result.sent} bekleyen giriş gönderildi` +
-        (result.rejected.length > 0 ? ` · ${result.rejected.length} reddedildi (${result.rejected[0].error})` : '')
+        (result.rejected.length > 0 ? ` · ${result.rejected.length} inceleme bekliyor (${result.rejected[0].error})` : '') +
+        (result.conflicts.length > 0 ? ` · ${result.conflicts.length} çakışma` : '')
       )
       setTimeout(() => setFlushMsg(null), 6000)
     }
   }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    tryFlush()
+    migrateLegacyLaundryQueue()
+      .then(() => listQueued())
+      .then(queue => setQueuedCount(queue.length))
+      .then(tryFlush)
+      .catch(error => setFlushMsg(error.message))
     window.addEventListener('online', tryFlush)
     return () => window.removeEventListener('online', tryFlush)
   }, [tryFlush])
@@ -366,22 +373,17 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
         item_count: derivedItemCount,
       })
     } catch (e) {
-      if (!e.response && needsSig) {
-        // İmzayı paylaşımlı cihazın şifresiz localStorage alanına yazmıyoruz.
-        // Bu nedenle standart blok girişi bağlantı gelmeden güvenle kuyruğa alınamaz.
-        setError('Standart blok girişi imza nedeniyle çevrimiçi kaydedilmelidir. Bağlantıyı kontrol edip tekrar deneyin.')
-      } else if (!e.response) {
-        // Ağ yok — kuyruğa al, bağlantı gelince otomatik gönderilir.
-        // Fotoğraf ve imza kuyruğa GİRMEZ (localStorage şifresiz, cihaz paylaşımlı);
-        // kuyruk dolu/kota hatasında enqueueBag throw eder — form sıfırlanmaz, hata gösterilir.
+      if (!e.response) {
+        // Ağ yok — veri, fotoğraf ve imza AES-GCM ile şifrelenip IndexedDB kuyruğunda korunur.
         try {
-          const n = enqueueBag({
+          const n = await enqueueBag({
             payload,
+            photoDataUrl,
             label: `${selection.block}-${selection.room_no} · ${derivedItemCount} parça`,
           })
           setQueuedCount(n)
           setRecentRooms(rememberRoom(selection))
-          setSuccess({ queued: true, droppedPhoto: !!photoDataUrl, droppedSignature: !!sig })
+          setSuccess({ queued: true, encrypted: true })
         } catch (queueErr) {
           setError(queueErr.message)
         }
@@ -400,15 +402,9 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
         <div style={{ color: success.queued ? '#fbbf24' : '#4ade80', fontWeight: 700, fontSize: 18 }}>
           {success.queued ? 'İnternet yok — giriş kuyruğa alındı' : 'Torba kaydedildi!'}
         </div>
-        {success.queued && (success.droppedPhoto || success.droppedSignature) && (
-          <div style={{ color: '#fbbf24', fontSize: 12, marginTop: 6 }}>
-            ⚠ {[success.droppedPhoto && 'Fotoğraf', success.droppedSignature && 'İmza'].filter(Boolean).join(' ve ')} çevrimdışı
-            kuyruğa alınmadı — bağlantı gelince kayda ekleyin.
-          </div>
-        )}
         {success.queued && (
           <div style={{ color: '#94a3b8', fontSize: 13 }}>
-            Bağlantı gelince otomatik gönderilecek ({queuedCount} bekleyen)
+            Veri, fotoğraf ve imza şifreli saklandı. Bağlantı gelince otomatik gönderilecek ({queuedCount} bekleyen).
           </div>
         )}
         {success.bag_no && (
@@ -621,16 +617,12 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
       <div style={{ fontSize: 12, color: '#94a3b8' }}>
         📍 {selection.block}-{selection.room_no} · 🧺 {derivedItemCount} parça
       </div>
-      {/* Çevrimdışı girişte foto/imza kuyruğa alınmaz (localStorage şifresiz,
-          cihaz paylaşımlı) — operatör kaydetmeden ÖNCE bilsin. */}
       {!isOnline && (
         <div style={{
           background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)',
           borderRadius: 10, padding: '10px 14px', color: '#fbbf24', fontSize: 12,
         }}>
-          {needsSig
-            ? '📡 Çevrimdışısınız — standart blokta imza zorunlu olduğu için bağlantı gelmeden kayıt yapılamaz.'
-            : '📡 Çevrimdışısınız — premium giriş fotoğraf olmadan kuyruğa alınabilir.'}
+          📡 Çevrimdışısınız — kayıt, fotoğraf ve imza bu cihazda AES-GCM ile şifrelenerek güvenli kuyruğa alınacak.
         </div>
       )}
       <div>

@@ -179,8 +179,9 @@ export default function KioskDevicesPage() {
                 </div>
               </div>
               <div style={{ minWidth: 155, fontFamily: 'var(--mono)', fontSize: 11 }}>
-                <div>Kuyruk: <strong>{device.queue_count || 0}</strong></div>
+                <div style={{ color: device.queue_count >= 400 ? '#dc2626' : device.queue_count ? '#f59e0b' : 'inherit' }}>Kuyruk: <strong>{device.queue_count || 0}</strong>{device.queue_count >= 500 ? ' · BLOKE' : device.queue_count >= 400 ? ' · UYARI' : ''}</div>
                 <div style={{ color: device.error_count ? '#dc2626' : 'var(--text3)' }}>Hata: <strong>{device.error_count || 0}</strong></div>
+                {device.health?.queue_statuses && <div style={{ color: 'var(--text3)', fontSize: 9, marginTop: 3 }}>Bekliyor {device.health.queue_statuses.pending || 0} · Çakışma {device.health.queue_statuses.conflict || 0} · İnceleme {device.health.queue_statuses.manual_review || 0}</div>}
                 <div>Kullanıcı: {device.last_principal_name || '—'}</div>
               </div>
               {isManager && device.status !== 'revoked' && (

@@ -3,7 +3,7 @@ import { NavLink, Outlet } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { useMobileAuth } from '../auth/useMobileAuth.js'
 import { useMobileSSE } from '../../../shared/hooks/useMobileSSE.js'
-import { getQueue, dequeue, updateRetries, getBlob } from '../../../shared/utils/offlineDB.js'
+import { getQueue, getQueueSummary, updateQueueItem, getBlob, setOfflineContext, clearOfflineContext } from '../../../shared/utils/offlineDB.js'
 import { useToastStore } from '../../../shared/store/toastStore.js'
 import { useMobilePrefs } from '../../../shared/store/mobilePrefsStore.js'
 import PushBanner from './PushBanner.jsx'
@@ -35,9 +35,20 @@ export default function MobileLayout({ tabs }) {
   const { addToast } = useToastStore()
   const [isOnline, setIsOnline] = useState(navigator.onLine)
   const [pendingCount, setPendingCount] = useState(0)
+  const [queueStatuses, setQueueStatuses] = useState({})
 
   useEffect(() => {
-    const refresh = () => getQueue().then(q => setPendingCount(q.length)).catch(() => {})
+    setOfflineContext({
+      principal: user?.id ? { kind: 'staff', id: user.id, name: user.full_name || user.username || 'AVS personeli' } : null,
+    })
+    return () => clearOfflineContext()
+  }, [user?.id, user?.full_name, user?.username])
+
+  useEffect(() => {
+    const refresh = () => getQueueSummary().then(summary => {
+      setPendingCount(summary.total)
+      setQueueStatuses(summary.statuses)
+    }).catch(() => {})
     refresh()
     window.addEventListener('yys-queue-changed', refresh)
     return () => window.removeEventListener('yys-queue-changed', refresh)
@@ -56,7 +67,12 @@ export default function MobileLayout({ tabs }) {
 
     async function replayItem(item, token) {
       const headers = { Authorization: `Bearer ${token}` }
-      const ok = r => { if (!r.ok) throw new Error(r.status) }
+      const ok = r => {
+        if (r.ok) return
+        const error = new Error(String(r.status))
+        error.httpStatus = r.status
+        throw error
+      }
       if (item.type === 'complete_task') {
         ok(await fetch(`/api/housekeeping/tasks/${item.payload.taskId}/complete`, {
           method: 'POST',
@@ -91,13 +107,15 @@ export default function MobileLayout({ tabs }) {
     async function drain() {
       const queue = await getQueue()
       if (queue.length === 0) return
-      const initialCount = queue.length
+      const actionable = queue.filter(entry => ['pending', 'sending'].includes(entry.status || 'pending'))
+      const initialCount = actionable.length
       let synced = 0
       const { token } = useMobileAuth.getState()
-      for (const item of queue) {
+      for (const item of actionable) {
         try {
+          await updateQueueItem(item.id, { status: 'sending', last_attempt_at: new Date().toISOString() })
           await replayItem(item, token)
-          await dequeue(item.id)
+          await updateQueueItem(item.id, { status: 'synced', error: null, server_result: { synced_at: new Date().toISOString() } })
           synced++
           if (item.type === 'complete_task' || item.type === 'skip_task') {
             qc.invalidateQueries({ queryKey: ['mobile-hk-tasks'] })
@@ -105,19 +123,30 @@ export default function MobileLayout({ tabs }) {
           if (item.type === 'quick_fault') {
             qc.invalidateQueries({ queryKey: ['mobile-tech-requests'] })
           }
-        } catch {
-          if (item.retries >= 2) {
-            addToast(`Çevrimdışı işlem gönderilemedi — silindi (${item.type})`, 'error')
-            await dequeue(item.id)
-          } else {
-            await updateRetries(item.id, item.retries + 1)
+        } catch (error) {
+          const retries = (item.retries || 0) + 1
+          const httpStatus = Number(error?.httpStatus || error?.message)
+          const status = httpStatus === 409
+            ? 'conflict'
+            : httpStatus >= 400 && httpStatus < 500
+              ? 'rejected'
+              : retries >= 3 ? 'manual_review' : 'pending'
+          await updateQueueItem(item.id, {
+            status,
+            retries,
+            error: Number.isFinite(httpStatus) ? `HTTP ${httpStatus}` : 'Ağ veya sunucu hatası',
+            last_attempt_at: new Date().toISOString(),
+          })
+          if (['manual_review', 'conflict', 'rejected'].includes(status)) {
+            addToast(`Çevrimdışı işlem korundu; ${status === 'conflict' ? 'çakışma' : status === 'rejected' ? 'sunucu reddi' : 'manuel inceleme'} gerekiyor (${item.type})`, 'error')
           }
         }
       }
       // Gercek sayiyi yeniden oku (retry'da kalan item'lar varsa 0 degil)
       const remaining = await getQueue()
       setPendingCount(remaining.length)
-      if (synced === initialCount) {
+      setQueueStatuses((await getQueueSummary()).statuses)
+      if (synced === initialCount && synced > 0) {
         addToast(`✓ ${synced} cevrimdisi islem senkronize edildi`, 'success')
       }
     }
@@ -166,10 +195,10 @@ export default function MobileLayout({ tabs }) {
 
   useMobileSSE(handleSSEEvent)
 
-  const offlineBanner = !isOnline && (
-    <div style={{ position:'fixed', top:0, left:'50%', transform:'translateX(-50%)', width:'100%', maxWidth:'480px', background:'#ef4444', color:'#fff', textAlign:'center', padding:'calc(8px + env(safe-area-inset-top)) 8px 8px', fontSize:'13px', fontWeight:600, zIndex:200 }}>
-      Çevrimdışı — Bağlantı bekleniyor...
-      {pendingCount > 0 && ` (${pendingCount} işlem bekliyor)`}
+  const offlineBanner = (!isOnline || pendingCount > 0) && (
+    <div style={{ position:'fixed', top:0, left:'50%', transform:'translateX(-50%)', width:'100%', maxWidth:'480px', background: isOnline ? '#b45309' : '#ef4444', color:'#fff', textAlign:'center', padding:'calc(8px + env(safe-area-inset-top)) 8px 8px', fontSize:'13px', fontWeight:600, zIndex:200 }}>
+      {!isOnline ? 'Çevrimdışı — bağlantı bekleniyor' : 'Senkronizasyon takibi'}
+      {pendingCount > 0 && ` · ${pendingCount} işlem (${(queueStatuses.manual_review || 0) + (queueStatuses.conflict || 0) + (queueStatuses.rejected || 0)} inceleme)`}
     </div>
   )
 
@@ -182,7 +211,7 @@ export default function MobileLayout({ tabs }) {
       <header style={{
         display:'flex', alignItems:'center', justifyContent:'space-between', gap:8,
         background:'#fff', borderBottom:'1px solid #e5e7eb', padding:'8px 12px',
-        paddingTop: isOnline ? 'calc(8px + env(safe-area-inset-top))' : 'calc(44px + env(safe-area-inset-top))',
+        paddingTop: isOnline && pendingCount === 0 ? 'calc(8px + env(safe-area-inset-top))' : 'calc(44px + env(safe-area-inset-top))',
       }}>
         <span style={{ fontSize:13, fontWeight:700, color:'#374151' }}>{user?.full_name || 'AVS Mobil'}</span>
         <div style={{ display:'flex', gap:4 }}>

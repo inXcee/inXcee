@@ -118,6 +118,39 @@ describe('kiosk device — kayıt, heartbeat ve komutlar', () => {
     expect(row.token_hash).not.toContain(deviceKey)
   })
 
+  it('aynı çevrimdışı işlem anahtarını ikinci kez çalıştırmaz ve receipt döndürür', async () => {
+    const actionId = 'offline-heartbeat-0001'
+    const first = await request(app)
+      .post('/api/kiosk-device/heartbeat')
+      .set('X-Kiosk-Device-Key', deviceKey)
+      .set('X-Idempotency-Key', actionId)
+      .set('X-Offline-Action-Type', 'device_heartbeat_test')
+      .send({ queue_count: 3, error_count: 0 })
+    const repeated = await request(app)
+      .post('/api/kiosk-device/heartbeat')
+      .set('X-Kiosk-Device-Key', deviceKey)
+      .set('X-Idempotency-Key', actionId)
+      .send({ queue_count: 99, error_count: 99 })
+
+    expect(first.status).toBe(200)
+    expect(first.body).toMatchObject({ queue_count: 3, idempotent: false, sync_status: 'completed' })
+    expect(repeated.status).toBe(200)
+    expect(repeated.headers['x-idempotent-replay']).toBe('1')
+    expect(repeated.body).toMatchObject({ queue_count: 3, idempotent: true, sync_status: 'completed' })
+    expect(getDB().prepare('SELECT queue_count FROM kiosk_devices WHERE id=?').get(deviceId).queue_count).toBe(3)
+    expect(getDB().prepare('SELECT COUNT(*) AS count FROM kiosk_sync_receipts WHERE client_action_id=?').get(actionId).count).toBe(1)
+
+    const statuses = await request(app)
+      .post('/api/kiosk-device/sync')
+      .set('X-Kiosk-Device-Key', deviceKey)
+      .send({ client_action_ids: [actionId, 'offline-unknown-0001'] })
+    expect(statuses.status).toBe(200)
+    expect(statuses.body.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ client_action_id: actionId, status: 'completed' }),
+      expect.objectContaining({ client_action_id: 'offline-unknown-0001', status: 'unknown' }),
+    ]))
+  })
+
   it('yönetici kilit komutu yollar, cihaz görür ve tamamlandı olarak işaretler', async () => {
     const created = await request(app)
       .post(`/api/kiosk-management/devices/${deviceId}/commands`)

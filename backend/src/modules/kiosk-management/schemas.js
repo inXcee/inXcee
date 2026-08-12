@@ -60,6 +60,10 @@ export const heartbeatSchema = z.object({
   }).strict().nullish(),
 }).strict()
 
+export const syncStatusSchema = z.object({
+  client_action_ids: z.array(z.string().trim().min(8).max(160)).min(1).max(500),
+}).strict()
+
 export const updateDeviceSchema = z.object({
   name: z.string().trim().min(2).max(120).optional(),
   location: z.string().trim().max(200).nullable().optional(),

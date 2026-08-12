@@ -1,7 +1,10 @@
-import { describe, expect, it, vi } from 'vitest'
+import 'fake-indexeddb/auto'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { renderWithProviders } from '../../test/renderWithProviders.jsx'
 import HandoverView from './HandoverView.jsx'
+import { enqueueBag } from './offlineQueue.js'
+import { _resetForTests } from '../../shared/utils/offlineDB.js'
 
 function api() {
   return {
@@ -15,8 +18,12 @@ function api() {
 }
 
 describe('HandoverView', () => {
-  it('çıkan ve devralan PIN adımlarını sırayla gönderir', async () => {
+  beforeEach(async () => {
     localStorage.clear()
+    await _resetForTests()
+  })
+
+  it('çıkan ve devralan PIN adımlarını sırayla gönderir', async () => {
     const kioskApi = api()
     const onComplete = vi.fn()
     renderWithProviders(<HandoverView kioskApi={kioskApi} workerName="Çıkan Personel" onComplete={onComplete} />)
@@ -34,11 +41,10 @@ describe('HandoverView', () => {
   })
 
   it('offline kuyruk varken teslim düğmesini kilitler', async () => {
-    localStorage.setItem('kiosk-offline-bags', JSON.stringify([{ queued_at: new Date().toISOString(), payload: {} }]))
+    await enqueueBag({ payload: { client_request_id: 'handover-block-1', room_no: '101' } })
     renderWithProviders(<HandoverView kioskApi={api()} workerName="Çıkan Personel" />)
     await waitFor(() => expect(screen.getByText(/1 offline kayıt bekliyor/)).toBeInTheDocument())
     fireEvent.change(screen.getByLabelText('Çıkan personel PIN’i'), { target: { value: '2468' } })
     expect(screen.getByRole('button', { name: 'Teslimi başlat' })).toBeDisabled()
-    localStorage.clear()
   })
 })

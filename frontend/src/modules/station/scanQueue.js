@@ -1,56 +1,97 @@
-// Okutma istasyonu çevrimdışı kuyruğu — ağ yokken okutmalar KAYBOLMAZ:
-// localStorage'a yazılır, bağlantı gelince orijinal zamanıyla (scanned_at)
-// sunucuya gönderilir. Desen: laundry offlineQueue (saf modül + unit test).
-// Foto kuyruklanmaz (dataURL ağırlığı) — kuyruk kaydı uid+öğün+zaman taşır.
+import { enqueue, getBlob, getQueue, updateQueueItem } from '../../shared/utils/offlineDB.js'
 
-const KEY = 'yys_station_scan_queue'
-const MAX_QUEUE = 500 // localStorage taşması guard'ı
+const LEGACY_KEY = 'yys_station_scan_queue'
+const ACTION_TYPE = 'station_scan'
 
-export function loadQueue() {
+export async function migrateLegacyStationQueue() {
+  let legacy = []
   try {
-    const q = JSON.parse(localStorage.getItem(KEY))
-    return Array.isArray(q) ? q : []
-  } catch { return [] }
-}
-
-function saveQueue(q) {
-  try { localStorage.setItem(KEY, JSON.stringify(q)) } catch { /* dolu — sessiz */ }
-}
-
-// → kuyruktaki eleman sayısı
-export function enqueueScan({ raw_uid, meal_type = null }) {
-  const q = loadQueue()
-  if (q.length >= MAX_QUEUE) q.shift() // en eskiyi düşür, yeniyi koru
-  q.push({ raw_uid, meal_type, scanned_at: new Date().toISOString() })
-  saveQueue(q)
-  return q.length
-}
-
-export function queueLength() { return loadQueue().length }
-
-// Kuyruğu gönder: ok → çıkar, 4xx → düşür (kalıcı ret kuyruğu tıkamasın),
-// 5xx/ağ hatası → kalsın (sonra tekrar denenir)
-export async function flushQueue(stationKey, fetcher = (...a) => fetch(...a)) {
-  const q = loadQueue()
-  if (q.length === 0) return { sent: 0, dropped: 0, remaining: 0 }
-  let sent = 0, dropped = 0
-  const remaining = []
-  for (const item of q) {
+    const parsed = JSON.parse(localStorage.getItem(LEGACY_KEY) || '[]')
+    legacy = Array.isArray(parsed) ? parsed : []
+  } catch {
+    return { migrated: 0, failed: 1 }
+  }
+  if (!legacy.length) return { migrated: 0, failed: 0 }
+  let migrated = 0
+  for (const entry of legacy) {
     try {
-      const fd = new FormData()
-      fd.append('raw_uid', item.raw_uid)
-      if (item.meal_type) fd.append('meal_type', item.meal_type)
-      fd.append('scanned_at', item.scanned_at)
-      const res = await fetcher('/api/stations/scan', {
-        method: 'POST', headers: { 'X-Station-Key': stationKey }, body: fd,
+      await enqueue(ACTION_TYPE, entry, [], {
+        idempotencyKey: entry.client_action_id || `legacy-station-${entry.scanned_at || migrated}`,
+        occurredAt: entry.scanned_at || new Date().toISOString(),
       })
-      if (res.ok) sent++
-      else if (res.status >= 400 && res.status < 500) dropped++
-      else remaining.push(item)
+      migrated += 1
     } catch {
-      remaining.push(item)
+      return { migrated, failed: legacy.length - migrated }
     }
   }
-  saveQueue(remaining)
-  return { sent, dropped, remaining: remaining.length }
+  localStorage.removeItem(LEGACY_KEY)
+  return { migrated, failed: 0 }
+}
+
+export async function loadQueue() {
+  return (await getQueue()).filter(item => item.type === ACTION_TYPE)
+}
+
+export async function enqueueScan({ raw_uid, meal_type = null, photo = null, station = null }) {
+  const clientActionId = globalThis.crypto?.randomUUID?.() || `station-${Date.now()}-${Math.random().toString(16).slice(2)}`
+  await enqueue(ACTION_TYPE, {
+    raw_uid,
+    meal_type,
+    scanned_at: new Date().toISOString(),
+    client_action_id: clientActionId,
+  }, photo ? [photo] : [], {
+    idempotencyKey: clientActionId,
+    deviceId: station?.device_id || (station?.id ? `station:${station.id}` : null),
+  })
+  return (await loadQueue()).length
+}
+
+export async function queueLength() {
+  return (await loadQueue()).length
+}
+
+export async function flushQueue(stationKey, fetcher = (...args) => fetch(...args)) {
+  const queue = await loadQueue()
+  if (queue.length === 0) return { sent: 0, conflicts: 0, rejected: 0, remaining: 0 }
+  let sent = 0
+  let conflicts = 0
+  let rejected = 0
+  for (const item of queue.filter(entry => ['pending', 'sending'].includes(entry.status || 'pending'))) {
+    try {
+      await updateQueueItem(item.id, { status: 'sending', last_attempt_at: new Date().toISOString() })
+      const formData = new FormData()
+      formData.append('raw_uid', item.payload.raw_uid)
+      if (item.payload.meal_type) formData.append('meal_type', item.payload.meal_type)
+      formData.append('scanned_at', item.payload.scanned_at)
+      formData.append('client_action_id', item.payload.client_action_id || item.id)
+      const photo = item.blobIds?.[0] ? await getBlob(item.blobIds[0]) : null
+      if (photo) formData.append('photo', photo, 'scan.jpg')
+      const response = await fetcher('/api/stations/scan', {
+        method: 'POST',
+        headers: { 'X-Station-Key': stationKey, 'X-Idempotency-Key': item.id },
+        body: formData,
+      })
+      if (response.ok) {
+        let serverResult = null
+        try { serverResult = await response.clone().json() } catch { /* gövde opsiyonel */ }
+        await updateQueueItem(item.id, { status: 'synced', error: null, server_result: serverResult })
+        sent += 1
+        continue
+      }
+      const status = response.status === 409 ? 'conflict' : response.status >= 400 && response.status < 500 ? 'rejected' : 'pending'
+      await updateQueueItem(item.id, { status, retries: (item.retries || 0) + 1, error: `HTTP ${response.status}` })
+      if (status === 'conflict') conflicts += 1
+      if (status === 'rejected') rejected += 1
+    } catch (error) {
+      const retries = (item.retries || 0) + 1
+      await updateQueueItem(item.id, {
+        status: retries >= 3 ? 'manual_review' : 'pending',
+        retries,
+        error: error?.message || 'Ağ hatası',
+        last_attempt_at: new Date().toISOString(),
+      })
+      break
+    }
+  }
+  return { sent, conflicts, rejected, remaining: (await loadQueue()).length }
 }

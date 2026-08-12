@@ -7,6 +7,7 @@ import {
   enrollmentCodeSchema,
   enrollDeviceSchema,
   heartbeatSchema,
+  syncStatusSchema,
   bulkPinDeliverySchema,
   pinDeliverySchema,
   pinIssueSchema,
@@ -20,6 +21,7 @@ import {
   deviceConfig,
   enrollDevice,
   heartbeat,
+  syncStatuses,
   listDevices,
   overview,
   pendingCommands,
@@ -137,6 +139,10 @@ kioskDeviceRouter.use(requireKioskDevice)
 
 kioskDeviceRouter.post('/heartbeat', validate(heartbeatSchema), (req, res) => {
   res.json(heartbeat(req.kioskDevice, req.validated))
+})
+
+kioskDeviceRouter.post('/sync', validate(syncStatusSchema), (req, res) => {
+  res.json(syncStatuses(req.kioskDevice.id, req.validated.client_action_ids))
 })
 
 kioskDeviceRouter.get('/config', (req, res) => {

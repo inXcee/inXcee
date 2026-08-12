@@ -11,6 +11,7 @@ import v8 from 'node:v8'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { sanitizeBody } from './shared/middleware/sanitize.js'
+import { kioskIdempotencyMiddleware } from './shared/middleware/kiosk-idempotency.js'
 import { getDB } from './shared/db/index.js'
 import { verifySchemaObjects } from './shared/db/verify.js'
 import { migrationFileVersions, pendingMigrations } from './shared/db/runner.js'
@@ -181,6 +182,7 @@ app.use(cors({
 app.use(express.json({ limit: '5mb' }))
 app.use(cookieParser())
 app.use(sanitizeBody)
+app.use('/api', kioskIdempotencyMiddleware)
 // Multer dosya isimleri unique (Date.now()-rand) — immutable cache güvenli.
 app.use('/uploads', (req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff')

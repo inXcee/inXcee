@@ -416,6 +416,24 @@ describe('stations — stats-today + hareket filtreleri', () => {
 })
 
 describe('stations — çevrimdışı kuyruk (scanned_at) + busyness', () => {
+  it('aynı client_action_id tekrar gönderilince hareketi çoğaltmaz', async () => {
+    const actionId = 'station-offline-action-0001'
+    const first = await request(app).post('/api/stations/scan')
+      .set('X-Station-Key', entryKey)
+      .set('X-Idempotency-Key', actionId)
+      .send({ raw_uid: 'OFFLINE-TEKRAR-1', client_action_id: actionId })
+    const repeated = await request(app).post('/api/stations/scan')
+      .set('X-Station-Key', entryKey)
+      .set('X-Idempotency-Key', actionId)
+      .send({ raw_uid: 'OFFLINE-TEKRAR-1', client_action_id: actionId })
+
+    expect(first.status).toBe(200)
+    expect(first.body.idempotent).toBe(false)
+    expect(repeated.status).toBe(200)
+    expect(repeated.body.idempotent).toBe(true)
+    expect(getDB().prepare('SELECT COUNT(*) AS count FROM access_events WHERE client_action_id=?').get(actionId).count).toBe(1)
+  })
+
   it('scan geçerli scanned_at ile orijinal zamana yazılır', async () => {
     const past = new Date(Date.now() - 2 * 3600 * 1000) // 2 saat önce
     const r = await request(app).post('/api/stations/scan').set('X-Station-Key', entryKey)

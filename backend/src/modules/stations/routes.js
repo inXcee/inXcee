@@ -62,7 +62,7 @@ function genKey() {
 function publicStation(s) {
   return {
     id: s.id, name: s.name, station_type: s.station_type, location: s.location,
-    is_active: s.is_active, capture_photo: s.capture_photo, created_at: s.created_at,
+    is_active: s.is_active, capture_photo: s.capture_photo, device_id: s.device_id || null, created_at: s.created_at,
   }
 }
 
@@ -268,6 +268,18 @@ stationsRouter.post('/scan', requireStation, upload.single('photo'), verifyMagic
   try {
     const db = getDB()
     const station = req.station
+    const clientActionId = String(req.headers['x-idempotency-key'] || req.body?.client_action_id || '').trim() || null
+    if (clientActionId && (clientActionId.length < 8 || clientActionId.length > 160)) {
+      return res.status(400).json({ error: 'Geçersiz işlem anahtarı' })
+    }
+    if (clientActionId) {
+      const existing = db.prepare('SELECT result, client_result_json FROM access_events WHERE client_action_id=?').get(clientActionId)
+      if (existing) {
+        let saved = { result: existing.result }
+        try { saved = JSON.parse(existing.client_result_json || '{}') } catch { /* eski receipt */ }
+        return res.json({ ...saved, idempotent: true, access_granted: saved.result === 'ok' })
+      }
+    }
     const map = TYPE_MAP[station.station_type] || TYPE_MAP.generic
     const rawUid = normalizeNfcUid(req.body?.raw_uid)
     const code = (req.body?.code || '').toString().trim() || null
@@ -290,11 +302,16 @@ stationsRouter.post('/scan', requireStation, upload.single('photo'), verifyMagic
     // (result==='ok' → kapı açılır). Fiziksel turnike denetleyicisi bu alanı
     // okuyup rölesini sürer; reddedilen/duplicate/alarm durumunda kapı kapalı kalır.
     const _json = res.json.bind(res)
-    res.json = (body) => _json(
-      body && typeof body === 'object' && 'result' in body
-        ? { ...body, access_granted: body.result === 'ok' }
-        : body,
-    )
+    res.json = (body) => {
+      const enriched = body && typeof body === 'object' && 'result' in body
+        ? { ...body, access_granted: body.result === 'ok', idempotent: false }
+        : body
+      if (clientActionId && enriched && typeof enriched === 'object') {
+        db.prepare('UPDATE access_events SET client_result_json=? WHERE client_action_id=?')
+          .run(JSON.stringify(enriched), clientActionId)
+      }
+      return _json(enriched)
+    }
 
     // Kart çözümle: önce NFC UID, yoksa kod (QR/barkod)
     let card = null
@@ -303,9 +320,9 @@ stationsRouter.post('/scan', requireStation, upload.single('photo'), verifyMagic
 
     function log(result, eventType, cardId, holderType, holderId) {
       return db.prepare(`
-        INSERT INTO access_events(card_id, holder_type, holder_id, station_id, event_type, meal_type, result, photo_url, raw_uid, scanned_at)
-        VALUES(?,?,?,?,?,?,?,?,?, COALESCE(?, datetime('now')))
-      `).run(cardId ?? null, holderType ?? null, holderId ?? null, station.id, eventType, mealType, result, photoUrl, rawUid, scannedAt).lastInsertRowid
+        INSERT INTO access_events(card_id, holder_type, holder_id, station_id, event_type, meal_type, result, photo_url, raw_uid, scanned_at, client_action_id)
+        VALUES(?,?,?,?,?,?,?,?,?, COALESCE(?, datetime('now')), ?)
+      `).run(cardId ?? null, holderType ?? null, holderId ?? null, station.id, eventType, mealType, result, photoUrl, rawUid, scannedAt, clientActionId).lastInsertRowid
     }
 
     // Eşleşmeyen kart

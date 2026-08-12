@@ -7,6 +7,7 @@ import {
   readDeviceIdentity,
   saveDeviceIdentity,
 } from './deviceIdentity.js'
+import { setOfflineContext, clearOfflineContext, getQueue, getQueueSummary, updateQueueItem } from '../utils/offlineDB.js'
 
 const DEVICE_PATHS = ['/kiosk', '/laundry-kiosk', '/avs-kiosk', '/station', '/display']
 
@@ -48,9 +49,10 @@ export default function KioskDeviceAgent() {
       if (!cancelled && value) {
         setIdentity(value)
         setDevice(value.device || null)
+        setOfflineContext({ deviceId: value.device?.id || null })
       }
     }).catch(() => {})
-    return () => { cancelled = true }
+    return () => { cancelled = true; clearOfflineContext() }
   }, [active])
 
   const processCommands = useCallback(async () => {
@@ -90,10 +92,33 @@ export default function KioskDeviceAgent() {
     }
   }, [identity, request])
 
+  const reconcileQueue = useCallback(async () => {
+    const queue = await getQueue().catch(() => [])
+    if (!queue.length) return
+    const response = await request('post', '/kiosk-device/sync', {
+      client_action_ids: queue.slice(0, 500).map(item => String(item.id)),
+    })
+    for (const receipt of response?.items || []) {
+      if (receipt.status === 'completed') {
+        await updateQueueItem(receipt.client_action_id, {
+          status: 'synced', error: null, server_result: receipt.result?.body || receipt.result || null,
+        })
+      } else if (receipt.status === 'conflict' || receipt.status === 'rejected') {
+        await updateQueueItem(receipt.client_action_id, {
+          status: receipt.status,
+          error: receipt.result?.body?.error || `Sunucu durumu: ${receipt.status}`,
+          server_result: receipt.result?.body || receipt.result || null,
+        })
+      }
+    }
+  }, [request])
+
   useEffect(() => {
     if (!active || !identity?.device_key) return undefined
     let stopped = false
     const heartbeat = async () => {
+      await reconcileQueue()
+      const queue = await getQueueSummary().catch(() => ({ total: 0, statuses: {} }))
       const updated = await request('post', '/kiosk-device/heartbeat', {
         app_version: 'web-1.0.0',
         capabilities: detectDeviceCapabilities(),
@@ -101,7 +126,10 @@ export default function KioskDeviceAgent() {
           online: navigator.onLine,
           path: window.location.pathname,
           viewport: `${window.innerWidth}x${window.innerHeight}`,
+          queue_statuses: queue.statuses,
         },
+        queue_count: queue.total,
+        error_count: (queue.statuses?.conflict || 0) + (queue.statuses?.rejected || 0) + (queue.statuses?.manual_review || 0),
       })
       if (!stopped && updated) setDevice(updated)
     }
@@ -114,7 +142,7 @@ export default function KioskDeviceAgent() {
       window.clearInterval(heartbeatTimer)
       window.clearInterval(commandTimer)
     }
-  }, [active, identity?.device_key, processCommands, request])
+  }, [active, identity?.device_key, processCommands, reconcileQueue, request])
 
   if (!active || device?.status !== 'locked') return null
   return (

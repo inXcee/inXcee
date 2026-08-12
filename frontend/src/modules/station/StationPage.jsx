@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { enqueueScan, queueLength, flushQueue } from './scanQueue.js'
+import { enqueueScan, queueLength, flushQueue, migrateLegacyStationQueue } from './scanQueue.js'
 
 // Sabit NFC okutma istasyonu — public route (/station), JWT yok.
 // Kimlik: localStorage'daki istasyon anahtarı, her istekte X-Station-Key header'ı.
@@ -72,7 +72,7 @@ export default function StationPage() {
   const [newKeyInput, setNewKeyInput] = useState('')
   const [newKeyError, setNewKeyError] = useState('')
   const [switching, setSwitching] = useState(false)
-  const [queued, setQueued] = useState(() => queueLength()) // çevrimdışı kuyruk sayacı
+  const [queued, setQueued] = useState(0) // çevrimdışı kuyruk sayacı
 
   const inputRef = useRef(null)
   const videoRef = useRef(null)
@@ -139,7 +139,7 @@ export default function StationPage() {
 
   // Çevrimdışı kuyruğu boşalt: açılışta, online olunca ve 45sn'de bir dene
   const tryFlush = useCallback(async () => {
-    if (!stationKey || queueLength() === 0 || !navigator.onLine) return
+    if (!stationKey || await queueLength() === 0 || !navigator.onLine) return
     const r = await flushQueue(stationKey)
     setQueued(r.remaining)
     if (r.sent > 0) loadRecent()
@@ -147,7 +147,11 @@ export default function StationPage() {
 
   useEffect(() => {
     if (!station) return
-    tryFlush()
+    migrateLegacyStationQueue()
+      .then(() => queueLength())
+      .then(setQueued)
+      .then(tryFlush)
+      .catch(() => {})
     const iv = setInterval(tryFlush, 45000)
     window.addEventListener('online', tryFlush)
     return () => { clearInterval(iv); window.removeEventListener('online', tryFlush) }
@@ -221,19 +225,25 @@ export default function StationPage() {
   async function doScan(rawUid) {
     if (!rawUid || scanningRef.current) return
     scanningRef.current = true
+    let scanPhoto = null
     try {
       const fd = new FormData()
       fd.append('raw_uid', rawUid)
       if (station.station_type === 'cafeteria') fd.append('meal_type', mealType)
       if (station.capture_photo) {
-        const blob = await captureFrame()
-        if (blob) fd.append('photo', blob, 'scan.jpg')
+        scanPhoto = await captureFrame()
+        if (scanPhoto) fd.append('photo', scanPhoto, 'scan.jpg')
       }
       const res = await fetch('/api/stations/scan', { method: 'POST', headers: { 'X-Station-Key': stationKey }, body: fd })
       showResult(await parseResponse(res))
     } catch {
       // Ağ yok → okutma KAYBOLMAZ: kuyruğa al, bağlantı gelince orijinal zamanıyla gönderilir
-      const n = enqueueScan({ raw_uid: rawUid, meal_type: station.station_type === 'cafeteria' ? mealType : null })
+      const n = await enqueueScan({
+        raw_uid: rawUid,
+        meal_type: station.station_type === 'cafeteria' ? mealType : null,
+        photo: scanPhoto,
+        station,
+      })
       setQueued(n)
       showResult({ result: 'queued', reason: `Ağ yok — kayıt sıraya alındı (${n} bekliyor), bağlantı gelince otomatik gönderilir` })
     } finally {

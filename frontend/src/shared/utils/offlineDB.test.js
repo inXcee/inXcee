@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import {
   enqueue, getQueue, dequeue, updateRetries,
   getBlob, saveDraft, loadDraft, clearDraft,
-  _resetForTests,
+  _getRawQueueForTests, _resetForTests, setOfflineContext,
 } from './offlineDB.js'
 
 beforeEach(async () => {
@@ -12,10 +12,16 @@ beforeEach(async () => {
 
 describe('enqueue / getQueue / dequeue', () => {
   it('item ekler ve siler', async () => {
+    setOfflineContext({ deviceId: 'device-1', principal: { kind: 'staff', id: 7, name: 'Ali' } })
     const id = await enqueue('complete_task', { taskId: 42 })
     const q = await getQueue()
     expect(q).toHaveLength(1)
     expect(q[0]).toMatchObject({ type: 'complete_task', payload: { taskId: 42 }, retries: 0, blobIds: [] })
+    expect(q[0]).toMatchObject({ device_id: 'device-1', principal: { kind: 'staff', id: 7 } })
+    const raw = await _getRawQueueForTests()
+    expect(raw[0]).not.toHaveProperty('payload')
+    expect(JSON.stringify(raw[0])).not.toContain('taskId')
+    expect(raw[0].encrypted_payload.encrypted).toBeTruthy()
     await dequeue(id)
     expect(await getQueue()).toHaveLength(0)
   })
