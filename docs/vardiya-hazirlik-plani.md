@@ -184,7 +184,7 @@ Fazlar arasında canlıya çıkılabilir; hiçbiri diğerini beklemez.
 | 12 — Akıllı planlama ve senaryolar | Bitti | (bu commit) |
 | 13 — Raporlama ve panolar | Bitti | (bu commit) |
 | 14 — Modüller arası bağlar | Bitti | (bu commit) |
-| 15 | Başlanmadı | — |
+| 15 — Kullanılabilirlik (çalışma modları) | Bitti | (bu commit) |
 
 **Faz 4 notu:** "geçmiş/gelecek ayrımı yok" varsayımıyla başlandı; ölçüm ayrımın
 ZATEN var olduğunu gösterdi (operasyonel/kapanış oranı ayrı hesaplanıyor).
@@ -196,6 +196,13 @@ aylardan devreden 1299 kapanmamış gün hiçbir yerde görünmüyordu.
 ölçülemez durumuyla ve gerekçesiyle görünüyor. Fazın "otomatik öneri, toplu
 mutabakat, iki yönetici onaylı kapanış, bordro farkı önizlemesi" kalemleri Faz
 9 ve 13'e bırakıldı — önce zincirin okunması gerekiyordu.
+
+**Faz 15 kapsamı:** Faz 1-14 boyunca çizelgenin altına on bir panel eklendi.
+Çalışma modu (Planlayıcı / Günlük operasyon / Puantaj kontrolörü / Hepsi açık)
+panel tercihlerini tek tıkla o role uygun kümeye getiriyor ve tarayıcıda
+kalıyor. Fazın kalan kalemleri (kaydedilebilir isimli filtreler, klavye
+kısayolu haritası, toplu işlemde geri alma) ayrı iş olarak duruyor; sabit
+personel kolonu ve Excel-ızgara kısayolları zaten mevcuttu.
 
 **Faz 2'de tamamlanmayan parça:** personelin çizelgeyi gördüğünü onaylaması
 (mobil tarafta ekran gerektiriyor) — atlanmadı, ayrı artım olarak bekliyor.

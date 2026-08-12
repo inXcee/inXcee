@@ -15,6 +15,7 @@ import {
 } from '../shared.jsx'
 import { buildStaffGrid, computeWeekStats, parseQuickScheduleCode, cellToScheduleCode, cellToClipboardCode, buildScheduleWarnings, planCellPaste } from '../logic/schedule.js'
 import { SCHEDULE_PANELS, loadPanelPrefs, savePanelPrefs, togglePanel, setAllPanels, hiddenPanelCount } from '../logic/panelPrefs.js'
+import { WORK_MODES, modePanelPrefs, detectMode, modeLabel, saveWorkMode } from '../logic/workModes.js'
 import { DailyView, WeekFillSheet, CellAssignSheet } from './scheduleSheets.jsx'
 import LiveOccupancyBoard from './LiveOccupancyBoard.jsx'
 import ScheduleImportModal from './ScheduleImportModal.jsx'
@@ -51,7 +52,11 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
   // Çizelge altındaki yardımcı paneller kapatılabilir; tercih tarayıcıda kalır.
   const [panels, setPanels] = useState(loadPanelPrefs)
   const [panelMenuOpen, setPanelMenuOpen] = useState(false)
-  const setPanel = next => { setPanels(next); savePanelPrefs(next) }
+  // Elle değişiklik modu 'custom' yapar; kullanıcının açtığı panel geri alınmaz,
+  // sadece artık bir modla eşleşmediği yazılır.
+  const setPanel = next => { setPanels(next); savePanelPrefs(next); saveWorkMode(detectMode(next)) }
+  const setMode = key => setPanel(modePanelPrefs(key))
+  const aktifMod = detectMode(panels)
   const [cellPopover, setCellPopover] = useState(null)
   const [weekFillPopover, setWeekFillPopover] = useState(null) // { person, rect }
   const [weekFillDef, setWeekFillDef] = useState('')
@@ -899,7 +904,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
               aria-expanded={panelMenuOpen}
               title="Çizelge altındaki panelleri göster/gizle"
             >
-              ⚙ Paneller{hiddenPanelCount(panels) > 0 ? ` · ${hiddenPanelCount(panels)} gizli` : ''}
+              ⚙ Paneller · {modeLabel(aktifMod)}{aktifMod === 'custom' && hiddenPanelCount(panels) > 0 ? ` · ${hiddenPanelCount(panels)} gizli` : ''}
             </button>
             {panelMenuOpen && (
               <>
@@ -910,6 +915,29 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                   background: 'var(--surface)', border: '1px solid var(--border)',
                   borderRadius: 10, padding: 10, boxShadow: '0 8px 28px rgba(0,0,0,.28)',
                 }}>
+                  {/* Çalışma modu: on bir panelin hepsine aynı anda kimse bakmıyor.
+                      Mod, tercihleri tek tıkla o role uygun kümeye getirir. */}
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: 1, color: 'var(--text3)', marginBottom: 4 }}>
+                    ÇALIŞMA MODU
+                  </div>
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
+                    {WORK_MODES.map(m => (
+                      <button
+                        key={m.key}
+                        className={`btn btn-xs ${aktifMod === m.key ? 'btn-primary' : 'btn-ghost'}`}
+                        onClick={() => setMode(m.key)}
+                        title={m.hint}
+                      >
+                        {m.label}
+                      </button>
+                    ))}
+                  </div>
+                  {aktifMod === 'custom' && (
+                    <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 8 }}>
+                      Panelleri elle değiştirdiniz — {modeLabel(aktifMod)} görünüm.
+                    </div>
+                  )}
+
                   <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
                     <button className="btn btn-xs btn-ghost" onClick={() => setPanel(setAllPanels(true))}>Hepsini aç</button>
                     <button className="btn btn-xs btn-ghost" onClick={() => setPanel(setAllPanels(false))}>Hepsini gizle</button>
