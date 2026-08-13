@@ -98,6 +98,7 @@ import { performanceRouter } from './modules/performance/routes.js'
 import { commsRouter } from './modules/communications/routes.js'
 import { integrityRouter } from './modules/integrity/routes.js'
 import { kioskDeviceRouter, kioskManagementRouter } from './modules/kiosk-management/routes.js'
+import { locationPortalRouter } from './modules/location-portal/routes.js'
 
 if (process.env.NODE_ENV === 'production' && !process.env.ALLOWED_ORIGIN) {
   logger.error('[Startup] HATA: ALLOWED_ORIGIN env değişkeni production\'da zorunludur.')
@@ -432,6 +433,7 @@ app.use('/api/comms', writeLimiter, commsRouter)
 app.use('/api/integrity', writeLimiter, integrityRouter)
 app.use('/api/kiosk-management', writeLimiter, kioskManagementRouter)
 app.use('/api/kiosk-device', writeLimiter, kioskDeviceRouter)
+app.use('/api/location-portal', writeLimiter, locationPortalRouter)
 
 // ── 404 Handler ──────────────────────────────────────────────────────────────
 app.use((req, res) => {
