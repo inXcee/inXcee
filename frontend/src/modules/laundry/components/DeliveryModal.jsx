@@ -1,6 +1,10 @@
 import { useState, useRef, useCallback } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from '../api.js'
+import LaundryCardPanel from '../../laundry-kiosk/LaundryCardPanel.jsx'
+import {
+  cardGateReady, cardRequestFields, emptyLaundryCard, useLaundryCardRequirement,
+} from '../laundryCard.js'
 
 export default function DeliveryModal({ item, onClose }) {
   const qc = useQueryClient()
@@ -8,13 +12,25 @@ export default function DeliveryModal({ item, onClose }) {
   const canvasRef = useRef(null)
   const drawing = useRef(false)
   const [hasSig, setHasSig] = useState(false)
+  const [laundryCard, setLaundryCard] = useState(emptyLaundryCard)
+  const [cardWarning, setCardWarning] = useState('')
+  const { required: cardRequired } = useLaundryCardRequirement('delivery')
+  const cardReady = cardGateReady({ required: cardRequired, online: true, value: laundryCard })
 
   const deliver = useMutation({
     mutationFn: () => {
       const sig = hasSig && canvasRef.current ? canvasRef.current.toDataURL() : undefined
-      return laundryApi.deliverItem(item.id, { delivered_to: name, signature_data: sig })
+      return laundryApi.deliverItem(item.id, {
+        delivered_to: name,
+        signature_data: sig,
+        ...cardRequestFields(laundryCard),
+      })
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['laundry-items'] }); onClose() },
+    onSuccess: (result) => {
+      qc.invalidateQueries({ queryKey: ['laundry-items'] })
+      if (result.card_warning) setCardWarning(result.card_warning)
+      else onClose()
+    },
   })
 
   const getPos = useCallback((e) => {
@@ -144,6 +160,19 @@ export default function DeliveryModal({ item, onClose }) {
             />
           </div>
 
+          <LaundryCardPanel
+            action="delivery"
+            required={cardRequired}
+            room={{ item_id: item.id }}
+            verifyCard={laundryApi.verifyCard}
+            value={laundryCard}
+            onChange={setLaundryCard}
+            resetKey={item.id}
+            captureHid
+          />
+
+          {cardWarning && <div className="alert alert-warning">{cardWarning}</div>}
+
           {deliver.isError && (
             <div className="alert alert-danger">
               {deliver.error?.response?.data?.error || 'Hata'}
@@ -157,10 +186,10 @@ export default function DeliveryModal({ item, onClose }) {
                 flex: 1, background: 'var(--green)', color: '#000',
                 padding: '10px', letterSpacing: 1,
               }}
-              onClick={() => deliver.mutate()}
-              disabled={!name.trim() || deliver.isPending}
+              onClick={() => cardWarning ? onClose() : deliver.mutate()}
+              disabled={!cardWarning && (!name.trim() || !cardReady || deliver.isPending)}
             >
-              {deliver.isPending ? 'Kaydediliyor...' : '✓ TESLİM ONAYLA'}
+              {cardWarning ? 'Kapat' : deliver.isPending ? 'Kaydediliyor...' : '✓ TESLİM ONAYLA'}
             </button>
             <button className="btn btn-ghost btn-sm" onClick={onClose}>İptal</button>
           </div>

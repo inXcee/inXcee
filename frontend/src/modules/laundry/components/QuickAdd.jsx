@@ -4,6 +4,10 @@ import { laundryApi } from '../api.js'
 import { CLOTHING_ICONS } from './NewItemModal.jsx'
 import { DEFAULT_CLOTHING_TYPES } from './newItem/constants.js'
 import { parseClothingLine, findRoom } from './newItem/parse.js'
+import LaundryCardPanel from '../../laundry-kiosk/LaundryCardPanel.jsx'
+import {
+  cardGateReady, cardRequestFields, emptyLaundryCard, useLaundryCardRequirement,
+} from '../laundryCard.js'
 
 // ── QuickAdd ───────────────────────────────────────────────────
 export default function QuickAdd({ onClose }) {
@@ -14,6 +18,8 @@ export default function QuickAdd({ onClose }) {
   const [selected, setSelected]         = useState([])
   const [quickText, setQuickText]       = useState('')
   const [itemCount, setItemCount]       = useState(1)
+  const [laundryCard, setLaundryCard]   = useState(emptyLaundryCard)
+  const { required: cardRequired } = useLaundryCardRequirement('intake')
   const QUICK_TYPES = ['Pantolon','Gömlek','T-Shirt','Çorap','Boxer','Havlu Tkm','Kazak','Şort']
 
   const { data: rooms = [] } = useQuery({
@@ -48,10 +54,12 @@ export default function QuickAdd({ onClose }) {
     : selected.map(t => ({ type: t, color: '', qty: 1 }))
   const effectiveCount = parsedRows.length > 0 ? parsedCount : itemCount
 
-  const canSubmit = !!selectedRoom && name.trim().length > 0
+  const cardReady = cardGateReady({ required: cardRequired, online: true, value: laundryCard })
+  const canSubmit = !!selectedRoom && name.trim().length > 0 && cardReady
 
   const resetForm = () => {
     setName(''); setSelected([]); setQuickText(''); setItemCount(1)
+    setLaundryCard(emptyLaundryCard())
   }
 
   const create = useMutation({
@@ -61,6 +69,7 @@ export default function QuickAdd({ onClose }) {
       item_count: effectiveCount,
       clothing_items: effectiveItems.length > 0 ? effectiveItems : undefined,
       urgent: 0,
+      ...cardRequestFields(laundryCard),
     }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['laundry-items'] }); resetForm() },
   })
@@ -189,6 +198,17 @@ export default function QuickAdd({ onClose }) {
         </button>
         <button className="btn btn-ghost btn-xs" onClick={onClose}>Kapat</button>
       </div>
+
+      <LaundryCardPanel
+        action="intake"
+        required={cardRequired}
+        room={selectedRoom ? { room_id: selectedRoom.id } : {}}
+        verifyCard={laundryApi.verifyCard}
+        value={laundryCard}
+        onChange={setLaundryCard}
+        resetKey={selectedRoom?.id || 'no-room'}
+        captureHid
+      />
 
       {create.isError && (
         <div className="alert alert-danger" style={{ marginTop: 6, fontSize: 10 }}>

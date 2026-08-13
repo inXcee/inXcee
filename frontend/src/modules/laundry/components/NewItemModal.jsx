@@ -9,6 +9,10 @@ import { parseClothingText, parseClothingLine, parsePremiumLine, findRoom } from
 import SignatureCanvas from './newItem/SignatureCanvas.jsx'
 import PremiumSection from './newItem/PremiumSection.jsx'
 import RegularSection from './newItem/RegularSection.jsx'
+import LaundryCardPanel from '../../laundry-kiosk/LaundryCardPanel.jsx'
+import {
+  cardGateReady, cardRequestFields, emptyLaundryCard, useLaundryCardRequirement,
+} from '../laundryCard.js'
 
 export { CLOTHING_ICONS } from './newItem/constants.js'
 
@@ -50,6 +54,9 @@ export default function NewItemModal({ onClose, roomPrefill = null }) {
   // Başarılı kayıt sonrası banner
   const [savedMsg, setSavedMsg] = useState(false)
   const [signatureKey, setSignatureKey] = useState(0)
+  const [laundryCard, setLaundryCard] = useState(emptyLaundryCard)
+  const [cardNotice, setCardNotice] = useState('')
+  const { required: cardRequired } = useLaundryCardRequirement('intake')
 
   // Premium parça girişi (local buffer — API'ye tek seferde gönderilir)
   const [premiumRows, setPremiumRows] = useState([])
@@ -88,6 +95,7 @@ export default function NewItemModal({ onClose, roomPrefill = null }) {
   }, [form.room_id])
 
   const selectedRoom = rooms.find(r => r.id === +form.room_id)
+  const cardReady = cardGateReady({ required: cardRequired, online: true, value: laundryCard })
   // Y tipi bloklar premium (özel banyolu). M/S tipi standart akış.
   const isPremium = selectedRoom && BLOCK_BY_NAME[selectedRoom.block]?.type === 'Y'
 
@@ -192,13 +200,14 @@ export default function NewItemModal({ onClose, roomPrefill = null }) {
         clothing_items: clothing.length > 0 ? clothing : undefined,
         phone_override: form.phone_override || undefined,
         intake_signature: form.intake_signature || undefined,
+        ...cardRequestFields(laundryCard),
       })
       if (isPremium && premiumRows.length > 0) {
         await laundryApi.addPremiumGarments(item.id, premiumRows)
       }
       return item
     },
-    onSuccess: () => {
+    onSuccess: (item) => {
       clearDraft()
       qc.invalidateQueries({ queryKey: ['laundry-items'] })
       // Oda seçimini koru, geri kalanı sıfırla
@@ -213,6 +222,8 @@ export default function NewItemModal({ onClose, roomPrefill = null }) {
       setQuickPremium('')
       setItemCount(1)
       setSignatureKey(k => k + 1)
+      setLaundryCard(emptyLaundryCard())
+      setCardNotice(item.card_warning || '')
       setSavedMsg(true)
       setTimeout(() => setSavedMsg(false), 3000)
     },
@@ -479,6 +490,19 @@ export default function NewItemModal({ onClose, roomPrefill = null }) {
             )}
           </label>}
 
+          {cardNotice && <div className="alert alert-warning">{cardNotice}</div>}
+
+          <LaundryCardPanel
+            action="intake"
+            required={cardRequired}
+            room={form.room_id ? { room_id: +form.room_id } : {}}
+            verifyCard={laundryApi.verifyCard}
+            value={laundryCard}
+            onChange={setLaundryCard}
+            resetKey={form.room_id || 'no-room'}
+            captureHid
+          />
+
           {create.isError && (
             <div className="alert alert-danger">{create.error?.response?.data?.error || 'Hata oluştu'}</div>
           )}
@@ -486,7 +510,7 @@ export default function NewItemModal({ onClose, roomPrefill = null }) {
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn btn-primary" style={{ flex: 1, padding: '10px', letterSpacing: 1 }}
               onClick={() => create.mutate()}
-              disabled={!form.room_id || create.isPending}>
+              disabled={!form.room_id || !cardReady || create.isPending}>
               {create.isPending
                 ? 'Kaydediliyor...'
                 : isPremium && premiumRows.length > 0

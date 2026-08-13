@@ -1,6 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from '../api.js'
+import LaundryCardPanel from '../../laundry-kiosk/LaundryCardPanel.jsx'
+import {
+  cardGateReady, cardRequestFields, emptyLaundryCard, useLaundryCardRequirement,
+} from '../laundryCard.js'
 
 const MODAL_STYLE = {
   position: 'fixed', inset: 0, zIndex: 1000,
@@ -138,6 +142,10 @@ export default function PremiumDeliveryModal({ item, onClose }) {
   const [deliveredTo, setDeliveredTo] = useState('')
   const [signatureData, setSignatureData] = useState(null)
   const [receipt, setReceipt] = useState(null)
+  const [laundryCard, setLaundryCard] = useState(emptyLaundryCard)
+  const [cardWarning, setCardWarning] = useState('')
+  const { required: cardRequired } = useLaundryCardRequirement('delivery')
+  const cardReady = cardGateReady({ required: cardRequired, online: true, value: laundryCard })
 
   const { data: garments = [] } = useQuery({
     queryKey: ['premium-garments', item.id],
@@ -155,11 +163,16 @@ export default function PremiumDeliveryModal({ item, onClose }) {
       item.id,
       [...selected],
       deliveredTo.trim(),
-      signatureData
+      signatureData,
+      cardRequestFields(laundryCard)
     ),
-    onSuccess: async () => {
+    onSuccess: async (result) => {
       qc.invalidateQueries({ queryKey: ['premium-garments', item.id] })
       qc.invalidateQueries({ queryKey: ['laundry-items'] })
+      if (result.card_warning) {
+        setCardWarning(result.card_warning)
+        return
+      }
       const rec = await laundryApi.getPremiumDeliveryReceipt(item.id)
       setReceipt(rec)
     },
@@ -245,10 +258,23 @@ export default function PremiumDeliveryModal({ item, onClose }) {
           <SignaturePad onSign={setSignatureData} />
         </div>
 
+        <LaundryCardPanel
+          action="delivery"
+          required={cardRequired}
+          room={{ item_id: item.id }}
+          verifyCard={laundryApi.verifyCard}
+          value={laundryCard}
+          onChange={setLaundryCard}
+          resetKey={item.id}
+          captureHid
+        />
+
+        {cardWarning && <div className="alert alert-warning" style={{ marginTop: 12 }}>{cardWarning}</div>}
+
         {/* Submit */}
         <button
-          onClick={() => deliverMut.mutate()}
-          disabled={selected.size === 0 || !deliveredTo.trim() || deliverMut.isPending}
+          onClick={() => cardWarning ? onClose() : deliverMut.mutate()}
+          disabled={!cardWarning && (selected.size === 0 || !deliveredTo.trim() || !cardReady || deliverMut.isPending)}
           style={{
             width: '100%', padding: '11px', borderRadius: 8, border: 'none',
             background: selected.size > 0 && deliveredTo.trim() ? 'var(--green)' : 'var(--surface2)',
@@ -257,7 +283,7 @@ export default function PremiumDeliveryModal({ item, onClose }) {
             transition: 'all 0.2s',
           }}
         >
-          {deliverMut.isPending ? 'Kaydediliyor...' : `${selected.size} Parça Teslim Et`}
+          {cardWarning ? 'Kapat' : deliverMut.isPending ? 'Kaydediliyor...' : `${selected.size} Parça Teslim Et`}
         </button>
       </div>
     </div>

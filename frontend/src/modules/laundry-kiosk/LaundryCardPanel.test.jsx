@@ -7,7 +7,7 @@ import {
   cardGateReady, cardRequestFields, emptyLaundryCard, extractNfcCode,
 } from './laundryCard.js'
 
-function renderPanel({ api, required = true, online = true, resetKey = 'M1|101' } = {}) {
+function renderPanel({ api, verifyCard, captureHid = false, required = true, online = true, resetKey = 'M1|101' } = {}) {
   const state = { current: emptyLaundryCard() }
   function Harness({ nextResetKey = resetKey }) {
     const [value, setValue] = useState(emptyLaundryCard)
@@ -18,10 +18,12 @@ function renderPanel({ api, required = true, online = true, resetKey = 'M1|101' 
         required={required}
         room={{ block: 'M1', room_no: '101' }}
         kioskApi={api || { post: vi.fn() }}
+        verifyCard={verifyCard}
         value={value}
         onChange={setValue}
         online={online}
         resetKey={nextResetKey}
+        captureHid={captureHid}
       />
     )
   }
@@ -85,6 +87,14 @@ describe('çamaşır kart paneli', () => {
     await waitFor(() => expect(state.current.verification).toMatchObject({ offline: true, allowed: true }))
     expect(cardRequestFields(state.current)).toMatchObject({ card_code: 'AVS-C:OFFLINE' })
     expect(cardGateReady({ required: true, online: false, value: state.current })).toBe(true)
+  })
+
+  it('masaüstünde HID klavye akışındaki AVS-C kodunu doğrudan doğrular', async () => {
+    const verifyCard = vi.fn(() => Promise.resolve({ allowed: true, code: 'ok', message: 'Doğrulandı' }))
+    renderPanel({ verifyCard, captureHid: true })
+    for (const key of 'AVS-C:HID-1') fireEvent.keyDown(window, { key })
+    fireEvent.keyDown(window, { key: 'Enter' })
+    await waitFor(() => expect(verifyCard).toHaveBeenCalledWith(expect.objectContaining({ card_code: 'AVS-C:HID-1' })))
   })
 
   it('NFC seri numarasını kart kodu olarak kullanır', async () => {

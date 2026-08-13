@@ -37,12 +37,13 @@ export function cardRequestFields(value) {
 
 export function cardGateReady({ required, online, value }) {
   if (!required) return true
-  const reason = String(value?.card_override_reason || '').trim()
-  if (reason.length >= 3) return true
   const code = String(value?.card_code || '').trim()
-  if (!code) return false
-  if (!online) return true
-  return Boolean(value?.verification?.allowed)
+  if (code) {
+    if (!online) return true
+    return Boolean(value?.verification?.allowed)
+  }
+  const reason = String(value?.card_override_reason || '').trim()
+  return reason.length >= 3
 }
 
 export function cardGateMessage({ required, online, value }) {

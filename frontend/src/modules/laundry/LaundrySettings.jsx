@@ -5,6 +5,108 @@ import SupplySettings from './components/SupplySettings.jsx'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
+import { useAuthStore } from '../../shared/store/authStore.js'
+
+export function CardSystemSettings() {
+  const qc = useQueryClient()
+  const role = useAuthStore(state => state.user?.role)
+  const canEdit = role === 'campus_manager'
+  const { data: serverSettings = {}, isLoading } = useQuery({
+    queryKey: ['laundry-card-settings'],
+    queryFn: laundryApi.getCardSettings,
+  })
+  const [values, setValues] = useState({ intake_required: false, delivery_required: false })
+  const [saving, setSaving] = useState('')
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    setValues({
+      intake_required: serverSettings.intake_required === true,
+      delivery_required: serverSettings.delivery_required === true,
+    })
+  }, [serverSettings.intake_required, serverSettings.delivery_required])
+
+  async function toggle(action) {
+    if (!canEdit || saving) return
+    const key = action === 'intake' ? 'intake_required' : 'delivery_required'
+    const previous = values[key]
+    const next = !previous
+    if (next) {
+      const confirmed = await confirmDialog({
+        title: 'Kart zorunluluğunu aç',
+        body: `${action === 'intake' ? 'Kabul' : 'Teslim'} işlemlerinde kartlar dağıtıldı mı? Kartı olmayan sakinler yalnız gerekçe yazarak devam edebilir.`,
+      })
+      if (!confirmed) return
+    }
+    setError('')
+    setSaving(action)
+    setValues(current => ({ ...current, [key]: next }))
+    try {
+      const updated = await laundryApi.updateCardSetting(action, next)
+      setValues({
+        intake_required: updated.intake_required === true,
+        delivery_required: updated.delivery_required === true,
+      })
+      qc.setQueryData(['laundry-card-settings'], updated)
+    } catch (requestError) {
+      setValues(current => ({ ...current, [key]: previous }))
+      setError(requestError?.response?.data?.error || 'Kart ayarı kaydedilemedi; önceki değer korundu.')
+    } finally {
+      setSaving('')
+    }
+  }
+
+  const rows = [
+    { action: 'intake', key: 'intake_required', title: 'Kabulde kart zorunlu', detail: 'Yeni torba teslim alınırken sakin kartı veya gerekçe ister.' },
+    { action: 'delivery', key: 'delivery_required', title: 'Teslimde kart zorunlu', detail: 'Hazır torba teslim edilirken sakin kartı veya gerekçe ister.' },
+  ]
+
+  return (
+    <div className="panel">
+      <div className="panel-header">
+        <div>
+          <span className="panel-title">KART SİSTEMİ</span>
+          <div className="panel-subtitle">İki anahtar bağımsızdır ve otomatik açılmaz.</div>
+        </div>
+        {!canEdit && <span className="badge badge-gray">Salt okunur</span>}
+      </div>
+      <div className="panel-body" style={{ display: 'grid', gap: 12 }}>
+        {isLoading ? <SkeletonTable rows={2} cols={2} /> : rows.map(row => {
+          const checked = values[row.key]
+          return (
+            <div key={row.action} style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16,
+              padding: 14, borderRadius: 10, background: 'var(--surface2)', border: '1px solid var(--border)',
+            }}>
+              <div>
+                <strong style={{ display: 'block', fontSize: 13 }}>{row.title}</strong>
+                <span style={{ color: 'var(--text3)', fontSize: 10 }}>{row.detail}</span>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={checked}
+                aria-label={row.title}
+                onClick={() => toggle(row.action)}
+                disabled={!canEdit || saving === row.action}
+                style={{
+                  minWidth: 72, padding: '7px 10px', borderRadius: 18, cursor: canEdit ? 'pointer' : 'not-allowed',
+                  border: `1px solid ${checked ? 'rgba(34,197,94,.55)' : 'var(--border)'}`,
+                  background: checked ? 'rgba(34,197,94,.14)' : 'var(--surface)',
+                  color: checked ? 'var(--green)' : 'var(--text3)', fontWeight: 800, fontSize: 10,
+                }}
+              >
+                {saving === row.action ? '...' : checked ? 'AÇIK' : 'KAPALI'}
+              </button>
+            </div>
+          )
+        })}
+        {error && <div className="alert alert-danger">{error}</div>}
+        {!canEdit && <div className="alert alert-info">Mevcut durumu görebilirsiniz. Anahtarları yalnız kampüs yöneticisi değiştirebilir.</div>}
+      </div>
+    </div>
+  )
+}
 
 // migration 072 — ütü politikası. 'ask' = tür için karar verilmemiş.
 const IRONING_CHOICES = [
@@ -421,6 +523,7 @@ export default function LaundrySettings() {
           { key: 'goals',    label: '🎯 Hedefler' },
           { key: 'blocks',   label: '🏢 Bloklar' },
           { key: 'stock',    label: '📦 Stok' },
+          { key: 'cards',    label: '🪪 Kart Sistemi' },
           { key: 'garment-types', label: '👔 Kıyafet Tipleri' },
         ].map(t => (
           <button key={t.key} onClick={() => setTab(t.key)} style={{
@@ -532,6 +635,7 @@ export default function LaundrySettings() {
       {tab === 'goals' && <GoalsSettings />}
       {tab === 'blocks' && <BlockSettings />}
       {tab === 'stock' && <SupplySettings />}
+      {tab === 'cards' && <CardSystemSettings />}
       {tab === 'garment-types' && (
         <div className="panel">
           <div className="panel-header"><span className="panel-title">KIYAFet TİPLERİ</span></div>

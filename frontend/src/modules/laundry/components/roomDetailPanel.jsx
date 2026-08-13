@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from '../api.js'
 import { BLOCK_BY_NAME } from '../../../shared/blocks.js'
@@ -10,6 +10,10 @@ import {
 import { STATUS_LABEL, STATUS_COLOR, formatRelative } from './roomsShared.js'
 import { OccupantRow, PremiumGarmentsCard } from './roomsCards.jsx'
 import { InlineNewRecord } from './roomsNewRecord.jsx'
+import LaundryCardPanel from '../../laundry-kiosk/LaundryCardPanel.jsx'
+import {
+  cardGateMessage, cardGateReady, cardRequestFields, emptyLaundryCard, useLaundryCardRequirement,
+} from '../laundryCard.js'
 
 export default function RoomDetailPanel({ block, room_no, onClose }) {
   const qc = useQueryClient()
@@ -40,6 +44,14 @@ export default function RoomDetailPanel({ block, room_no, onClose }) {
   const [actionItem, setActionItem] = useState(null)        // expanded action panel
   const [batchAction, setBatchAction] = useState(null)      // 'deliver' | 'lost'
   const [batchInput, setBatchInput] = useState('')
+  const [laundryCard, setLaundryCard] = useState(emptyLaundryCard)
+  const { required: cardRequired } = useLaundryCardRequirement('delivery')
+  const cardReady = cardGateReady({ required: cardRequired, online: true, value: laundryCard })
+  const cardMessage = cardGateMessage({ required: cardRequired, online: true, value: laundryCard })
+
+  useEffect(() => {
+    setLaundryCard(emptyLaundryCard())
+  }, [actionItem, batchAction, block, room_no])
 
   // Timeline filtreleri
   const [tlStatus, setTlStatus] = useState('all')   // all | active | delivered | lost
@@ -62,12 +74,12 @@ export default function RoomDetailPanel({ block, room_no, onClose }) {
     onSuccess: () => { refetch(); qc.invalidateQueries({ queryKey: ['laundry-items'] }); qc.invalidateQueries({ queryKey: ['laundry-rooms-overview'] }); setActionItem(null) },
   })
   const deliver = useMutation({
-    mutationFn: ({ id, delivered_to }) => laundryApi.deliverItem(id, { delivered_to }),
-    onSuccess: () => { refetch(); qc.invalidateQueries({ queryKey: ['laundry-items'] }); qc.invalidateQueries({ queryKey: ['laundry-rooms-overview'] }); setActionItem(null) },
+    mutationFn: ({ id, delivered_to }) => laundryApi.deliverItem(id, { delivered_to, ...cardRequestFields(laundryCard) }),
+    onSuccess: () => { refetch(); qc.invalidateQueries({ queryKey: ['laundry-items'] }); qc.invalidateQueries({ queryKey: ['laundry-rooms-overview'] }); setActionItem(null); setLaundryCard(emptyLaundryCard()) },
   })
   const batchDeliverMut = useMutation({
-    mutationFn: (delivered_to) => laundryApi.batchDeliver({ item_ids: [...selectedIds], delivered_to }),
-    onSuccess: () => { refetch(); qc.invalidateQueries({ queryKey: ['laundry-items'] }); qc.invalidateQueries({ queryKey: ['laundry-rooms-overview'] }); setSelectedIds(new Set()); setBatchAction(null); setBatchInput('') },
+    mutationFn: (delivered_to) => laundryApi.batchDeliver({ item_ids: [...selectedIds], delivered_to, ...cardRequestFields(laundryCard) }),
+    onSuccess: () => { refetch(); qc.invalidateQueries({ queryKey: ['laundry-items'] }); qc.invalidateQueries({ queryKey: ['laundry-rooms-overview'] }); setSelectedIds(new Set()); setBatchAction(null); setBatchInput(''); setLaundryCard(emptyLaundryCard()) },
   })
   const batchLostMut = useMutation({
     mutationFn: (notes) => laundryApi.batchLost([...selectedIds], notes),
@@ -468,12 +480,24 @@ export default function RoomDetailPanel({ block, room_no, onClose }) {
                 )}
                 {batchAction === 'deliver' && (
                   <>
+                    <div style={{ flexBasis: '100%' }}>
+                      <LaundryCardPanel
+                        action="delivery"
+                        required={cardRequired}
+                        room={{ item_id: [...selectedIds][0] }}
+                        verifyCard={laundryApi.verifyCard}
+                        value={laundryCard}
+                        onChange={setLaundryCard}
+                        resetKey={`batch-${block}-${room_no}`}
+                        captureHid
+                      />
+                    </div>
                     <input className="form-input" value={batchInput} autoFocus
                       onChange={e => setBatchInput(e.target.value)}
                       placeholder="Teslim alan adı..."
                       style={{ flex: 1, minWidth: 120, height: 28, fontSize: 11 }} />
                     <button onClick={() => batchInput.trim() && batchDeliverMut.mutate(batchInput.trim())}
-                      disabled={!batchInput.trim() || batchDeliverMut.isPending}
+                      disabled={!batchInput.trim() || !cardReady || batchDeliverMut.isPending}
                       className="btn btn-primary btn-xs">✓ Teslim et</button>
                     <button onClick={() => { setBatchAction(null); setBatchInput('') }} className="btn btn-ghost btn-xs">İptal</button>
                   </>
@@ -569,13 +593,29 @@ export default function RoomDetailPanel({ block, room_no, onClose }) {
 
                     {/* Per-item action menu (Faz 3) */}
                     {expanded && !batchMode && (
-                      <ItemActionMenu
-                        item={it}
-                        onAdvance={() => advance.mutate({ id: it.id })}
-                        onDeliver={(name) => deliver.mutate({ id: it.id, delivered_to: name })}
-                        onLost={(note) => markLost.mutate({ id: it.id, notes: note })}
-                        onClose={() => setActionItem(null)}
-                      />
+                      <>
+                        {it.status === 'ready' && (
+                          <LaundryCardPanel
+                            action="delivery"
+                            required={cardRequired}
+                            room={{ item_id: it.id }}
+                            verifyCard={laundryApi.verifyCard}
+                            value={laundryCard}
+                            onChange={setLaundryCard}
+                            resetKey={it.id}
+                            captureHid
+                          />
+                        )}
+                        <ItemActionMenu
+                          item={it}
+                          onAdvance={() => advance.mutate({ id: it.id })}
+                          onDeliver={(name) => deliver.mutate({ id: it.id, delivered_to: name })}
+                          onLost={(note) => markLost.mutate({ id: it.id, notes: note })}
+                          onClose={() => setActionItem(null)}
+                          deliverDisabled={!cardReady}
+                          deliverDisabledMessage={cardMessage}
+                        />
+                      </>
                     )}
                   </div>
                 )

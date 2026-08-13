@@ -5,6 +5,10 @@ import { BLOCK_BY_NAME } from '../../../shared/blocks.js'
 import { SIGN_BLOCKS } from '../../laundry-kiosk/constants.js'
 import { CLOTHING_ICONS } from './NewItemModal.jsx'
 import ColorPatternPicker, { ColorPatternDisplay, parseColors } from './ColorPatternPicker.jsx'
+import LaundryCardPanel from '../../laundry-kiosk/LaundryCardPanel.jsx'
+import {
+  cardGateReady, cardRequestFields, emptyLaundryCard, useLaundryCardRequirement,
+} from '../laundryCard.js'
 
 const SIZES = ['XS','S','M','L','XL','XXL','3XL','4XL','36','38','40','42','44','46','48']
 const QUICK_TYPES = ['Pantolon', 'Gömlek', 'T-Shirt', 'İç Çamaşırı', 'Çorap', 'Havlu', 'Eşofman', 'Mont']
@@ -83,6 +87,8 @@ export function InlineNewRecord({ roomId, block, room_no, occupants, lastBag, on
   const [needsIroning, setNeedsIroning] = useState(isPremium)  // premium → varsayılan açık
   const [expandedIdx, setExpandedIdx] = useState(null)  // hangi clothing item açık
   const [error, setError] = useState('')
+  const [laundryCard, setLaundryCard] = useState(emptyLaundryCard)
+  const { required: cardRequired } = useLaundryCardRequirement('intake')
   const sigRef = useRef(null)
 
   // Premium parça inline form state
@@ -134,6 +140,7 @@ export function InlineNewRecord({ roomId, block, room_no, occupants, lastBag, on
         phone_override: phoneOverride.trim() || undefined,
         intake_signature: intake_signature || undefined,
         clothing_items,
+        ...cardRequestFields(laundryCard),
       })
       if (isPremium && premiumRows.length > 0) {
         await laundryApi.addPremiumGarments(item.id, premiumRows)
@@ -177,6 +184,7 @@ export function InlineNewRecord({ roomId, block, room_no, occupants, lastBag, on
   const removePremiumRow = (i) => setPremiumRows(prev => prev.filter((_, idx) => idx !== i))
 
   const isValid = totalCount >= 1 && (!needsSig || sigRef.current?.isEmpty() === false)
+  const cardReady = cardGateReady({ required: cardRequired, online: true, value: laundryCard })
 
   return (
     <div className="panel" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -459,12 +467,23 @@ export function InlineNewRecord({ roomId, block, room_no, occupants, lastBag, on
         </div>
       )}
 
+      <LaundryCardPanel
+        action="intake"
+        required={cardRequired}
+        room={{ room_id: roomId }}
+        verifyCard={laundryApi.verifyCard}
+        value={laundryCard}
+        onChange={setLaundryCard}
+        resetKey={roomId}
+        captureHid
+      />
+
       {error && (
         <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--red)' }}>{error}</div>
       )}
 
       <button className="btn btn-primary" onClick={() => create.mutate()}
-        disabled={create.isPending || totalCount < 1}
+        disabled={create.isPending || totalCount < 1 || !cardReady}
         style={{ letterSpacing: 1, opacity: create.isPending ? 0.6 : 1 }}>
         {create.isPending ? 'Kaydediliyor…' : '✓ KAYDET'}
       </button>

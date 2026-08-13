@@ -68,6 +68,9 @@ export const laundryApi = {
   // ── Settings ───────────────────────────────────────────────────────────
   getLaundrySettings: () => api.get('/laundry/settings').then(r => r.data),
   updateLaundrySetting: (key, value) => api.put(`/laundry/settings/${encodeURIComponent(key)}`, { value }).then(r => r.data),
+  getCardSettings: () => api.get('/laundry/card-settings').then(r => r.data),
+  updateCardSetting: (action, required) => api.put('/laundry/card-settings', { action, required }).then(r => r.data),
+  verifyCard: (data) => api.post('/laundry/card-verify', data).then(r => r.data),
 
   // ── Premium Garments ───────────────────────────────────────────────────
   getPremiumGarments: (item_id) => api.get(`/laundry/items/${item_id}/garments`).then(r => r.data),
@@ -84,7 +87,9 @@ export const laundryApi = {
   advancePremiumGarment: (id) => api.patch(`/laundry/garments/${id}/advance`).then(r => r.data),
   bulkAdvancePremiumGarments: (item_id, garment_ids, to_status) => api.post(`/laundry/items/${item_id}/garments/bulk-advance`, { garment_ids, to_status }).then(r => r.data),
   deliverPremiumGarment: (id, data) => api.patch(`/laundry/garments/${id}/deliver`, data).then(r => r.data),
-  bulkDeliverPremiumGarments: (item_id, garment_ids, delivered_to, signature_data) => api.post(`/laundry/items/${item_id}/premium-deliver`, { garment_ids, delivered_to, signature_data }).then(r => r.data),
+  bulkDeliverPremiumGarments: (item_id, garment_ids, delivered_to, signature_data, card = {}) => api.post(`/laundry/items/${item_id}/premium-deliver`, {
+    garment_ids, delivered_to, signature_data, ...card,
+  }).then(r => r.data),
   getPremiumDeliveryReceipt: (item_id) => api.get(`/laundry/items/${item_id}/delivery-receipt`).then(r => r.data),
   searchPremiumGarments: (params) => api.get('/laundry/garments/search', { params }).then(r => r.data),
   getRoomGarmentHistory: (room_id, params) => api.get(`/laundry/rooms/${room_id}/garment-history`, { params }).then(r => r.data),

@@ -23,10 +23,12 @@ export default function LaundryCardPanel({
   required,
   room,
   kioskApi,
+  verifyCard,
   value,
   onChange,
   online = true,
   resetKey,
+  captureHid = false,
 }) {
   const [cameraOpen, setCameraOpen] = useState(false)
   const [nfcBusy, setNfcBusy] = useState(false)
@@ -53,14 +55,17 @@ export default function LaundryCardPanel({
     }
     update({ card_code: code, verification: { checking: true, message: 'Kart doğrulanıyor…' } })
     try {
-      const response = await kioskApi.post('/self-service/laundry-kiosk/card-verify', {
+      const request = {
         action,
         ...room,
         card_code: code,
-      })
+      }
+      const responseData = verifyCard
+        ? await verifyCard(request)
+        : (await kioskApi.post('/self-service/laundry-kiosk/card-verify', request)).data
       if (requestSequence !== sequence.current) return
-      update({ card_code: code, verification: response.data })
-      globalThis.navigator?.vibrate?.(response.data.code === 'mismatch' ? [80, 50, 80] : 40)
+      update({ card_code: code, verification: responseData })
+      globalThis.navigator?.vibrate?.(responseData.code === 'mismatch' ? [80, 50, 80] : 40)
     } catch (error) {
       if (requestSequence !== sequence.current) return
       update({
@@ -72,7 +77,7 @@ export default function LaundryCardPanel({
         },
       })
     }
-  }, [action, kioskApi, online, room, update])
+  }, [action, kioskApi, online, room, update, verifyCard])
 
   useEffect(() => {
     if (previousResetKey.current === resetKey) return
@@ -90,6 +95,28 @@ export default function LaundryCardPanel({
     window.addEventListener('laundry-card-scan', listener)
     return () => window.removeEventListener('laundry-card-scan', listener)
   }, [required, verify])
+
+  useEffect(() => {
+    if (!required || !captureHid) return undefined
+    let buffer = ''
+    let lastAt = 0
+    const listener = event => {
+      const now = Date.now()
+      if (now - lastAt > 90) buffer = ''
+      lastAt = now
+      if (event.key === 'Enter') {
+        const code = buffer.trim()
+        buffer = ''
+        if (!code.toUpperCase().startsWith('AVS-C:')) return
+        event.preventDefault()
+        verify(code)
+        return
+      }
+      if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) buffer += event.key
+    }
+    window.addEventListener('keydown', listener)
+    return () => window.removeEventListener('keydown', listener)
+  }, [captureHid, required, verify])
 
   if (!required) return null
 

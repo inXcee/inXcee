@@ -6,7 +6,6 @@ import LaundryReport from './LaundryReport.jsx'
 import LaundrySettings from './LaundrySettings.jsx'
 import { useLaundrySSE } from '../../shared/hooks/useLaundrySSE.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
-import { inputDialog } from '../../shared/components/InputDialog.jsx'
 import {
   DndContext,
   PointerSensor,
@@ -41,6 +40,8 @@ import DeliveredTodaySection   from './components/DeliveredTodaySection.jsx'
 import QuickAdd                from './components/QuickAdd.jsx'
 import FullRecordsView         from './components/FullRecordsView.jsx'
 import { KanbanCard, KanbanCol } from './components/KanbanBoard.jsx'
+import BatchDeliveryModal from './components/BatchDeliveryModal.jsx'
+import { useLaundryCardRequirement } from './laundryCard.js'
 
 // ── Filter config ──────────────────────────────────────────────
 const FILTERS = [
@@ -72,6 +73,8 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
   const [batchMode,      setBatchMode]      = useState(false)
   const [selectedIds,    setSelectedIds]    = useState(new Set())
   const [showBatchAssign, setShowBatchAssign] = useState(false)
+  const [batchDeliveryItems, setBatchDeliveryItems] = useState(null)
+  const { required: deliveryCardRequired } = useLaundryCardRequirement('delivery')
   const [verificationTarget, setVerificationTarget] = useState(null)
   const [archiveSelectedItem, setArchiveSelectedItem] = useState(null)
   const [groupByRoom,    setGroupByRoom]    = useState(
@@ -311,21 +314,14 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
     })
   }
 
-  const handleBatchDeliver = async () => {
-    const name = await inputDialog({
-      title: 'Toplu Teslim',
-      body: `${selectedIds.size} kaydı kime teslim ediyorsunuz?`,
-      placeholder: 'Alıcı adı',
-    })
-    if (!name) return
-    laundryApi.batchDeliver({ item_ids: [...selectedIds], delivered_to: name })
-      .then(() => {
-        qc.invalidateQueries({ queryKey: ['laundry-items'] })
-        setSelectedIds(new Set())
-        setBatchMode(false)
-        addToast(`${selectedIds.size} kayıt teslim edildi`, 'success')
-      })
-      .catch(err => addToast(err?.response?.data?.error || 'Toplu teslim başarısız', 'error'))
+  const handleBatchDeliver = () => {
+    const selectedItems = allItems.filter(item => selectedIds.has(item.id))
+    const rooms = new Set(selectedItems.map(item => item.room_id || `${item.block}:${item.room_no}`))
+    if (deliveryCardRequired && rooms.size > 1) {
+      addToast('Kart zorunluyken toplu teslimi oda bazında ayrı yapın.', 'error')
+      return
+    }
+    setBatchDeliveryItems(selectedItems)
   }
 
   const handleBatchLost = async () => {
@@ -790,6 +786,19 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
           selectedIds={selectedIds}
           onClose={() => setShowBatchAssign(false)}
           onSuccess={() => { setShowBatchAssign(false); setSelectedIds(new Set()); setBatchMode(false) }}
+        />
+      )}
+      {batchDeliveryItems && (
+        <BatchDeliveryModal
+          items={batchDeliveryItems}
+          onClose={() => setBatchDeliveryItems(null)}
+          onSuccess={() => {
+            qc.invalidateQueries({ queryKey: ['laundry-items'] })
+            setBatchDeliveryItems(null)
+            setSelectedIds(new Set())
+            setBatchMode(false)
+            addToast('Toplu teslim tamamlandı', 'success')
+          }}
         />
       )}
       {verificationTarget && (

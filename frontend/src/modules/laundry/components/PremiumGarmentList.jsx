@@ -1,6 +1,10 @@
 import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { laundryApi } from '../api.js'
+import LaundryCardPanel from '../../laundry-kiosk/LaundryCardPanel.jsx'
+import {
+  cardGateReady, cardRequestFields, emptyLaundryCard, useLaundryCardRequirement,
+} from '../laundryCard.js'
 import ColorPatternPicker, { ColorPatternDisplay, parseColors, colorHex } from './ColorPatternPicker.jsx'
 
 const GARMENT_TYPES = [
@@ -118,6 +122,9 @@ export default function PremiumGarmentList({ item }) {
   const [bulkDeliverTo, setBulkDeliverTo] = useState('')
   const brandRef = useRef(null)
   const [quickText, setQuickText] = useState('')
+  const [laundryCard, setLaundryCard] = useState(emptyLaundryCard)
+  const { required: cardRequired } = useLaundryCardRequirement('delivery')
+  const cardReady = cardGateReady({ required: cardRequired, online: true, value: laundryCard })
 
   const { data: garments = [], isLoading } = useQuery({
     queryKey: ['premium-garments', item.id],
@@ -174,22 +181,28 @@ export default function PremiumGarmentList({ item }) {
     mutationFn: (to) => laundryApi.bulkDeliverPremiumGarments(
       item.id,
       readyGarments.map(g => g.id),
-      to
+      to,
+      undefined,
+      cardRequestFields(laundryCard)
     ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['premium-garments', item.id] })
       qc.invalidateQueries({ queryKey: ['laundry-items'] })
       setDeliveredTo('')
+      setLaundryCard(emptyLaundryCard())
     },
   })
 
   const bulkDeliverMut = useMutation({
-    mutationFn: ({ ids, to }) => laundryApi.bulkDeliverPremiumGarments(item.id, ids, to),
+    mutationFn: ({ ids, to }) => laundryApi.bulkDeliverPremiumGarments(
+      item.id, ids, to, undefined, cardRequestFields(laundryCard)
+    ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['premium-garments', item.id] })
       qc.invalidateQueries({ queryKey: ['laundry-items'] })
       setSelected(new Set())
       setBulkDeliverTo('')
+      setLaundryCard(emptyLaundryCard())
     },
   })
 
@@ -310,6 +323,19 @@ export default function PremiumGarmentList({ item }) {
       </div>
 
       {/* ── Bulk Action Bar ── */}
+      {readyGarments.length > 0 && (
+        <LaundryCardPanel
+          action="delivery"
+          required={cardRequired}
+          room={{ item_id: item.id }}
+          verifyCard={laundryApi.verifyCard}
+          value={laundryCard}
+          onChange={setLaundryCard}
+          resetKey={item.id}
+          captureHid
+        />
+      )}
+
       {selected.size > 0 && (
         <div style={{
           display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8,
@@ -339,7 +365,7 @@ export default function PremiumGarmentList({ item }) {
                 onChange={e => setBulkDeliverTo(e.target.value)}
                 placeholder="Teslim alan..."
                 onKeyDown={e => {
-                  if (e.key === 'Enter' && bulkDeliverTo.trim()) {
+                  if (e.key === 'Enter' && bulkDeliverTo.trim() && cardReady) {
                     bulkDeliverMut.mutate({ ids: selectedReady.map(g => g.id), to: bulkDeliverTo.trim() })
                   }
                 }}
@@ -351,7 +377,7 @@ export default function PremiumGarmentList({ item }) {
               />
               <button
                 onClick={() => bulkDeliverMut.mutate({ ids: selectedReady.map(g => g.id), to: bulkDeliverTo.trim() })}
-                disabled={!bulkDeliverTo.trim() || bulkDeliverMut.isPending}
+                disabled={!bulkDeliverTo.trim() || !cardReady || bulkDeliverMut.isPending}
                 style={{
                   padding: '3px 10px', borderRadius: 5,
                   border: `1px solid ${bulkDeliverTo.trim() ? 'var(--green)' : 'var(--border)'}`,
@@ -717,11 +743,11 @@ export default function PremiumGarmentList({ item }) {
               onChange={e => setDeliveredTo(e.target.value)}
               placeholder="Teslim alan adı..."
               style={{ flex: 1, fontSize: 11 }}
-              onKeyDown={e => { if (e.key === 'Enter' && deliveredTo.trim()) deliverMut.mutate(deliveredTo.trim()) }}
+              onKeyDown={e => { if (e.key === 'Enter' && deliveredTo.trim() && cardReady) deliverMut.mutate(deliveredTo.trim()) }}
             />
             <button
               onClick={() => deliverMut.mutate(deliveredTo.trim())}
-              disabled={!deliveredTo.trim() || deliverMut.isPending}
+              disabled={!deliveredTo.trim() || !cardReady || deliverMut.isPending}
               style={{
                 padding: '7px 16px', borderRadius: 6, cursor: 'pointer', flexShrink: 0,
                 background: deliveredTo.trim() ? 'var(--green)' : 'var(--surface)',

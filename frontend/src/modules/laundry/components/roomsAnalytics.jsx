@@ -277,7 +277,7 @@ export function SlaCard({ violations }) {
   )
 }
 
-export function ItemActionMenu({ item, onAdvance, onDeliver, onLost, onClose }) {
+export function ItemActionMenu({ item, onAdvance, onDeliver, onLost, onClose, deliverDisabled = false, deliverDisabledMessage = '' }) {
   const [mode, setMode] = useState(null)  // null | 'deliver' | 'lost'
   const [input, setInput] = useState('')
   const nextLabel = NEXT_STATUS_LABEL[item.status]
@@ -314,8 +314,11 @@ export function ItemActionMenu({ item, onAdvance, onDeliver, onLost, onClose }) 
             placeholder="Teslim alan adı..."
             style={{ flex: 1, minWidth: 100, height: 26, fontSize: 11 }} />
           <button onClick={() => input.trim() && onDeliver(input.trim())}
-            disabled={!input.trim()}
+            disabled={!input.trim() || deliverDisabled}
             className="btn btn-primary btn-xs">✓</button>
+          {deliverDisabled && deliverDisabledMessage && (
+            <span style={{ width: '100%', color: 'var(--red)', fontSize: 9 }}>{deliverDisabledMessage}</span>
+          )}
           <button onClick={() => { setMode(null); setInput('') }} className="btn btn-ghost btn-xs">İptal</button>
         </>
       )}

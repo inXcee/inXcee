@@ -4,6 +4,7 @@ import { renderWithProviders } from '../../../test/renderWithProviders.jsx'
 
 vi.mock('../api.js', () => ({
   laundryApi: {
+    getCardSettings: vi.fn(() => Promise.resolve({ intake_required: false, delivery_required: false })),
     getItems: vi.fn(() => Promise.resolve([])),
     getRooms: vi.fn(() => Promise.resolve([])),
     createItem: vi.fn(() => Promise.resolve({})),
