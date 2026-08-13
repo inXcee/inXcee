@@ -120,7 +120,7 @@ describe('genel bakış sayfası', () => {
   it('kalem sayısını ve açıklamaları gösterir', async () => {
     kur()
     expect(await screen.findByRole('heading', { name: 'AYARLAR' })).toBeInTheDocument()
-    expect(screen.getByText(/37 ayar sayfası/)).toBeInTheDocument()
+    expect(screen.getByText(/38 ayar sayfası/)).toBeInTheDocument()
     expect(screen.getByText('Yedek alma ve geri yükleme')).toBeInTheDocument()
   })
 

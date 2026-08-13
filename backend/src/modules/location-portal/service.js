@@ -320,3 +320,21 @@ export function getActiveCoverage() {
     WHERE sl.is_active=1
   `).get()
 }
+
+// Baskı föyü için: aktif QR'ı olan konumlar, sayfalama YOK (hepsi basılacak).
+// listServiceLocations sayfalıyor; 1078 etiketi 100'er 100'er basmak işe yaramaz.
+export function listPrintableQrCodes(filters = {}) {
+  const normalized = normalizeFilters(filters)
+  const params = []
+  const where = locationWhere(normalized, params, { activeOnly: true })
+  return getDB().prepare(`
+    SELECT sl.id, sl.display_name, sl.block, sl.floor, sl.area_code, sl.location_type,
+           q.token
+    FROM service_locations sl
+    JOIN location_qr_codes q ON q.location_id=sl.id AND q.status='active'
+    ${where}
+    ORDER BY sl.block, sl.floor,
+      CASE sl.location_type WHEN 'room' THEN 0 ELSE 1 END,
+      sl.display_name
+  `).all(...params)
+}

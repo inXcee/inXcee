@@ -6,12 +6,14 @@ import {
   generateMissingQrCodes,
   getActiveCoverage,
   getPortalSettings,
+  listPrintableQrCodes,
   listServiceLocations,
   revokeLocationQr,
   rotateLocationQr,
   syncServiceLocations,
   updatePortalSettings,
 } from './service.js'
+import { buildQrSheetPdf } from './qrSheetPdf.js'
 
 export const locationPortalRouter = Router()
 const canRead = requireRole('campus_manager', 'shift_supervisor')
@@ -78,4 +80,19 @@ locationPortalRouter.post('/locations/:id/revoke', ...managerOnly, (req, res) =>
     logAudit(req.user.id, 'location_portal_qr_revoke', 'location_portal', Number(req.params.id), req.body?.reason || null)
     res.json(result)
   } catch (error) { sendError(res, error, 'QR iptal edilemedi') }
+})
+
+// Basılabilir QR föyü: sayfa başına 12 etiket, kesim çizgili.
+// Filtreler listeyle aynı (blok/kat/tip) — bir bloğu tek seferde basmak için.
+locationPortalRouter.get('/qr-sheet.pdf', ...managerOnly, async (req, res) => {
+  try {
+    const kayitlar = listPrintableQrCodes(req.query)
+    const baseUrl = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`
+    const pdf = await buildQrSheetPdf(kayitlar, { baseUrl })
+    const ad = ['qr', req.query.block, req.query.floor, req.query.type].filter(Boolean).join('-')
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `attachment; filename="${ad || 'qr'}-etiketleri.pdf"`)
+    logAudit(req.user.id, 'location_portal_qr_print', 'location_portal', null, `${kayitlar.length} etiket`)
+    res.send(pdf)
+  } catch (error) { sendError(res, error, 'QR föyü üretilemedi') }
 })
