@@ -12,7 +12,10 @@ export default defineConfig({
   },
   server: {
     host: '0.0.0.0',
-    port: 5174,
+    // PORT verilmişse ona uyar (önizleme aracı boş bir port atıyor), verilmemişse
+    // 5174'te kalır — CLAUDE.md, e2e varsayılanı ve WebAuthn dev origin'i bu port.
+    // .env'deki PORT yalnız backend sürecine enjekte edilir, buraya sızmaz.
+    port: Number(process.env.PORT) || 5174,
     proxy: {
       '/api': backendTarget,
       '/public': backendTarget,
