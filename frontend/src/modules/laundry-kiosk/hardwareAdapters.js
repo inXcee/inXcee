@@ -9,14 +9,26 @@ export function attachHidScanner(onScan, { timeoutMs = 80, minLength = 3 } = {})
   let lastAt = 0
   const listener = event => {
     const tag = event.target?.tagName?.toLowerCase()
-    if (tag === 'input' || tag === 'textarea' || event.ctrlKey || event.altKey || event.metaKey) return
+    const formField = tag === 'input' || tag === 'textarea'
+    if (event.ctrlKey || event.altKey || event.metaKey) return
     const now = Date.now()
     if (now - lastAt > timeoutMs) buffer = ''
     lastAt = now
     if (event.key === 'Enter') {
       const code = buffer.trim()
       buffer = ''
-      if (code.length >= minLength) onScan(code)
+      const laundryCard = code.toLocaleUpperCase('tr-TR').startsWith('AVS-C:')
+      if (code.length >= minLength && (!formField || laundryCard)) {
+        if (formField && laundryCard) {
+          event.preventDefault()
+          const currentValue = String(event.target.value || '')
+          if (currentValue.endsWith(code)) {
+            event.target.value = currentValue.slice(0, -code.length)
+            event.target.dispatchEvent(new Event('input', { bubbles: true }))
+          }
+        }
+        onScan(code)
+      }
       return
     }
     if (event.key?.length === 1) buffer += event.key
@@ -29,6 +41,7 @@ export function hardwareCapabilities() {
   return {
     hid_keyboard: true,
     camera: Boolean(navigator.mediaDevices?.getUserMedia),
+    web_nfc: typeof globalThis.NDEFReader === 'function',
     local_qr: true,
     browser_print: typeof window.print === 'function',
   }

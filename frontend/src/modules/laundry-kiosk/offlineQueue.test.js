@@ -17,20 +17,21 @@ beforeEach(async () => {
 describe('şifreli çamaşır kuyruğu', () => {
   it('payload, fotoğraf ve imzayı AES-GCM kayıt içinde korur', async () => {
     const photo = 'data:image/jpeg;base64,Zm90bw=='
+    const roomNo = 'ROOM-PLAINTEXT-SECRET'
     await enqueueBag({
-      payload: { client_request_id: 'bag-offline-0001', room_no: '101', intake_signature: 'data:image/png;base64,aW16YQ==' },
+      payload: { client_request_id: 'bag-offline-0001', room_no: roomNo, intake_signature: 'data:image/png;base64,aW16YQ==' },
       photoDataUrl: photo,
       label: 'A1-101',
     })
 
     const queue = await listQueued()
-    expect(queue[0].payload).toMatchObject({ room_no: '101', intake_signature: expect.stringContaining('base64') })
+    expect(queue[0].payload).toMatchObject({ room_no: roomNo, intake_signature: expect.stringContaining('base64') })
     expect(queue[0].blobIds).toHaveLength(1)
     expect(await getBlob(queue[0].blobIds[0])).toBeInstanceOf(Blob)
 
     const raw = await _getRawQueueForTests()
     expect(raw[0]).not.toHaveProperty('payload')
-    expect(JSON.stringify(raw[0])).not.toContain('101')
+    expect(JSON.stringify(raw[0])).not.toContain(roomNo)
     expect(raw[0].encrypted_payload.encrypted).toBeTruthy()
   })
 
@@ -54,6 +55,28 @@ describe('şifreli çamaşır kuyruğu', () => {
       throw error
     })
     expect((await listQueued())[0]).toMatchObject({ status: 'rejected', error: 'Geçersiz oda' })
+  })
+
+  it('kart verisini şifreler ve sunucunun kart reddini manuel incelemeye alır', async () => {
+    await enqueueBag({
+      payload: {
+        client_request_id: 'bag-offline-card-1',
+        room_no: '104',
+        card_code: 'AVS-C:SECRET',
+        card_override_reason: null,
+      },
+    })
+    const raw = await _getRawQueueForTests()
+    expect(JSON.stringify(raw[0])).not.toContain('AVS-C:SECRET')
+
+    const result = await flushQueue(async form => {
+      expect(form.get('card_code')).toBe('AVS-C:SECRET')
+      const error = new Error('Kart iptal edilmiş')
+      error.response = { status: 409, data: { error: 'Kart iptal edilmiş', card_gate: { code: 'inactive_card', required: true } } }
+      throw error
+    })
+    expect(result.rejected[0]).toMatchObject({ status: 'manual_review', error: 'Kart iptal edilmiş' })
+    expect((await listQueued())[0]).toMatchObject({ status: 'manual_review' })
   })
 
   it('eski localStorage kuyruğunu kayıp olmadan IndexedDB içine taşır', async () => {

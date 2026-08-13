@@ -6,6 +6,11 @@ import { listQueued, enqueueBag, flushQueue, buildBagFormData, migrateLegacyLaun
 import { listRecentRooms, rememberRoom } from './recentRooms.js'
 import { downscalePhoto } from '../../shared/photo.js'
 import { printLaundryLabel } from './hardwareAdapters.js'
+import LaundryCardPanel from './LaundryCardPanel.jsx'
+import {
+  cacheCardSettings, cardGateMessage, cardGateReady, cardRequestFields,
+  emptyLaundryCard, readCachedCardSettings,
+} from './laundryCard.js'
 
 function newRequestId() {
   return globalThis.crypto?.randomUUID?.() ||
@@ -114,6 +119,7 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
   const [queuedCount, setQueuedCount] = useState(0)
   const [flushMsg, setFlushMsg] = useState(null)
   const [lastBagGarments, setLastBagGarments] = useState(null) // { count, garments } | null
+  const [laundryCard, setLaundryCard] = useState(emptyLaundryCard)
 
   // Çevrimdışı kuyruğu boşalt — açılışta + bağlantı gelince
   const tryFlush = useCallback(async () => {
@@ -151,6 +157,16 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
   }, [])
   const [activeByPerson, setActiveByPerson] = useState([]) // [{ name, count, statuses }]
+
+  const cardSettings = useQuery({
+    queryKey: ['laundry-kiosk-card-settings'],
+    queryFn: () => kioskApi.get('/self-service/laundry-kiosk/card-settings').then(response => cacheCardSettings(response.data)),
+    initialData: readCachedCardSettings,
+    staleTime: 30000,
+    retry: false,
+  }).data
+  const cardRequired = Boolean(cardSettings?.intake_required)
+  const cardReady = cardGateReady({ required: cardRequired, online: isOnline, value: laundryCard })
 
   // Oda seçilince son torbanın kıyafet listesini hazırla — "↺ kopyala" için.
   // Aynı kişi her hafta benzer torba verir; tek tuşla tekrar girişi hızlandırır.
@@ -318,6 +334,7 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
     setError('')
     setSuccess(null)
     setPhotoDataUrl(null)
+    setLaundryCard(emptyLaundryCard())
     setStep(1)
     sigRef.current?.clear()
   }
@@ -334,6 +351,7 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
     setError('')
     if (!selection.block || !selection.room_no) return setError('Blok ve oda seçin')
     if (derivedItemCount === 0) return setError('Kıyafet ekleyin (fotoğraflı seçin veya parça sayısını işaretleyin)')
+    if (!cardReady) return setError(cardGateMessage({ required: cardRequired, online: isOnline, value: laundryCard }))
 
     let sig = null
     if (needsSig) {
@@ -358,6 +376,7 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
       intake_signature: sig,
       client_request_id: clientRequestId,
       tracking_mode: normalizedGarments.length > 0 ? 'individual' : 'count_only',
+      ...cardRequestFields(laundryCard),
     }
 
     setSubmitting(true)
@@ -371,6 +390,7 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
         room: `${selection.block}-${selection.room_no}`,
         owner: selection.person?.full_name || null,
         item_count: derivedItemCount,
+        card_warning: res.data.card_warning || null,
       })
     } catch (e) {
       if (!e.response) {
@@ -405,6 +425,11 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
         {success.queued && (
           <div style={{ color: '#94a3b8', fontSize: 13 }}>
             Veri, fotoğraf ve imza şifreli saklandı. Bağlantı gelince otomatik gönderilecek ({queuedCount} bekleyen).
+          </div>
+        )}
+        {success.card_warning && (
+          <div role="alert" style={{ color: '#fcd34d', background: 'rgba(245,158,11,.12)', border: '1px solid #f59e0b', borderRadius: 10, padding: 10 }}>
+            ⚠ {success.card_warning}
           </div>
         )}
         {success.bag_no && (
@@ -625,6 +650,16 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
           📡 Çevrimdışısınız — kayıt, fotoğraf ve imza bu cihazda AES-GCM ile şifrelenerek güvenli kuyruğa alınacak.
         </div>
       )}
+      <LaundryCardPanel
+        action="intake"
+        required={cardRequired}
+        room={{ block: selection.block, room_no: selection.room_no }}
+        kioskApi={kioskApi}
+        value={laundryCard}
+        onChange={setLaundryCard}
+        online={isOnline}
+        resetKey={`${selection.block || ''}|${selection.room_no || ''}|${selection.person?.id || ''}`}
+      />
       <div>
         <label style={lbl}>Fotoğraf (opsiyonel)</label>
         {photoDataUrl ? (
@@ -684,8 +719,8 @@ export default function EntryForm({ kioskApi, focusedRoom, onConsumeFocus }) {
             İleri →
           </button>
         ) : (
-          <button onClick={submit} disabled={!canSubmit || submitting}
-            style={{ ...btnStyle('#2563eb', '#fff', !canSubmit || submitting), flex: 1 }}>
+          <button onClick={submit} disabled={!canSubmit || !cardReady || submitting}
+            style={{ ...btnStyle('#2563eb', '#fff', !canSubmit || !cardReady || submitting), flex: 1 }}>
             {submitting ? 'Kaydediliyor…' : '✓ Torba Kaydet'}
           </button>
         )}

@@ -26,6 +26,19 @@ describe('laundry kiosk hardware adapters', () => {
     input.remove()
   })
 
+  it('AVS-C kart kodunu form alanı odaktayken bile aktif kart paneline yollar', () => {
+    const onScan = vi.fn()
+    const detach = attachHidScanner(onScan)
+    const input = document.createElement('input')
+    input.value = 'AVS-C:SAKIN'
+    document.body.appendChild(input)
+    for (const key of [...'AVS-C:SAKIN', 'Enter']) input.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+    expect(onScan).toHaveBeenCalledWith('AVS-C:SAKIN')
+    expect(input.value).toBe('')
+    detach()
+    input.remove()
+  })
+
   it('manuel yedek ve yerel QR/yazdırma yeteneklerini bildirir', () => {
     expect(hardwareCapabilities()).toMatchObject({ hid_keyboard: true, local_qr: true, browser_print: true })
   })

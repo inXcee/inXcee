@@ -96,11 +96,14 @@ export async function flushQueue(postFn) {
     } catch (error) {
       const retries = (item.retries || 0) + 1
       const httpStatus = error?.response?.status
-      const status = httpStatus === 409
-        ? 'conflict'
-        : httpStatus >= 400 && httpStatus < 500
-          ? 'rejected'
-          : retries >= 3 ? 'manual_review' : 'pending'
+      const cardRejected = Boolean(error?.response?.data?.card_gate)
+      const status = cardRejected
+        ? 'manual_review'
+        : httpStatus === 409
+          ? 'conflict'
+          : httpStatus >= 400 && httpStatus < 500
+            ? 'rejected'
+            : retries >= 3 ? 'manual_review' : 'pending'
       const reason = error?.response?.data?.error || error?.message || 'Senkronizasyon başarısız'
       await updateQueueItem(item.id, { status, retries, error: reason, last_attempt_at: new Date().toISOString() })
       if (status === 'conflict') conflicts.push({ label: item.payload?._label, error: reason })

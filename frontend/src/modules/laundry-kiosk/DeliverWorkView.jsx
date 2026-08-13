@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { blockNeedsSignature } from './constants.js'
 import { PATTERNS } from './garmentPalette.js'
+import LaundryCardPanel from './LaundryCardPanel.jsx'
+import {
+  cacheCardSettings, cardGateMessage, cardGateReady, cardRequestFields,
+  emptyLaundryCard, readCachedCardSettings,
+} from './laundryCard.js'
 import { garmentTagSummary } from './garmentTag.js'
 
 function recordNeedsSignature(record) {
@@ -105,6 +111,28 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
   const [deliveryPhoto, setDeliveryPhoto] = useState(null)
   // Oda bazlı toplu teslim — aynı odanın birden çok torbası tek isim + tek imzayla
   const [roomBulk, setRoomBulk] = useState(null) // { block, room_no, bags, people }
+  const [laundryCard, setLaundryCard] = useState(emptyLaundryCard)
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine)
+
+  useEffect(() => {
+    const update = () => setIsOnline(navigator.onLine)
+    window.addEventListener('online', update)
+    window.addEventListener('offline', update)
+    return () => {
+      window.removeEventListener('online', update)
+      window.removeEventListener('offline', update)
+    }
+  }, [])
+
+  const cardSettings = useQuery({
+    queryKey: ['laundry-kiosk-card-settings'],
+    queryFn: () => kioskApi.get('/self-service/laundry-kiosk/card-settings').then(response => cacheCardSettings(response.data)),
+    initialData: readCachedCardSettings,
+    staleTime: 30000,
+    retry: false,
+  }).data
+  const cardRequired = Boolean(cardSettings?.delivery_required)
+  const cardReady = cardGateReady({ required: cardRequired, online: isOnline, value: laundryCard })
 
   const filteredBags = useMemo(() => {
     const query = searchQuery.trim().toLocaleLowerCase('tr-TR')
@@ -132,6 +160,7 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
 
   async function openRoomBulk(group) {
     setError('')
+    setLaundryCard(emptyLaundryCard())
     try {
       const response = await kioskApi.get(
         `/self-service/laundry-kiosk/room-persons?block=${encodeURIComponent(group.block)}&room_no=${encodeURIComponent(group.room_no)}`
@@ -147,6 +176,8 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
     if (!roomBulk) return
     const name = deliveredName.trim()
     if (!name) return setError('Teslim alan kişiyi seçin veya yazın')
+    if (!isOnline) return setError('Teslim işlemleri bağlantı gelmeden yapılamaz')
+    if (!cardReady) return setError(cardGateMessage({ required: cardRequired, online: isOnline, value: laundryCard }))
     const needsSignature = recordNeedsSignature(roomBulk.bags[0])
     if (needsSignature && signatureRef.current?.isEmpty()) return setError('İmza gerekli')
     setSubmitting(true)
@@ -157,6 +188,7 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
         room_no: roomBulk.room_no,
         delivered_name: name,
         signature: needsSignature ? signatureRef.current?.toDataURL() : null,
+        ...cardRequestFields(laundryCard),
       })
       const failures = response.data.failed || []
       setRoomBulk(null)
@@ -164,7 +196,9 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
       await loadBags()
       // Sebebi de göster: "2 başarısız" tek başına operatöre ne yapacağını
       // söylemiyor (çoğunlukla parçalar henüz ütüden/yıkamadan çıkmamıştır).
-      setError(failures.length > 0
+      setError(response.data.card_warning
+        ? `⚠ ${response.data.card_warning}`
+        : failures.length > 0
         ? `✓ ${response.data.delivered} torba teslim edildi · ${failures.length} başarısız — ${failures[0].error}`
         : `✓ ${response.data.delivered} torba tek imzayla teslim edildi`)
     } catch (requestError) {
@@ -189,6 +223,7 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
 
   async function selectBag(bag) {
     setError('')
+    setLaundryCard(emptyLaundryCard())
     try {
       const [detailResponse, peopleResponse] = await Promise.all([
         kioskApi.get(`/self-service/laundry-kiosk/bags/${bag.id}`),
@@ -253,6 +288,14 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
       setError('Teslim alan kişiyi seçin veya adını yazın')
       return
     }
+    if (!isOnline) {
+      setError('Teslim işlemleri bağlantı gelmeden yapılamaz')
+      return
+    }
+    if (!cardReady) {
+      setError(cardGateMessage({ required: cardRequired, online: isOnline, value: laundryCard }))
+      return
+    }
     if (recipientType === 'third_party' && thirdPartyReason.trim().length < 10) {
       setError('Üçüncü kişiye teslim için en az 10 karakter gerekçe yazın')
       return
@@ -277,11 +320,14 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
           form.append('recipient_type', recipientType)
           if (thirdPartyReason.trim()) form.append('third_party_reason', thirdPartyReason.trim())
           if (signature) form.append('signature', signature)
+          const cardFields = cardRequestFields(laundryCard)
+          if (cardFields.card_code) form.append('card_code', cardFields.card_code)
+          if (cardFields.card_override_reason) form.append('card_override_reason', cardFields.card_override_reason)
           if (deliveryPhoto) form.append('photo', deliveryPhoto, 'teslim.jpg')
           return kioskApi.post('/self-service/laundry-kiosk/deliver-partial', form)
         })()
         : await kioskApi.post(`/self-service/laundry-kiosk/bags/${detail.bag.id}/deliver`, {
-          delivered_name: deliveredName.trim(), signature,
+          delivered_name: deliveredName.trim(), signature, ...cardRequestFields(laundryCard),
         })
       if (response.data.approval_required) {
         setError(`Yönetici onayı bekleniyor · Teslim #${response.data.id}`)
@@ -302,11 +348,14 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
       setRecipientType('owner')
       setThirdPartyReason('')
       setDeliveryPhoto(null)
+      setLaundryCard(emptyLaundryCard())
       if (remaining === 0) {
         setDeliveredName('')
         setPeople([])
       }
-      setError(`✓ ${response.data.delivered_count} parça teslim edildi${remaining ? ` · ${remaining} parça açık kaldı` : ''}`)
+      setError(response.data.card_warning
+        ? `⚠ ${response.data.card_warning}`
+        : `✓ ${response.data.delivered_count} parça teslim edildi${remaining ? ` · ${remaining} parça açık kaldı` : ''}`)
     } catch (requestError) {
       setError(requestError.response?.data?.error || 'Teslim kaydedilemedi; tekrar deneyin')
     } finally {
@@ -371,7 +420,7 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
     return (
       <section style={panel}>
         <header style={headerRow}>
-          <button type="button" onClick={() => { setRoomBulk(null); setError('') }} style={smallButton}>
+          <button type="button" onClick={() => { setRoomBulk(null); setLaundryCard(emptyLaundryCard()); setError('') }} style={smallButton}>
             ← Geri
           </button>
           <div style={{ textAlign: 'right' }}>
@@ -435,6 +484,17 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
             placeholder="Teslim alan kişinin adı" style={textInput} />
         </div>
 
+        <LaundryCardPanel
+          action="delivery"
+          required={cardRequired}
+          room={{ block: roomBulk.block, room_no: roomBulk.room_no }}
+          kioskApi={kioskApi}
+          value={laundryCard}
+          onChange={setLaundryCard}
+          online={isOnline}
+          resetKey={`room|${roomBulk.block}|${roomBulk.room_no}|${deliveredName}`}
+        />
+
         {needsSignature && (
           <div>
             <div style={eyebrow}>İMZA</div>
@@ -442,15 +502,15 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
           </div>
         )}
 
-        <button type="button" onClick={submitRoomBulk} disabled={submitting}
+        <button type="button" onClick={submitRoomBulk} disabled={submitting || !isOnline || !cardReady}
           style={{
             minHeight: 56,
             border: 0,
             borderRadius: 13,
             fontSize: 15,
             fontWeight: 900,
-            background: submitting ? '#1e293b' : '#15803d',
-            color: submitting ? '#475569' : '#fff',
+            background: submitting || !isOnline || !cardReady ? '#1e293b' : '#15803d',
+            color: submitting || !isOnline || !cardReady ? '#475569' : '#fff',
           }}>
           {submitting ? 'Teslim ediliyor…' : `✓ ${roomBulk.bags.length} Torbayı Birden Teslim Et`}
         </button>
@@ -546,7 +606,7 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
   return (
     <section style={panel}>
       <header style={headerRow}>
-        <button type="button" onClick={() => setDetail(null)} style={smallButton}>← Geri</button>
+        <button type="button" onClick={() => { setDetail(null); setLaundryCard(emptyLaundryCard()) }} style={smallButton}>← Geri</button>
         <div style={{ textAlign: 'right' }}>
           <div style={{ color: '#38bdf8', fontFamily: 'monospace', fontWeight: 900 }}>
             {detail.bag.bag_no}
@@ -591,6 +651,17 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
         <input value={deliveredName} onChange={event => setDeliveredName(event.target.value)}
           placeholder="Teslim alan ad soyad" style={textInput} />
       </div>
+
+      <LaundryCardPanel
+        action="delivery"
+        required={cardRequired}
+        room={{ item_id: detail.bag.id }}
+        kioskApi={kioskApi}
+        value={laundryCard}
+        onChange={setLaundryCard}
+        online={isOnline}
+        resetKey={`bag|${detail.bag.id}|${deliveredName}`}
+      />
 
       <div style={deliveryOptions}>
         <div style={eyebrow}>TESLİM YETKİSİ VE KANIT</div>
@@ -755,13 +826,13 @@ export default function DeliverWorkView({ kioskApi, focusedBag, onConsumeFocus }
         </div>
       )}
 
-      <button type="button" onClick={deliver} disabled={!canDeliver || submitting}
+      <button type="button" onClick={deliver} disabled={!canDeliver || submitting || !isOnline || !cardReady}
         style={{
           minHeight: 56,
           border: 0,
           borderRadius: 13,
-          background: canDeliver && !submitting ? '#15803d' : '#1e293b',
-          color: canDeliver && !submitting ? '#fff' : '#475569',
+          background: canDeliver && !submitting && isOnline && cardReady ? '#15803d' : '#1e293b',
+          color: canDeliver && !submitting && isOnline && cardReady ? '#fff' : '#475569',
           fontSize: 15,
           fontWeight: 900,
         }}>

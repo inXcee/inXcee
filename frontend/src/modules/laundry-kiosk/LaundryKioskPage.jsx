@@ -97,6 +97,18 @@ export default function LaundryKioskPage() {
   async function openScannedCode(rawCode) {
     const code = String(rawCode || '').trim()
     if (!code || !avsToken) return
+    if (code.toLocaleUpperCase('tr-TR').startsWith('AVS-C:')) {
+      const handled = !window.dispatchEvent(new CustomEvent('laundry-card-scan', {
+        detail: { code },
+        cancelable: true,
+      }))
+      setScanNotice({
+        type: handled ? 'ok' : 'error',
+        code,
+        text: handled ? 'Kod aktif çamaşır kartı paneline gönderildi.' : 'Kart okutmak için kabul veya teslim ekranını açın.',
+      })
+      return
+    }
     try {
       const response = await kioskApi.get('/self-service/laundry-kiosk/bags?scope=all')
       const bag = (response.data || []).find(item => item.bag_no === code || (item.garments || []).some(garment => garment.garment_code === code))
