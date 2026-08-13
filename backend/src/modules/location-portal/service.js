@@ -321,6 +321,19 @@ export function getActiveCoverage() {
   `).get()
 }
 
+// Tek konumun basılabilir kaydı. Aktif QR yoksa token null döner; çağıran
+// tarafın bunu "etiket üretilemez" diye ele alması gerekir — token'sız etiket,
+// üstünde çalışmayan QR olan kâğıttır.
+export function getPrintableLocation(id) {
+  return getDB().prepare(`
+    SELECT sl.id, sl.display_name, sl.block, sl.floor, sl.area_code, sl.location_type,
+           sl.is_active, q.token, q.id AS qr_code_id
+    FROM service_locations sl
+    LEFT JOIN location_qr_codes q ON q.location_id=sl.id AND q.status='active'
+    WHERE sl.id=?
+  `).get(Number(id)) || null
+}
+
 // Baskı föyü için: aktif QR'ı olan konumlar, sayfalama YOK (hepsi basılacak).
 // listServiceLocations sayfalıyor; 1078 etiketi 100'er 100'er basmak işe yaramaz.
 export function listPrintableQrCodes(filters = {}) {

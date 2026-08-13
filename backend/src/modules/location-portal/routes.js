@@ -5,6 +5,7 @@ import { logger } from '../../shared/logger.js'
 import {
   generateMissingQrCodes,
   getActiveCoverage,
+  getPrintableLocation,
   getPortalSettings,
   listPrintableQrCodes,
   listServiceLocations,
@@ -15,6 +16,8 @@ import {
 } from './service.js'
 import { buildQrSheetPdf } from './qrSheetPdf.js'
 import { streamLabelPdf, streamCalibrationPdf } from './labelPdf.js'
+import { buildLabelSvg, buildLabelPng } from './labelSvg.js'
+import { getPortalAnalytics } from './analytics.js'
 import { TEMPLATES, DEFAULT_TEMPLATE, shortSerial, normalizeCalibration } from './labelTemplates.js'
 import {
   cancelBatch,
@@ -304,4 +307,75 @@ locationPortalRouter.post('/deployments/:id/issue', ...fieldRoles, (req, res) =>
     logAudit(req.user.id, 'location_portal_label_issue', 'location_portal', kayit.location_id, kayit.status)
     res.json(kayit)
   } catch (error) { sendError(res, error, 'Etiket durumu kaydedilemedi') }
+})
+
+// ---------------------------------------------------------------------------
+// Faz 6 — Yönetim ve analitik
+// ---------------------------------------------------------------------------
+
+// QR analitiği. Sayıların yanında NEDEN o sayı olduğu da döner: kapalı hizmetin
+// sıfırı ile kullanılmayan hizmetin sıfırı aynı şey değildir.
+locationPortalRouter.get('/analytics', ...canRead, (req, res) => {
+  try { res.json(getPortalAnalytics(req.query)) }
+  catch (error) { sendError(res, error, 'QR analitiği alınamadı') }
+})
+
+// Tekli etiket — kâğıt yırtıldığında 135 sayfalık föyü yeniden basmamak için.
+// Üç biçim aynı kaynaktan üretilir; PDF föyle, SVG/PNG birbiriyle aynı görünür.
+function tekliKonum(req, res) {
+  const konum = getPrintableLocation(req.params.id)
+  if (!konum) { res.status(404).json({ error: 'Konum bulunamadı' }); return null }
+  if (!konum.token) {
+    // Sessizce boş etiket vermek, üstünde çalışmayan QR olan kâğıt üretmektir.
+    res.status(409).json({
+      error: 'Bu konumun aktif QR kodu yok — önce QR üretilmeli',
+      code: 'no_active_qr',
+    })
+    return null
+  }
+  return konum
+}
+
+function tekliDosyaAdi(konum, uzanti) {
+  const ad = String(konum.display_name || konum.id).replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '')
+  return `${ad || 'etiket'}.${uzanti}`
+}
+
+locationPortalRouter.get('/locations/:id/label.pdf', ...canRead, (req, res) => {
+  try {
+    const konum = tekliKonum(req, res)
+    if (!konum) return
+    const baseUrl = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `attachment; filename="${tekliDosyaAdi(konum, 'pdf')}"`)
+    streamLabelPdf([konum], { template: 'tek_100x70', baseUrl, cutMarks: false, pipeTo: res })
+      .on('error', (err) => {
+        logger.error({ err, id: konum.id }, '[location-portal.label.pdf]')
+        res.destroy(err)
+      })
+  } catch (error) { sendError(res, error, 'Etiket PDF üretilemedi') }
+})
+
+locationPortalRouter.get('/locations/:id/label.svg', ...canRead, async (req, res) => {
+  try {
+    const konum = tekliKonum(req, res)
+    if (!konum) return
+    const baseUrl = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`
+    const svg = await buildLabelSvg(konum, { baseUrl })
+    res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8')
+    res.setHeader('Content-Disposition', `attachment; filename="${tekliDosyaAdi(konum, 'svg')}"`)
+    res.send(svg)
+  } catch (error) { sendError(res, error, 'Etiket SVG üretilemedi') }
+})
+
+locationPortalRouter.get('/locations/:id/label.png', ...canRead, async (req, res) => {
+  try {
+    const konum = tekliKonum(req, res)
+    if (!konum) return
+    const baseUrl = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`
+    const png = await buildLabelPng(konum, { baseUrl, dpi: req.query.dpi })
+    res.setHeader('Content-Type', 'image/png')
+    res.setHeader('Content-Disposition', `attachment; filename="${tekliDosyaAdi(konum, 'png')}"`)
+    res.send(png)
+  } catch (error) { sendError(res, error, 'Etiket PNG üretilemedi') }
 })

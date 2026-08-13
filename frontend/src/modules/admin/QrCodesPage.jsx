@@ -26,6 +26,11 @@ function sureTahmini(adet) {
   return `~${Math.ceil(sn / 60)} dakika`
 }
 
+const kucukDugme = {
+  border: '1px solid var(--border)', background: 'transparent', color: 'var(--text)',
+  borderRadius: 6, padding: '1px 7px', fontSize: 10, cursor: 'pointer',
+}
+
 const TIPLER = [
   { value: '', label: 'Tüm konum tipleri' },
   { value: 'room', label: 'Odalar' },
@@ -100,6 +105,41 @@ export default function QrCodesPage() {
     }
   }
 
+  // Tekli etiket indirme. api istemcisi kullanilir ki Authorization gitsin.
+  const tekliIndir = async (item, bicim) => {
+    setHata('')
+    try {
+      const res = await api.get(`/location-portal/locations/${item.id}/label.${bicim}`, { responseType: 'blob' })
+      const tur = bicim === 'pdf' ? 'application/pdf' : bicim === 'svg' ? 'image/svg+xml' : 'image/png'
+      const url = URL.createObjectURL(new Blob([res.data], { type: tur }))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${item.display_name.replace(/[^\p{L}\p{N}]+/gu, '-')}.${bicim}`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      setHata(e?.response?.status === 409
+        ? 'Bu konumun aktif QR kodu yok — önce QR üretin.'
+        : 'Etiket indirilemedi.')
+    }
+  }
+
+  // Token döndürmek/iptal etmek kapıdaki kâğıdı ÖLDÜRÜR. Sessizce yapılmamalı.
+  const tokenIslem = async (item, islem) => {
+    const soru = islem === 'rotate'
+      ? `${item.display_name} için yeni QR üretilsin mi? Kapıdaki etiket çalışmaz hâle gelir ve yeniden basılması gerekir.`
+      : `${item.display_name} QR'ı iptal edilsin mi? Kapıdaki etiket çalışmaz hâle gelir ve yerine yenisi ÜRETİLMEZ.`
+    if (!window.confirm(soru)) return
+    setHata('')
+    try {
+      await api.post(`/location-portal/locations/${item.id}/${islem}`, { reason: 'admin' })
+      qc.invalidateQueries({ queryKey: ['qr-locations'] })
+      qc.invalidateQueries({ queryKey: ['qr-coverage'] })
+    } catch (e) {
+      setHata(e?.response?.data?.error || 'İşlem başarısız')
+    }
+  }
+
   const k = kapsam.data || {}
   const eksik = (k.active_locations ?? 0) - (k.locations_with_qr ?? 0)
   const kayitlar = liste.data?.items || []
@@ -157,7 +197,7 @@ export default function QrCodesPage() {
         )}
       </div>
 
-      {/* Filtresiz baskı 1078 etiket / ~11 sn / 6 MB — bilerek seçilsin. */}
+      {/* Filtresiz baskı bütün kampüsü kapsar — süre sunucu ölçümünden hesaplanır. */}
       {!blok && !kat && !tip && (
         <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 10 }}>
           Filtre seçmezseniz tüm konumlar basılır: {k.active_locations ?? '?'} etiket,{' '}
@@ -206,6 +246,34 @@ export default function QrCodesPage() {
               <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: item.token ? 'var(--green)' : 'var(--red)' }}>
                 {item.token ? 'QR var' : 'QR YOK'}
               </span>
+              {/* Tekli etiket: kâğıt yırtıldığında 135 sayfalık föyü yeniden
+                  basmamak için. Üç biçim de aynı kaynaktan üretilir. */}
+              {item.token && (
+                <span style={{ display: 'flex', gap: 4 }}>
+                  {['pdf', 'svg', 'png'].map(bicim => (
+                    <button
+                      key={bicim} type="button" style={kucukDugme}
+                      onClick={() => tekliIndir(item, bicim)}
+                    >
+                      {bicim.toUpperCase()}
+                    </button>
+                  ))}
+                  <button
+                    type="button" style={kucukDugme}
+                    title="Token yenilenir; kapıdaki etiket geçersiz olur ve yeniden basılmalıdır"
+                    onClick={() => tokenIslem(item, 'rotate')}
+                  >
+                    Döndür
+                  </button>
+                  <button
+                    type="button" style={{ ...kucukDugme, color: 'var(--red)' }}
+                    title="QR iptal edilir; kapıdaki etiket çalışmaz hâle gelir"
+                    onClick={() => tokenIslem(item, 'revoke')}
+                  >
+                    İptal
+                  </button>
+                </span>
+              )}
             </div>
           ))}
           {toplam > kayitlar.length && (

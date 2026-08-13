@@ -67,6 +67,7 @@ const SettingsPage = lazy(() => import('./modules/admin/SettingsPage.jsx'))
 const SettingsHomePage = lazy(() => import('./modules/admin/SettingsHomePage.jsx'))
 const QrCodesPage = lazy(() => import('./modules/admin/QrCodesPage.jsx'))
 const QrDeploymentPage = lazy(() => import('./modules/admin/QrDeploymentPage.jsx'))
+const QrPortalAdminPage = lazy(() => import('./modules/admin/QrPortalAdminPage.jsx'))
 const SettingsLayout = lazy(() => import('./modules/admin/SettingsLayout.jsx'))
 const KioskPinPage = lazy(() => import('./modules/admin/KioskPinPage.jsx'))
 const AnnouncementsPage = lazy(() => import('./modules/admin/AnnouncementsPage.jsx'))
@@ -388,6 +389,7 @@ export default function App() {
               <Route path="kiosk-pins" element={<SettingsRoute settingsKey="kiosk-pins"><KioskPinPage /></SettingsRoute>} />
               <Route path="qr-codes" element={<SettingsRoute settingsKey="qr-codes"><QrCodesPage /></SettingsRoute>} />
               <Route path="qr-deployment" element={<SettingsRoute settingsKey="qr-deployment"><QrDeploymentPage /></SettingsRoute>} />
+              <Route path="qr-portal" element={<SettingsRoute settingsKey="qr-portal"><QrPortalAdminPage /></SettingsRoute>} />
               <Route path="kiosk-devices" element={<SettingsRoute settingsKey="kiosk-devices"><KioskDevicesPage /></SettingsRoute>} />
               <Route path="announcements" element={<SettingsRoute settingsKey="announcements"><AnnouncementsPage /></SettingsRoute>} />
               <Route path="avs-workers" element={<SettingsRoute settingsKey="avs-workers"><AvsWorkersPage /></SettingsRoute>} />
