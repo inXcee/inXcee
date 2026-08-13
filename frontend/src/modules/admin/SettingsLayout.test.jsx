@@ -5,6 +5,7 @@ import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import SettingsLayout from './SettingsLayout.jsx'
 import SettingsHomePage from './SettingsHomePage.jsx'
 import { useAuthStore } from '../../shared/store/authStore.js'
+import { SETTINGS_GROUPS, canAccess } from './settingsNav.js'
 
 // Ayarlar 37 kalemlik düz bir listeydi: arama yok, açıklama yok, gruplar hep
 // açık. Buradaki testler aramanın, sık kullanılanın ve rol süzgecinin
@@ -120,7 +121,12 @@ describe('genel bakış sayfası', () => {
   it('kalem sayısını ve açıklamaları gösterir', async () => {
     kur()
     expect(await screen.findByRole('heading', { name: 'AYARLAR' })).toBeInTheDocument()
-    expect(screen.getByText(/38 ayar sayfası/)).toBeInTheDocument()
+    // Sayı TEK KAYNAKTAN türetiliyor: elle "38" yazmak her yeni ayar
+    // sayfasında bu testi ilgisiz yere kırardı.
+    const yoneticiKalem = SETTINGS_GROUPS
+      .flatMap(g => g.items)
+      .filter(i => canAccess(i.key, 'campus_manager')).length
+    expect(screen.getByText(new RegExp(`${yoneticiKalem} ayar sayfası`))).toBeInTheDocument()
     expect(screen.getByText('Yedek alma ve geri yükleme')).toBeInTheDocument()
   })
 

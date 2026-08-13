@@ -329,7 +329,7 @@ export function listPrintableQrCodes(filters = {}) {
   const where = locationWhere(normalized, params, { activeOnly: true })
   return getDB().prepare(`
     SELECT sl.id, sl.display_name, sl.block, sl.floor, sl.area_code, sl.location_type,
-           q.token
+           q.token, q.id AS qr_code_id
     FROM service_locations sl
     JOIN location_qr_codes q ON q.location_id=sl.id AND q.status='active'
     ${where}

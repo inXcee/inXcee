@@ -14,6 +14,24 @@ import {
   updatePortalSettings,
 } from './service.js'
 import { buildQrSheetPdf } from './qrSheetPdf.js'
+import { streamLabelPdf, streamCalibrationPdf } from './labelPdf.js'
+import { TEMPLATES, DEFAULT_TEMPLATE, shortSerial, normalizeCalibration } from './labelTemplates.js'
+import {
+  cancelBatch,
+  confirmBatchPrinted,
+  createPrintBatch,
+  getBatch,
+  getBatchItems,
+  getBatchPrintables,
+  getDeploymentReport,
+  listOpenMismatches,
+  listPrintBatches,
+  listStaleLabels,
+  markInstalled,
+  reportLabelIssue,
+  resolveMismatch,
+  verifyDeployment,
+} from './deployment.js'
 
 export const locationPortalRouter = Router()
 const canRead = requireRole('campus_manager', 'shift_supervisor')
@@ -95,4 +113,195 @@ locationPortalRouter.get('/qr-sheet.pdf', ...managerOnly, async (req, res) => {
     logAudit(req.user.id, 'location_portal_qr_print', 'location_portal', null, `${kayitlar.length} etiket`)
     res.send(pdf)
   } catch (error) { sendError(res, error, 'QR föyü üretilemedi') }
+})
+
+// ---------------------------------------------------------------------------
+// Faz 7 — Profesyonel basım ve saha kurulumu
+// ---------------------------------------------------------------------------
+//
+// Akış bilerek iki adımlı: önce PARTİ açılır (POST /print-batches), sonra o
+// partinin PDF'i indirilir. Tek adımda GET ile hem basıp hem kaydetmek,
+// tarayıcının ön-getirmesi veya kullanıcının sayfayı yenilemesiyle hayalet
+// partiler üretirdi. Ayrıca PDF filtreden değil PARTİ KAYDINDAN üretilir: aynı
+// parti numarası her indirişte aynı kâğıdı verir.
+
+const fieldRoles = requireRole('campus_manager', 'shift_supervisor', 'housekeeper', 'technical')
+
+locationPortalRouter.get('/label-templates', ...canRead, (_req, res) => {
+  try {
+    res.json({
+      templates: Object.values(TEMPLATES).map(t => ({
+        key: t.key,
+        label: t.label,
+        cols: t.cols,
+        rows: t.rows,
+        per_page: t.cols * t.rows,
+        label_w_mm: t.labelW,
+        label_h_mm: t.labelH,
+        qr_mm: t.qrMm,
+      })),
+      default_template: DEFAULT_TEMPLATE,
+    })
+  } catch (error) { sendError(res, error, 'Etiket şablonları alınamadı') }
+})
+
+locationPortalRouter.post('/print-batches', ...managerOnly, (req, res) => {
+  try {
+    const filtre = req.body?.filters || {}
+    const kayitlar = listPrintableQrCodes(filtre)
+    const parti = createPrintBatch({
+      templateKey: req.body?.template,
+      calibration: req.body?.calibration,
+      filters: filtre,
+      note: req.body?.note || null,
+      userId: req.user.id,
+      // Seri, PDF'te de aynı saf fonksiyonla üretilir; kâğıttaki seri ile kayıt
+      // birebir tutar.
+      items: kayitlar.map(k => ({
+        location_id: k.id,
+        qr_code_id: k.qr_code_id,
+        serial: shortSerial(k, k.token),
+      })),
+    })
+    logAudit(req.user.id, 'location_portal_print_batch', 'location_portal', parti.id,
+      `${parti.batch_no} — ${parti.label_count} etiket (${parti.template_key})`)
+    res.status(201).json(parti)
+  } catch (error) { sendError(res, error, 'Basım partisi açılamadı') }
+})
+
+locationPortalRouter.get('/print-batches', ...canRead, (req, res) => {
+  try { res.json(listPrintBatches({ limit: req.query.limit })) }
+  catch (error) { sendError(res, error, 'Basım partileri alınamadı') }
+})
+
+locationPortalRouter.get('/print-batches/:id/items', ...canRead, (req, res) => {
+  try { res.json({ items: getBatchItems(req.params.id) }) }
+  catch (error) { sendError(res, error, 'Parti içeriği alınamadı') }
+})
+
+locationPortalRouter.post('/print-batches/:id/confirm', ...managerOnly, (req, res) => {
+  try {
+    const parti = confirmBatchPrinted(req.params.id, req.user.id)
+    logAudit(req.user.id, 'location_portal_batch_confirm', 'location_portal', parti.id, parti.batch_no)
+    res.json(parti)
+  } catch (error) { sendError(res, error, 'Parti onaylanamadı') }
+})
+
+locationPortalRouter.post('/print-batches/:id/cancel', ...managerOnly, (req, res) => {
+  try {
+    const sonuc = cancelBatch(req.params.id, req.user.id)
+    logAudit(req.user.id, 'location_portal_batch_cancel', 'location_portal', sonuc.id,
+      `${sonuc.reverted_deployments} kurulum kaydı geri alındı`)
+    res.json(sonuc)
+  } catch (error) { sendError(res, error, 'Parti iptal edilemedi') }
+})
+
+// Partinin etiket PDF'i. Akış, hedefe çizim başlamadan bağlanır; 1078 etiket
+// belleğe yığılmaz.
+locationPortalRouter.get('/print-batches/:id/labels.pdf', ...managerOnly, (req, res) => {
+  try {
+    const parti = getBatch(req.params.id)
+    if (!parti) { res.status(404).json({ error: 'Basım partisi bulunamadı' }); return }
+    const kayitlar = getBatchPrintables(parti.id)
+    const baseUrl = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`
+
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `attachment; filename="${parti.batch_no}-etiketler.pdf"`)
+    const doc = streamLabelPdf(kayitlar, {
+      template: parti.template_key,
+      calibration: JSON.parse(parti.calibration_json || '{}'),
+      filters: JSON.parse(parti.filter_json || '{}'),
+      batchNo: parti.batch_no,
+      baseUrl,
+      pipeTo: res,
+    })
+    doc.on('error', (err) => {
+      logger.error({ err, batch: parti.batch_no }, '[location-portal.labels.pdf]')
+      res.destroy(err)
+    })
+  } catch (error) { sendError(res, error, 'Etiket PDF üretilemedi') }
+})
+
+// Kalibrasyon sayfası: QR yok, yalnız etiket sınırları. Basılıp etiket kâğıdının
+// üstüne tutularak kayma ölçülür.
+locationPortalRouter.get('/calibration.pdf', ...managerOnly, (req, res) => {
+  try {
+    const cal = normalizeCalibration({
+      offset_x_mm: req.query.offset_x_mm,
+      offset_y_mm: req.query.offset_y_mm,
+      scale: req.query.scale,
+    })
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', 'attachment; filename="etiket-kalibrasyon.pdf"')
+    streamCalibrationPdf({ template: req.query.template, calibration: cal, pipeTo: res })
+  } catch (error) { sendError(res, error, 'Kalibrasyon sayfası üretilemedi') }
+})
+
+locationPortalRouter.get('/deployments', ...canRead, (req, res) => {
+  try { res.json(getDeploymentReport(req.query)) }
+  catch (error) { sendError(res, error, 'Kurulum raporu alınamadı') }
+})
+
+locationPortalRouter.get('/deployments/stale', ...canRead, (_req, res) => {
+  try { res.json(listStaleLabels()) }
+  catch (error) { sendError(res, error, 'Bayat etiket listesi alınamadı') }
+})
+
+locationPortalRouter.get('/deployments/mismatches', ...canRead, (_req, res) => {
+  try { res.json(listOpenMismatches()) }
+  catch (error) { sendError(res, error, 'Uyuşmazlık listesi alınamadı') }
+})
+
+locationPortalRouter.post('/deployments/mismatches/:id/resolve', ...fieldRoles, (req, res) => {
+  try {
+    const sonuc = resolveMismatch(req.params.id, req.user.id)
+    logAudit(req.user.id, 'location_portal_mismatch_resolve', 'location_portal', sonuc.id, null)
+    res.json(sonuc)
+  } catch (error) { sendError(res, error, 'Uyuşmazlık kapatılamadı') }
+})
+
+// Görevli kapının önünde etiketi okutur. Beklenen konum gönderildiyse ve QR
+// başka konumu gösteriyorsa DOĞRULAMA SAYILMAZ — yanlış kapıya asılmış etiket
+// sahadaki en sık hatadır, sessizce onaylanmamalıdır.
+locationPortalRouter.post('/deployments/verify', ...fieldRoles, (req, res) => {
+  try {
+    const sonuc = verifyDeployment({
+      token: req.body?.token,
+      expectedLocationId: req.body?.expected_location_id,
+      note: req.body?.note || null,
+      userId: req.user.id,
+    })
+    if (!sonuc.ok) {
+      logAudit(req.user.id, 'location_portal_verify_failed', 'location_portal',
+        sonuc.scanned?.location_id || null, sonuc.code)
+      res.status(409).json(sonuc)
+      return
+    }
+    logAudit(req.user.id, 'location_portal_verify', 'location_portal', sonuc.scanned.location_id, null)
+    res.json(sonuc)
+  } catch (error) { sendError(res, error, 'Etiket doğrulanamadı') }
+})
+
+locationPortalRouter.post('/deployments/install', ...fieldRoles, (req, res) => {
+  try {
+    const sonuc = markInstalled(req.body?.location_ids || [], {
+      userId: req.user.id,
+      note: req.body?.note || null,
+    })
+    logAudit(req.user.id, 'location_portal_install', 'location_portal', null,
+      `${sonuc.updated} konum asıldı olarak işaretlendi`)
+    res.json(sonuc)
+  } catch (error) { sendError(res, error, 'Kurulum kaydedilemedi') }
+})
+
+locationPortalRouter.post('/deployments/:id/issue', ...fieldRoles, (req, res) => {
+  try {
+    const kayit = reportLabelIssue(req.params.id, {
+      status: req.body?.status,
+      note: req.body?.note || null,
+      userId: req.user.id,
+    })
+    logAudit(req.user.id, 'location_portal_label_issue', 'location_portal', kayit.location_id, kayit.status)
+    res.json(kayit)
+  } catch (error) { sendError(res, error, 'Etiket durumu kaydedilemedi') }
 })
