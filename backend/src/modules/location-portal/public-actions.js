@@ -16,7 +16,7 @@ function actionError(message, statusCode, code) {
   return error
 }
 
-function resolveAction(token, settingKey) {
+export function resolveAction(token, settingKey) {
   const location = resolveLocationToken(token)
   if (!location) throw actionError('QR kodu bulunamadı', 404, 'unknown_qr')
   if (location.qr_status !== 'active' || !location.is_active) {
@@ -28,7 +28,7 @@ function resolveAction(token, settingKey) {
   return { location, settings }
 }
 
-function actionActor(location, sessionToken, required) {
+export function actionActor(location, sessionToken, required) {
   if (!sessionToken) {
     if (required) throw actionError('Bu işlem için oda sakini doğrulaması gerekli', 401, 'resident_session_required')
     return { mode: 'anonymous', personnelId: null }

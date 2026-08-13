@@ -30,3 +30,22 @@ export const portalSurveySchema = z.object({
   ].some(value => value != null),
   { message: 'En az bir puan veya yorum gerekli' },
 )
+
+export const portalCleaningCompleteSchema = z.object({
+  client_request_id: clientRequestId,
+  checklist: z.record(z.string(), z.boolean()),
+  note: z.string().trim().max(500, 'Not çok uzun').nullish(),
+})
+
+export const portalCleaningReviewSchema = z.object({
+  client_request_id: clientRequestId,
+  outcome: z.enum(['approved', 'issue'], {
+    errorMap: () => ({ message: 'Geçersiz değerlendirme sonucu' }),
+  }),
+  rating: z.coerce.number().int().min(1, 'Puan 1-5 arasında olmalı').max(5, 'Puan 1-5 arasında olmalı').nullish(),
+  comment: z.string().trim().max(1000, 'Açıklama çok uzun').nullish(),
+}).superRefine((data, context) => {
+  if (data.outcome === 'issue' && (!data.comment || data.comment.length < 3)) {
+    context.addIssue({ code: 'custom', path: ['comment'], message: 'Eksik bildiriminde en az 3 karakter açıklama gerekli' })
+  }
+})

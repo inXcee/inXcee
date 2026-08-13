@@ -7,12 +7,25 @@ import {
   getPublicPortalReceipt,
 } from './public-service.js'
 import { validate } from '../../shared/middleware/validate.js'
+import { requireAvsKiosk } from '../../shared/auth/middleware.js'
 import { logger } from '../../shared/logger.js'
-import { portalFaultSchema, portalSurveySchema } from './public-action-schemas.js'
+import {
+  portalCleaningCompleteSchema,
+  portalCleaningReviewSchema,
+  portalFaultSchema,
+  portalSurveySchema,
+} from './public-action-schemas.js'
 import { submitPortalFault, submitPortalSurvey } from './public-actions.js'
 import {
+  completePortalCleaning,
+  getPortalCleaningStatus,
+  reviewPortalCleaning,
+} from './public-cleaning-actions.js'
+import {
   cleanupPortalImages,
+  encodePortalCleaningPhotos,
   encodePortalFaultPhotos,
+  receivePortalCleaningPhotos,
   receivePortalFaultPhotos,
   verifyPortalFaultPhotos,
 } from './public-upload.js'
@@ -84,6 +97,90 @@ roomPortalRouter.post('/:token/auth', portalLimiter, authLimiter, (req, res) => 
     })
   }
 })
+
+roomPortalRouter.get('/:token/cleaning', portalLimiter, (req, res) => {
+  try {
+    const result = getPortalCleaningStatus({ token: req.params.token, ip: req.ip })
+    res.setHeader('Cache-Control', 'no-store')
+    res.json(result)
+  } catch (error) {
+    if (!error.statusCode) logger.error({ err: error }, '[RoomPortal] Temizlik durumu okunamadı')
+    res.status(error.statusCode || 500).json({
+      error: error.statusCode ? error.message : 'Temizlik durumu okunamadı',
+      code: error.statusCode ? error.code : 'cleaning_status_failed',
+    })
+  }
+})
+
+function parseCleaningChecklist(req, res, next) {
+  if (typeof req.body?.checklist !== 'string') return next()
+  try {
+    req.body.checklist = JSON.parse(req.body.checklist)
+    next()
+  } catch {
+    res.status(400).json({ error: 'Temizlik kontrol listesi geçersiz', code: 'invalid_checklist' })
+  }
+}
+
+roomPortalRouter.post(
+  '/:token/cleaning/complete',
+  portalLimiter,
+  actionLimiter,
+  requireAvsKiosk,
+  receivePortalCleaningPhotos,
+  verifyPortalFaultPhotos,
+  parseCleaningChecklist,
+  validate(portalCleaningCompleteSchema),
+  encodePortalCleaningPhotos,
+  (req, res) => {
+    const imageUrls = req.portalImageUrls || []
+    try {
+      const result = completePortalCleaning({
+        token: req.params.token,
+        workerId: req.user.workerId,
+        body: req.validated,
+        imageUrls,
+        ip: req.ip,
+      })
+      if (!result.keepImages) cleanupPortalImages(imageUrls)
+      const { keepImages: _keepImages, ...publicResult } = result
+      res.setHeader('Cache-Control', 'no-store')
+      res.status(result.replayed ? 200 : 201).json(publicResult)
+    } catch (error) {
+      cleanupPortalImages(imageUrls)
+      if (!error.statusCode) logger.error({ err: error }, '[RoomPortal] Temizlik tamamlanamadı')
+      res.status(error.statusCode || 500).json({
+        error: error.statusCode ? error.message : 'Temizlik tamamlanamadı',
+        code: error.statusCode ? error.code : 'cleaning_complete_failed',
+      })
+    }
+  },
+)
+
+roomPortalRouter.post(
+  '/:token/cleaning/review',
+  portalLimiter,
+  actionLimiter,
+  validate(portalCleaningReviewSchema),
+  (req, res) => {
+    try {
+      const result = reviewPortalCleaning({
+        token: req.params.token,
+        sessionToken: req.get('X-Room-Portal-Session'),
+        body: req.validated,
+        ip: req.ip,
+      })
+      res.setHeader('Cache-Control', 'no-store')
+      res.status(result.replayed ? 200 : 201).json(result)
+    } catch (error) {
+      if (!error.statusCode) logger.error({ err: error }, '[RoomPortal] Temizlik değerlendirmesi kaydedilemedi')
+      res.status(error.statusCode || 500).json({
+        error: error.statusCode ? error.message : 'Temizlik değerlendirmesi kaydedilemedi',
+        code: error.statusCode ? error.code : 'cleaning_review_failed',
+      })
+    }
+  },
+)
 
 roomPortalRouter.post(
   '/:token/faults',

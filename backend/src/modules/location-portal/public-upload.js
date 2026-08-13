@@ -30,6 +30,8 @@ export function receivePortalFaultPhotos(req, res, next) {
   })
 }
 
+export const receivePortalCleaningPhotos = receivePortalFaultPhotos
+
 export async function verifyPortalFaultPhotos(req, res, next) {
   try {
     for (const file of req.files || []) {
@@ -45,11 +47,11 @@ export async function verifyPortalFaultPhotos(req, res, next) {
   } catch (error) { next(error) }
 }
 
-export async function encodePortalFaultPhotos(req, res, next) {
+async function encodePortalPhotos(req, res, next, prefix) {
   const written = []
   try {
     for (const file of req.files || []) {
-      const filename = `room-portal-fault-${Date.now()}-${randomBytes(8).toString('hex')}.jpg`
+      const filename = `room-portal-${prefix}-${Date.now()}-${randomBytes(8).toString('hex')}.jpg`
       const target = path.join(uploadDir, filename)
       await sharp(file.buffer, { failOn: 'error', limitInputPixels: 40_000_000 })
         .rotate()
@@ -69,10 +71,18 @@ export async function encodePortalFaultPhotos(req, res, next) {
   }
 }
 
+export function encodePortalFaultPhotos(req, res, next) {
+  return encodePortalPhotos(req, res, next, 'fault')
+}
+
+export function encodePortalCleaningPhotos(req, res, next) {
+  return encodePortalPhotos(req, res, next, 'cleaning')
+}
+
 export function cleanupPortalImages(urls = []) {
   for (const url of urls) {
     const filename = path.basename(String(url))
-    if (!filename.startsWith('room-portal-fault-')) continue
+    if (!/^room-portal-(fault|cleaning)-/.test(filename)) continue
     try { fs.unlinkSync(path.join(uploadDir, filename)) } catch { /* already removed */ }
   }
 }

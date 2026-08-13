@@ -17,6 +17,15 @@ const roomPortal = {
   },
 }
 
+const cleaningPortal = {
+  ...roomPortal,
+  actions: { ...roomPortal.actions, cleaning: { enabled: true, pin_required: false } },
+}
+
+function mockCleaningStatus(status) {
+  api.get.mockImplementation(url => Promise.resolve({ data: url.endsWith('/cleaning') ? status : cleaningPortal }))
+}
+
 function renderPage() {
   return render(<MemoryRouter initialEntries={['/r/token-123']}><Routes><Route path="/r/:token" element={<RoomPortalPage />} /></Routes></MemoryRouter>)
 }
@@ -106,5 +115,74 @@ describe('RoomPortalPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Sunucuya gönderilmedi')
     expect(api.post).not.toHaveBeenCalled()
     expect(JSON.parse(localStorage.getItem('room-portal-draft:token-123:survey')).scores.room_score).toBe(4)
+  })
+
+  it('bekleyen temizlik görevini çalışan PIN’i, tüm kontrol listesi ve kanıt fotoğrafıyla tamamlar', async () => {
+    mockCleaningStatus({
+      state: 'pending', review_pin_required: false,
+      checklist: ['floor_cleaned', 'surfaces_wiped', 'waste_removed', 'bed_area_checked'],
+      task: { scheduled_date: '2026-08-13' },
+    })
+    api.post.mockImplementation(url => {
+      if (url === '/auth/avs-login') return Promise.resolve({ data: { token: 'worker-token' } })
+      return Promise.resolve({ data: { receipt: 'cleaning-complete-receipt', status: 'completed', summary: { message: 'Temizlik tamamlandı' } } })
+    })
+    renderPage(); fireEvent.click(await screen.findByRole('button', { name: /Temizlik durumu/ }))
+    expect(await screen.findByText('Bugünkü temizlik görevi bekliyor')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('AVS çalışan numarası'), { target: { value: '42' } })
+    fireEvent.change(screen.getByLabelText('Çalışan PIN’i'), { target: { value: '8642' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Çalışan olarak doğrula' }))
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/auth/avs-login', { worker_id: 42, pin: '8642' }))
+    screen.getAllByRole('checkbox').forEach(checkbox => fireEvent.click(checkbox))
+    const photo = new File(['proof'], 'proof.jpg', { type: 'image/jpeg' })
+    fireEvent.change(screen.getByLabelText('Kanıt fotoğrafları (1–3)'), { target: { files: [photo] } })
+    fireEvent.click(screen.getByRole('button', { name: 'Temizliği QR ile tamamla' }))
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(2))
+    const [url, data, config] = api.post.mock.calls[1]
+    expect(url).toBe('/room-portal/token-123/cleaning/complete')
+    expect(data).toBeInstanceOf(FormData)
+    expect(JSON.parse(data.get('checklist'))).toEqual({ floor_cleaned: true, surfaces_wiped: true, waste_removed: true, bed_area_checked: true })
+    expect(config.headers).toEqual({ Authorization: 'Bearer worker-token' })
+    expect(await screen.findByText('cleaning-complete-receipt')).toBeInTheDocument()
+  })
+
+  it('tamamlanan temizlikte zorunlu oda PIN’ini doğrulayıp sakin değerlendirmesini gönderir', async () => {
+    mockCleaningStatus({
+      state: 'completed', review_pin_required: true, checklist: [],
+      task: { proof_count: 2, review: null },
+    })
+    api.post.mockImplementation(url => {
+      if (url.endsWith('/auth')) return Promise.resolve({ data: { session_token: 'r'.repeat(43), expires_at: new Date(Date.now() + 600_000).toISOString(), resident: { display_name: 'Ali K.' } } })
+      return Promise.resolve({ data: { receipt: 'cleaning-review-receipt', status: 'completed', summary: { message: 'Değerlendirme kaydedildi' } } })
+    })
+    renderPage(); fireEvent.click(await screen.findByRole('button', { name: /Temizlik durumu/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Değerlendirme için oda PIN’ini doğrula' }))
+    fireEvent.change(screen.getByLabelText('TC / Pasaport No'), { target: { value: '12345678901' } })
+    fireEvent.change(screen.getByLabelText('4 haneli kalıcı PIN'), { target: { value: '2468' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Doğrula ve devam et' }))
+    expect(await screen.findByText(/Ali K./)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Temizlik uygun/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Temizlik puanı: 5 puan' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Değerlendirmeyi gönder' }))
+    await waitFor(() => expect(api.post.mock.calls.some(([url]) => url.endsWith('/cleaning/review'))).toBe(true))
+    const reviewCall = api.post.mock.calls.find(([url]) => url.endsWith('/cleaning/review'))
+    expect(reviewCall[1]).toMatchObject({ outcome: 'approved', rating: 5 })
+    expect(reviewCall[2].headers).toEqual({ 'X-Room-Portal-Session': 'r'.repeat(43) })
+  })
+
+  it('anonim eksik değerlendirmesini çevrimdışında yalnız yerel taslak olarak tutar', async () => {
+    vi.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(false)
+    mockCleaningStatus({
+      state: 'completed', review_pin_required: false, checklist: [],
+      task: { proof_count: 1, review: null },
+    })
+    renderPage(); fireEvent.click(await screen.findByRole('button', { name: /Temizlik durumu/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Anonim devam et' }))
+    fireEvent.click(screen.getByRole('button', { name: /Eksik var/ }))
+    fireEvent.change(screen.getByLabelText('Değerlendirme / eksik açıklaması'), { target: { value: 'Lavabo tekrar temizlenmeli' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Değerlendirmeyi gönder' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Sunucuya gönderilmedi')
+    expect(api.post).not.toHaveBeenCalled()
+    expect(JSON.parse(localStorage.getItem('room-portal-draft:token-123:cleaning_review'))).toMatchObject({ outcome: 'issue', comment: 'Lavabo tekrar temizlenmeli' })
   })
 })

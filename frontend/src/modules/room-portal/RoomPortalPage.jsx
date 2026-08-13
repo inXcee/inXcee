@@ -80,6 +80,45 @@ const COPY = {
   },
 }
 
+const CLEANING_COPY = {
+  tr: {
+    cleaningLoading: 'Bugünkü temizlik görevi kontrol ediliyor…', cleaningNone: 'Bugün için bu konumda temizlik görevi bulunmuyor.',
+    cleaningPending: 'Bugünkü temizlik görevi bekliyor', cleaningCompleted: 'Bugünkü temizlik QR ile tamamlandı', cleaningSkipped: 'Bugünkü görev atlandı.',
+    proofCount: 'Kanıt fotoğrafı', workerTitle: 'Temizlik çalışanı doğrulaması', workerId: 'AVS çalışan numarası', workerPin: 'Çalışan PIN’i', workerLogin: 'Çalışan olarak doğrula',
+    workerReady: 'Çalışan doğrulandı. Tüm maddeleri tamamlayıp kanıt fotoğraflarını ekleyin.', checklistTitle: 'Zorunlu kontrol listesi', cleaningProofs: 'Kanıt fotoğrafları (1–3)', cleaningProofHint: 'İşlem sunucu onayı olmadan tamamlanmış sayılmaz. Fotoğraflar JPEG, PNG veya WebP ve en fazla 10 MB olmalıdır.',
+    cleaningNote: 'Temizlik notu (isteğe bağlı)', completeCleaning: 'Temizliği QR ile tamamla', workerAuthFailed: 'Çalışan doğrulanamadı',
+    allChecksRequired: 'Bütün kontrol maddelerini işaretleyin.', proofRequired: '1–3 kanıt fotoğrafı seçin.', onlineRequired: 'Temizlik tamamlama ve değerlendirme için bağlantı gereklidir.',
+    reviewTitle: 'Temizliği değerlendirin', reviewIntro: 'Tamamlama kaydı korunur; eksik bildirirseniz ayrı bir takip işi açılır.', approveCleaning: 'Temizlik uygun', reportIssue: 'Eksik var',
+    reviewIdentity: 'Değerlendirmeyi anonim veya oda sakini PIN’iyle gönderebilirsiniz.', verifyForReview: 'Değerlendirme için oda PIN’ini doğrula', reviewRating: 'Temizlik puanı', reviewComment: 'Değerlendirme / eksik açıklaması', issueCommentRequired: 'Eksik bildiriminde en az 3 karakter açıklama gereklidir.', sendReview: 'Değerlendirmeyi gönder',
+    reviewedApproved: 'Temizlik sakin tarafından onaylandı.', reviewedIssue: 'Eksik bildirildi; takip temizliği oluşturuldu.',
+    checklist: { floor_cleaned: 'Zemin temizlendi', surfaces_wiped: 'Yüzeyler silindi', waste_removed: 'Atıklar toplandı', bed_area_checked: 'Yatak alanı kontrol edildi', supplies_checked: 'Sarf malzemeleri kontrol edildi' },
+  },
+  en: {
+    cleaningLoading: 'Checking today’s cleaning task…', cleaningNone: 'There is no cleaning task for this location today.',
+    cleaningPending: 'Today’s cleaning task is pending', cleaningCompleted: 'Today’s cleaning was completed through the QR', cleaningSkipped: 'Today’s task was skipped.',
+    proofCount: 'Proof photos', workerTitle: 'Cleaning worker verification', workerId: 'AVS worker number', workerPin: 'Worker PIN', workerLogin: 'Verify as worker',
+    workerReady: 'Worker verified. Complete every item and add proof photos.', checklistTitle: 'Required checklist', cleaningProofs: 'Proof photos (1–3)', cleaningProofHint: 'The task is not complete without server confirmation. Use JPEG, PNG or WebP files up to 10 MB.',
+    cleaningNote: 'Cleaning note (optional)', completeCleaning: 'Complete cleaning with QR', workerAuthFailed: 'Worker could not be verified',
+    allChecksRequired: 'Check every checklist item.', proofRequired: 'Select 1–3 proof photos.', onlineRequired: 'A connection is required to complete or review cleaning.',
+    reviewTitle: 'Review the cleaning', reviewIntro: 'The completion record remains intact; reporting an issue creates a separate follow-up task.', approveCleaning: 'Cleaning is satisfactory', reportIssue: 'Report an issue',
+    reviewIdentity: 'Send the review anonymously or with the room resident PIN.', verifyForReview: 'Verify room PIN to review', reviewRating: 'Cleaning score', reviewComment: 'Review / issue details', issueCommentRequired: 'Issue reports need at least 3 characters of detail.', sendReview: 'Send review',
+    reviewedApproved: 'The cleaning was approved by a resident.', reviewedIssue: 'An issue was reported and a follow-up cleaning was created.',
+    checklist: { floor_cleaned: 'Floor cleaned', surfaces_wiped: 'Surfaces wiped', waste_removed: 'Waste removed', bed_area_checked: 'Bed area checked', supplies_checked: 'Supplies checked' },
+  },
+  ar: {
+    cleaningLoading: 'جارٍ التحقق من مهمة التنظيف اليوم…', cleaningNone: 'لا توجد مهمة تنظيف لهذا الموقع اليوم.',
+    cleaningPending: 'مهمة التنظيف اليوم قيد الانتظار', cleaningCompleted: 'اكتمل تنظيف اليوم عبر رمز QR', cleaningSkipped: 'تم تخطي مهمة اليوم.',
+    proofCount: 'صور الإثبات', workerTitle: 'التحقق من عامل التنظيف', workerId: 'رقم موظف AVS', workerPin: 'رمز PIN للموظف', workerLogin: 'التحقق كموظف',
+    workerReady: 'تم التحقق من الموظف. أكمل جميع البنود وأضف صور الإثبات.', checklistTitle: 'قائمة التحقق الإلزامية', cleaningProofs: 'صور الإثبات (1–3)', cleaningProofHint: 'لا تعتبر المهمة مكتملة دون تأكيد الخادم. استخدم JPEG أو PNG أو WebP حتى 10 ميغابايت.',
+    cleaningNote: 'ملاحظة التنظيف (اختياري)', completeCleaning: 'إكمال التنظيف عبر QR', workerAuthFailed: 'تعذر التحقق من الموظف',
+    allChecksRequired: 'حدد جميع بنود قائمة التحقق.', proofRequired: 'اختر من صورة إلى ثلاث صور إثبات.', onlineRequired: 'يلزم الاتصال لإكمال التنظيف أو تقييمه.',
+    reviewTitle: 'قيّم التنظيف', reviewIntro: 'يبقى سجل الإكمال محفوظاً، ويؤدي الإبلاغ عن نقص إلى إنشاء مهمة متابعة منفصلة.', approveCleaning: 'التنظيف مناسب', reportIssue: 'يوجد نقص',
+    reviewIdentity: 'أرسل التقييم بشكل مجهول أو باستخدام PIN ساكن الغرفة.', verifyForReview: 'تحقق من PIN الغرفة للتقييم', reviewRating: 'تقييم التنظيف', reviewComment: 'التقييم / تفاصيل النقص', issueCommentRequired: 'يتطلب بلاغ النقص شرحاً من 3 أحرف على الأقل.', sendReview: 'إرسال التقييم',
+    reviewedApproved: 'تم اعتماد التنظيف من قبل الساكن.', reviewedIssue: 'تم الإبلاغ عن نقص وإنشاء مهمة تنظيف متابعة.',
+    checklist: { floor_cleaned: 'تم تنظيف الأرضية', surfaces_wiped: 'تم مسح الأسطح', waste_removed: 'تم جمع النفايات', bed_area_checked: 'تم فحص منطقة السرير', supplies_checked: 'تم فحص المستلزمات' },
+  },
+}
+
 const ACTIONS = [
   { key: 'fault', icon: '🔧', tone: 'red' },
   { key: 'laundry', icon: '🧺', tone: 'teal' },
@@ -229,10 +268,121 @@ function SurveyForm({ c, token, mode, session, online, onSessionExpired }) {
   </form>
 }
 
+function CleaningPanel({ c, token, mode, session, online, onRequestResidentAuth, onSessionExpired }) {
+  const reviewDraft = readDraft(token, 'cleaning_review', { outcome: '', rating: null, comment: '' })
+  const [status, setStatus] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [message, setMessage] = useState('')
+  const [workerId, setWorkerId] = useState('')
+  const [workerPin, setWorkerPin] = useState('')
+  const [workerToken, setWorkerToken] = useState('')
+  const [checks, setChecks] = useState({})
+  const [photos, setPhotos] = useState([])
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState(null)
+  const [reviewMode, setReviewMode] = useState(mode === 'resident_pin' ? 'resident_pin' : null)
+  const [outcome, setOutcome] = useState(reviewDraft.outcome)
+  const [rating, setRating] = useState(reviewDraft.rating)
+  const [comment, setComment] = useState(reviewDraft.comment)
+
+  const loadStatus = async () => {
+    setLoading(true); setMessage('')
+    try { setStatus((await api.get(`/room-portal/${encodeURIComponent(token)}/cleaning`)).data) }
+    catch (error) { setMessage(error.response?.data?.error || c.sendFailed) }
+    finally { setLoading(false) }
+  }
+  useEffect(() => { loadStatus() }, [token]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (mode === 'resident_pin') setReviewMode('resident_pin') }, [mode])
+
+  const loginWorker = async event => {
+    event.preventDefault(); setMessage('')
+    if (!online) return setMessage(c.onlineRequired)
+    setBusy(true)
+    try {
+      const response = await api.post('/auth/avs-login', { worker_id: Number(workerId), pin: workerPin })
+      setWorkerToken(response.data.token); setWorkerPin('')
+    } catch (error) { setMessage(error.response?.data?.error || c.workerAuthFailed) }
+    finally { setBusy(false) }
+  }
+
+  const complete = async event => {
+    event.preventDefault(); setMessage('')
+    if (!online) return setMessage(c.onlineRequired)
+    if (!status.checklist.every(key => checks[key])) return setMessage(c.allChecksRequired)
+    if (photos.length < 1 || photos.length > 3 || photos.some(file => file.size > 10 * 1024 * 1024)) return setMessage(c.proofRequired)
+    const data = new FormData()
+    data.append('client_request_id', ensureRequestId(token, 'cleaning_complete'))
+    data.append('checklist', JSON.stringify(checks))
+    if (note.trim()) data.append('note', note.trim())
+    photos.forEach(photo => data.append('photos', photo))
+    setBusy(true)
+    try {
+      const response = await api.post(`/room-portal/${encodeURIComponent(token)}/cleaning/complete`, data, { headers: { Authorization: `Bearer ${workerToken}` } })
+      clearSubmission(token, 'cleaning_complete'); setResult(response.data)
+    } catch (error) {
+      if (error.response?.status === 401) setWorkerToken('')
+      setMessage(error.response?.data?.error || c.sendFailed)
+    } finally { setBusy(false) }
+  }
+
+  const submitReview = async event => {
+    event.preventDefault(); setMessage('')
+    if (!online) {
+      saveDraft(token, 'cleaning_review', { outcome, rating, comment })
+      return setMessage(c.draftSaved)
+    }
+    if (!outcome) return setMessage(c.required)
+    if (outcome === 'issue' && comment.trim().length < 3) return setMessage(c.issueCommentRequired)
+    setBusy(true)
+    try {
+      const headers = reviewMode === 'resident_pin' ? { 'X-Room-Portal-Session': session?.session_token } : {}
+      const response = await api.post(`/room-portal/${encodeURIComponent(token)}/cleaning/review`, {
+        client_request_id: ensureRequestId(token, 'cleaning_review'),
+        outcome,
+        rating: rating || null,
+        comment: comment.trim() || null,
+      }, { headers })
+      clearSubmission(token, 'cleaning_review'); setResult(response.data)
+    } catch (error) {
+      if (error.response?.status === 401) onSessionExpired()
+      setMessage(error.response?.data?.error || c.sendFailed)
+    } finally { setBusy(false) }
+  }
+
+  if (result) return <ReceiptCard c={c} result={result} action="cleaning" />
+  if (loading) return <div className="rp-cleaning-state"><span className="rp-spinner" /><p>{c.cleaningLoading}</p></div>
+  if (!status) return <div className="rp-cleaning-state">{message && <div className="rp-alert" role="alert">{message}</div>}<button type="button" onClick={loadStatus}>{c.retry}</button></div>
+  if (status.state === 'none' || status.state === 'skipped') return <div className="rp-cleaning-state"><span>ℹ️</span><h3>{status.state === 'skipped' ? c.cleaningSkipped : c.cleaningNone}</h3></div>
+  if (status.state === 'pending') return <div className="rp-cleaning-panel">
+    <div className="rp-cleaning-banner pending"><span>⌛</span><div><strong>{c.cleaningPending}</strong><small>{status.task?.scheduled_date}</small></div></div>
+    {!workerToken ? <form key="worker-login" className="rp-worker-login" onSubmit={loginWorker}><h3>{c.workerTitle}</h3><label>{c.workerId}<input aria-label={c.workerId} type="number" min="1" value={workerId ?? ''} onChange={event => setWorkerId(event.target.value)} required /></label><label>{c.workerPin}<input aria-label={c.workerPin} type="password" inputMode="numeric" pattern="[0-9]{4}" maxLength={4} value={workerPin ?? ''} onChange={event => setWorkerPin(event.target.value.replace(/\D/g, '').slice(0, 4))} required /></label><button type="submit" className="rp-primary rp-submit" disabled={busy || workerPin.length !== 4}>{busy ? c.sending : c.workerLogin}</button></form> : <form key="cleaning-complete" className="rp-public-form" onSubmit={complete}>
+      <div className="rp-verified">✓ {c.workerReady}</div><fieldset className="rp-checklist"><legend>{c.checklistTitle}</legend>{status.checklist.map(key => <label key={key}><input type="checkbox" checked={Boolean(checks[key])} onChange={event => { const checked = event.target.checked; setChecks(current => ({ ...current, [key]: checked })) }} /> <span>{c.checklist[key] || key}</span></label>)}</fieldset>
+      <label>{c.cleaningProofs}<input aria-label={c.cleaningProofs} type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={event => setPhotos(Array.from(event.target.files || []))} /><small>{c.cleaningProofHint}</small></label>
+      <label>{c.cleaningNote}<textarea aria-label={c.cleaningNote} rows={3} maxLength={500} value={note ?? ''} onChange={event => setNote(event.target.value)} /></label>
+      {message && <div className="rp-alert" role="alert">{message}</div>}<button type="submit" className="rp-primary rp-submit" disabled={busy}>{busy ? c.sending : c.completeCleaning}</button>
+    </form>}
+    {message && !workerToken && <div className="rp-alert" role="alert">{message}</div>}
+  </div>
+
+  const review = status.task?.review
+  if (review) return <div className="rp-cleaning-state"><span>✓</span><h3>{review.outcome === 'issue' ? c.reviewedIssue : c.reviewedApproved}</h3></div>
+  const residentVerified = mode === 'resident_pin' && session?.session_token
+  return <div className="rp-cleaning-panel">
+    <div className="rp-cleaning-banner completed"><span>✓</span><div><strong>{c.cleaningCompleted}</strong><small>{c.proofCount}: {status.task?.proof_count || 0}</small></div></div>
+    {status.review_pin_required && !residentVerified ? <div className="rp-mode-card"><p>{c.pinRequired}</p><button type="button" className="rp-primary" onClick={onRequestResidentAuth}>{c.verifyForReview}</button></div> : !status.review_pin_required && !reviewMode ? <div className="rp-mode-card"><p>{c.reviewIdentity}</p><button type="button" className="rp-primary" onClick={() => setReviewMode('anonymous')}>{c.anonymous}</button><button type="button" onClick={onRequestResidentAuth}>{c.withPin}</button></div> : <form className="rp-public-form" onSubmit={submitReview}>
+      {residentVerified && <div className="rp-verified">✓ {session.resident?.display_name} {c.verified}</div>}<h3>{c.reviewTitle}</h3><p className="rp-form-intro">{c.reviewIntro}</p>
+      <div className="rp-review-outcomes"><button type="button" className={outcome === 'approved' ? 'selected' : ''} aria-pressed={outcome === 'approved'} onClick={() => setOutcome('approved')}>✓ {c.approveCleaning}</button><button type="button" className={outcome === 'issue' ? 'selected issue' : ''} aria-pressed={outcome === 'issue'} onClick={() => setOutcome('issue')}>! {c.reportIssue}</button></div>
+      <ScorePicker c={c} label={c.reviewRating} value={rating} onChange={setRating} /><label>{c.reviewComment}<textarea aria-label={c.reviewComment} rows={4} maxLength={1000} value={comment ?? ''} onChange={event => setComment(event.target.value)} /></label>
+      {message && <div className="rp-alert" role="alert">{message}</div>}<button type="submit" className="rp-primary rp-submit" disabled={busy}>{busy ? c.sending : c.sendReview}</button>
+    </form>}
+  </div>
+}
+
 export default function RoomPortalPage() {
   const { token = '' } = useParams()
   const { locale } = useTranslation()
-  const c = COPY[locale] || COPY.tr
+  const c = { ...(COPY[locale] || COPY.tr), ...(CLEANING_COPY[locale] || CLEANING_COPY.tr) }
   const [portal, setPortal] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -269,6 +419,7 @@ export default function RoomPortalPage() {
   }
   const selectAction = action => {
     ensureRequestId(token, action.key); setSelectedAction(action); setAuthError('')
+    if (action.key === 'cleaning') { setShowAuth(false); setMode('cleaning'); return }
     const policy = portal.actions[action.key]
     const validSession = session && new Date(session.expires_at).getTime() > Date.now() ? session : null
     if (session && !validSession) resetSession()
@@ -298,7 +449,8 @@ export default function RoomPortalPage() {
 
   const location = portal.location
   let actionBody = null
-  if (mode && selectedAction?.key === 'fault') actionBody = <FaultForm c={c} token={token} mode={mode} session={session} online={online} onSessionExpired={resetSession} />
+  if (selectedAction?.key === 'cleaning') actionBody = <CleaningPanel c={c} token={token} mode={mode} session={session} online={online} onRequestResidentAuth={() => { setShowAuth(true); setAuthError('') }} onSessionExpired={resetSession} />
+  else if (mode && selectedAction?.key === 'fault') actionBody = <FaultForm c={c} token={token} mode={mode} session={session} online={online} onSessionExpired={resetSession} />
   else if (mode && selectedAction?.key === 'survey') actionBody = <SurveyForm c={c} token={token} mode={mode} session={session} online={online} onSessionExpired={resetSession} />
   else if (mode) actionBody = <div className="rp-ready"><span>✓</span><h3>{c.readyTitle}</h3>{mode === 'resident_pin' && session?.resident && <strong>{session.resident.display_name} {c.verified}</strong>}<p>{c.readyText}</p></div>
 
@@ -309,7 +461,7 @@ export default function RoomPortalPage() {
     {portal.portal_status === 'disabled' ? <section className="rp-state rp-disabled"><span className="rp-state-icon">🛡️</span><h2>{c.disabledTitle}</h2><p>{c.disabledText}</p></section> : selectedAction ? <section className="rp-action-flow">
       <button type="button" className="rp-back" onClick={resetAction}>← {c.back}</button>
       <div className={`rp-action-heading ${selectedAction.tone}`}><span>{selectedAction.icon}</span><div><h2>{c[selectedAction.key]}</h2><p>{c[`${selectedAction.key}Text`]}</p></div></div>
-      {showAuth ? <form className="rp-auth-card" onSubmit={authenticate}><h3>{c.identityTitle}</h3><p>{c.pinRequired}</p><label>{c.identifier}<input value={identifier} onChange={event => setIdentifier(event.target.value)} autoComplete="username" maxLength={32} required /></label><label>{c.pin}<input value={pin} onChange={event => setPin(event.target.value.replace(/\D/g, '').slice(0, 4))} autoComplete="current-password" inputMode="numeric" pattern="[0-9]{4}" maxLength={4} required /></label>{authError && <div className="rp-alert" role="alert">{authError}</div>}<div className="rp-auth-actions"><button type="button" onClick={() => portal.actions[selectedAction.key].pin_required ? resetAction() : setShowAuth(false)}>{c.cancel}</button><button type="submit" className="rp-primary" disabled={authBusy || pin.length !== 4}>{c.verify}</button></div></form> : actionBody || <div className="rp-mode-card"><p>{c.optionalIdentity}</p><button type="button" className="rp-primary" onClick={() => setMode('anonymous')}>{c.anonymous}</button><button type="button" onClick={choosePinMode}>{c.withPin}</button></div>}
+      {showAuth ? <form className="rp-auth-card" onSubmit={authenticate}><h3>{c.identityTitle}</h3><p>{c.pinRequired}</p><label>{c.identifier}<input value={identifier} onChange={event => setIdentifier(event.target.value)} autoComplete="username" maxLength={32} required /></label><label>{c.pin}<input value={pin} onChange={event => setPin(event.target.value.replace(/\D/g, '').slice(0, 4))} autoComplete="current-password" inputMode="numeric" pattern="[0-9]{4}" maxLength={4} required /></label>{authError && <div className="rp-alert" role="alert">{authError}</div>}<div className="rp-auth-actions"><button type="button" onClick={() => selectedAction.key === 'cleaning' ? setShowAuth(false) : portal.actions[selectedAction.key].pin_required ? resetAction() : setShowAuth(false)}>{c.cancel}</button><button type="submit" className="rp-primary" disabled={authBusy || pin.length !== 4}>{c.verify}</button></div></form> : actionBody || <div className="rp-mode-card"><p>{c.optionalIdentity}</p><button type="button" className="rp-primary" onClick={() => setMode('anonymous')}>{c.anonymous}</button><button type="button" onClick={choosePinMode}>{c.withPin}</button></div>}
     </section> : <section className="rp-services"><div className="rp-section-title"><h2>{c.choose}</h2><p>{c.privacy}</p></div><div className="rp-service-grid">{enabledActions.map(action => <button type="button" key={action.key} className={`rp-service-card ${action.tone}`} onClick={() => selectAction(action)}><span className="rp-service-icon">{action.icon}</span><span><strong>{c[action.key]}</strong><small>{c[`${action.key}Text`]}</small></span><b aria-hidden="true">›</b></button>)}</div></section>}
     <footer className="rp-footer">AVS · {location.block} · <span>{c.privacy}</span></footer>
   </main>
