@@ -13,7 +13,7 @@ beforeAll(async () => {
 })
 
 describe('Checkout Module', () => {
-  let personnelId, roomId, zimmetId
+  let personnelId, roomId, zimmetId, laundryCardId
 
   it('creates personnel and assigns room', async () => {
     const regRes = await request(app)
@@ -49,6 +49,15 @@ describe('Checkout Module', () => {
     const items = db.prepare('SELECT * FROM zimmet WHERE personnel_id=?').all(personnelId)
     expect(items).toHaveLength(3)
     zimmetId = items[0].id
+  })
+
+  it('issues an active laundry card before checkout', async () => {
+    const res = await request(app)
+      .post(`/api/cards/personnel/${personnelId}/issue`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ card_type: 'laundry' })
+    expect(res.status).toBe(201)
+    laundryCardId = res.body.id
   })
 
   it('returns checkout preview with unreturned zimmet', async () => {
@@ -105,6 +114,12 @@ describe('Checkout Module', () => {
   it('verifies room assignment is cleared', () => {
     const active = db.prepare('SELECT * FROM room_assignments WHERE personnel_id=? AND check_out_at IS NULL').get(personnelId)
     expect(active).toBeUndefined()
+  })
+
+  it('revokes the active laundry card in the checkout transaction', () => {
+    const card = db.prepare('SELECT status, revoked_at FROM cards WHERE id=?').get(laundryCardId)
+    expect(card.status).toBe('revoked')
+    expect(card.revoked_at).toBeTruthy()
   })
 
   it('verifies zimmet conditions are recorded correctly', () => {

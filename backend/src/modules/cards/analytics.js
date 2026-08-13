@@ -1,12 +1,16 @@
 import { getDB } from '../../shared/db/index.js'
 
-const CARD_TYPES = ['access', 'meal']
+const CARD_TYPES = ['access', 'meal', 'laundry']
 
 /**
  * Kart tipi başına durum sayımı + NFC enrollment ilerlemesi + personel kapsamı.
  */
 export function summary(db = getDB()) {
   const totalActiveStaff = db.prepare('SELECT COUNT(*) AS c FROM staff WHERE is_active=1').get().c
+  const totalActiveResidents = db.prepare(`
+    SELECT COUNT(DISTINCT personnel_id) AS c
+    FROM room_assignments WHERE check_out_at IS NULL
+  `).get().c
 
   return CARD_TYPES.map(card_type => {
     const counts = db.prepare(`
@@ -18,12 +22,24 @@ export function summary(db = getDB()) {
       FROM cards WHERE card_type=?
     `).get(card_type)
 
-    // Kapsam: o tipte aktif kartı olan aktif staff sayısı / toplam aktif staff
-    const covered = db.prepare(`
-      SELECT COUNT(*) AS c FROM staff s
-      WHERE s.is_active=1
-        AND EXISTS (SELECT 1 FROM cards c WHERE c.holder_type='staff' AND c.holder_id=s.id AND c.card_type=? AND c.status='active')
-    `).get(card_type).c
+    // Kapsam: giriş/yemekte aktif çalışanlar, çamaşırda aktif odalı sakinler.
+    const isLaundry = card_type === 'laundry'
+    const covered = isLaundry
+      ? db.prepare(`
+          SELECT COUNT(DISTINCT ra.personnel_id) AS c
+          FROM room_assignments ra
+          WHERE ra.check_out_at IS NULL
+            AND EXISTS (
+              SELECT 1 FROM cards c WHERE c.holder_type='personnel'
+                AND c.holder_id=ra.personnel_id AND c.card_type=? AND c.status='active'
+            )
+        `).get(card_type).c
+      : db.prepare(`
+          SELECT COUNT(*) AS c FROM staff s
+          WHERE s.is_active=1
+            AND EXISTS (SELECT 1 FROM cards c WHERE c.holder_type='staff' AND c.holder_id=s.id AND c.card_type=? AND c.status='active')
+        `).get(card_type).c
+    const population = isLaundry ? totalActiveResidents : totalActiveStaff
 
     return {
       card_type,
@@ -31,7 +47,7 @@ export function summary(db = getDB()) {
       lost: counts.lost || 0,
       revoked: counts.revoked || 0,
       nfc_bound: counts.nfc_bound || 0,
-      coverage_pct: totalActiveStaff > 0 ? Math.round((covered / totalActiveStaff) * 100) : 0,
+      coverage_pct: population > 0 ? Math.round((covered / population) * 100) : 0,
     }
   })
 }

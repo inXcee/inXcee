@@ -1,9 +1,10 @@
 import { z } from 'zod'
 
 // Cross-cutting Zod sweep — cards yazma uçları.
-const cardTypeEnum = z.enum(['access', 'meal'], { errorMap: () => ({ message: 'Geçersiz card_type' }) })
+const cardTypeEnum = z.enum(['access', 'meal', 'laundry'], { errorMap: () => ({ message: 'Geçersiz card_type' }) })
 
 export const bulkIssueSchema = z.object({
+  holder_type: z.enum(['staff', 'personnel']).default('staff'),
   card_type: cardTypeEnum,
 })
 

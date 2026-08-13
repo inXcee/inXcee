@@ -17,11 +17,25 @@ const mgr = requireRole('campus_manager', 'shift_supervisor')
 const view = requireRole('campus_manager', 'shift_supervisor', 'laundry', 'housekeeper', 'technical')
 
 const HOLDER_TYPES = ['staff', 'personnel', 'visitor']
-const CARD_TYPES = ['access', 'meal']
+const CARD_TYPES = ['access', 'meal', 'laundry']
 // Kart tipi → kod prefix + PDF görünümü (renk + başlık)
 const CARD_META = {
   access: { prefix: 'AVS-A:', title: 'GİRİŞ KARTI', accent: '#2563eb', badge: 'GİRİŞ' },
   meal:   { prefix: 'AVS-M:', title: 'YEMEK KARTI', accent: '#ea580c', badge: 'YEMEK' },
+  laundry:{ prefix: 'AVS-C:', title: 'ÇAMAŞIR KARTI', accent: '#0f9f9a', badge: 'ÇAMAŞIR' },
+}
+
+function validHolderCardPair(holderType, cardType) {
+  if (cardType === 'laundry') return holderType === 'personnel'
+  return true
+}
+
+function hasActiveRoom(db, personnelId) {
+  return Boolean(db.prepare(`
+    SELECT 1 FROM room_assignments
+    WHERE personnel_id=? AND check_out_at IS NULL
+    LIMIT 1
+  `).get(personnelId))
 }
 
 function genCode(cardType) {
@@ -35,14 +49,23 @@ function activeCard(db, holderType, holderId, cardType) {
   ).get(holderType, holderId, cardType)
 }
 
-// Kart sahibi bilgisi (şimdilik staff; personnel/visitor genişletilebilir)
+// PDF üzerinde gösterilecek kart sahibi bilgisi.
 function holderInfo(db, card) {
   const empty = { full_name: '—', tc_no: null, position: null, phone: null, blood_type: null, dept_name: null }
-  if (card.holder_type !== 'staff') return empty
-  return db.prepare(`
-    SELECT s.full_name, s.tc_no, s.position, s.phone, s.blood_type, d.name as dept_name
-    FROM staff s LEFT JOIN departments d ON d.id = s.department_id WHERE s.id=?
-  `).get(card.holder_id) || empty
+  if (card.holder_type === 'staff') {
+    return db.prepare(`
+      SELECT s.full_name, s.tc_no, s.position, s.phone, s.blood_type, d.name as dept_name
+      FROM staff s LEFT JOIN departments d ON d.id = s.department_id WHERE s.id=?
+    `).get(card.holder_id) || empty
+  }
+  if (card.holder_type === 'personnel') {
+    return db.prepare(`
+      SELECT p.full_name, p.tc_no, p.job_title AS position,
+             p.phone_number AS phone, NULL AS blood_type, p.company AS dept_name
+      FROM personnel p WHERE p.id=?
+    `).get(card.holder_id) || empty
+  }
+  return empty
 }
 
 // Bir kartı (ox,oy) origin'ine göre çizer — tek-kart ve toplu PDF ortak kullanır.
@@ -68,20 +91,35 @@ function drawCard(doc, ox, oy, w, h, { card, holder, meta, qrDataUrl }) {
   doc.fillColor('#94a3b8').font('Helvetica').fontSize(6).text(`#${card.code.slice(-6).toUpperCase()}`, ox + w - 90, oy + 105, { width: 80, align: 'center' })
 }
 
-// ── Toplu üret: aktif staff'ın eksik kartlarını doldur ──
+// ── Toplu üret: aktif çalışanların veya aktif odalı sakinlerin eksik kartları ──
 cardsRouter.post('/bulk-issue', ...mgr, validate(bulkIssueSchema), (req, res) => {
   try {
-    const cardType = req.validated.card_type
+    const { holder_type: holderType, card_type: cardType } = req.validated
+    if (!validHolderCardPair(holderType, cardType)) {
+      return res.status(400).json({ error: 'Çamaşır kartı yalnız sakinler için üretilebilir' })
+    }
     const db = getDB()
-    const missing = db.prepare(`
-      SELECT id FROM staff
-      WHERE is_active = 1
-        AND id NOT IN (SELECT holder_id FROM cards WHERE holder_type='staff' AND card_type=? AND status='active')
-    `).all(cardType)
-    const stmt = db.prepare(`INSERT INTO cards(holder_type, holder_id, card_type, code, issued_by) VALUES('staff',?,?,?,?)`)
-    const tx = db.transaction(() => { missing.forEach(s => stmt.run(s.id, cardType, genCode(cardType), req.user.id)) })
+    const missing = holderType === 'personnel'
+      ? db.prepare(`
+          SELECT DISTINCT p.id FROM personnel p
+          JOIN room_assignments ra ON ra.personnel_id=p.id AND ra.check_out_at IS NULL
+          WHERE NOT EXISTS (
+            SELECT 1 FROM cards c
+            WHERE c.holder_type='personnel' AND c.holder_id=p.id
+              AND c.card_type=? AND c.status='active'
+          )
+          ORDER BY p.id
+        `).all(cardType)
+      : db.prepare(`
+          SELECT id FROM staff
+          WHERE is_active = 1
+            AND id NOT IN (SELECT holder_id FROM cards WHERE holder_type='staff' AND card_type=? AND status='active')
+          ORDER BY id
+        `).all(cardType)
+    const stmt = db.prepare(`INSERT INTO cards(holder_type, holder_id, card_type, code, issued_by) VALUES(?,?,?,?,?)`)
+    const tx = db.transaction(() => { missing.forEach(s => stmt.run(holderType, s.id, cardType, genCode(cardType), req.user.id)) })
     tx()
-    logAudit(req.user.id, 'card_bulk_issue', 'cards', null, `${cardType}: ${missing.length}`)
+    logAudit(req.user.id, 'card_bulk_issue', 'cards', null, `${holderType}/${cardType}: ${missing.length}`)
     res.json({ generated: missing.length })
   } catch (e) { logger.error('[cards/bulk-issue]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
@@ -90,9 +128,15 @@ cardsRouter.post('/bulk-issue', ...mgr, validate(bulkIssueSchema), (req, res) =>
 cardsRouter.post('/enroll-nfc', ...mgr, validate(enrollNfcSchema), (req, res) => {
   try {
     const { holder_type, holder_id, card_type } = req.validated
+    if (!validHolderCardPair(holder_type, card_type)) {
+      return res.status(400).json({ error: 'Çamaşır kartı yalnız sakinler için üretilebilir' })
+    }
     const uid = normalizeNfcUid(req.validated.nfc_uid)
     if (!uid) return res.status(400).json({ error: 'Geçersiz NFC UID' })
     const db = getDB()
+    if (card_type === 'laundry' && !hasActiveRoom(db, holder_id)) {
+      return res.status(409).json({ error: 'Sakinin aktif oda ataması yok' })
+    }
 
     const result = db.transaction(() => {
       let card = activeCard(db, holder_type, holder_id, card_type)
@@ -125,8 +169,14 @@ cardsRouter.post('/:holderType/:holderId/issue', ...mgr, validate(issueSchema), 
     const { holderType, holderId } = req.params
     const { card_type: cardType, regenerate, nfc_uid, valid_until } = req.validated
     if (!HOLDER_TYPES.includes(holderType)) return res.status(400).json({ error: 'Geçersiz holderType' })
+    if (!validHolderCardPair(holderType, cardType)) {
+      return res.status(400).json({ error: 'Çamaşır kartı yalnız sakinler için üretilebilir' })
+    }
 
     const db = getDB()
+    if (cardType === 'laundry' && !hasActiveRoom(db, +holderId)) {
+      return res.status(409).json({ error: 'Sakinin aktif oda ataması yok' })
+    }
     const existing = activeCard(db, holderType, +holderId, cardType)
     if (existing && !regenerate) {
       return res.json({ id: existing.id, code: existing.code, card_type: existing.card_type, status: existing.status })
@@ -297,8 +347,29 @@ cardsRouter.get('/analytics', ...view, (req, res) => {
 // bu yüzden LEFT JOIN'ler fan-out yapmaz. Frontend bunu N+1 isteğe gerek kalmadan listeler.
 cardsRouter.get('/roster', ...view, (req, res) => {
   try {
+    const holderType = String(req.query.holder_type || 'staff')
+    if (!['staff', 'personnel'].includes(holderType)) {
+      return res.status(400).json({ error: 'Geçersiz holder_type' })
+    }
     const q = String(req.query.q || '').trim()
     const params = []
+    if (holderType === 'personnel') {
+      let where = 'ra.check_out_at IS NULL'
+      if (q) { where += ' AND p.full_name LIKE ?'; params.push(`%${q}%`) }
+      const rows = getDB().prepare(`
+        SELECT DISTINCT p.id, p.full_name, p.company, r.block, r.room_no,
+          lc.id AS laundry_id, lc.code AS laundry_code,
+          lc.nfc_uid AS laundry_nfc, lc.photo_url AS laundry_photo
+        FROM personnel p
+        JOIN room_assignments ra ON ra.personnel_id=p.id
+        JOIN rooms r ON r.id=ra.room_id
+        LEFT JOIN cards lc ON lc.holder_type='personnel' AND lc.holder_id=p.id
+          AND lc.card_type='laundry' AND lc.status='active'
+        WHERE ${where}
+        ORDER BY p.full_name
+      `).all(...params)
+      return res.json(rows)
+    }
     let where = 's.is_active = 1'
     if (q) { where += ' AND s.full_name LIKE ?'; params.push(`%${q}%`) }
     const rows = getDB().prepare(`

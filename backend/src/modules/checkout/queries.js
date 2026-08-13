@@ -59,6 +59,13 @@ export function processCheckout(personnelId, zimmetActions, userId) {
     }
     // Remove from room
     db.prepare("UPDATE room_assignments SET check_out_at=datetime('now') WHERE personnel_id=? AND check_out_at IS NULL").run(personnelId)
+    // Fiziksel çamaşır kartı oda değişiminde korunur; kampüsten çıkışta artık
+    // geçerli bir sakin kimliği olmadığı için aynı transaction'da iptal edilir.
+    db.prepare(`
+      UPDATE cards SET status='revoked', revoked_at=datetime('now')
+      WHERE holder_type='personnel' AND holder_id=?
+        AND card_type='laundry' AND status='active'
+    `).run(personnelId)
     // Set checkout date
     db.prepare("UPDATE personnel SET check_out_date=datetime('now') WHERE id=?").run(personnelId)
   })

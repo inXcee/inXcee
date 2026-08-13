@@ -20,6 +20,21 @@ beforeAll(async () => {
 
 const auth = (t) => ({ Authorization: `Bearer ${t}` })
 
+function freshResident(name, assigned = true) {
+  const db = getDB()
+  const id = db.prepare('INSERT INTO personnel(full_name, company) VALUES(?, ?)')
+    .run(name, 'Kart Test A.Ş.').lastInsertRowid
+  if (assigned) {
+    const roomId = db.prepare(`
+      INSERT INTO rooms(block, floor, room_no, capacity, active_beds)
+      VALUES('KT', 0, ?, 6, 1)
+    `).run(`C-${id}`).lastInsertRowid
+    db.prepare('INSERT INTO room_assignments(personnel_id, room_id, bed_no) VALUES(?,?,1)')
+      .run(id, roomId)
+  }
+  return id
+}
+
 describe('cards — kart üretimi (amaç bazında ayrı)', () => {
   it('giriş kartı üretir (AVS-A: prefix)', async () => {
     const r = await request(app).post(`/api/cards/staff/${staffId}/issue`).set(auth(token)).send({ card_type: 'access' })
@@ -34,6 +49,28 @@ describe('cards — kart üretimi (amaç bazında ayrı)', () => {
     expect(r.status).toBe(201)
     expect(r.body.card_type).toBe('meal')
     expect(r.body.code).toMatch(/^AVS-M:/)
+  })
+
+  it('sakine ayrı çamaşır kartı üretir (AVS-C: prefix)', async () => {
+    const residentId = freshResident('Çamaşır Kart Sakini')
+    const r = await request(app).post(`/api/cards/personnel/${residentId}/issue`)
+      .set(auth(token)).send({ card_type: 'laundry' })
+    expect(r.status).toBe(201)
+    expect(r.body.card_type).toBe('laundry')
+    expect(r.body.code).toMatch(/^AVS-C:/)
+  })
+
+  it('çamaşır kartını staff için üretmez', async () => {
+    const r = await request(app).post(`/api/cards/staff/${staffId}/issue`)
+      .set(auth(token)).send({ card_type: 'laundry' })
+    expect(r.status).toBe(400)
+  })
+
+  it('odasız sakine çamaşır kartı üretmez', async () => {
+    const residentId = freshResident('Odasız Kart Sakini', false)
+    const r = await request(app).post(`/api/cards/personnel/${residentId}/issue`)
+      .set(auth(token)).send({ card_type: 'laundry' })
+    expect(r.status).toBe(409)
   })
 
   it('aynı tip tekrar istenince mevcut aktif kartı döner (idempotent)', async () => {
@@ -104,6 +141,41 @@ describe('cards — kart üretimi (amaç bazında ayrı)', () => {
     const r = await request(app).get('/api/cards/roster?q=__yokboyle__').set(auth(token))
     expect(r.status).toBe(200)
     expect(r.body).toEqual([])
+  })
+
+  it('sakin roster yalnız aktif odalı sakinleri ve çamaşır kartını döner', async () => {
+    const activeId = freshResident('Roster Aktif Sakin')
+    const inactiveId = freshResident('Roster Çıkmış Sakin', false)
+    await request(app).post(`/api/cards/personnel/${activeId}/issue`).set(auth(token))
+      .send({ card_type: 'laundry' })
+    const r = await request(app).get('/api/cards/roster?holder_type=personnel')
+      .set(auth(token))
+    expect(r.status).toBe(200)
+    const active = r.body.find(row => row.id === activeId)
+    expect(active).toMatchObject({ block: 'KT', laundry_id: expect.any(Number) })
+    expect(active.laundry_code).toMatch(/^AVS-C:/)
+    expect(r.body.some(row => row.id === inactiveId)).toBe(false)
+  })
+
+  it('toplu çamaşır kartını yalnız aktif odalı ve kartı eksik sakinlere üretir', async () => {
+    const activeId = freshResident('Bulk Aktif Sakin')
+    const inactiveId = freshResident('Bulk Odasız Sakin', false)
+    getDB().prepare("DELETE FROM cards WHERE card_type='laundry'").run()
+    const r1 = await request(app).post('/api/cards/bulk-issue').set(auth(token))
+      .send({ holder_type: 'personnel', card_type: 'laundry' })
+    expect(r1.status).toBe(200)
+    expect(r1.body.generated).toBeGreaterThanOrEqual(1)
+    expect(getDB().prepare(`
+      SELECT id FROM cards WHERE holder_type='personnel' AND holder_id=?
+        AND card_type='laundry' AND status='active'
+    `).get(activeId)).toBeTruthy()
+    expect(getDB().prepare(`
+      SELECT id FROM cards WHERE holder_type='personnel' AND holder_id=?
+        AND card_type='laundry' AND status='active'
+    `).get(inactiveId)).toBeUndefined()
+    const r2 = await request(app).post('/api/cards/bulk-issue').set(auth(token))
+      .send({ holder_type: 'personnel', card_type: 'laundry' })
+    expect(r2.body.generated).toBe(0)
   })
 
   it('karta özel PDF döner', async () => {
@@ -199,6 +271,16 @@ describe('cards — toplu basım (batch PDF)', () => {
     expect(r.status).toBe(400)
   })
 
+  it('sakin çamaşır kartları için toplu PDF döner', async () => {
+    freshResident('PDF Çamaşır Sakini')
+    await request(app).post('/api/cards/bulk-issue').set(auth(token))
+      .send({ holder_type: 'personnel', card_type: 'laundry' })
+    const r = await request(app).get('/api/cards/batch-pdf?card_type=laundry').set(auth(token))
+    expect(r.status).toBe(200)
+    expect(r.headers['content-type']).toMatch(/pdf/)
+    expect(r.body.length).toBeGreaterThan(500)
+  }, 15_000)
+
   it('ids ile boş seçim 400 döner', async () => {
     const r = await request(app).get('/api/cards/batch-pdf?card_type=access&ids=99999999').set(auth(token))
     expect(r.status).toBe(400)
@@ -234,6 +316,15 @@ describe('cards — hızlı seri NFC kayıt (enroll-nfc)', () => {
     const card = getDB().prepare('SELECT * FROM cards WHERE id=?').get(r.body.card_id)
     expect(card.status).toBe('active')
     expect(card.nfc_uid).toBe('AA11BB22')
+  })
+
+  it('sakinin çamaşır kartını NFC ile üretip bağlar', async () => {
+    const id = freshResident('Enroll Çamaşır Sakini')
+    const r = await request(app).post('/api/cards/enroll-nfc').set(auth(token))
+      .send({ holder_type: 'personnel', holder_id: id, card_type: 'laundry', nfc_uid: 'CAFE104' })
+    expect(r.status).toBe(200)
+    expect(r.body.created).toBe(true)
+    expect(r.body.code).toMatch(/^AVS-C:/)
   })
 
   it('mevcut aktif karta bağlar (created=false, aynı kart)', async () => {
@@ -281,6 +372,7 @@ describe('cards — analitik', () => {
     expect(r.body.days).toBe(30)
     expect(Array.isArray(r.body.summary)).toBe(true)
     expect(r.body.summary.find(s => s.card_type === 'access')).toBeTruthy()
+    expect(r.body.summary.find(s => s.card_type === 'laundry')).toBeTruthy()
     expect(Array.isArray(r.body.usageByDay)).toBe(true)
     expect(Array.isArray(r.body.usageByResult)).toBe(true)
     expect(Array.isArray(r.body.topStations)).toBe(true)
