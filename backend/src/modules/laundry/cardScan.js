@@ -241,25 +241,32 @@ export function scanResponse(gate) {
 }
 
 // Amir ekranı: dikkat gerektiren okutmalar (eşleşmeyen, tanınmayan, gerekçeli).
-export function listScanIssues({ from = null, to = null, limit = 100 } = {}, db = getDB()) {
+export function listScanIssues({ from = null, to = null, result = null, limit = 100 } = {}, db = getDB()) {
   const kosul = ["s.result != 'ok'"]
   const params = []
   if (from) { kosul.push('s.created_at >= ?'); params.push(from) }
   if (to) { kosul.push('s.created_at <= ?'); params.push(`${to} 23:59:59`) }
+  if (result && Object.values(SONUC).includes(result) && result !== SONUC.OK) {
+    kosul.push('s.result = ?')
+    params.push(result)
+  }
 
   try {
+    const safeLimit = Math.max(1, Math.min(500, Number(limit) || 100))
     const items = db.prepare(`
       SELECT s.*, p.full_name AS card_holder_name, r.block, r.room_no,
+             li.bag_no,
              u.full_name AS operator_name, w.full_name AS worker_name
       FROM laundry_card_scans s
       LEFT JOIN personnel p ON p.id = s.personnel_id
       LEFT JOIN rooms r ON r.id = s.room_id
+      LEFT JOIN laundry_items li ON li.id = s.item_id
       LEFT JOIN users u ON u.id = s.operator_user_id
       LEFT JOIN staff w ON w.id = s.operator_worker_id
       WHERE ${kosul.join(' AND ')}
       ORDER BY s.created_at DESC
       LIMIT ?
-    `).all(...params, Number(limit) || 100)
+    `).all(...params, safeLimit)
     return { available: true, items }
   } catch (err) {
     // Boş liste "sorun yok" diye okunur; okunamadığını söylemek gerekir.

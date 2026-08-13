@@ -8,6 +8,16 @@ const roster = [
     meal_id: null, meal_code: null, meal_nfc: null, meal_photo: null },
 ]
 
+const residentRoster = [
+  { id: 91, full_name: 'Sakin Resident', company: 'Örnek AŞ', block: 'M1', room_no: '101',
+    laundry_id: 801, laundry_code: 'AVS-C:resident001', laundry_nfc: '04AABB', laundry_photo: null },
+  { id: 92, full_name: 'Kartsız Sakin', company: 'Örnek AŞ', block: 'M1', room_no: '102',
+    laundry_id: null, laundry_code: null, laundry_nfc: null, laundry_photo: null },
+]
+
+const scanStats = { available: true, total: 10, ok: 8, mismatch: 1, unknown_card: 0, inactive: 0, override: 1, success_ratio: 0.8 }
+const scanIssues = { available: true, items: [{ id: 44, result: 'mismatch', card_holder_name: 'Başka Sakin', block: 'M2', room_no: '202', action: 'delivery', bag_no: 'T-0044', operator_name: 'Vardiya Amir', created_at: '2026-08-12 10:30:00', scanned_code: 'AVS-C:BASKA' }] }
+
 const analyticsData = {
   days: 30,
   summary: [
@@ -21,7 +31,15 @@ const analyticsData = {
 
 vi.mock('../../shared/api/client.js', () => ({
   default: {
-    get: vi.fn((url) => Promise.resolve({ data: url.includes('/cards/analytics') ? analyticsData : roster })),
+    get: vi.fn((url) => {
+      if (url.includes('/cards/analytics')) return Promise.resolve({ data: analyticsData })
+      if (url.includes('/cards/roster?holder_type=personnel')) return Promise.resolve({ data: residentRoster })
+      if (url.includes('/laundry/card-scan-stats')) return Promise.resolve({ data: scanStats })
+      if (url.includes('/laundry/card-scans')) return Promise.resolve({ data: scanIssues })
+      return Promise.resolve({ data: roster })
+    }),
+    post: vi.fn(() => Promise.resolve({ data: { generated: 1 } })),
+    patch: vi.fn(() => Promise.resolve({ data: { ok: true } })),
   },
 }))
 
@@ -71,5 +89,34 @@ describe('cards/CardsPage smoke', () => {
     fireEvent.click(await screen.findByText('📲 Hızlı Kayıt'))
     expect(await screen.findByText(/yalnızca/)).toBeInTheDocument()
     expect(screen.getByText(/Android Chrome/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Sakin / çamaşır' })).toBeInTheDocument()
+  })
+
+  it('sakin çamaşır kartlarını çalışanlardan ayrı gösterir', async () => {
+    const api = (await import('../../shared/api/client.js')).default
+    renderWithProviders(<CardsPage />)
+    fireEvent.click(screen.getByRole('button', { name: /Sakin Çamaşır Kartları/ }))
+    expect(await screen.findByText('Sakin Resident')).toBeInTheDocument()
+    expect(screen.getByText('Kartsız Sakin')).toBeInTheDocument()
+    expect(screen.getByText('Sakin Resident').closest('button')).toHaveTextContent('M1/101')
+    fireEvent.click(screen.getByText('Sakin Resident'))
+    expect(await screen.findByRole('button', { name: /Tekli PDF/ })).toBeInTheDocument()
+    expect(screen.getByLabelText(/NFC UID/)).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText(/NFC UID/), { target: { value: '04:11:22' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Bağla' }))
+    await waitFor(() => expect(api.patch).toHaveBeenCalledWith('/cards/801/bind-nfc', { nfc_uid: '04:11:22' }))
+
+    fireEvent.click(screen.getByText('Kartsız Sakin'))
+    fireEvent.click(await screen.findByRole('button', { name: /Çamaşır kartı üret/ }))
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/cards/personnel/92/issue', { card_type: 'laundry', regenerate: false }))
+  })
+
+  it('sorunlu okutma listesini KPI ve denetim ayrıntılarıyla gösterir', async () => {
+    renderWithProviders(<CardsPage />)
+    fireEvent.click(screen.getByRole('button', { name: /Sorunlu Okutmalar/ }))
+    expect(await screen.findByText('%80')).toBeInTheDocument()
+    expect(screen.getByText('Başka Sakin')).toBeInTheDocument()
+    expect(screen.getByText('T-0044')).toBeInTheDocument()
+    expect(screen.getByText('Vardiya Amir')).toBeInTheDocument()
   })
 })

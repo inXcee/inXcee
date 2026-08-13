@@ -10,8 +10,8 @@ import { setCardSetting, AKSIYON } from './cardScan.js'
 // bağlandı mı, gerçek şemada eşleşme ölçülebiliyor mu, kayıt işlemle birlikte
 // yazılıyor mu.
 
-let adminToken, roomId, block, roomNo, sakinId, digerSakinId
-const auth = () => ({ Authorization: `Bearer ${adminToken}` })
+let adminToken, supervisorToken, laundryToken, roomId, block, roomNo, sakinId, digerSakinId
+const auth = (token = adminToken) => ({ Authorization: `Bearer ${token}` })
 
 beforeAll(async () => {
   process.env.DB_PATH = ':memory:'
@@ -23,6 +23,10 @@ beforeAll(async () => {
 
   adminToken = (await request(app).post('/api/auth/login')
     .send({ username: 'mudur', password: 'admin123' })).body.token
+  supervisorToken = (await request(app).post('/api/auth/login')
+    .send({ username: 'vardiya', password: 'admin123' })).body.token
+  laundryToken = (await request(app).post('/api/auth/login')
+    .send({ username: 'camasir', password: 'admin123' })).body.token
 
   // Seed'deki sakin sayısına güvenmek testi kırılgan yapar; kendi verimizi kurarız.
   sakinId = db.prepare("INSERT INTO personnel(full_name) VALUES('Kart Sahibi Sakin')").run().lastInsertRowid
@@ -43,6 +47,29 @@ beforeEach(() => {
   db.prepare('DELETE FROM laundry_items').run()
   setCardSetting(AKSIYON.INTAKE, false, db)
   setCardSetting(AKSIYON.DELIVERY, false, db)
+})
+
+describe('amir okutma raporu', () => {
+  it('yönetici ve vardiya amiri görebilir, çamaşır rolü göremez', async () => {
+    const manager = await request(app).get('/api/laundry/card-scans').set(auth())
+    const supervisor = await request(app).get('/api/laundry/card-scans').set(auth(supervisorToken))
+    const laundry = await request(app).get('/api/laundry/card-scans').set(auth(laundryToken))
+
+    expect(manager.status).toBe(200)
+    expect(supervisor.status).toBe(200)
+    expect(laundry.status).toBe(403)
+  })
+
+  it('sonuç filtresini API üzerinden uygular', async () => {
+    const db = getDB()
+    db.prepare(`INSERT INTO laundry_card_scans(action,result,room_id,scanned_code) VALUES('delivery','mismatch',?,'AVS-C:YABANCI')`).run(roomId)
+    db.prepare(`INSERT INTO laundry_card_scans(action,result,room_id,scanned_code) VALUES('intake','unknown_card',?,'YOK')`).run(roomId)
+
+    const response = await request(app).get('/api/laundry/card-scans?result=mismatch').set(auth(supervisorToken))
+    expect(response.status).toBe(200)
+    expect(response.body.items).toHaveLength(1)
+    expect(response.body.items[0].result).toBe('mismatch')
+  })
 })
 
 const torbaBirak = (govde = {}) => request(app).post('/api/self-service/laundry-kiosk/bag')

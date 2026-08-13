@@ -24,6 +24,7 @@ export const laundryRouter = Router()
 // campus_manager tüm işlemlere erişebilir (en yetkili)
 const laundryFull = requireRole('laundry', 'campus_manager')
 const laundryRead = requireRole('laundry', 'shift_supervisor', 'campus_manager')
+const cardScanReview = requireRole('shift_supervisor', 'campus_manager')
 const slaWrite    = requireRole('laundry', 'campus_manager')
 
 // `laundry-` öneki gecelik yetim dosya temizliğinin dosyaları hangi modüle ait
@@ -50,11 +51,16 @@ laundryRouter.put('/card-settings', ...requireRole('campus_manager'), (req, res)
 })
 
 // Amir ekranı: eşleşmeyen, tanınmayan ve gerekçeyle geçilen okutmalar.
-laundryRouter.get('/card-scans', ...laundryRead, (req, res) => {
-  res.json(listScanIssues({ from: req.query.from || null, to: req.query.to || null, limit: req.query.limit }))
+laundryRouter.get('/card-scans', ...cardScanReview, (req, res) => {
+  res.json(listScanIssues({
+    from: req.query.from || null,
+    to: req.query.to || null,
+    result: req.query.result || null,
+    limit: req.query.limit,
+  }))
 })
 
-laundryRouter.get('/card-scan-stats', ...laundryRead, (req, res) => {
+laundryRouter.get('/card-scan-stats', ...cardScanReview, (req, res) => {
   res.json(scanStats({ from: req.query.from || null, to: req.query.to || null }))
 })
 

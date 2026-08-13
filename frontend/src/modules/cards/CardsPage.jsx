@@ -3,6 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
+import ResidentLaundryCardsPanel from './ResidentLaundryCardsPanel.jsx'
+import LaundryScanIssuesPanel from './LaundryScanIssuesPanel.jsx'
 
 // Kart tipi → görünüm (backend CARD_META ile aynı renk/etiket dili)
 const CARD_TYPES = [
@@ -41,6 +43,12 @@ export default function CardsPage() {
     enabled: view === 'analytics',
   })
 
+  const { data: residentRoster = [], isLoading: residentsLoading } = useQuery({
+    queryKey: ['cards-roster', 'personnel'],
+    queryFn: () => api.get('/cards/roster?holder_type=personnel').then(r => r.data),
+    enabled: view === 'residents' || view === 'enroll',
+  })
+
   // selected'ı id'den türet → mutation sonrası invalidate ile otomatik tazelenir
   const selected = useMemo(() => roster.find(s => s.id === selectedId) || null, [roster, selectedId])
 
@@ -62,6 +70,7 @@ export default function CardsPage() {
   }
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['cards-roster'] })
+  const invalidateResidents = () => qc.invalidateQueries({ queryKey: ['cards-roster', 'personnel'] })
 
   const issueMut = useMutation({
     mutationFn: ({ holderId, card_type, regenerate }) =>
@@ -161,10 +170,10 @@ export default function CardsPage() {
         <div>
           <h2 style={{ fontSize: '28px', letterSpacing: '4px' }}>KARTLAR</h2>
           <p style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', letterSpacing: '1px', marginTop: '4px' }}>
-            AMAÇ BAZINDA KİMLİK · GİRİŞ + YEMEK KARTI · PDF · NFC BAĞLAMA
+            AMAÇ BAZINDA KİMLİK · GİRİŞ + YEMEK + SAKİN ÇAMAŞIR KARTI · PDF · NFC
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 2, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: 3 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: 3 }}>
           <button onClick={() => setView('roster')} className="btn btn-xs"
             style={{ borderRadius: 8, border: 'none', background: view === 'roster' ? 'var(--accent)' : 'transparent', color: view === 'roster' ? '#000' : 'var(--text3)' }}>
             🪪 Kartlar
@@ -177,12 +186,24 @@ export default function CardsPage() {
             style={{ borderRadius: 8, border: 'none', background: view === 'enroll' ? 'var(--accent)' : 'transparent', color: view === 'enroll' ? '#000' : 'var(--text3)' }}>
             📲 Hızlı Kayıt
           </button>
+          <button onClick={() => setView('residents')} className="btn btn-xs"
+            style={{ borderRadius: 8, border: 'none', background: view === 'residents' ? '#0f9f9a' : 'transparent', color: view === 'residents' ? '#fff' : 'var(--text3)' }}>
+            🧺 Sakin Çamaşır Kartları
+          </button>
+          <button onClick={() => setView('scan-issues')} className="btn btn-xs"
+            style={{ borderRadius: 8, border: 'none', background: view === 'scan-issues' ? '#b45309' : 'transparent', color: view === 'scan-issues' ? '#fff' : 'var(--text3)' }}>
+            ⚠ Sorunlu Okutmalar
+          </button>
         </div>
       </div>
 
       {view === 'analytics' && <AnalyticsPanel data={analytics} />}
 
-      {view === 'enroll' && <EnrollPanel roster={roster} showToast={showToast} onEnrolled={invalidate} />}
+      {view === 'enroll' && <EnrollPanel roster={roster} residentRoster={residentRoster} showToast={showToast} onEnrolled={() => { invalidate(); invalidateResidents() }} />}
+
+      {view === 'residents' && <ResidentLaundryCardsPanel roster={residentRoster} isLoading={residentsLoading} onChanged={invalidateResidents} showToast={showToast} />}
+
+      {view === 'scan-issues' && <LaundryScanIssuesPanel />}
 
       {/* Toplu üret + kapsama */}
       {view === 'roster' && (
@@ -543,7 +564,8 @@ function AnalyticsPanel({ data }) {
 }
 
 // ── Hızlı seri NFC kayıt modu ──
-function EnrollPanel({ roster, showToast, onEnrolled }) {
+function EnrollPanel({ roster, residentRoster, showToast, onEnrolled }) {
+  const [holderType, setHolderType] = useState('staff')
   const [cardType, setCardType] = useState('access')
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState(null) // staff row
@@ -555,11 +577,13 @@ function EnrollPanel({ roster, showToast, onEnrolled }) {
   // onreading kapanışı güncel değerleri görsün diye ref'ler
   const selectedRef = useRef(null)
   const cardTypeRef = useRef('access')
+  const holderTypeRef = useRef('staff')
   useEffect(() => { selectedRef.current = selected }, [selected])
   useEffect(() => { cardTypeRef.current = cardType }, [cardType])
+  useEffect(() => { holderTypeRef.current = holderType }, [holderType])
 
   const enrollMut = useMutation({
-    mutationFn: ({ holder_id, card_type, nfc_uid }) => api.post('/cards/enroll-nfc', { holder_id, card_type, nfc_uid }),
+    mutationFn: ({ holder_type, holder_id, card_type, nfc_uid }) => api.post('/cards/enroll-nfc', { holder_type, holder_id, card_type, nfc_uid }),
     onSuccess: (res, v) => {
       const person = selectedRef.current
       setCount(c => c + 1)
@@ -576,7 +600,7 @@ function EnrollPanel({ roster, showToast, onEnrolled }) {
     const person = selectedRef.current
     if (!uid) return showToast('UID okunamadı', 'error')
     if (!person) return showToast('Önce bir kişi seçin', 'error')
-    enrollMut.mutate({ holder_id: person.id, card_type: cardTypeRef.current, nfc_uid: uid })
+    enrollMut.mutate({ holder_type: holderTypeRef.current, holder_id: person.id, card_type: cardTypeRef.current, nfc_uid: uid })
   }
 
   useEffect(() => {
@@ -599,14 +623,22 @@ function EnrollPanel({ roster, showToast, onEnrolled }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const currentRoster = holderType === 'personnel' ? residentRoster : roster
   const filtered = useMemo(() => {
     const q = search.trim().toLocaleLowerCase('tr')
     if (!q) return []
-    return roster.filter(s => s.full_name.toLocaleLowerCase('tr').includes(q)).slice(0, 8)
-  }, [roster, search])
+    return currentRoster.filter(s => s.full_name.toLocaleLowerCase('tr').includes(q)).slice(0, 8)
+  }, [currentRoster, search])
 
   return (
     <div className="fade-up-1" style={{ maxWidth: 560 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
+        <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>KİŞİ GRUBU</span>
+        <button className="btn btn-xs" onClick={() => { setHolderType('staff'); setCardType('access'); setSelected(null); setSearch('') }}
+          style={{ borderRadius: 8, background: holderType === 'staff' ? 'var(--accent)' : 'var(--surface2)' }}>Çalışan</button>
+        <button className="btn btn-xs" onClick={() => { setHolderType('personnel'); setCardType('laundry'); setSelected(null); setSearch('') }}
+          style={{ borderRadius: 8, background: holderType === 'personnel' ? '#0f9f9a' : 'var(--surface2)', color: holderType === 'personnel' ? '#fff' : 'var(--text)' }}>Sakin / çamaşır</button>
+      </div>
       {!NFC_SUPPORTED ? (
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: 20, fontSize: 13, color: 'var(--text2)' }}>
           📲 Hızlı NFC kayıt yalnızca <strong>Android Chrome</strong>'da (Web NFC) çalışır. Bu cihazda desteklenmiyor — masaüstünde/iPhone'da kişi detayından elle UID girişini kullanın.
@@ -616,7 +648,7 @@ function EnrollPanel({ roster, showToast, onEnrolled }) {
           {/* Kart tipi */}
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
             <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)' }}>KART TİPİ</span>
-            {CARD_TYPES.map(ct => (
+            {(holderType === 'personnel' ? [{ type: 'laundry', label: 'Çamaşır Kartı', short: 'ÇAMAŞIR', icon: '🧺', color: '#0f9f9a' }] : CARD_TYPES).map(ct => (
               <button key={ct.type} className="btn btn-xs" onClick={() => setCardType(ct.type)}
                 style={{ borderRadius: 8, border: `1px solid ${ct.color}55`, background: cardType === ct.type ? ct.color : `${ct.color}14`, color: cardType === ct.type ? '#fff' : ct.color }}>
                 {ct.icon} {ct.short.toLocaleLowerCase('tr')}
@@ -646,7 +678,7 @@ function EnrollPanel({ roster, showToast, onEnrolled }) {
               style={{ padding: '10px 12px', cursor: 'pointer', borderRadius: 8, marginBottom: 4,
                 background: selected?.id === s.id ? 'var(--accent)' : 'var(--surface)',
                 color: selected?.id === s.id ? '#000' : 'var(--text)', border: '1px solid var(--border)' }}>
-              {s.full_name} <span style={{ fontFamily: 'var(--mono)', fontSize: 10, opacity: 0.7 }}>{s.department_name || ''}</span>
+              {s.full_name} <span style={{ fontFamily: 'var(--mono)', fontSize: 10, opacity: 0.7 }}>{s.department_name || s.company || ''}{s.block ? ` · ${s.block}/${s.room_no}` : ''}</span>
             </div>
           ))}
 

@@ -25,7 +25,7 @@ const kur = () => {
     CREATE TABLE rooms (id INTEGER PRIMARY KEY, block TEXT, room_no TEXT);
     CREATE TABLE room_assignments (id INTEGER PRIMARY KEY AUTOINCREMENT, personnel_id INTEGER,
       room_id INTEGER, check_out_at TEXT);
-    CREATE TABLE laundry_items (id INTEGER PRIMARY KEY AUTOINCREMENT, room_id INTEGER);
+    CREATE TABLE laundry_items (id INTEGER PRIMARY KEY AUTOINCREMENT, room_id INTEGER, bag_no TEXT);
     CREATE TABLE cards (id INTEGER PRIMARY KEY AUTOINCREMENT, holder_type TEXT, holder_id INTEGER,
       card_type TEXT, code TEXT UNIQUE, nfc_uid TEXT UNIQUE, status TEXT DEFAULT 'active',
       issued_at TEXT, issued_by INTEGER, revoked_at TEXT, valid_until TEXT, photo_url TEXT);
@@ -42,7 +42,7 @@ const kur = () => {
       ('personnel', 10, 'laundry', 'AVS-C:ALI', '04AABBCC'),
       ('personnel', 12, 'laundry', 'AVS-C:VELI', NULL),
       ('personnel', 10, 'access',  'AVS-A:ALI', NULL);
-    INSERT INTO laundry_items(id, room_id) VALUES (77, 5);
+    INSERT INTO laundry_items(id, room_id, bag_no) VALUES (77, 5, 'T-00077');
   `)
   return d
 }
@@ -208,7 +208,15 @@ describe('kayıt ve raporlama', () => {
     const liste = listScanIssues({}, db)
     expect(liste.available).toBe(true)
     expect(liste.items).toHaveLength(1)
-    expect(liste.items[0]).toMatchObject({ result: SONUC.MISMATCH, card_holder_name: 'Veli Ak', block: 'M1', room_no: '101' })
+    expect(liste.items[0]).toMatchObject({ result: SONUC.MISMATCH, card_holder_name: 'Veli Ak', block: 'M1', room_no: '101', bag_no: 'T-00077' })
+  })
+
+  it('sonuç filtresi yalnız istenen sorun türünü döndürür', () => {
+    recordScan(coz({ scanned_code: 'AVS-C:VELI' }).scan, { item_id: 77 }, db)
+    recordScan(coz({ scanned_code: 'TANIMSIZ' }).scan, { item_id: null }, db)
+
+    expect(listScanIssues({ result: SONUC.MISMATCH }, db).items).toHaveLength(1)
+    expect(listScanIssues({ result: SONUC.UNKNOWN }, db).items[0]).toMatchObject({ result: SONUC.UNKNOWN })
   })
 
   // Sorunsuz okutmalar amir listesini doldurmamalı.
