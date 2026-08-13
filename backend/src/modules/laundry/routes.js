@@ -33,6 +33,12 @@ const upload = createImageUpload('laundry')
 
 // ── Çamaşır kartı ───────────────────────────────────────────────────────────
 // Zorunluluğu açıp kapatmak operasyonel bir karar: yalnız yönetici.
+// Kapsam: zorunluluğu açmadan önce ölçülmesi gereken tek şey — kaç sakinin
+// kartı var, kimin yok. Ayar ekranı bunu soruyordu; artık ölçüyor.
+laundryRouter.get('/card-coverage', ...laundryRead, (req, res) => {
+  res.json(cardCoverage())
+})
+
 laundryRouter.get('/card-settings', ...laundryRead, (req, res) => {
   res.json(getCardSettings())
 })

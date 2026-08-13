@@ -300,3 +300,68 @@ export function scanStats({ from = null, to = null } = {}, db = getDB()) {
     return { available: false, reason: `Okutma istatistiği okunamadı: ${err.message}` }
   }
 }
+
+// Kart KAPSAMI — zorunluluğu açmadan önce ölçülmesi gereken tek şey.
+//
+// Canlıda zorunluluk açıldı ve sıfır kart vardı; kimse fark etmedi. Ayar ekranı
+// "kartlar dağıtıldı mı?" diye SORUYORDU — soru cevaplanabilir ama ölçüm
+// yalan söylemez. Burası sayar: kaç aktif sakin var, kaçının kartı var, kimin
+// yok.
+//
+// Kart yalnız AKTİF oda ataması olan sakine verilir (cards modülünün kuralı);
+// kapsam da aynı kümeye göre ölçülür, yoksa oran hep düşük görünür.
+export function cardCoverage(db = getDB()) {
+  const ayarlar = getCardSettings(db)
+  try {
+    const sakinler = db.prepare(`
+      SELECT DISTINCT p.id, p.full_name, r.block, r.room_no
+      FROM room_assignments ra
+      JOIN personnel p ON p.id = ra.personnel_id
+      LEFT JOIN rooms r ON r.id = ra.room_id
+      WHERE ra.check_out_at IS NULL
+    `).all()
+
+    const kartliIdler = new Set(db.prepare(`
+      SELECT DISTINCT holder_id FROM cards
+      WHERE card_type = 'laundry' AND holder_type = 'personnel' AND status = 'active'
+    `).all().map(r => r.holder_id))
+
+    const kartsiz = sakinler.filter(s => !kartliIdler.has(s.id))
+    const kartli = sakinler.length - kartsiz.length
+
+    const uyarilar = []
+    // Zorunluluk açıkken kartsız kalan herkes her işlemde gerekçe yazdırır.
+    if ((ayarlar.intake_required || ayarlar.delivery_required) && kartsiz.length > 0) {
+      uyarilar.push(`Kart zorunluluğu açık ama ${kartsiz.length} sakinin kartı yok — her işlemlerinde gerekçe yazılması gerekecek`)
+    }
+    if (sakinler.length === 0) {
+      uyarilar.push('Aktif oda ataması olan sakin yok — kapsam ölçülemiyor')
+    }
+
+    return {
+      available: true,
+      residents: sakinler.length,
+      with_card: kartli,
+      without_card: kartsiz.length,
+      // Sakin yoksa "%100 kapsandı" demek yanlış olur.
+      ratio: sakinler.length > 0 ? Number((kartli / sakinler.length).toFixed(3)) : null,
+      intake_required: ayarlar.intake_required,
+      delivery_required: ayarlar.delivery_required,
+      missing: kartsiz.slice(0, 50).map(s => ({
+        personnel_id: s.id, full_name: s.full_name,
+        room: s.block && s.room_no ? `${s.block}-${s.room_no}` : null,
+      })),
+      missing_truncated: Math.max(0, kartsiz.length - 50),
+      warnings: uyarilar,
+    }
+  } catch (err) {
+    // Ölçülemeyen kapsamı "tam" saymak, tam da kaçırılan hatayı tekrar eder.
+    return {
+      available: false,
+      reason: `Kart kapsamı okunamadı: ${err.message}`,
+      intake_required: ayarlar.intake_required,
+      delivery_required: ayarlar.delivery_required,
+      warnings: ['Kapsam ölçülemedi — zorunluluğu açmadan önce elle doğrulayın'],
+    }
+  }
+}

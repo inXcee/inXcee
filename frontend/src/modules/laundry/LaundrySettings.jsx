@@ -15,6 +15,12 @@ export function CardSystemSettings() {
     queryKey: ['laundry-card-settings'],
     queryFn: laundryApi.getCardSettings,
   })
+  // Kapsam ÖLÇÜLÜR, sorulmaz: canlıda zorunluluk sıfır kartla açıldı ve kimse
+  // fark etmedi. Sayı yalan söylemez.
+  const { data: coverage } = useQuery({
+    queryKey: ['laundry-card-coverage'],
+    queryFn: laundryApi.getCardCoverage,
+  })
   const [values, setValues] = useState({ intake_required: false, delivery_required: false })
   const [saving, setSaving] = useState('')
   const [error, setError] = useState('')
@@ -32,9 +38,18 @@ export function CardSystemSettings() {
     const previous = values[key]
     const next = !previous
     if (next) {
+      // Soru sormak yerine ölçümü göster: kaç kişinin kartı yok, sayıyla.
+      const eksik = coverage?.available ? coverage.without_card : null
+      const olcum = coverage?.available === false
+        ? 'Kart kapsamı ÖLÇÜLEMEDİ — açmadan önce elle doğrulayın.'
+        : eksik > 0
+          ? `DİKKAT: ${coverage.residents} sakinden ${eksik} kişinin kartı YOK. Bu kişiler her işlemde gerekçe yazmak zorunda kalacak.`
+          : `${coverage?.residents ?? 0} sakinin tamamında kart var.`
       const confirmed = await confirmDialog({
         title: 'Kart zorunluluğunu aç',
-        body: `${action === 'intake' ? 'Kabul' : 'Teslim'} işlemlerinde kartlar dağıtıldı mı? Kartı olmayan sakinler yalnız gerekçe yazarak devam edebilir.`,
+        body: `${olcum}
+
+${action === 'intake' ? 'Kabul' : 'Teslim'} işlemlerinde kart zorunlu olacak.`,
       })
       if (!confirmed) return
     }
@@ -71,6 +86,33 @@ export function CardSystemSettings() {
         {!canEdit && <span className="badge badge-gray">Salt okunur</span>}
       </div>
       <div className="panel-body" style={{ display: 'grid', gap: 12 }}>
+        {coverage && (
+          <div style={{
+            padding: '8px 12px', borderRadius: 9, fontSize: 11,
+            border: '1px solid ' + (coverage.warnings?.length ? 'rgba(239,68,68,.4)' : 'var(--border)'),
+            background: coverage.warnings?.length ? 'rgba(239,68,68,.08)' : 'var(--surface2)',
+          }}>
+            {coverage.available
+              ? (
+                <>
+                  <strong>Kart kapsamı:</strong>{' '}
+                  {coverage.residents} sakinden {coverage.with_card} kişide kart var
+                  {coverage.ratio != null && ` (%${Math.round(coverage.ratio * 100)})`}
+                  {coverage.warnings?.map(w => (
+                    <div key={w} style={{ color: 'var(--red)', marginTop: 4 }}>⚠ {w}</div>
+                  ))}
+                  {coverage.without_card > 0 && (
+                    <div style={{ color: 'var(--text3)', marginTop: 4 }}>
+                      Kartsız: {coverage.missing.map(m => m.full_name).join(', ')}
+                      {coverage.missing_truncated > 0 && ` +${coverage.missing_truncated} kişi daha`}
+                    </div>
+                  )}
+                </>
+              )
+              // Ölçülemeyen kapsamı "tam" saymak, kaçırılan hatayı tekrar eder.
+              : <span style={{ color: 'var(--amber)' }}>⚠ {coverage.reason}</span>}
+          </div>
+        )}
         {isLoading ? <SkeletonTable rows={2} cols={2} /> : rows.map(row => {
           const checked = values[row.key]
           return (

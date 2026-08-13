@@ -69,6 +69,7 @@ export const laundryApi = {
   getLaundrySettings: () => api.get('/laundry/settings').then(r => r.data),
   updateLaundrySetting: (key, value) => api.put(`/laundry/settings/${encodeURIComponent(key)}`, { value }).then(r => r.data),
   getCardSettings: () => api.get('/laundry/card-settings').then(r => r.data),
+  getCardCoverage: () => api.get('/laundry/card-coverage').then(r => r.data),
   updateCardSetting: (action, required) => api.put('/laundry/card-settings', { action, required }).then(r => r.data),
   verifyCard: (data) => api.post('/laundry/card-verify', data).then(r => r.data),
 
