@@ -351,6 +351,11 @@ export default function MaintenancePage() {
                           color: 'var(--blue)', background: 'rgba(52,152,219,.1)',
                           border: '1px solid rgba(52,152,219,.2)',
                         }}>{SPECIALTIES[req.category] || SPECIALTIES.genel}</span>
+                        {req.request_source === 'room_qr' && <span style={{
+                          fontFamily: 'var(--mono)', fontSize: '8.5px', padding: '2px 8px', borderRadius: '4px',
+                          color: 'var(--teal)', background: 'rgba(26,188,156,.1)',
+                          border: '1px solid rgba(26,188,156,.25)',
+                        }}>ODA QR · {req.identity_mode === 'resident_pin' ? 'PIN' : 'ANONİM'}</span>}
                         {req.photo_before && <span style={{ fontSize: '11px' }} title="Fotoğraf var">📷</span>}
                         {req.sla_deadline && req.status !== 'done' && (
                           <SLACountdown deadline={req.sla_deadline} />

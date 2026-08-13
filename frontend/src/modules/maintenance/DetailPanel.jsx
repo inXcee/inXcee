@@ -98,6 +98,11 @@ export default function DetailPanel({ requestId, onClose }) {
               color: 'var(--blue)', background: 'rgba(52,152,219,.1)',
               border: '1px solid rgba(52,152,219,.2)',
             }}>{SPECIALTIES[request.category] || SPECIALTIES.genel}</span>
+            {request.request_source === 'room_qr' && <span style={{
+              fontFamily: 'var(--mono)', fontSize: '8.5px', padding: '2px 8px', borderRadius: '4px',
+              color: 'var(--teal)', background: 'rgba(26,188,156,.1)',
+              border: '1px solid rgba(26,188,156,.25)',
+            }}>ODA QR · {request.identity_mode === 'resident_pin' ? 'PIN' : 'ANONİM'}</span>}
             {request.sla_deadline && request.status !== 'done' && (() => {
               const isOverdue = new Date(request.sla_deadline) < new Date()
               return (

@@ -268,6 +268,17 @@ function publicReceipt(row) {
   }
 }
 
+export function findPortalReceipt({ locationId, actionType, clientRequestId }) {
+  const { action, requestId } = validateIdempotency(actionType, clientRequestId)
+  const row = getDB().prepare(`
+    SELECT r.*, sl.display_name, sl.location_type
+    FROM location_portal_receipts r
+    JOIN service_locations sl ON sl.id=r.location_id
+    WHERE r.location_id=? AND r.action_type=? AND r.client_request_id=?
+  `).get(Number(locationId), action, requestId)
+  return row ? publicReceipt(row) : null
+}
+
 export function createOrGetPortalReceipt({ locationId, actionType, clientRequestId, eventId = null, status = 'accepted', publicPayload = {} }) {
   const { action, requestId } = validateIdempotency(actionType, clientRequestId)
   if (!RECEIPT_STATUS.has(status)) throw authError('Geçersiz makbuz durumu', 400, 'invalid_receipt_status')
