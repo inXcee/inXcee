@@ -1,4 +1,5 @@
 import { getDB } from '../../shared/db/index.js'
+import { recordScan } from './cardScan.js'
 
 const SLA_HOURS = { low: 48, normal: 24, high: 12, critical: 4 }
 const INCIDENT_KINDS = new Set(['lost_bag', 'lost_garment', 'damaged_garment', 'other'])
@@ -193,10 +194,9 @@ function completeDelivery(deliveryId, approverUserId = null) {
   return finalizeGarmentDelivery(delivery, garmentIds, approverUserId)
 }
 
-function finalizeGarmentDelivery(delivery, garmentIds, approverUserId = null) {
+function finalizeGarmentDeliveryWrites(delivery, garmentIds, approverUserId = null, { cardScan = null } = {}) {
   const db = getDB()
-  return db.transaction(() => {
-    const item = db.prepare('SELECT * FROM laundry_items WHERE id=?').get(delivery.item_id)
+  const item = db.prepare('SELECT * FROM laundry_items WHERE id=?').get(delivery.item_id)
     const garments = garmentIds.length
       ? db.prepare(`SELECT * FROM premium_garments WHERE item_id=? AND id IN (${garmentIds.map(() => '?').join(',')})`).all(item.id, ...garmentIds)
       : []
@@ -234,8 +234,17 @@ function finalizeGarmentDelivery(delivery, garmentIds, approverUserId = null) {
         approved_at=CASE WHEN ? IS NULL THEN approved_at ELSE CURRENT_TIMESTAMP END,
         completed_at=CURRENT_TIMESTAMP WHERE id=?
     `).run(approverUserId, approverUserId, delivery.id)
-    return { ...getDelivery(delivery.id), delivered_count: garments.length, remaining_count: remaining, item_status: nextStatus }
-  }).immediate()
+    recordScan(cardScan, {
+      item_id: item.id,
+      operator_user_id: delivery.delivered_by_user_id,
+      operator_worker_id: delivery.delivered_by_worker_id,
+    })
+  return { ...getDelivery(delivery.id), delivered_count: garments.length, remaining_count: remaining, item_status: nextStatus }
+}
+
+function finalizeGarmentDelivery(delivery, garmentIds, approverUserId = null, options = {}) {
+  const db = getDB()
+  return db.transaction(() => finalizeGarmentDeliveryWrites(delivery, garmentIds, approverUserId, options)).immediate()
 }
 
 export function getDelivery(id) {
@@ -253,7 +262,7 @@ export function getDelivery(id) {
   return { ...row, garment_ids: db.prepare('SELECT garment_id FROM laundry_delivery_batch_garments WHERE delivery_id=?').all(row.id).map(value => value.garment_id) }
 }
 
-export function createPartialDelivery(input, actor = {}) {
+export function createPartialDelivery(input, actor = {}, { cardScan = null } = {}) {
   const db = getDB()
   const itemId = Number(input.item_id)
   const item = db.prepare('SELECT * FROM laundry_items WHERE id=?').get(itemId)
@@ -276,7 +285,7 @@ export function createPartialDelivery(input, actor = {}) {
   `).get(...garmentIds)
   if (pending) throw httpError(`Seçilen parça için #${pending.id} numaralı yönetici onayı bekleniyor`, 409)
   const { userId, workerId } = actorColumns(actor)
-  const delivery = db.transaction(() => {
+  return db.transaction(() => {
     const result = db.prepare(`
       INSERT INTO laundry_delivery_batches(
         item_id,recipient_type,recipient_name,recipient_personnel_id,third_party_reason,status,
@@ -290,10 +299,13 @@ export function createPartialDelivery(input, actor = {}) {
     const id = Number(result.lastInsertRowid)
     const insert = db.prepare('INSERT INTO laundry_delivery_batch_garments(delivery_id,garment_id) VALUES(?,?)')
     for (const garmentId of garmentIds) insert.run(id, garmentId)
-    return getDelivery(id)
+    const delivery = getDelivery(id)
+    if (recipientType === 'third_party') {
+      recordScan(cardScan, { item_id: itemId, operator_user_id: userId, operator_worker_id: workerId })
+      return { ...delivery, approval_required: true }
+    }
+    return finalizeGarmentDeliveryWrites(delivery, garmentIds, null, { cardScan })
   }).immediate()
-  if (recipientType === 'third_party') return { ...delivery, approval_required: true }
-  return finalizeGarmentDelivery(delivery, garmentIds)
 }
 
 export function approvePartialDelivery(id, approverUserId) {

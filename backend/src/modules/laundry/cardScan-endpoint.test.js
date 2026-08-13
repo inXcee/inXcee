@@ -3,6 +3,7 @@ import request from 'supertest'
 import app from '../../app.js'
 import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
+import { issuePersonnelKioskSession } from '../../shared/auth/service.js'
 import { setCardSetting, AKSIYON } from './cardScan.js'
 
 // Saf çözümleme cardScan.test.js'te. Burada asıl soru: kapı gerçek uçlara
@@ -36,6 +37,9 @@ beforeAll(async () => {
 beforeEach(() => {
   const db = getDB()
   db.prepare('DELETE FROM laundry_card_scans').run()
+  db.prepare('DELETE FROM laundry_delivery_batch_garments').run()
+  db.prepare('DELETE FROM laundry_delivery_batches').run()
+  db.prepare('DELETE FROM premium_garment_deliveries').run()
   db.prepare('DELETE FROM laundry_items').run()
   setCardSetting(AKSIYON.INTAKE, false, db)
   setCardSetting(AKSIYON.DELIVERY, false, db)
@@ -184,5 +188,246 @@ describe('ayar ve rapor uçları', () => {
     expect(body.available).toBe(true)
     expect(body).toHaveProperty('mismatch')
     expect(body).toHaveProperty('success_ratio')
+  })
+})
+
+describe('ortak masaüstü ve kiosk kart kapısı', () => {
+  const masaustuKaydi = (body = {}) => request(app).post('/api/laundry/items').set(auth()).send({
+    room_id: roomId,
+    item_count: 2,
+    ...body,
+  })
+
+  const hazirMasaustuKaydi = async (targetRoomId = roomId, extra = {}) => {
+    const res = await masaustuKaydi({ room_id: targetRoomId, ...extra })
+    expect(res.status).toBe(201)
+    getDB().prepare("UPDATE laundry_items SET status='ready' WHERE id=?").run(res.body.id)
+    return res.body.id
+  }
+
+  it('doğrulama uçları anında sonucu döndürür fakat audit yazmaz', async () => {
+    setCardSetting(AKSIYON.DELIVERY, true, getDB())
+    const standard = await request(app).post('/api/laundry/card-verify').set(auth()).send({
+      action: 'delivery', room_id: roomId, card_code: 'AVS-C:SAKIN',
+    })
+    expect(standard.status).toBe(200)
+    expect(standard.body).toMatchObject({ allowed: true, code: 'ok', card_warning: null })
+
+    const kiosk = await request(app).post('/api/self-service/laundry-kiosk/card-verify').set(auth()).send({
+      action: 'delivery', room_id: roomId, card_code: 'AVS-C:YABANCI',
+    })
+    expect(kiosk.status).toBe(200)
+    expect(kiosk.body).toMatchObject({ allowed: true, code: 'mismatch' })
+    expect(okutmalar()).toHaveLength(0)
+  })
+
+  it('kiosk kart ayarını yetkili oturuma salt okunur verir', async () => {
+    setCardSetting(AKSIYON.INTAKE, true, getDB())
+    const res = await request(app).get('/api/self-service/laundry-kiosk/card-settings').set(auth())
+    expect(res.status).toBe(200)
+    expect(res.body).toMatchObject({ intake_required: true, delivery_required: false })
+  })
+
+  it('masaüstü kabulde zorunluluğu uygular ve doğru kartı kayda bağlar', async () => {
+    setCardSetting(AKSIYON.INTAKE, true, getDB())
+    const blocked = await masaustuKaydi()
+    expect(blocked.status).toBe(409)
+    expect(getDB().prepare('SELECT COUNT(*) AS count FROM laundry_items').get().count).toBe(0)
+
+    const accepted = await masaustuKaydi({ card_code: 'AVS-C:SAKIN' })
+    expect(accepted.status).toBe(201)
+    expect(accepted.body.card.holder_name).toBe('Kart Sahibi Sakin')
+    expect(okutmalar().at(-1)).toMatchObject({ action: 'intake', result: 'ok', item_id: accepted.body.id })
+  })
+
+  it('masaüstü tekli teslimde mismatch uyarısıyla işlemi tamamlar', async () => {
+    const id = await hazirMasaustuKaydi()
+    getDB().prepare('DELETE FROM laundry_card_scans').run()
+    setCardSetting(AKSIYON.DELIVERY, true, getDB())
+    const res = await request(app).patch(`/api/laundry/items/${id}/deliver`).set(auth()).send({
+      delivered_to: 'Teslim Alan', card_code: 'AVS-C:YABANCI',
+    })
+    expect(res.status).toBe(200)
+    expect(res.body.card_warning).toMatch(/sakini değil/)
+    expect(getDB().prepare('SELECT status FROM laundry_items WHERE id=?').get(id).status).toBe('delivered')
+    expect(okutmalar()[0]).toMatchObject({ item_id: id, result: 'mismatch' })
+  })
+
+  it('kart zorunluyken masaüstü toplu teslimde karışık odaları reddeder', async () => {
+    const secondRoom = getDB().prepare('SELECT id FROM rooms WHERE id<>? ORDER BY id LIMIT 1').get(roomId)
+    const first = await hazirMasaustuKaydi(roomId)
+    const second = await hazirMasaustuKaydi(secondRoom.id)
+    setCardSetting(AKSIYON.DELIVERY, true, getDB())
+    const blocked = await request(app).post('/api/laundry/items/batch-deliver').set(auth()).send({
+      item_ids: [first, second], delivered_to: 'Teslim Alan', card_code: 'AVS-C:SAKIN',
+    })
+    expect(blocked.status).toBe(400)
+    expect(blocked.body.code).toBe('mixed_rooms')
+
+    setCardSetting(AKSIYON.DELIVERY, false, getDB())
+    const legacy = await request(app).post('/api/laundry/items/batch-deliver').set(auth()).send({
+      item_ids: [first, second], delivered_to: 'Teslim Alan',
+    })
+    expect(legacy.status).toBe(200)
+    expect(legacy.body).toMatchObject({ delivered: 2, errors: [] })
+  })
+
+  it('oda toplu tesliminde aynı okutmayı her torbanın audit kaydına bağlar', async () => {
+    const first = await hazirMasaustuKaydi()
+    const second = await hazirMasaustuKaydi()
+    getDB().prepare('DELETE FROM laundry_card_scans').run()
+    setCardSetting(AKSIYON.DELIVERY, true, getDB())
+    const res = await request(app).post('/api/self-service/laundry-kiosk/deliver-room').set(auth()).send({
+      block, room_no: roomNo, delivered_name: 'Teslim Alan', signature: 'imza', card_code: 'AVS-C:SAKIN',
+    })
+    expect(res.status).toBe(200)
+    expect(res.body.delivered).toBe(2)
+    expect(okutmalar().map(row => row.item_id).sort()).toEqual([first, second].sort())
+  })
+
+  it('audit yazılamazsa kabul kaydını da rollback eder', async () => {
+    const db = getDB()
+    setCardSetting(AKSIYON.INTAKE, true, db)
+    db.exec(`
+      CREATE TRIGGER fail_laundry_scan BEFORE INSERT ON laundry_card_scans
+      BEGIN SELECT RAISE(ABORT, 'scan write failed'); END;
+    `)
+    try {
+      const res = await masaustuKaydi({ card_code: 'AVS-C:SAKIN' })
+      expect(res.status).toBe(400)
+      expect(db.prepare('SELECT COUNT(*) AS count FROM laundry_items').get().count).toBe(0)
+    } finally {
+      db.exec('DROP TRIGGER IF EXISTS fail_laundry_scan')
+    }
+  })
+
+  it('audit yazılamazsa teslimi ve teslim kaydını da rollback eder', async () => {
+    const id = await hazirMasaustuKaydi()
+    const db = getDB()
+    setCardSetting(AKSIYON.DELIVERY, true, db)
+    db.exec(`
+      CREATE TRIGGER fail_laundry_scan BEFORE INSERT ON laundry_card_scans
+      BEGIN SELECT RAISE(ABORT, 'scan write failed'); END;
+    `)
+    try {
+      const res = await request(app).patch(`/api/laundry/items/${id}/deliver`).set(auth()).send({
+        delivered_to: 'Teslim Alan', card_code: 'AVS-C:SAKIN',
+      })
+      expect(res.status).toBe(400)
+      expect(db.prepare('SELECT status FROM laundry_items WHERE id=?').get(id).status).toBe('ready')
+      expect(db.prepare('SELECT COUNT(*) AS count FROM laundry_deliveries WHERE item_id=?').get(id).count).toBe(0)
+    } finally {
+      db.exec('DROP TRIGGER IF EXISTS fail_laundry_scan')
+    }
+  })
+
+  it('legacy kiosk kıyafet kabul ucu da kart kapısından geçer', async () => {
+    setCardSetting(AKSIYON.INTAKE, true, getDB())
+    const blocked = await request(app).post('/api/self-service/laundry-kiosk/garment').set(auth()).send({
+      block,
+      room_no: roomNo,
+      clothing_items: [{ type: 'Gömlek', count: 1 }],
+      intake_signature: 'imza',
+    })
+    expect(blocked.status).toBe(409)
+    const accepted = await request(app).post('/api/self-service/laundry-kiosk/garment').set(auth()).send({
+      block,
+      room_no: roomNo,
+      clothing_items: [{ type: 'Gömlek', count: 1 }],
+      intake_signature: 'imza',
+      card_code: 'AVS-C:SAKIN',
+    })
+    expect(accepted.status).toBe(201)
+    expect(okutmalar().at(-1)).toMatchObject({ item_id: accepted.body.id, action: 'intake' })
+  })
+
+  it('premium tekli ve toplu teslim uçları kartı ortak transaction ile kaydeder', async () => {
+    const singleItem = await hazirMasaustuKaydi(roomId, {
+      item_count: 1,
+      garments: [{ garment_type: 'Gömlek', count: 1 }],
+    })
+    const db = getDB()
+    const singleGarment = db.prepare('SELECT id FROM premium_garments WHERE item_id=?').get(singleItem)
+    db.prepare("UPDATE premium_garments SET status='ready' WHERE item_id=?").run(singleItem)
+    setCardSetting(AKSIYON.DELIVERY, true, db)
+
+    const blocked = await request(app).patch(`/api/laundry/garments/${singleGarment.id}/deliver`).set(auth()).send({
+      delivered_to: 'Teslim Alan',
+    })
+    expect(blocked.status).toBe(409)
+    const single = await request(app).patch(`/api/laundry/garments/${singleGarment.id}/deliver`).set(auth()).send({
+      delivered_to: 'Teslim Alan', card_code: 'AVS-C:SAKIN',
+    })
+    expect(single.status).toBe(200)
+    expect(okutmalar().at(-1)).toMatchObject({ item_id: singleItem, action: 'delivery' })
+
+    setCardSetting(AKSIYON.DELIVERY, false, db)
+    const bulkItem = await hazirMasaustuKaydi(roomId, {
+      item_count: 2,
+      garments: [{ garment_type: 'Pantolon', count: 2 }],
+    })
+    const bulkGarments = db.prepare('SELECT id FROM premium_garments WHERE item_id=?').all(bulkItem)
+    db.prepare("UPDATE premium_garments SET status='ready' WHERE item_id=?").run(bulkItem)
+    setCardSetting(AKSIYON.DELIVERY, true, db)
+    const bulk = await request(app).post(`/api/laundry/items/${bulkItem}/premium-deliver`).set(auth()).send({
+      garment_ids: bulkGarments.map(row => row.id),
+      delivered_to: 'Teslim Alan',
+      card_code: 'AVS-C:SAKIN',
+    })
+    expect(bulk.status).toBe(200)
+    expect(bulk.body.delivered).toBe(2)
+    expect(okutmalar().at(-1)).toMatchObject({ item_id: bulkItem, action: 'delivery' })
+  })
+
+  it('kısmi kiosk teslimi kart zorunluluğunu uygular', async () => {
+    const itemId = await hazirMasaustuKaydi(roomId, {
+      item_count: 2,
+      garments: [{ garment_type: 'Gömlek', count: 2 }],
+    })
+    const db = getDB()
+    const garment = db.prepare('SELECT id FROM premium_garments WHERE item_id=? ORDER BY id LIMIT 1').get(itemId)
+    db.prepare("UPDATE premium_garments SET status='ready' WHERE item_id=?").run(itemId)
+    setCardSetting(AKSIYON.DELIVERY, true, db)
+
+    const partial = cardCode => request(app).post('/api/self-service/laundry-kiosk/deliver-partial').set(auth())
+      .field('item_id', String(itemId))
+      .field('garment_ids', JSON.stringify([garment.id]))
+      .field('delivered_name', 'Teslim Alan')
+      .field('recipient_type', 'owner')
+      .field('signature', 'imza')
+      .field('card_code', cardCode || '')
+
+    expect((await partial()).status).toBe(409)
+    const accepted = await partial('AVS-C:SAKIN')
+    expect(accepted.status).toBe(200)
+    expect(accepted.body.delivered_count).toBe(1)
+    expect(okutmalar().at(-1)).toMatchObject({ item_id: itemId, action: 'delivery' })
+  })
+
+  it('sakin self-service tesliminde kartı nihai işlemde yeniden doğrular', async () => {
+    const itemId = await hazirMasaustuKaydi()
+    const residentToken = issuePersonnelKioskSession(sakinId).token
+    setCardSetting(AKSIYON.DELIVERY, true, getDB())
+
+    const settings = await request(app).get('/api/self-service/laundry-kiosk/card-settings')
+      .set({ Authorization: `Bearer ${residentToken}` })
+    expect(settings.status).toBe(200)
+    expect(settings.body.delivery_required).toBe(true)
+    const verified = await request(app).post('/api/self-service/laundry-kiosk/card-verify')
+      .set({ Authorization: `Bearer ${residentToken}` })
+      .send({ action: 'delivery', item_id: itemId, card_code: 'AVS-C:SAKIN' })
+    expect(verified.status).toBe(200)
+    expect(verified.body.code).toBe('ok')
+    expect(okutmalar()).toHaveLength(0)
+
+    const blocked = await request(app).post(`/api/self-service/laundry-kiosk/deliver-resident/${itemId}`)
+      .set({ Authorization: `Bearer ${residentToken}` }).send({ signature: 'imza' })
+    expect(blocked.status).toBe(409)
+    const accepted = await request(app).post(`/api/self-service/laundry-kiosk/deliver-resident/${itemId}`)
+      .set({ Authorization: `Bearer ${residentToken}` })
+      .send({ signature: 'imza', card_code: 'AVS-C:SAKIN' })
+    expect(accepted.status).toBe(200)
+    expect(getDB().prepare('SELECT status FROM laundry_items WHERE id=?').get(itemId).status).toBe('delivered')
+    expect(okutmalar().at(-1)).toMatchObject({ item_id: itemId, result: 'ok' })
   })
 })

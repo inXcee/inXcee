@@ -227,6 +227,19 @@ export function recordScan(scan, { item_id, operator_user_id = null, operator_wo
   return bilgi.lastInsertRowid
 }
 
+// Doğrulama ve nihai işlem uçları için tek bir HTTP sözleşmesi.
+// Bu yardımcı kayıt yazmaz; nihai işlem kartı yeniden çözümler.
+export function scanResponse(gate) {
+  return {
+    allowed: gate.allowed,
+    required: gate.required,
+    code: gate.code || null,
+    message: gate.message,
+    card: gate.card || null,
+    card_warning: gate.code === 'mismatch' ? gate.message : null,
+  }
+}
+
 // Amir ekranı: dikkat gerektiren okutmalar (eşleşmeyen, tanınmayan, gerekçeli).
 export function listScanIssues({ from = null, to = null, limit = 100 } = {}, db = getDB()) {
   const kosul = ["s.result != 'ok'"]

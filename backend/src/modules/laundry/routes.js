@@ -1,7 +1,10 @@
 import { Router } from 'express'
 import { unlinkSync } from 'node:fs'
 import { requireRole } from '../../shared/auth/middleware.js'
-import { getCardSettings, setCardSetting, listScanIssues, scanStats, AKSIYON } from './cardScan.js'
+import {
+  getCardSettings, setCardSetting, listScanIssues, scanStats,
+  resolveScan, recordScan, scanResponse, AKSIYON,
+} from './cardScan.js'
 import { createImageUpload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import * as svc from './service.js'
@@ -53,6 +56,56 @@ laundryRouter.get('/card-scans', ...laundryRead, (req, res) => {
 
 laundryRouter.get('/card-scan-stats', ...laundryRead, (req, res) => {
   res.json(scanStats({ from: req.query.from || null, to: req.query.to || null }))
+})
+
+function resolveRoomId(body = {}) {
+  const db = getDB()
+  if (body.room_id) return Number(body.room_id)
+  if (body.item_id) return db.prepare('SELECT room_id FROM laundry_items WHERE id=?').get(Number(body.item_id))?.room_id || null
+  if (body.garment_id) {
+    return db.prepare(`
+      SELECT li.room_id FROM premium_garments pg
+      JOIN laundry_items li ON li.id=pg.item_id WHERE pg.id=?
+    `).get(Number(body.garment_id))?.room_id || null
+  }
+  if (body.block && body.room_no) {
+    return db.prepare('SELECT id FROM rooms WHERE block=? AND room_no=?').get(body.block, body.room_no)?.id || null
+  }
+  return null
+}
+
+function cardGate(body, action, roomId) {
+  return resolveScan({
+    action,
+    room_id: roomId,
+    scanned_code: body?.card_code || null,
+    override_reason: body?.card_override_reason || null,
+  })
+}
+
+function rejectCardGate(res, gate, userId) {
+  if (gate.scan) {
+    try { recordScan(gate.scan, { item_id: null, operator_user_id: userId }) } catch {}
+  }
+  return res.status(409).json({
+    error: gate.message,
+    card_gate: { code: gate.code, required: gate.required },
+  })
+}
+
+function withCard(result, gate) {
+  return { ...result, card: gate.card || null, card_warning: gate.code === 'mismatch' ? gate.message : null }
+}
+
+// Anlık UI geri bildirimi için saf doğrulama; audit kaydı yalnız nihai
+// kabul/teslim işlemi sırasında yazılır.
+laundryRouter.post('/card-verify', ...laundryRead, (req, res) => {
+  try {
+    const action = req.body?.action
+    const roomId = resolveRoomId(req.body)
+    if (!roomId) return res.status(400).json({ error: 'room_id, item_id veya garment_id gerekli' })
+    res.json(scanResponse(cardGate(req.body, action, roomId)))
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
 
 function removeUploadedPhoto(req) {
@@ -193,9 +246,11 @@ laundryRouter.get('/items/:id/damages', ...laundryRead, (req, res) => {
 
 laundryRouter.post('/items', ...laundryFull, (req, res) => {
   try {
-    const item = svc.createItemService(req.body, req.user.id)
-    res.status(201).json(item)
-  } catch (e) { res.status(400).json({ error: e.message }) }
+    const gate = cardGate(req.body, AKSIYON.INTAKE, Number(req.body?.room_id))
+    if (!gate.allowed) return rejectCardGate(res, gate, req.user.id)
+    const item = svc.createItemService(req.body, req.user.id, { cardScan: gate.scan })
+    res.status(201).json(withCard(item, gate))
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
 
 laundryRouter.post('/items/:id/collect', ...laundryFull, (req, res) => {
@@ -222,9 +277,13 @@ laundryRouter.patch('/items/:id/advance', ...laundryFull, (req, res) => {
 
 laundryRouter.patch('/items/:id/deliver', ...laundryFull, (req, res) => {
   try {
-    const item = svc.deliverItemService(+req.params.id, req.body, req.user.id)
-    res.json(item)
-  } catch (e) { res.status(400).json({ error: e.message }) }
+    const roomId = resolveRoomId({ item_id: req.params.id })
+    if (!roomId) return res.status(404).json({ error: 'Kayıt bulunamadı' })
+    const gate = cardGate(req.body, AKSIYON.DELIVERY, roomId)
+    if (!gate.allowed) return rejectCardGate(res, gate, req.user.id)
+    const item = svc.deliverItemService(+req.params.id, req.body, req.user.id, null, { cardScan: gate.scan })
+    res.json(withCard(item, gate))
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
 
 laundryRouter.patch('/items/:id/revert', ...laundryFull, (req, res) => {
@@ -286,8 +345,20 @@ laundryRouter.post('/items/batch-deliver', ...laundryFull, (req, res) => {
   try {
     const { item_ids, delivered_to, signature_data } = req.body
     if (Array.isArray(item_ids) && item_ids.length > MAX_BATCH) return res.status(400).json({ error: `Tek seferde en fazla ${MAX_BATCH} kayit` })
-    const result = svc.batchDeliverService(item_ids, { delivered_to, signature_data }, req.user.id)
-    res.json(result)
+    if (!Array.isArray(item_ids) || item_ids.length === 0) return res.status(400).json({ error: 'item_ids[] zorunlu' })
+    const placeholders = item_ids.map(() => '?').join(',')
+    const rows = getDB().prepare(`SELECT id,room_id FROM laundry_items WHERE id IN (${placeholders})`).all(...item_ids.map(Number))
+    const roomIds = [...new Set(rows.map(row => Number(row.room_id)))]
+    if (getCardSettings().delivery_required && roomIds.length > 1) {
+      return res.status(400).json({
+        error: 'Kart zorunluyken toplu teslim yalnız aynı odadaki kayıtları içerebilir',
+        code: 'mixed_rooms',
+      })
+    }
+    const gate = cardGate(req.body, AKSIYON.DELIVERY, roomIds[0] || null)
+    if (!gate.allowed) return rejectCardGate(res, gate, req.user.id)
+    const result = svc.batchDeliverService(item_ids, { delivered_to, signature_data }, req.user.id, { cardScan: gate.scan })
+    res.json(withCard(result, gate))
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
@@ -830,8 +901,12 @@ laundryRouter.post('/items/:id/garments/bulk-advance', ...laundryFull, (req, res
 
 laundryRouter.patch('/garments/:id/deliver', ...laundryFull, (req, res) => {
   try {
-    const garment = svc.deliverPremiumGarmentService(+req.params.id, req.body, req.user.id)
-    res.json(garment)
+    const roomId = resolveRoomId({ garment_id: req.params.id })
+    if (!roomId) return res.status(404).json({ error: 'Parça bulunamadı' })
+    const gate = cardGate(req.body, AKSIYON.DELIVERY, roomId)
+    if (!gate.allowed) return rejectCardGate(res, gate, req.user.id)
+    const garment = svc.deliverPremiumGarmentService(+req.params.id, req.body, req.user.id, { cardScan: gate.scan })
+    res.json(withCard(garment, gate))
   } catch (e) { res.status(e.status || 400).json({ error: e.message }) }
 })
 
@@ -841,8 +916,12 @@ laundryRouter.post('/items/:id/premium-deliver', ...laundryFull, (req, res) => {
     if (!Array.isArray(garment_ids) || !delivered_to) {
       return res.status(400).json({ error: 'garment_ids[] ve delivered_to zorunlu' })
     }
-    const result = svc.bulkDeliverPremiumGarmentsService(+req.params.id, garment_ids, { delivered_to, signature_data }, req.user.id)
-    res.json(result)
+    const roomId = resolveRoomId({ item_id: req.params.id })
+    if (!roomId) return res.status(404).json({ error: 'Kayıt bulunamadı' })
+    const gate = cardGate(req.body, AKSIYON.DELIVERY, roomId)
+    if (!gate.allowed) return rejectCardGate(res, gate, req.user.id)
+    const result = svc.bulkDeliverPremiumGarmentsService(+req.params.id, garment_ids, { delivered_to, signature_data }, req.user.id, { cardScan: gate.scan })
+    res.json(withCard(result, gate))
   } catch (e) { res.status(e.status || 400).json({ error: e.message }) }
 })
 

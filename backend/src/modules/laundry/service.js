@@ -5,6 +5,7 @@ import { EVENT_KINDS } from '../../shared/notifications/events.js'
 import { logAudit } from '../../shared/audit.js'
 import { notifyItemReady } from './whatsapp.js'
 import { removeLaundryPhotoFile } from './photo-retention.js'
+import { recordScan } from './cardScan.js'
 
 // Dashboard özeti (laundry rolü) — saf okuma.
 export function getLaundrySummaryService() {
@@ -26,7 +27,7 @@ const TRANSITIONS = {
 // ITEM CRUD
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function createItemService({ room_id, item_count, item_details, notes, urgent, photo_url, phone_override, intake_name, intake_signature, clothing_items, needs_ironing, garments }, userId) {
+export function createItemService({ room_id, item_count, item_details, notes, urgent, photo_url, phone_override, intake_name, intake_signature, clothing_items, needs_ironing, garments }, userId, { cardScan = null } = {}) {
   if (!room_id) throw new Error('Oda seçilmeli')
   if (!item_count || item_count < 1) throw new Error('Parça adedi en az 1 olmalı')
 
@@ -46,13 +47,11 @@ export function createItemService({ room_id, item_count, item_details, notes, ur
       created_by: userId, tracking_mode: hasGarments ? 'individual' : 'legacy',
     })
     if (hasGarments) q.insertTrackedGarmentsQuery(newId, garments, { source: 'admin' })
+    q.insertHistoryQuery({ item_id: newId, from_status: null, to_status: 'dirty', action_by: userId, notes: `${item_count} parça kayıt` })
+    if (urgent) q.addToQueueQuery({ item_id: newId, priority: 'urgent' })
+    recordScan(cardScan, { item_id: newId, operator_user_id: userId })
     return newId
   }).immediate()
-  q.insertHistoryQuery({ item_id: id, from_status: null, to_status: 'dirty', action_by: userId, notes: `${item_count} parça kayıt` })
-
-  if (urgent) {
-    q.addToQueueQuery({ item_id: id, priority: 'urgent' })
-  }
 
   logAudit(userId, 'laundry_create', 'laundry', id, `${item_count} parça`)
   return q.getItemQuery(id)
@@ -182,7 +181,8 @@ export function deliverItemService(
   id,
   { delivered_to, signature_data, garment_ids },
   userId,
-  workerId = null
+  workerId = null,
+  { cardScan = null, afterDelivery = null } = {}
 ) {
   if (!delivered_to || !delivered_to.trim()) throw new Error('Teslim alanın adı zorunlu')
 
@@ -235,6 +235,8 @@ export function deliverItemService(
       worker_id: workerId,
       notes: `Teslim: ${delivered_to.trim()}`,
     })
+    if (afterDelivery) afterDelivery({ item, delivered_count: readyGarments.length })
+    recordScan(cardScan, { item_id: id, operator_user_id: userId, operator_worker_id: workerId })
     return { ...q.getItemQuery(id), delivered_count: readyGarments.length }
   }).immediate()
 
@@ -243,30 +245,38 @@ export function deliverItemService(
   return delivered
 }
 
-export function deliverPremiumGarmentService(garment_id, { delivered_to, signature_data }, userId) {
+export function deliverPremiumGarmentService(garment_id, { delivered_to, signature_data }, userId, { cardScan = null, workerId = null } = {}) {
   if (!delivered_to || !delivered_to.trim()) throw new Error('Teslim alanın adı zorunlu')
-  const g = q.getPremiumGarmentQuery(garment_id)
-  if (!g) throw Object.assign(new Error('Parça bulunamadı'), { status: 404 })
-  if (g.status !== 'ready') throw new Error('Sadece hazır parçalar teslim edilebilir')
-  q.deliverPremiumGarmentQuery(garment_id, g.item_id, { delivered_to: delivered_to.trim(), signature_data }, userId)
-  syncParentStatusService(g.item_id)
-  return q.getPremiumGarmentQuery(garment_id)
+  const db = getDB()
+  return db.transaction(() => {
+    const g = q.getPremiumGarmentQuery(garment_id)
+    if (!g) throw Object.assign(new Error('Parça bulunamadı'), { status: 404 })
+    if (g.status !== 'ready') throw new Error('Sadece hazır parçalar teslim edilebilir')
+    q.deliverPremiumGarmentQuery(garment_id, g.item_id, { delivered_to: delivered_to.trim(), signature_data }, userId, workerId)
+    syncParentStatusService(g.item_id)
+    recordScan(cardScan, { item_id: g.item_id, operator_user_id: userId, operator_worker_id: workerId })
+    return q.getPremiumGarmentQuery(garment_id)
+  }).immediate()
 }
 
-export function bulkDeliverPremiumGarmentsService(item_id, garment_ids, { delivered_to, signature_data }, userId) {
+export function bulkDeliverPremiumGarmentsService(item_id, garment_ids, { delivered_to, signature_data }, userId, { cardScan = null, workerId = null } = {}) {
   if (!delivered_to || !delivered_to.trim()) throw new Error('Teslim alanın adı zorunlu')
-  const item = q.getItemQuery(item_id)
-  if (!item) throw Object.assign(new Error('Kayıt bulunamadı'), { status: 404 })
-  let delivered = 0
-  for (const gid of garment_ids) {
-    const g = q.getPremiumGarmentQuery(gid)
-    if (g && g.item_id === item_id && g.status === 'ready') {
-      q.deliverPremiumGarmentQuery(gid, item_id, { delivered_to: delivered_to.trim(), signature_data }, userId)
-      delivered++
+  const db = getDB()
+  return db.transaction(() => {
+    const item = q.getItemQuery(item_id)
+    if (!item) throw Object.assign(new Error('Kayıt bulunamadı'), { status: 404 })
+    let delivered = 0
+    for (const gid of garment_ids) {
+      const g = q.getPremiumGarmentQuery(gid)
+      if (g && g.item_id === item_id && g.status === 'ready') {
+        q.deliverPremiumGarmentQuery(gid, item_id, { delivered_to: delivered_to.trim(), signature_data }, userId, workerId)
+        delivered++
+      }
     }
-  }
-  syncParentStatusService(item_id)
-  return { delivered }
+    syncParentStatusService(item_id)
+    if (delivered > 0) recordScan(cardScan, { item_id, operator_user_id: userId, operator_worker_id: workerId })
+    return { delivered }
+  }).immediate()
 }
 
 export function getPremiumDeliveryReceiptService(item_id) {
@@ -276,7 +286,7 @@ export function getPremiumDeliveryReceiptService(item_id) {
   return { item, garments }
 }
 
-export function batchDeliverService(itemIds, { delivered_to, signature_data }, userId) {
+export function batchDeliverService(itemIds, { delivered_to, signature_data }, userId, { cardScan = null, workerId = null } = {}) {
   if (!delivered_to || !delivered_to.trim()) throw new Error('Teslim alanın adı zorunlu')
   if (!Array.isArray(itemIds) || !itemIds.length) throw new Error('En az 1 kayıt seçilmeli')
 
@@ -284,7 +294,7 @@ export function batchDeliverService(itemIds, { delivered_to, signature_data }, u
   const errors = []
   for (const id of itemIds) {
     try {
-      deliverItemService(id, { delivered_to, signature_data }, userId)
+      deliverItemService(id, { delivered_to, signature_data }, userId, workerId, { cardScan })
       delivered++
     } catch (e) {
       errors.push({ id, error: e.message })

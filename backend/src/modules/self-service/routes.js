@@ -1,11 +1,11 @@
 import { Router } from 'express'
 import { unlinkSync } from 'node:fs'
-import { requireKioskOrStaff, requireLaundryKioskOperator } from '../../shared/auth/middleware.js'
+import { requireAuth, requireKioskOrStaff, requireLaundryKioskOperator } from '../../shared/auth/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import { createRequest } from '../maintenance/queries.js'
 import { changeKioskPin, issuePersonnelKioskSession } from '../../shared/auth/service.js'
 import { createLeaveService } from '../shifts/service.js'
-import { resolveScan, recordScan, AKSIYON } from '../laundry/cardScan.js'
+import { getCardSettings, resolveScan, recordScan, scanResponse, AKSIYON } from '../laundry/cardScan.js'
 import { getLeaveBalance } from '../shifts/queries.js'
 import { createNotification } from '../../shared/notifications/service.js'
 import { validate } from '../../shared/middleware/validate.js'
@@ -65,6 +65,31 @@ function rejectCardGate(res, gate, actor) {
     } catch { /* kayıt yazılamazsa da işlemi bloklamaya devam et */ }
   }
   return res.status(409).json({ error: gate.message, card_gate: { code: gate.code, required: gate.required } })
+}
+
+function resolveKioskRoomId(body = {}) {
+  const db = getDB()
+  if (body.room_id) return Number(body.room_id)
+  if (body.item_id) return db.prepare('SELECT room_id FROM laundry_items WHERE id=?').get(Number(body.item_id))?.room_id || null
+  if (body.block && body.room_no) {
+    return db.prepare('SELECT id FROM rooms WHERE block=? AND room_no=?').get(body.block, body.room_no)?.id || null
+  }
+  return null
+}
+
+function requireLaundryCardReader(req, res, next) {
+  requireAuth(req, res, () => {
+    if (req.user.role === 'kiosk' && req.user.personnelId) return next()
+    return requireLaundryKioskOperator(req, res, next)
+  })
+}
+
+function residentRoomAllowed(req, roomId) {
+  if (req.user.role !== 'kiosk') return true
+  return Boolean(getDB().prepare(`
+    SELECT 1 FROM room_assignments
+    WHERE personnel_id=? AND room_id=? AND check_out_at IS NULL
+  `).get(req.user.personnelId, roomId))
 }
 
 // Az önce atılan history satırına kiosk operatörünü damgala (operatör
@@ -508,6 +533,20 @@ selfServiceRouter.post('/feedback', requireKioskOrStaff, requirePersonnel, valid
 })
 
 // ── Laundry Kiosk (AVS çalışanları) ──────────────────────────────────────
+
+selfServiceRouter.get('/laundry-kiosk/card-settings', requireLaundryCardReader, (req, res) => {
+  res.json(getCardSettings())
+})
+
+selfServiceRouter.post('/laundry-kiosk/card-verify', requireLaundryCardReader, (req, res) => {
+  try {
+    const roomId = resolveKioskRoomId(req.body)
+    if (!roomId) return res.status(400).json({ error: 'room_id, item_id veya block/room_no gerekli' })
+    if (!residentRoomAllowed(req, roomId)) return res.status(403).json({ error: 'Yalnız kendi odanız için kart doğrulayabilirsiniz' })
+    const gate = cardGate(req, { action: req.body?.action, room_id: roomId })
+    res.json(scanResponse(gate))
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
 
 selfServiceRouter.get('/laundry-kiosk/session', requireLaundryKioskOperator, (req, res) => {
   const actor = laundryActor(req)
@@ -1271,7 +1310,11 @@ selfServiceRouter.post('/laundry-kiosk/bag', requireLaundryKioskOperator, upload
       })
       return { id, bag_no, tracking_mode, garments: tracked }
     }).immediate()
-    res.status(201).json(created)
+    res.status(201).json({
+      ...created,
+      card: kart.card || null,
+      card_warning: kart.code === 'mismatch' ? kart.message : null,
+    })
   } catch (e) {
     removeLaundryUpload(req)
     logger.error('[kiosk/bag]', e)
@@ -1486,18 +1529,28 @@ selfServiceRouter.post('/laundry-kiosk/deliver-resident/:id', requireKioskOrStaf
   try {
     const db = getDB()
     const item = db.prepare(`
-      SELECT li.id, li.status FROM laundry_items li
+      SELECT li.id, li.status, li.room_id FROM laundry_items li
       JOIN room_assignments ra ON ra.room_id = li.room_id
       WHERE li.id=? AND ra.personnel_id=? AND ra.check_out_at IS NULL AND li.status='ready'
     `).get(Number(req.params.id), req.user.personnelId)
     if (!item) return res.status(403).json({ error: 'Torba bulunamadı veya hazır değil' })
     const me = db.prepare('SELECT full_name FROM personnel WHERE id=?').get(req.user.personnelId)
+    const kart = cardGate(req, { action: AKSIYON.DELIVERY, room_id: item.room_id })
+    if (!kart.allowed) return rejectCardGate(res, kart, {})
     // Ana teslim servisi: laundry_deliveries + history + premium parça teslimi
-    deliverItemService(item.id, { delivered_to: me?.full_name || 'Sakin (self)', signature_data: signature || null }, null)
-    db.prepare(`UPDATE laundry_items SET delivered_name=?, occupant_signature=? WHERE id=?`)
-      .run(me?.full_name || 'Sakin (self)', signature || null, item.id)
-    res.json({ ok: true })
-  } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
+    deliverItemService(
+      item.id,
+      { delivered_to: me?.full_name || 'Sakin (self)', signature_data: signature || null },
+      null,
+      null,
+      {
+        cardScan: kart.scan,
+        afterDelivery: () => db.prepare(`UPDATE laundry_items SET delivered_name=?, occupant_signature=? WHERE id=?`)
+          .run(me?.full_name || 'Sakin (self)', signature || null, item.id),
+      },
+    )
+    res.json({ ok: true, card: kart.card || null, card_warning: kart.code === 'mismatch' ? kart.message : null })
+  } catch (e) { res.status(e.status || 500).json({ error: e.message || 'Sunucu hatası' }) }
 })
 
 selfServiceRouter.put('/laundry-kiosk/bags/:id/ironing', requireLaundryKioskOperator, (req, res) => {
@@ -1785,12 +1838,18 @@ selfServiceRouter.post(
       const itemId = Number(req.body?.item_id)
       const db = getDB()
       const item = db.prepare(`
-        SELECT li.id,r.block FROM laundry_items li JOIN rooms r ON r.id=li.room_id WHERE li.id=?
+        SELECT li.id,li.room_id,r.block FROM laundry_items li JOIN rooms r ON r.id=li.room_id WHERE li.id=?
       `).get(itemId)
       if (!item) throw Object.assign(new Error('Torba bulunamadı'), { status: 404 })
       const signature = String(req.body?.signature || '').trim()
       if (blockNeedsSignature(item.block) && !signature) {
         throw Object.assign(new Error(`${item.block} blok tesliminde imza zorunludur`), { status: 400 })
+      }
+      const actor = laundryActor(req)
+      const kart = cardGate(req, { action: AKSIYON.DELIVERY, room_id: item.room_id })
+      if (!kart.allowed) {
+        removeLaundryUpload(req)
+        return rejectCardGate(res, kart, actor)
       }
       const delivery = createPartialDelivery({
         item_id: itemId,
@@ -1801,7 +1860,7 @@ selfServiceRouter.post(
         third_party_reason: req.body?.third_party_reason,
         signature_data: signature || null,
         photo_url: req.file ? `/uploads/${req.file.filename}` : null,
-      }, laundryActor(req))
+      }, actor, { cardScan: kart.scan })
       auditLaundryKiosk(db, req, 'laundry_partial_delivery', delivery.id, {
         itemId, garmentIds: delivery.garment_ids, status: delivery.status,
       })
@@ -1812,7 +1871,11 @@ selfServiceRouter.post(
           dedup_key: `laundry_third_party_delivery_${delivery.id}`,
         })
       }
-      res.status(delivery.approval_required ? 202 : 200).json(delivery)
+      res.status(delivery.approval_required ? 202 : 200).json({
+        ...delivery,
+        card: kart.card || null,
+        card_warning: kart.code === 'mismatch' ? kart.message : null,
+      })
     } catch (e) {
       removeLaundryUpload(req)
       res.status(e.status || 400).json({ error: e.message })
@@ -1855,23 +1918,24 @@ selfServiceRouter.post('/laundry-kiosk/bags/:id/deliver', requireLaundryKioskOpe
         garment_ids: garmentIds,
       },
       actor.userId,
-      actor.workerId
+      actor.workerId,
+      {
+        cardScan: kart.scan,
+        afterDelivery: ({ delivered_count }) => db.prepare(`
+          UPDATE laundry_items
+          SET delivered_name=?, file_count=?, occupant_signature=?,
+              last_modified_worker_id=?, last_modified_at=datetime('now')
+          WHERE id=?
+        `).run(
+          delivered_name.trim(),
+          delivered_count || item.item_count,
+          signature || null,
+          actor.workerId,
+          item.id,
+        ),
+      },
     )
     const deliveredCount = delivered.delivered_count || item.item_count
-    db.prepare(`
-      UPDATE laundry_items
-      SET delivered_name=?, file_count=?, occupant_signature=?,
-          last_modified_worker_id=?, last_modified_at=datetime('now')
-      WHERE id=?
-    `).run(
-      delivered_name.trim(),
-      deliveredCount,
-      signature || null,
-      actor.workerId,
-      item.id
-    )
-    // Kim aldı kaydı — teslim yazıldıktan sonra, aynı istek içinde.
-    recordScan(kart.scan, { item_id: item.id, operator_user_id: actor.userId, operator_worker_id: actor.workerId })
     auditLaundryKiosk(db, req, 'laundry_deliver', item.id, {
       deliveredCount,
       garmentIds: garmentIds || null,
@@ -1900,6 +1964,8 @@ selfServiceRouter.post('/laundry-kiosk/garment', requireLaundryKioskOperator, (r
     }
     const itemStatus = isPremium ? 'ironing' : 'dirty'
     const actor = laundryActor(req)
+    const kart = cardGate(req, { action: AKSIYON.INTAKE, room_id: room.id })
+    if (!kart.allowed) return rejectCardGate(res, kart, actor)
     const created = db.transaction(() => {
       const id = insertItemQuery({
         room_id: room.id,
@@ -1939,10 +2005,11 @@ selfServiceRouter.post('/laundry-kiosk/garment', requireLaundryKioskOperator, (r
         trackingMode: 'individual',
         source: 'legacy_garment_endpoint',
       })
+      recordScan(kart.scan, { item_id: id, operator_user_id: actor.userId, operator_worker_id: actor.workerId })
       return { id, bag_no: bagNo, tracking_mode: 'individual', garments }
     }).immediate()
-    res.status(201).json(created)
-  } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
+    res.status(201).json({ ...created, card: kart.card || null, card_warning: kart.code === 'mismatch' ? kart.message : null })
+  } catch (e) { res.status(e.status || 500).json({ error: e.message || 'Sunucu hatası' }) }
 })
 
 selfServiceRouter.get('/laundry-kiosk/machines', requireLaundryKioskOperator, (req, res) => {
@@ -2069,6 +2136,8 @@ selfServiceRouter.post('/laundry-kiosk/deliver-room', requireLaundryKioskOperato
   if (!delivered_name || !delivered_name.trim()) return res.status(400).json({ error: 'delivered_name gerekli' })
   try {
     const db = getDB()
+    const room = db.prepare('SELECT id FROM rooms WHERE block=? AND room_no=?').get(block, room_no)
+    if (!room) return res.status(404).json({ error: 'Oda bulunamadı' })
     const bags = db.prepare(`
       SELECT li.id, li.bag_no FROM laundry_items li
       JOIN rooms r ON r.id = li.room_id
@@ -2090,11 +2159,20 @@ selfServiceRouter.post('/laundry-kiosk/deliver-room', requireLaundryKioskOperato
     const deliveredIds = []
     const failed = []
     const actor = laundryActor(req)
+    const kart = cardGate(req, { action: AKSIYON.DELIVERY, room_id: room.id })
+    if (!kart.allowed) return rejectCardGate(res, kart, actor)
     for (const b of bags) {
       try {
-        deliverItemService(b.id, { delivered_to: delivered_name.trim(), signature_data: signature || null }, null)
-        extraStmt.run(delivered_name.trim(), signature || null, actor.workerId || null, b.id)
-        stampHistoryWorker(db, b.id, actor.workerId)
+        deliverItemService(
+          b.id,
+          { delivered_to: delivered_name.trim(), signature_data: signature || null },
+          actor.userId,
+          actor.workerId,
+          {
+            cardScan: kart.scan,
+            afterDelivery: () => extraStmt.run(delivered_name.trim(), signature || null, actor.workerId || null, b.id),
+          },
+        )
         delivered.push(b.bag_no || `#${b.id}`)
         deliveredIds.push(b.id)
       } catch (e) {
@@ -2106,7 +2184,14 @@ selfServiceRouter.post('/laundry-kiosk/deliver-room', requireLaundryKioskOperato
         block, roomNo: room_no, deliveredTo: delivered_name.trim(), itemIds: deliveredIds,
       })
     }
-    res.json({ ok: true, delivered: delivered.length, bag_nos: delivered, failed })
+    res.json({
+      ok: true,
+      delivered: delivered.length,
+      bag_nos: delivered,
+      failed,
+      card: kart.card || null,
+      card_warning: kart.code === 'mismatch' ? kart.message : null,
+    })
   } catch (e) { res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
