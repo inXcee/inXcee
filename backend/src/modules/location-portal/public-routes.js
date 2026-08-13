@@ -13,8 +13,10 @@ import {
   portalCleaningCompleteSchema,
   portalCleaningReviewSchema,
   portalFaultSchema,
+  portalLaundryRequestSchema,
   portalSurveySchema,
 } from './public-action-schemas.js'
+import { submitPortalLaundryRequest } from './laundry-request-action.js'
 import { submitPortalFault, submitPortalSurvey } from './public-actions.js'
 import {
   completePortalCleaning,
@@ -213,6 +215,27 @@ roomPortalRouter.post(
       })
     }
   },
+)
+
+// Çamaşır alma talebi — TESLİM DEĞİL. Torba fiziksel alınırken kart kapısı,
+// gerekçe, imza ve premium kuralları baştan uygulanır.
+roomPortalRouter.post(
+  '/:token/laundry-requests',
+  portalLimiter,
+  actionLimiter,
+  validate(portalLaundryRequestSchema),
+  (req, res) => {
+    try {
+      res.status(201).json(submitPortalLaundryRequest({
+        token: req.params.token,
+        sessionToken: req.get('X-Portal-Session') || req.body?.session_token || null,
+        body: req.validated,
+        ip: req.ip,
+      }))
+    } catch (error) {
+      res.status(error.statusCode || 400).json({ error: error.message, code: error.code })
+    }
+  }
 )
 
 roomPortalRouter.post('/:token/surveys', portalLimiter, actionLimiter, validate(portalSurveySchema), (req, res) => {

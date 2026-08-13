@@ -49,3 +49,11 @@ export const portalCleaningReviewSchema = z.object({
     context.addIssue({ code: 'custom', path: ['comment'], message: 'Eksik bildiriminde en az 3 karakter açıklama gerekli' })
   }
 })
+
+// Çamaşır alma talebi. Not isteğe bağlı; torba tahmini 1-20 arası — üstü
+// yazım hatasıdır, altı anlamsız.
+export const portalLaundryRequestSchema = z.object({
+  note: z.string().trim().max(300).optional(),
+  bag_estimate: z.coerce.number().int().min(1).max(20).optional(),
+  client_request_id: z.string().trim().min(8).max(80).regex(/^[a-zA-Z0-9-]+$/),
+})
