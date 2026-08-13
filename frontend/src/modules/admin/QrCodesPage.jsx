@@ -11,8 +11,20 @@ import { BLOCKS } from '../../shared/blocks.js'
 //
 // Buradaki iş üç şey: kapsamı görmek, eksikleri üretmek, basmak.
 //
-// Baskı blok blok yapılır — 1078 etiketin tamamı tek dosyada ~11 saniye sürer
-// ve 6 MB olur. Bu ekran filtreyi öne koyar, "hepsini bas" bilinçli bir seçim.
+// Baskı blok blok yapılır. Süre SUNUCUDA ölçüldü (CX22, 2 çekirdek): etiket
+// başına ~37 ms. 1078 etiketin tamamı ~40 saniye ve 7 MB. Geliştirme
+// makinesinde 4 kat hızlıydı — oradaki ölçüme göre "11 saniye" yazmak
+// kullanıcıya yalan söylemek olurdu.
+
+// Sunucuda ölçülen etiket başına süre. Tahmini buradan üretiyoruz ki konum
+// sayısı değişince metin de kendiliğinden doğru kalsın.
+const MS_PER_ETIKET = 37
+
+function sureTahmini(adet) {
+  const sn = Math.round((adet || 0) * MS_PER_ETIKET / 1000)
+  if (sn < 60) return `~${sn} saniye`
+  return `~${Math.ceil(sn / 60)} dakika`
+}
 
 const TIPLER = [
   { value: '', label: 'Tüm konum tipleri' },
@@ -135,7 +147,7 @@ export default function QrCodesPage() {
         </select>
 
         <button className="btn btn-primary btn-sm" disabled={indiriliyor} onClick={pdfIndir}>
-          {indiriliyor ? 'Hazırlanıyor…' : '🖨 Etiketleri bas (PDF)'}
+          {indiriliyor ? 'Hazırlanıyor, bekleyin…' : '🖨 Etiketleri bas (PDF)'}
         </button>
 
         {eksik > 0 && (
@@ -148,7 +160,8 @@ export default function QrCodesPage() {
       {/* Filtresiz baskı 1078 etiket / ~11 sn / 6 MB — bilerek seçilsin. */}
       {!blok && !kat && !tip && (
         <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 10 }}>
-          Filtre seçmezseniz tüm konumlar basılır ({k.active_locations ?? '?'} etiket, ~11 saniye).
+          Filtre seçmezseniz tüm konumlar basılır: {k.active_locations ?? '?'} etiket,{' '}
+          {Math.ceil((k.active_locations ?? 0) / 12)} sayfa, {sureTahmini(k.active_locations)}.
           Blok seçerek çok daha hızlı basabilirsiniz.
         </div>
       )}

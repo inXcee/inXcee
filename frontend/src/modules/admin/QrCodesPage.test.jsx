@@ -68,10 +68,12 @@ describe('QR kodları ekranı', () => {
     expect(await screen.findByText(/Portal kapalı/)).toBeInTheDocument()
   })
 
-  // Filtresiz baskı 1078 etiket / ~11 sn; kullanıcı bilerek seçsin.
-  it('filtre seçilmemişken tam baskı maliyetini söyler', async () => {
+  // Süre SUNUCUDA ölçüldü; geliştirme makinesinin ölçümünü yazmak yalan olurdu.
+  it('filtresiz baskının gerçek maliyetini sayfa ve süreyle söyler', async () => {
     ciz()
-    expect(await screen.findByText(/1078 etiket, ~11 saniye/)).toBeInTheDocument()
+    expect(await screen.findByText(/1078 etiket/)).toBeInTheDocument()
+    expect(screen.getByText(/90 sayfa/)).toBeInTheDocument()
+    expect(screen.getByText(/~40 saniye/)).toBeInTheDocument()
   })
 
   it('blok seçilince uyarı kalkar ve istek filtrelenir', async () => {
