@@ -109,6 +109,7 @@ const KioskEnrollmentPage = lazy(() => import('./modules/kiosk-enrollment/KioskE
 const NotificationPrefsPage = lazy(() => import('./modules/notification-prefs/NotificationPrefsPage.jsx'))
 const NotificationsCenterPage = lazy(() => import('./modules/notifications/NotificationsCenterPage.jsx'))
 const KvkkPage = lazy(() => import('./modules/kvkk/KvkkPage.jsx'))
+const RoomPortalPage = lazy(() => import('./modules/room-portal/RoomPortalPage.jsx'))
 
 function PrivateRoute({ children }) {
   const user = useAuthStore(s => s.user)
@@ -258,7 +259,9 @@ function SetupGate({ children }) {
   const onSetup = location.pathname === '/setup'
   // Public sayfalar setup zorunluluğundan muaf (KVKK kanun gereği herkese açık)
   const publicPaths = ['/setup', '/kvkk']
-  const onPublic = publicPaths.includes(location.pathname) || location.pathname.startsWith('/driver/trips/')
+  const onPublic = publicPaths.includes(location.pathname)
+    || location.pathname.startsWith('/driver/trips/')
+    || location.pathname.startsWith('/r/')
   if (data?.needs_setup && !onPublic) return <Navigate to="/setup" replace />
   if (!data?.needs_setup && onSetup) return <Navigate to="/login" replace />
   return children
@@ -305,6 +308,7 @@ export default function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/kvkk" element={<KvkkPage />} />
           <Route path="/driver/trips/:token" element={<DriverTripPage />} />
+          <Route path="/r/:token" element={<RoomPortalPage />} />
           <Route path="/kiosk" element={<SelfServicePage />} />
           <Route path="/laundry-kiosk" element={<LaundryKioskPage />} />
           <Route path="/avs-kiosk" element={<AvsSelfServicePage />} />

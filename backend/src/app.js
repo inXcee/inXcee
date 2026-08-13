@@ -99,6 +99,7 @@ import { commsRouter } from './modules/communications/routes.js'
 import { integrityRouter } from './modules/integrity/routes.js'
 import { kioskDeviceRouter, kioskManagementRouter } from './modules/kiosk-management/routes.js'
 import { locationPortalRouter } from './modules/location-portal/routes.js'
+import { roomPortalRouter } from './modules/location-portal/public-routes.js'
 
 if (process.env.NODE_ENV === 'production' && !process.env.ALLOWED_ORIGIN) {
   logger.error('[Startup] HATA: ALLOWED_ORIGIN env değişkeni production\'da zorunludur.')
@@ -376,6 +377,7 @@ app.use('/api/setup', authLimiter, setupRouter)
 app.use('/api/auth', authLimiter, authRouter)
 app.use('/public/transport/trips', driverLinkLimiter, transportPublicRouter)
 app.use('/api/public', readLimiter, publicRouter)  // login öncesi güvenli toplu sayılar (auth yok)
+app.use('/api/room-portal', roomPortalRouter)
 app.use('/api/mobile/auth', mobileAuthLimiter, mobileAuthRouter)
 app.use('/api/checkin', writeLimiter, checkinRouter)
 app.use('/api/capacity', writeLimiter, capacityRouter)
