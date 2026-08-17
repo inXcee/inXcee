@@ -17,6 +17,7 @@ import { createGarmentTypeSchema, updateGarmentTypeSchema, createBagSchema } fro
 import {
   approvePartialDelivery, createIncident, getCostReport, listIncidents, updateIncident,
 } from './phase5.js'
+import { listOpenPickupRequests, closePickupRequest } from '../location-portal/laundry-request-action.js'
 
 export const laundryRouter = Router()
 
@@ -1147,4 +1148,41 @@ laundryRouter.patch('/bags/:id/status', ...laundryFull, (req, res) => {
   const r = db.prepare(`UPDATE laundry_bags SET ${sets.join(', ')} WHERE id = ?`).run(...params)
   if (r.changes === 0) return res.status(404).json({ error: 'Çanta bulunamadı' })
   res.json({ ok: true })
+})
+
+// ── Oda QR'ından gelen çamaşır alma talepleri ───────────────────────────────
+//
+// Faz 5 talebi oluşturuyor ve çamaşırhaneye bildirim atıyordu, ama talebi
+// GÖRECEK ve KAPATACAK bir uç yoktu: sakin "talebiniz iletildi" makbuzu
+// alıyor, çamaşırhanede zil çalıyor, sonrası boşluktu.
+//
+// Kapatmanın ayrıca bir önemi var: oda başına tek açık talep kısıtı var
+// (kısmi UNIQUE index). Talep hiç kapatılmazsa o oda bir daha "yeni" talep
+// açamaz — hepsi eski kayda birleşir ve sayaç artar. Yani kapatma, kuyruğu
+// temizlemekten ibaret değil; sakinin bir sonraki isteğinin görünmesini sağlar.
+
+laundryRouter.get('/pickup-requests', ...laundryRead, (req, res) => {
+  try {
+    res.json(listOpenPickupRequests({ block: req.query.block || null }))
+  } catch (error) {
+    logger.error({ err: error }, '[laundry.pickup-requests.list]')
+    res.status(500).json({ error: 'Çamaşır talepleri alınamadı' })
+  }
+})
+
+laundryRouter.post('/pickup-requests/:id/close', ...laundryFull, (req, res) => {
+  try {
+    const kayit = closePickupRequest(Number(req.params.id), {
+      status: req.body?.status || 'collected',
+      laundryItemId: req.body?.laundry_item_id || null,
+      reason: req.body?.reason || null,
+      userId: req.user.id,
+    })
+    logAudit(req.user.id, 'laundry_pickup_request_close', 'laundry', kayit.id, kayit.status)
+    res.json(kayit)
+  } catch (error) {
+    if (error.statusCode) { res.status(error.statusCode).json({ error: error.message, code: error.code }); return }
+    logger.error({ err: error }, '[laundry.pickup-requests.close]')
+    res.status(500).json({ error: 'Talep kapatılamadı' })
+  }
 })

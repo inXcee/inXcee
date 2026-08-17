@@ -42,6 +42,7 @@ import FullRecordsView         from './components/FullRecordsView.jsx'
 import { KanbanCard, KanbanCol } from './components/KanbanBoard.jsx'
 import BatchDeliveryModal from './components/BatchDeliveryModal.jsx'
 import { useLaundryCardRequirement } from './laundryCard.js'
+import PickupRequestsPanel from './PickupRequestsPanel.jsx'
 
 // ── Filter config ──────────────────────────────────────────────
 const FILTERS = [
@@ -432,6 +433,10 @@ export default function LaundryHub({ defaultView = 'kanban' }) {
 
       {/* ── SLA ── */}
       <SlaAlert violations={violations} preWarnings={preWarnings} />
+
+      {/* Oda QR'ından gelen talepler: sakin istedi, torba henüz alınmadı.
+          SLA uyarısının hemen altında — çünkü bunlar da bekleyen iş. */}
+      <PickupRequestsPanel />
 
       {/* ── KPI STRIP ── */}
       {/* 6 sabit sütun 360-412px ekranlarda yatay taşma yapıyordu — auto-fit ile sarılır */}
