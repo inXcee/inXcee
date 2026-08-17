@@ -116,7 +116,9 @@ kontrolünden geçer ve sharp ile yeniden kodlanır (EXIF temizlenir).
 | `GET /calibration.pdf` | yönetici |
 | `GET /deployments`, `/deployments/stale`, `/deployments/mismatches` | oku |
 | `POST /deployments/verify`, `/install`, `/:id/issue` | saha rolleri |
-| `GET /analytics` | oku |
+| `GET /analytics` | oku — sakin temizlik puanı dahil |
+| `GET /api/laundry/pickup-requests` | çamaşırhane, amir, yönetici |
+| `POST /api/laundry/pickup-requests/:id/close` | çamaşırhane, yönetici |
 
 ---
 
@@ -192,6 +194,25 @@ Ekran: **Ayarlar → QR Basım & Kurulum**.
 Token döndürüldüğünde kapıdaki kâğıt ölür ve **bayat etiket listesine** düşer
 (`GET /deployments/stale`). Rutin yeniden basım bütün kampüs QR'larını
 değiştirmez.
+
+---
+
+## Gelen kayıt kime düşüyor
+
+Bir hizmeti açmadan önce sorulacak soru: sakin bunu kullanınca oluşan kayıt
+KİMİN ekranına düşüyor? İki boşluk tam da bu soruyla bulundu.
+
+| Hizmet | Kayıt | Kim görür |
+|---|---|---|
+| Arıza | `maintenance_requests` (`source='room_qr'`) + medya | Teknik/arıza ekranları, kampüs haritası |
+| Çamaşır talebi | `laundry_pickup_requests` | **Çamaşırhane ekranındaki talep paneli** |
+| Temizlik — şikayet | `cleaning_task_reviews` + otomatik takip `cleaning_tasks` | Normal temizlik kuyruğu |
+| Temizlik — puan/onay | `cleaning_task_reviews` | **QR Analitiği → sakin temizlik değerlendirmesi** |
+| Anket | `surveys` | Anket ekranları, yönetim widget'ları |
+
+Çamaşır talebini kapatmak, kuyruk temizliğinden ibaret değil: oda başına tek
+açık talep kısıtı (kısmi UNIQUE index) yüzünden kapatılmayan talep, o odanın
+bir daha "yeni" talep açmasını engeller — sonraki istekler eskisine birleşir.
 
 ---
 
