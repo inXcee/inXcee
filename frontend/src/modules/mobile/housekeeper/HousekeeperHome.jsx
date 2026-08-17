@@ -117,6 +117,27 @@ export default function HousekeeperHome() {
         <p style={{ fontSize: '12px', color: '#6b7280', margin: '4px 0 0' }}>{today}</p>
       </div>
 
+      {/* Saha dağıtımı: alt nav 5 sekmede kalsın diye giriş buradan.
+          QR etiketleri kapıya asılıp yerinde doğrulanana kadar gerekli. */}
+      <button
+        type="button"
+        onClick={() => navigate('qr-field')}
+        style={{
+          width: '100%', minHeight: '52px', marginBottom: '16px',
+          display: 'flex', alignItems: 'center', gap: '10px',
+          padding: '12px 14px', borderRadius: '12px', cursor: 'pointer',
+          border: '1px solid #d1d5db', background: '#fff', textAlign: 'left',
+        }}
+      >
+        <span style={{ fontSize: '20px' }}>📷</span>
+        <span>
+          <span style={{ display: 'block', fontSize: '14px', fontWeight: 600 }}>Saha Dağıtımı</span>
+          <span style={{ display: 'block', fontSize: '11.5px', color: '#6b7280' }}>
+            Kapıdaki QR etiketini okut, yerinde doğrula
+          </span>
+        </span>
+      </button>
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '16px' }}>
         {['pending', 'done', 'skipped'].map(s => (
           <button key={s} onClick={() => setFilter(s)}

@@ -62,6 +62,9 @@ export const SETTINGS_GROUPS = [
       { key: 'qr-codes', label: 'Oda QR Kodları', icon: '⬛', roles: ROL.YONETICI, desc: 'Oda ve ortak alan QR kodları, etiket basımı', keywords: 'qr kod etiket oda basim portal karekod' },
       { key: 'qr-deployment', label: 'QR Basım & Kurulum', icon: '🖨', roles: ROL.YONETICI, desc: 'Basım partileri, kalibrasyon ve yerinde doğrulama', keywords: 'basim parti etiket kalibrasyon kurulum dogrulama yazici' },
       { key: 'qr-portal', label: 'QR Portal Yönetimi', icon: '📊', roles: ROL.YONETICI, desc: 'Portal ayarları, hizmet anahtarları ve QR analitiği', keywords: 'portal ayar analitik istatistik hizmet pin okutma rapor' },
+      // Meydancı ve teknik mobil kabukta yaşıyor, Ayarlar'ı hiç görmüyor —
+      // onların girişi /mobile/housekeeper/qr-field rotası.
+      { key: 'qr-field', label: 'Saha Dağıtımı', icon: '📷', roles: ROL.YONETIM, desc: 'Koridorda etiket okutup yerinde doğrulama', keywords: 'saha dagitim okut kamera dogrula etiket koridor mobil' },
       { key: 'kiosk-devices', label: 'Kiosk Cihazları', icon: '▣', roles: ROL.YONETIM, desc: 'Cihaz kaydı, komut ve oturumlar', keywords: 'cihaz tablet kiosk device' },
       { key: 'avs-workers', label: 'AVS Çalışanları', icon: '👷', roles: ROL.YONETICI, desc: 'AVS personeli hesapları', keywords: 'avs calisan hesap' },
     ],
