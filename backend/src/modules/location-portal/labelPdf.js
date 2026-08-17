@@ -136,19 +136,13 @@ function kapakSayfasi(doc, fonts, { tpl, adet, sayfa, batchNo, filtre }) {
   }
 }
 
-/**
- * Etiket föyünü PDF stream olarak üretir.
- * Buffer toplamak yerine stream dönüyoruz: 1078 etikette bellek şişmesin.
- *
- * @returns pdfkit belgesi (readable stream)
- */
-export function streamLabelPdf(locations = [], opts = {}) {
+// Belge iskeleti. Senkron ve akışlı üretim aynı yerden kurulur ki ikisi
+// arasında sessiz bir yerleşim farkı oluşmasın.
+function belgeHazirla(locations, opts) {
   const tpl = getTemplate(opts.template)
   const cal = normalizeCalibration(opts.calibration)
   const baseUrl = opts.baseUrl || 'https://avskamp.com'
   const kayitlar = (locations || []).filter(k => k && k.token)
-  const perPage = labelsPerPage(tpl)
-
   const doc = new PDFDocument({
     size: [tpl.page.w * MM, tpl.page.h * MM],
     margin: 0,
@@ -156,12 +150,13 @@ export function streamLabelPdf(locations = [], opts = {}) {
     autoFirstPage: false,
   })
   const fonts = registerTurkishFonts(doc)
+  return { doc, fonts, tpl, cal, baseUrl, kayitlar, perPage: labelsPerPage(tpl) }
+}
 
-  // GERÇEK akış buradan doğar: hedefe ÇİZİM BAŞLAMADAN bağlanmak gerekir.
-  // Sonradan pipe edilirse pdfkit geri basınç uygulamadığı için 1078 etiketin
-  // tamamı (~10 MB) bellekte birikir — "stream" adı kalır, faydası kalmaz.
-  if (opts.pipeTo) doc.pipe(opts.pipeTo)
-
+// Kapak ve "etiket yok" sayfası. Basılacak kayıt yoksa belgeyi kapatır ve
+// true döner — boş PDF "hepsi basıldı" gibi okunmasın diye açık uyarı basılır.
+function girisSayfalari(ctx, opts) {
+  const { doc, fonts, tpl, kayitlar, perPage } = ctx
   const etiketSayfa = Math.max(1, Math.ceil(kayitlar.length / perPage))
 
   if (opts.coverPage !== false && tpl.key !== 'tek_100x70') {
@@ -172,23 +167,34 @@ export function streamLabelPdf(locations = [], opts = {}) {
     })
   }
 
-  // Kayıt yoksa boş PDF "hepsi basıldı" gibi okunur.
-  if (kayitlar.length === 0) {
-    doc.addPage()
-    doc.font(fonts.bold).fontSize(13).fillColor(RENK.metin)
-    doc.text(pdfText('Basılacak etiket yok', fonts), 20 * MM, 40 * MM, { width: 160 * MM, align: 'center' })
-    doc.font(fonts.regular).fontSize(9).fillColor(RENK.soluk)
-    doc.text(pdfText('Seçtiğiniz filtreye uyan, aktif QR kodu olan konum bulunamadı.', fonts),
-      20 * MM, 48 * MM, { width: 160 * MM, align: 'center' })
-    doc.end()
-    return doc
-  }
+  if (kayitlar.length > 0) return false
 
-  const seriler = []
-  kayitlar.forEach((konum, i) => {
+  doc.addPage()
+  doc.font(fonts.bold).fontSize(13).fillColor(RENK.metin)
+  doc.text(pdfText('Basılacak etiket yok', fonts), 20 * MM, 40 * MM, { width: 160 * MM, align: 'center' })
+  doc.font(fonts.regular).fontSize(9).fillColor(RENK.soluk)
+  doc.text(pdfText('Seçtiğiniz filtreye uyan, aktif QR kodu olan konum bulunamadı.', fonts),
+    20 * MM, 48 * MM, { width: 160 * MM, align: 'center' })
+  doc.end()
+  doc.__seriler = []
+  return true
+}
+
+/**
+ * Etiketleri çizer ve HER SAYFA SONUNDA durur (yield).
+ *
+ * Duraklar akışlı üretimin tek dayanağı: pdfkit çizimi senkron yapar, bu
+ * yüzden araya olay döngüsü girmezse pipe'ın yazma geri çağrıları hiç
+ * çalışamaz ve PDF'in tamamı pdfkit'in okuma tamponunda birikir.
+ */
+function* etiketAdimlari(ctx, opts, seriler) {
+  const { doc, fonts, tpl, cal, baseUrl, kayitlar, perPage } = ctx
+  for (let i = 0; i < kayitlar.length; i += 1) {
     const sayfaIci = i % perPage
-    if (sayfaIci === 0) doc.addPage()
-
+    if (sayfaIci === 0) {
+      if (i > 0) yield i          // önceki sayfa bitti
+      doc.addPage()
+    }
     const sutun = sayfaIci % tpl.cols
     const satir = Math.floor(sayfaIci / tpl.cols)
 
@@ -198,12 +204,69 @@ export function streamLabelPdf(locations = [], opts = {}) {
     const w = tpl.labelW * MM * cal.scale
     const h = tpl.labelH * MM * cal.scale
 
-    seriler.push(drawLabel(doc, fonts, konum, { x, y, w, h, tpl, baseUrl, cut: opts.cutMarks !== false }))
+    seriler.push(drawLabel(doc, fonts, kayitlar[i], { x, y, w, h, tpl, baseUrl, cut: opts.cutMarks !== false }))
+  }
+}
+
+/**
+ * Etiket föyünü tek seferde (senkron) üretir.
+ *
+ * DİKKAT: buradaki `pipeTo` hedefi baştan bağlar ama TEK BAŞINA AKIŞ SAĞLAMAZ.
+ * Çizim baştan sona senkron olduğu için olay döngüsü araya giremez ve bütün
+ * PDF pdfkit'in okuma tamponunda birikir. Kampüs ölçeğinde (1174+ etiket,
+ * ~4 MB) gerçek akış için `writeLabelPdfTo` kullanılmalıdır.
+ *
+ * @returns pdfkit belgesi
+ */
+export function streamLabelPdf(locations = [], opts = {}) {
+  const ctx = belgeHazirla(locations, opts)
+  if (opts.pipeTo) ctx.doc.pipe(opts.pipeTo)
+  if (girisSayfalari(ctx, opts)) return ctx.doc
+
+  const seriler = []
+  // Senkron tüketim: duraklara uğrar ama beklemez.
+  for (const _durak of etiketAdimlari(ctx, opts, seriler)) { /* duraksız devam */ }
+
+  ctx.doc.end()
+  ctx.doc.__seriler = seriler
+  return ctx.doc
+}
+
+/**
+ * GERÇEK akışlı üretim: hedefe bağlanır, her sayfadan sonra olay döngüsüne
+ * dönerek pipe'ın biriken yazmalarını boşaltır.
+ *
+ * 1174+ etikette senkron sürüm PDF'in tamamını (~4 MB) bellekte tutuyordu;
+ * bu sürümde tamponda aynı anda yalnız birkaç sayfa durur.
+ *
+ * @param target  Writable (HTTP yanıtı, dosya akışı…)
+ * @returns bitince pdfkit belgesi (seriler `__seriler` içinde)
+ */
+export async function writeLabelPdfTo(target, locations = [], opts = {}) {
+  const ctx = belgeHazirla(locations, opts)
+  ctx.doc.pipe(target)
+  // Belgeyi üretim SÜRERKEN dışarı verir: akışın gerçekten boşaldığını
+  // ölçebilmek (doc.readableLength) buna bağlı.
+  if (typeof opts.onDocument === 'function') opts.onDocument(ctx.doc)
+
+  const bitti = new Promise((coz, red) => {
+    target.once('finish', coz)
+    target.once('error', red)
+    ctx.doc.once('error', red)
   })
 
-  doc.end()
-  doc.__seriler = seriler
-  return doc
+  if (!girisSayfalari(ctx, opts)) {
+    const seriler = []
+    for (const _durak of etiketAdimlari(ctx, opts, seriler)) {
+      // Olay döngüsüne dönüş: pipe biriken yazmaları hedefe aktarır.
+      await new Promise(coz => { setImmediate(coz) })
+    }
+    ctx.doc.end()
+    ctx.doc.__seriler = seriler
+  }
+
+  await bitti
+  return ctx.doc
 }
 
 // Kalibrasyon sayfası: QR içermez, yalnız etiket sınırlarını çizer. Kullanıcı

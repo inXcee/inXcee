@@ -3,7 +3,7 @@ import { unlinkSync } from 'node:fs'
 import { requireRole } from '../../shared/auth/middleware.js'
 import {
   getCardSettings, setCardSetting, listScanIssues, scanStats,
-  resolveScan, recordScan, scanResponse, AKSIYON,
+  resolveScan, recordScan, scanResponse, cardCoverage, AKSIYON,
 } from './cardScan.js'
 import { createImageUpload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { getDB } from '../../shared/db/index.js'

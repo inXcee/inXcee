@@ -99,7 +99,19 @@ export function createPrintBatch({ templateKey, calibration, filters = {}, items
         verified_at = CASE
           WHEN location_qr_deployments.qr_code_id IS NOT excluded.qr_code_id THEN NULL
           ELSE location_qr_deployments.verified_at
-        END
+        END,
+        -- Hasar/kaldırma izi YENİ kâğıt basılınca temizlenir. Aksi hâlde taze
+        -- etiket "Yırtılmış" notunu taşımaya devam eder ve saha listesi
+        -- çoktan çözülmüş bir işi göstermeye devam eder.
+        damaged_at = CASE
+          WHEN location_qr_deployments.status IN ('damaged','removed') THEN NULL
+          ELSE location_qr_deployments.damaged_at END,
+        damage_note = CASE
+          WHEN location_qr_deployments.status IN ('damaged','removed') THEN NULL
+          ELSE location_qr_deployments.damage_note END,
+        removed_at = CASE
+          WHEN location_qr_deployments.status IN ('damaged','removed') THEN NULL
+          ELSE location_qr_deployments.removed_at END
     `)
     const printedStmt = db.prepare("UPDATE location_qr_codes SET last_printed_at=datetime('now') WHERE id=?")
 

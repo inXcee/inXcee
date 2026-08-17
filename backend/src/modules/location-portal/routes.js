@@ -15,7 +15,7 @@ import {
   updatePortalSettings,
 } from './service.js'
 import { buildQrSheetPdf } from './qrSheetPdf.js'
-import { streamLabelPdf, streamCalibrationPdf } from './labelPdf.js'
+import { streamLabelPdf, streamCalibrationPdf, writeLabelPdfTo } from './labelPdf.js'
 import { buildLabelSvg, buildLabelPng } from './labelSvg.js'
 import { getPortalAnalytics } from './analytics.js'
 import { TEMPLATES, DEFAULT_TEMPLATE, shortSerial, normalizeCalibration } from './labelTemplates.js'
@@ -201,7 +201,7 @@ locationPortalRouter.post('/print-batches/:id/cancel', ...managerOnly, (req, res
 
 // Partinin etiket PDF'i. Akış, hedefe çizim başlamadan bağlanır; 1078 etiket
 // belleğe yığılmaz.
-locationPortalRouter.get('/print-batches/:id/labels.pdf', ...managerOnly, (req, res) => {
+locationPortalRouter.get('/print-batches/:id/labels.pdf', ...managerOnly, async (req, res) => {
   try {
     const parti = getBatch(req.params.id)
     if (!parti) { res.status(404).json({ error: 'Basım partisi bulunamadı' }); return }
@@ -210,19 +210,22 @@ locationPortalRouter.get('/print-batches/:id/labels.pdf', ...managerOnly, (req, 
 
     res.setHeader('Content-Type', 'application/pdf')
     res.setHeader('Content-Disposition', `attachment; filename="${parti.batch_no}-etiketler.pdf"`)
-    const doc = streamLabelPdf(kayitlar, {
+    // writeLabelPdfTo: her sayfadan sonra olay döngüsüne dönerek yanıtı
+    // besler. streamLabelPdf senkron çizdiği için 1174 etikette PDF'in
+    // tamamını bellekte tutuyordu.
+    await writeLabelPdfTo(res, kayitlar, {
       template: parti.template_key,
       calibration: JSON.parse(parti.calibration_json || '{}'),
       filters: JSON.parse(parti.filter_json || '{}'),
       batchNo: parti.batch_no,
       baseUrl,
-      pipeTo: res,
     })
-    doc.on('error', (err) => {
-      logger.error({ err, batch: parti.batch_no }, '[location-portal.labels.pdf]')
-      res.destroy(err)
-    })
-  } catch (error) { sendError(res, error, 'Etiket PDF üretilemedi') }
+  } catch (error) {
+    logger.error({ err: error, batch: req.params.id }, '[location-portal.labels.pdf]')
+    // Başlıklar gittiyse JSON hata gövdesi yazmak PDF'i bozar; bağlantıyı kes.
+    if (res.headersSent) res.destroy(error)
+    else sendError(res, error, 'Etiket PDF üretilemedi')
+  }
 })
 
 // Kalibrasyon sayfası: QR yok, yalnız etiket sınırları. Basılıp etiket kâğıdının

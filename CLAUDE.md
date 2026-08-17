@@ -56,6 +56,16 @@ cd backend && node -e "import('./src/shared/db/index.js').then(m=>m.initDB()).th
 - Frontend mutation'ları merkezi `invalidateWaterQueries` kapsamlarını kullanır; yeni dağınık query-key listeleri eklenmez.
 - Gerçek tır maili `water.truck-mail` kalıcı kuyruğundan gider. `mark-mail-sent` yalnızca harici gönderim teyididir.
 
+### Oda QR Portalı Modülü
+
+- Güncel işletim, API, rol, etiket basımı ve saha kurulumu kaynağı: `docs/room-qr-portal.md`.
+- `basıldı` ≠ `asıldı` ≠ `doğru kapıya asıldı`. Kurulum kaydı OLMAYAN konum "kurulmadı" değil **"bilinmiyor"** sayılır; kurulum oranının paydası yalnız durumu bilinen konumlardır.
+- Etiketin bayatlığı (token döndürülmüş) saklanmaz, `qr_code_id` karşılaştırmasıyla türetilir.
+- Toplu etiket PDF'i `writeLabelPdfTo` ile üretilir. `streamLabelPdf` senkrondur ve `pipeTo` verilse bile tüm PDF'i bellekte biriktirir — tekli etiket dışında kullanılmaz.
+- Analitikte sıfır tek başına yazılmaz: hizmet kapalı mıydı, etiket kapıda mıydı, gerçekten mi kullanılmadı — üçü ayrı raporlanır.
+- Çamaşır talebi teslim DEĞİLDİR; portal hiçbir `laundry_items` kaydı açmaz.
+- Portal ve tüm hizmet/PIN anahtarları üretimde otomatik açılmaz.
+
 ## Veritabanı
 
 `yys.db` (SQLite) — geliştirmede proje kökünde oluşur.
