@@ -42,6 +42,11 @@ const ANALITIK = {
   labels: { unknown: 5, printed: 10, installed: 25, verified: 30, damaged: 0, stale: 0, removed: 0, qr_missing: 0 },
   silence: { zero_scan_locations: 10, explained_by_label: 7, genuinely_unused: 3, measurable: true, note: 'x' },
   busiest: [{ location_id: 1, display_name: 'M1 Oda 101', block: 'M1', scans: 12 }],
+  cleaning_reviews: {
+    total: 9, issues: 2, followup_tasks: 2, rated_count: 7,
+    rating_measurable: true, average_rating: 4.3, rating_note: null,
+    by_block: [{ block: 'M1', total: 9, issues: 2, rated_count: 7, average_rating: 4.3 }],
+  },
 }
 
 const cevaplar = ({ ayarlar, analitik } = {}) => url => {
@@ -157,5 +162,31 @@ describe('QR portal yönetim ekranı', () => {
   it('blok kırılımında kayıtsız etiket notunu gösterir', async () => {
     ciz()
     expect(await screen.findByText('5 konumun etiket durumu kayıtsız')).toBeInTheDocument()
+  })
+
+  it('sakin temizlik puanını paydasıyla gösterir', async () => {
+    ciz()
+    // Ortalama hem başlıkta hem blok satırında görünür — ikisi de doğru.
+    expect((await screen.findAllByText(/4\.3\/5/)).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText(/7 puan/)).toBeInTheDocument()
+    expect(screen.getByText(/2 şikayet · 2 takip görevi açıldı/)).toBeInTheDocument()
+  })
+
+  // Sıfır puandan ortalama üretmek "temizlik kötü" demek olurdu.
+  it('puanlı değerlendirme yoksa ortalama göstermez', async () => {
+    api.get.mockImplementation(cevaplar({
+      analitik: {
+        ...ANALITIK,
+        cleaning_reviews: {
+          total: 0, issues: 0, followup_tasks: 0, rated_count: 0,
+          rating_measurable: false, average_rating: null,
+          rating_note: 'Henüz puanlı değerlendirme yok — ortalama hesaplanamaz',
+          by_block: [],
+        },
+      },
+    }))
+    ciz()
+    expect(await screen.findByText(/ortalama hesaplanamaz/)).toBeInTheDocument()
+    expect(screen.queryAllByText(/\d\/5/)).toHaveLength(0)
   })
 })

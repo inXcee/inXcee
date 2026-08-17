@@ -6,7 +6,7 @@ import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
 import { generateMissingQrCodes, updatePortalSettings, revokeLocationQr } from './service.js'
 import { markInstalled, verifyDeployment } from './deployment.js'
-import { getPortalAnalytics, explainSilence, labelProvesReachable } from './analytics.js'
+import { getPortalAnalytics, explainSilence, labelProvesReachable, getCleaningReviewStats } from './analytics.js'
 import { buildLabelSvg, buildLabelPng, qrRects } from './labelSvg.js'
 
 // Faz 6 kabul kriterleri (spec): "Ayar ekranı, konum yönetimi, kapsama ve
@@ -51,6 +51,7 @@ beforeEach(() => {
   const db = getDB()
   db.prepare('DELETE FROM location_portal_events').run()
   db.prepare('DELETE FROM location_qr_deployments').run()
+  db.prepare('DELETE FROM cleaning_task_reviews').run()
   db.prepare("DELETE FROM audit_log WHERE action='location_portal_settings_update'").run()
   updatePortalSettings({
     location_portal_enabled: true,
@@ -338,5 +339,69 @@ describe('uçlar', () => {
   it('yetkisiz erişim reddedilir', async () => {
     expect((await request(app).get('/api/location-portal/analytics')).status).toBe(401)
     expect((await request(app).get(`/api/location-portal/locations/${odaKonum.id}/label.svg`)).status).toBe(401)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Sakin memnuniyeti toplanıyordu ama hiçbir yönetim ekranı okumuyordu:
+// şikayet takip görevi açtığı için aksiyon yolu vardı, puanlar görünmüyordu.
+describe('temizlik değerlendirmeleri', () => {
+  const degerlendirmeEkle = ({ outcome = 'approved', rating = 5, blok = null } = {}) => {
+    const db = getDB()
+    const konum = db.prepare(`
+      SELECT sl.id, sl.qr_location, sl.block, sl.floor FROM service_locations sl
+      WHERE sl.location_type='room' ${blok ? 'AND sl.block=?' : ''} ORDER BY sl.id LIMIT 1
+    `).get(...(blok ? [blok] : []))
+    const gorevId = db.prepare(`
+      INSERT INTO cleaning_tasks(area, block, floor, task_type, scheduled_at, qr_location)
+      VALUES('Oda', ?, ?, 'room', datetime('now'), ?)
+    `).run(konum.block, konum.floor, konum.qr_location).lastInsertRowid
+    db.prepare(`
+      INSERT INTO cleaning_task_reviews(task_id, location_id, identity_mode, outcome, rating, comment)
+      VALUES(?,?,'anonymous',?,?,?)
+    `).run(gorevId, konum.id, outcome, rating, outcome === 'issue' ? 'Banyo temiz değil' : null)
+    return { konum, gorevId }
+  }
+
+  // ASIL KURAL: sıfır değerlendirmeden "0,0 puan" üretmek, temizliğin kötü
+  // olduğunu söylemek olurdu. Bilinen tek şey kimsenin oy vermediğidir.
+  it('değerlendirme yokken ortalama üretmez', () => {
+    const s = getCleaningReviewStats({})
+    expect(s.total).toBe(0)
+    expect(s.rating_measurable).toBe(false)
+    expect(s.average_rating).toBeNull()
+    expect(s.rating_note).toMatch(/ortalama hesaplanamaz/)
+  })
+
+  it('puanları ve şikayetleri sayar', () => {
+    degerlendirmeEkle({ outcome: 'approved', rating: 5 })
+    const s = getCleaningReviewStats({})
+    expect(s.total).toBe(1)
+    expect(s.rated_count).toBe(1)
+    expect(s.rating_measurable).toBe(true)
+    expect(s.average_rating).toBe(5)
+    expect(s.issues).toBe(0)
+  })
+
+  it('puansız değerlendirme ortalamaya katılmaz', () => {
+    degerlendirmeEkle({ outcome: 'approved', rating: null })
+    const s = getCleaningReviewStats({})
+    expect(s.total).toBe(1)
+    expect(s.rated_count).toBe(0)
+    expect(s.rating_measurable).toBe(false)
+    expect(s.average_rating).toBeNull()
+  })
+
+  it('blok kırılımı verir', () => {
+    const { konum } = degerlendirmeEkle({ outcome: 'issue', rating: 2 })
+    const s = getCleaningReviewStats({})
+    const b = s.by_block.find(x => x.block === konum.block)
+    expect(b).toMatchObject({ total: 1, issues: 1, average_rating: 2 })
+  })
+
+  it('analitik yanıtına bağlanır', () => {
+    degerlendirmeEkle({ outcome: 'approved', rating: 4 })
+    const a = getPortalAnalytics({})
+    expect(a.cleaning_reviews).toMatchObject({ total: 1, average_rating: 4, rating_measurable: true })
   })
 })

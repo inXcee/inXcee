@@ -218,6 +218,50 @@ export default function QrPortalAdminPage() {
               </Rozet>
             )}
 
+            {/* Sakin memnuniyeti: toplanıyordu ama hiçbir ekran okumuyordu.
+                Şikayet takip görevi açıyor (aksiyon yolu vardı), puanlar
+                görünmüyordu — "hangi blokta temizlik puanı düşük" cevapsızdı. */}
+            {an.cleaning_reviews && (
+              <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '11px 13px', marginBottom: 14 }}>
+                <div style={{ display: 'flex', gap: 14, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                  <strong style={{ fontSize: 12.5 }}>Sakin temizlik değerlendirmesi</strong>
+                  {an.cleaning_reviews.rating_measurable ? (
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 18 }}>
+                      {an.cleaning_reviews.average_rating}/5
+                      <span style={{ fontSize: 11, color: 'var(--text3)' }}>
+                        {' '}({an.cleaning_reviews.rated_count} puan)
+                      </span>
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: 11.5, color: RENK.bilinmiyor }}>{an.cleaning_reviews.rating_note}</span>
+                  )}
+                  <span style={{ fontSize: 11.5, color: 'var(--text3)', marginLeft: 'auto' }}>
+                    {an.cleaning_reviews.total} değerlendirme · {an.cleaning_reviews.issues} şikayet ·{' '}
+                    {an.cleaning_reviews.followup_tasks} takip görevi açıldı
+                  </span>
+                </div>
+
+                {an.cleaning_reviews.by_block.length > 0 && (
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, marginTop: 8 }}>
+                    <tbody>
+                      {an.cleaning_reviews.by_block.map(b => (
+                        <tr key={b.block} style={{ borderTop: '1px solid var(--border)' }}>
+                          <td style={{ padding: '4px 6px' }}>{b.block}</td>
+                          <td style={{ padding: '4px 6px', fontFamily: 'var(--mono)' }}>
+                            {b.average_rating != null ? `${b.average_rating}/5` : 'puan yok'}
+                          </td>
+                          <td style={{ padding: '4px 6px', color: b.issues > 0 ? RENK.uyari : 'var(--text3)' }}>
+                            {b.issues > 0 ? `${b.issues} şikayet` : 'şikayet yok'}
+                          </td>
+                          <td style={{ padding: '4px 6px', color: 'var(--text3)' }}>{b.total} değerlendirme</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            )}
+
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 14 }}>
               <div>
                 <div style={{ fontSize: 11, color: 'var(--text3)', letterSpacing: 1, marginBottom: 6 }}>BLOK KIRILIMI</div>

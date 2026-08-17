@@ -53,6 +53,70 @@ export function explainSilence(locations = []) {
   }
 }
 
+/**
+ * Sakinlerin temizlik değerlendirmeleri.
+ *
+ * Bu veri toplanıyordu ama HİÇBİR yönetim ekranı okumuyordu: şikayet
+ * (`issue`) takip görevi açtığı için aksiyon yolu vardı, ama puanlar ve
+ * onaylar hiçbir yerde görünmüyordu — "hangi blokta temizlik puanı düşük"
+ * sorusu cevapsızdı.
+ *
+ * Ortalama, DEĞERLENDİRME VARSA hesaplanır. Sıfır değerlendirmeden "0,0 puan"
+ * üretmek, temizliğin kötü olduğunu söylemek olurdu; oysa bilinen tek şey
+ * kimsenin oy vermediğidir.
+ */
+export function getCleaningReviewStats(filters = {}, db = getDB()) {
+  const params = []
+  const kosul = []
+  if (filters.from) { kosul.push('date(cr.created_at) >= ?'); params.push(filters.from) }
+  if (filters.to) { kosul.push('date(cr.created_at) <= ?'); params.push(filters.to) }
+  if (filters.block) { kosul.push('sl.block = ?'); params.push(filters.block) }
+  const where = kosul.length ? `WHERE ${kosul.join(' AND ')}` : ''
+
+  const toplam = db.prepare(`
+    SELECT COUNT(*) AS adet,
+           SUM(CASE WHEN cr.outcome='issue' THEN 1 ELSE 0 END) AS sikayet,
+           SUM(CASE WHEN cr.followup_task_id IS NOT NULL THEN 1 ELSE 0 END) AS takip_gorevi,
+           AVG(cr.rating) AS ortalama,
+           SUM(CASE WHEN cr.rating IS NOT NULL THEN 1 ELSE 0 END) AS puanli
+    FROM cleaning_task_reviews cr
+    JOIN service_locations sl ON sl.id = cr.location_id
+    ${where}
+  `).get(...params)
+
+  const bloklar = db.prepare(`
+    SELECT sl.block,
+           COUNT(*) AS adet,
+           SUM(CASE WHEN cr.outcome='issue' THEN 1 ELSE 0 END) AS sikayet,
+           AVG(cr.rating) AS ortalama,
+           SUM(CASE WHEN cr.rating IS NOT NULL THEN 1 ELSE 0 END) AS puanli
+    FROM cleaning_task_reviews cr
+    JOIN service_locations sl ON sl.id = cr.location_id
+    ${where}
+    GROUP BY sl.block
+    ORDER BY sl.block
+  `).all(...params)
+
+  const puanli = toplam?.puanli || 0
+  return {
+    total: toplam?.adet || 0,
+    issues: toplam?.sikayet || 0,
+    followup_tasks: toplam?.takip_gorevi || 0,
+    rated_count: puanli,
+    // Puan verilmemişse ortalama YOK — sıfır değil.
+    rating_measurable: puanli > 0,
+    average_rating: puanli > 0 ? Math.round(toplam.ortalama * 10) / 10 : null,
+    rating_note: puanli > 0 ? null : 'Henüz puanlı değerlendirme yok — ortalama hesaplanamaz',
+    by_block: bloklar.map(b => ({
+      block: b.block,
+      total: b.adet,
+      issues: b.sikayet,
+      rated_count: b.puanli,
+      average_rating: b.puanli > 0 ? Math.round(b.ortalama * 10) / 10 : null,
+    })),
+  }
+}
+
 function windowWhere(filters, params, alias = 'e') {
   const kosul = []
   if (filters.from) { kosul.push(`date(${alias}.created_at) >= ?`); params.push(filters.from) }
@@ -219,6 +283,8 @@ export function getPortalAnalytics(filters = {}, db = getDB()) {
       by_block,
       labels,
       silence: explainSilence(konumDurum),
+      // Sakin memnuniyeti: toplanıyordu ama hiçbir ekran okumuyordu.
+      cleaning_reviews: getCleaningReviewStats(filters, db),
       // En çok okutulan konumlar: gerçek talebin nerede olduğunu gösterir.
       busiest: konumDurum
         .filter(k => (k.scans || 0) > 0)
