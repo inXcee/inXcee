@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { logAudit } from '../../shared/audit.js'
+import { setAttachment } from '../../shared/http/contentDisposition.js'
 import { logger } from '../../shared/logger.js'
 import {
   generateMissingQrCodes,
@@ -112,7 +113,9 @@ locationPortalRouter.get('/qr-sheet.pdf', ...managerOnly, async (req, res) => {
     const pdf = await buildQrSheetPdf(kayitlar, { baseUrl })
     const ad = ['qr', req.query.block, req.query.floor, req.query.type].filter(Boolean).join('-')
     res.setHeader('Content-Type', 'application/pdf')
-    res.setHeader('Content-Disposition', `attachment; filename="${ad || 'qr'}-etiketleri.pdf"`)
+    // `ad` kullanıcının filtre parametrelerinden gelir — ham hâlde başlığa
+    // yazmak başlığı bozabilir.
+    setAttachment(res, `${ad || 'qr'}-etiketleri.pdf`, 'qr-etiketleri.pdf')
     logAudit(req.user.id, 'location_portal_qr_print', 'location_portal', null, `${kayitlar.length} etiket`)
     res.send(pdf)
   } catch (error) { sendError(res, error, 'QR föyü üretilemedi') }
@@ -209,7 +212,7 @@ locationPortalRouter.get('/print-batches/:id/labels.pdf', ...managerOnly, async 
     const baseUrl = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`
 
     res.setHeader('Content-Type', 'application/pdf')
-    res.setHeader('Content-Disposition', `attachment; filename="${parti.batch_no}-etiketler.pdf"`)
+    setAttachment(res, `${parti.batch_no}-etiketler.pdf`, 'etiketler.pdf')
     // writeLabelPdfTo: her sayfadan sonra olay döngüsüne dönerek yanıtı
     // besler. streamLabelPdf senkron çizdiği için 1174 etikette PDF'in
     // tamamını bellekte tutuyordu.
@@ -238,7 +241,7 @@ locationPortalRouter.get('/calibration.pdf', ...managerOnly, (req, res) => {
       scale: req.query.scale,
     })
     res.setHeader('Content-Type', 'application/pdf')
-    res.setHeader('Content-Disposition', 'attachment; filename="etiket-kalibrasyon.pdf"')
+    setAttachment(res, 'etiket-kalibrasyon.pdf')
     streamCalibrationPdf({ template: req.query.template, calibration: cal, pipeTo: res })
   } catch (error) { sendError(res, error, 'Kalibrasyon sayfası üretilemedi') }
 })
@@ -350,7 +353,7 @@ locationPortalRouter.get('/locations/:id/label.pdf', ...canRead, (req, res) => {
     if (!konum) return
     const baseUrl = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`
     res.setHeader('Content-Type', 'application/pdf')
-    res.setHeader('Content-Disposition', `attachment; filename="${tekliDosyaAdi(konum, 'pdf')}"`)
+    setAttachment(res, tekliDosyaAdi(konum, 'pdf'), 'etiket.pdf')
     streamLabelPdf([konum], { template: 'tek_100x70', baseUrl, cutMarks: false, pipeTo: res })
       .on('error', (err) => {
         logger.error({ err, id: konum.id }, '[location-portal.label.pdf]')
@@ -366,7 +369,7 @@ locationPortalRouter.get('/locations/:id/label.svg', ...canRead, async (req, res
     const baseUrl = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`
     const svg = await buildLabelSvg(konum, { baseUrl })
     res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8')
-    res.setHeader('Content-Disposition', `attachment; filename="${tekliDosyaAdi(konum, 'svg')}"`)
+    setAttachment(res, tekliDosyaAdi(konum, 'svg'), 'etiket.svg')
     res.send(svg)
   } catch (error) { sendError(res, error, 'Etiket SVG üretilemedi') }
 })
@@ -378,7 +381,7 @@ locationPortalRouter.get('/locations/:id/label.png', ...canRead, async (req, res
     const baseUrl = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`
     const png = await buildLabelPng(konum, { baseUrl, dpi: req.query.dpi })
     res.setHeader('Content-Type', 'image/png')
-    res.setHeader('Content-Disposition', `attachment; filename="${tekliDosyaAdi(konum, 'png')}"`)
+    setAttachment(res, tekliDosyaAdi(konum, 'png'), 'etiket.png')
     res.send(png)
   } catch (error) { sendError(res, error, 'Etiket PNG üretilemedi') }
 })

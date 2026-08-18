@@ -1,9 +1,12 @@
 import PDFDocument from 'pdfkit'
+import { setAttachment } from '../http/contentDisposition.js'
 
 export function createPDF(res, title) {
   const doc = new PDFDocument({ size: 'A4', margin: 50 })
   res.setHeader('Content-Type', 'application/pdf')
-  res.setHeader('Content-Disposition', `attachment; filename="${title}.pdf"`)
+  // Başlık Türkçe harf ya da uzun tire içerebilir; ham hâlde başlığa yazmak
+  // "Invalid character in header content" ile 500 döndürüyordu.
+  setAttachment(res, `${title}.pdf`, 'rapor.pdf')
   doc.pipe(res)
 
   // Header
