@@ -76,7 +76,7 @@ export function isSmtpAuthError(error) {
   return describeSmtpError(error).kind === 'auth'
 }
 
-function createTransport() {
+function createTransport(timeouts = {}) {
   const cfg = getSmtpConfig()
   if (!cfg.host) throw new Error('SMTP_HOST tanımlı değil — Ayarlar → Genel & E-Posta sayfasında SMTP host doldurun')
   if (!cfg.user) throw new Error('SMTP kullanıcı tanımlı değil')
@@ -85,6 +85,11 @@ function createTransport() {
     host: cfg.host, port: cfg.port,
     secure: cfg.port === 465,
     auth: { user: cfg.user, pass: cfg.pass },
+    // Erişilemeyen/yanıt vermeyen host nodemailer varsayılanında ~2dk asılı kalır;
+    // bu da verify endpoint'ini ve e-posta job worker'ını bloke eder. Sınırla.
+    connectionTimeout: timeouts.connectionTimeout ?? 15000,
+    greetingTimeout: timeouts.greetingTimeout ?? 10000,
+    socketTimeout: timeouts.socketTimeout ?? 30000,
   })
 }
 
@@ -228,7 +233,8 @@ export async function verifySmtp() {
     warnings.push(`${cfg.port} portu alışılmadık; Gmail/Microsoft 365 için 587 (STARTTLS) kullanın.`)
   }
   try {
-    const t = createTransport()
+    // Tanılama; kullanıcı "test et" butonuna basıyor — hızlı geri bildirim ver.
+    const t = createTransport({ connectionTimeout: 4000, greetingTimeout: 4000, socketTimeout: 6000 })
     await t.verify()
     return { ok: true, message: 'SMTP bağlantısı başarılı', config: summary, warnings }
   } catch (e) {
