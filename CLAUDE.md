@@ -66,6 +66,12 @@ cd backend && node -e "import('./src/shared/db/index.js').then(m=>m.initDB()).th
 - Çamaşır talebi teslim DEĞİLDİR; portal hiçbir `laundry_items` kaydı açmaz.
 - Portal ve tüm hizmet/PIN anahtarları üretimde otomatik açılmaz.
 
+### Hermes Agent (Telegram ajanı) Entegrasyonu
+
+- Kaynak: `docs/hermes-integration.md`. Uçlar `backend/src/modules/agent/` (`/api/agent/*`), skill `.hermes/skills/inxcee-ops/`, bekçi `integrations/hermes/scripts/inxcee_watchdog.py`.
+- `/api/agent` **salt-okunurdur**; yazma ucu eklenmez. Kimlik yalnız `AGENT_API_TOKEN` (≥32 karakter) — kullanıcı JWT'si kabul edilmez.
+- Ajan yanıtları yalnız toplu sayıdır; personel adı/TC/telefon dönmez (KVKK — veri LLM sağlayıcısına gider). Yeni alan eklerken `agent.test.js` PII testi geçmeli.
+
 ## Veritabanı
 
 `yys.db` (SQLite) — geliştirmede proje kökünde oluşur.
