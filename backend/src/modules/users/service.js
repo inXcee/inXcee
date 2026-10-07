@@ -38,7 +38,17 @@ export function addUser(data, createdBy) {
   return { id }
 }
 
+// Sahip hesabı (users.is_owner — özel finans kasası) yalnız kendisi tarafından değiştirilebilir:
+// başka bir müdür şifresini/rolünü/PIN'ini değiştirip ya da hesabı silip kasaya dolaylı erişemez.
+export function foreignOwnerGuard(targetId, actorId) {
+  if (Number(targetId) === Number(actorId)) return null
+  const row = getDB().prepare('SELECT is_owner FROM users WHERE id=?').get(targetId)
+  return row?.is_owner ? { error: 'Bu hesap yalnız kendi sahibi tarafından değiştirilebilir', status: 403 } : null
+}
+
 export function editUser(id, data, updatedBy) {
+  const ownerBlock = foreignOwnerGuard(id, updatedBy)
+  if (ownerBlock) return ownerBlock
   if (!VALID_ROLES.includes(data.role)) {
     return { error: 'Geçersiz rol', status: 400 }
   }
@@ -51,6 +61,8 @@ export function editUser(id, data, updatedBy) {
 }
 
 export function changePassword(id, newPassword, changedBy) {
+  const ownerBlock = foreignOwnerGuard(id, changedBy)
+  if (ownerBlock) return ownerBlock
   const existing = queries.getUserById(id)
   if (!existing) return { error: 'Kullanıcı bulunamadı', status: 404 }
   const pwCheck = validatePassword(newPassword, { username: existing.username })
@@ -65,6 +77,8 @@ export function changePassword(id, newPassword, changedBy) {
 }
 
 export function removeUser(id, removedBy) {
+  const ownerBlock = foreignOwnerGuard(id, removedBy)
+  if (ownerBlock) return ownerBlock
   const existing = queries.getUserById(id)
   if (!existing) return { error: 'Kullanıcı bulunamadı', status: 404 }
   if (existing.id === removedBy) return { error: 'Kendinizi silemezsiniz', status: 400 }
@@ -75,6 +89,8 @@ export function removeUser(id, removedBy) {
 }
 
 export function setMobilePinService(userId, pin, actorId) {
+  const ownerBlock = foreignOwnerGuard(userId, actorId)
+  if (ownerBlock) return ownerBlock
   const db = getDB()
   const user = db.prepare('SELECT id FROM users WHERE id=?').get(userId)
   if (!user) return { error: 'Kullanıcı bulunamadı', status: 404 }

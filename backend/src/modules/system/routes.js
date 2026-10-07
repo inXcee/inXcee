@@ -5,6 +5,7 @@ import { logger } from '../../shared/logger.js'
 import { register } from '../../shared/metrics.js'
 import { getStats, listFailed, retryFailed } from '../../shared/jobs/index.js'
 import { logAudit } from '../../shared/audit.js'
+import { foreignOwnerGuard } from '../users/service.js'
 import { listActiveSessions, revokeSession, listActiveUsers, revokeSessionsFor, suspendUser, unsuspendUser } from '../../shared/auth/service.js'
 
 export const systemRouter = Router()
@@ -64,6 +65,8 @@ systemRouter.post('/sessions/revoke-all', ...adminOnly, (req, res) => {
 // Hesabı askıya al / geri aç — silmeden erişimi kesmenin yolu.
 systemRouter.post('/users/:id/suspend', ...adminOnly, (req, res) => {
   try {
+    const ownerBlock = foreignOwnerGuard(Number(req.params.id), req.user.id)
+    if (ownerBlock) return res.status(ownerBlock.status).json({ error: ownerBlock.error })
     const result = suspendUser(Number(req.params.id), {
       reason: req.body?.reason ? String(req.body.reason).slice(0, 200) : null,
       byUserId: req.user.id,

@@ -100,6 +100,7 @@ import { integrityRouter } from './modules/integrity/routes.js'
 import { kioskDeviceRouter, kioskManagementRouter } from './modules/kiosk-management/routes.js'
 import { locationPortalRouter } from './modules/location-portal/routes.js'
 import { roomPortalRouter } from './modules/location-portal/public-routes.js'
+import { privateFinanceRouter } from './modules/private-finance/routes.js'
 
 if (process.env.NODE_ENV === 'production' && !process.env.ALLOWED_ORIGIN) {
   logger.error('[Startup] HATA: ALLOWED_ORIGIN env değişkeni production\'da zorunludur.')
@@ -180,10 +181,14 @@ app.use(cors({
   },
   credentials: true,
 }))
+// Özel finans kasası: FinansApp store blokları 5mb'ı aşabilir → kendi ayrıştırıcısı önce çalışır
+// (global parser gövde zaten ayrıştırılmışsa atlar). Kasa verisi birebir saklanır; HTML
+// temizliğinden muaftır (hiçbir zaman YYS'de HTML olarak render edilmez).
+app.use('/api/pf', express.json({ limit: '25mb' }))
 // 5mb limit: zimmet imzası canvas base64 ve profil fotoğrafları JSON body'de taşınıyor
 app.use(express.json({ limit: '5mb' }))
 app.use(cookieParser())
-app.use(sanitizeBody)
+app.use((req, res, next) => (req.path.startsWith('/api/pf/') ? next() : sanitizeBody(req, res, next)))
 app.use('/api', kioskIdempotencyMiddleware)
 // Multer dosya isimleri unique (Date.now()-rand) — immutable cache güvenli.
 app.use('/uploads', (req, res, next) => {
@@ -394,6 +399,7 @@ app.use('/api/push', writeLimiter, pushRouter)
 app.use('/api/whatsapp', writeLimiter, whatsappRouter)
 app.use('/api/shifts', writeLimiter, shiftsRouter)
 app.use('/api/water', writeLimiter, waterRouter)
+app.use('/api/pf', readLimiter, privateFinanceRouter)
 app.use('/api/checkout', writeLimiter, checkoutRouter)
 app.use('/api/bulk-actions', writeLimiter, bulkActionsRouter)
 app.use('/api/companies', writeLimiter, companiesRouter)
