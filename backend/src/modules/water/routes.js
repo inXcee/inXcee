@@ -16,7 +16,7 @@ import {
   summaryService, productDistributionService, pivotService, batchIntakeService, batchDistributeService, parseDistributionText,
   alertsService, forecastService, trendsService, waterDailyDigest, dailyDigestDeliveriesService,
   intakeLotsService, updateIntakeLotService,
-  reconciliationService, buildReconciliationPDF, saveStockCountService, monthlyCloseService, monthlyUnlockService,
+  reconciliationService, buildReconciliationPDF, saveStockCountService, applyStockCountService, monthlyCloseService, monthlyUnlockService,
   pendingDistributionsService,
   templatesService, createTemplateService, deleteTemplateService,
   adjustmentsService, createAdjustmentService, deleteAdjustmentService, COUNT_REASONS,
@@ -511,6 +511,14 @@ waterRouter.post('/stock-count', ...mgr, (req, res, next) => {
     const r = saveStockCountService(req.body, req.user.id)
     logAudit(req.user.id, 'water_stock_count', 'water', req.body.product_id, `${req.body.month} fark:${r.diff_base}`)
     res.json(r)
+  } catch (e) { fail(next, e) }
+})
+// Sayım farkını düzeltme fişine çevir — sadece kampüs müdürü (sayımı vardiya/Hermes girebilir)
+waterRouter.post('/stock-count/:month/:productId/apply', ...managerOnly, (req, res, next) => {
+  try {
+    const r = applyStockCountService(req.params.month, +req.params.productId, req.user.id)
+    logAudit(req.user.id, 'water_stock_count_apply', 'water', r.adjustment_id, `${req.params.month} ${r.direction} ${r.qty_base} (${r.reason})`)
+    res.status(201).json(r)
   } catch (e) { fail(next, e) }
 })
 // Ay kapanışı/kilit — sadece kampüs müdürü

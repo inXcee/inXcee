@@ -7,7 +7,7 @@ import { trClock } from './trucks.js'
 import { queueWaterDailyDigestEmail } from './daily-digest.js'
 import { intakeLotsService, updateIntakeLotService } from './lots.js'
 import { waybillDocumentStatus } from './document-status.js'
-import { isIsoDate } from '../../shared/validation/date.js'
+import { isIsoDate, isIsoMonth } from '../../shared/validation/date.js'
 export { availableUnits, humanize, toBase, unitMultiplier } from './units.js'
 export { depositService, forecastService, summaryService, trendsService, productDistributionService } from './analytics.js'
 export { notifyWaterOperations, WATER_OPERATION_ROLES } from './notifications.js'
@@ -749,6 +749,38 @@ export function createAdjustmentService(data, userId) {
   })
   checkLowStock([product.id])
   return id
+}
+
+// Kayıtlı sayım farkını stoğa işler (W11): sayım fişi (vardiya da girebilir) stoğu oynatmaz; farkı
+// düzeltme fişine çevirmek kampüs müdürü kararıdır. Fark o anki sistem kalanına göre yeniden hesaplanır,
+// bu yüzden ikinci tıklama "Fark yok" ile döner (çift düzeltme olmaz).
+export function applyStockCountService(month, productId, userId, today = new Date().toLocaleDateString('sv-SE')) {
+  if (!isIsoMonth(month)) throw Object.assign(new Error('Ay YYYY-MM formatında olmalı'), { statusCode: 400 })
+  if (month > today.slice(0, 7)) throw Object.assign(new Error('Gelecek ayın sayımı stoğa işlenemez'), { statusCode: 400 })
+  const product = q.getProduct(productId)
+  if (!product) throw Object.assign(new Error('Ürün bulunamadı'), { statusCode: 400 })
+  assertMonthUnlocked(month)
+  return q.runInTransaction(() => {
+    const row = q.reconciliationRow(month, product.id)
+    if (row?.counted_base == null) throw Object.assign(new Error('Bu ay için bu ürünün sayımı yok'), { statusCode: 400 })
+    const systemBase = row.opening_base + row.month_in - row.month_out + (row.month_adjust || 0)
+    const diff = row.counted_base - systemBase
+    if (diff === 0) throw Object.assign(new Error('Fark yok — sistem kalanı sayımla aynı'), { statusCode: 400 })
+    const reason = isCountReason(row.count_reason) ? row.count_reason : 'sayim_farki'
+    const [y, m] = month.split('-').map(Number)
+    const moveDate = today.startsWith(month) ? today : `${month}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0')}`
+    const baseUnit = String(product.base_unit || product.unit_label || 'adet').toLocaleLowerCase('tr')
+    const direction = diff > 0 ? 'in' : 'out'
+    const id = createAdjustmentService({
+      product_id: product.id, direction, input_qty: Math.abs(diff), input_unit: INPUT_UNITS.includes(baseUnit) ? baseUnit : 'adet',
+      move_date: moveDate, reason, note: `Sayım farkı uygulandı (${month})${row.count_note ? ` · ${row.count_note}` : ''}`,
+    }, userId)
+    q.upsertStockCount({
+      month, product_id: product.id, system_base: row.counted_base, counted_base: row.counted_base, diff_base: 0,
+      reason, note: row.count_note || null, created_by: userId || null,
+    })
+    return { adjustment_id: id, direction, qty_base: Math.abs(diff), move_date: moveDate, reason, system_base: row.counted_base }
+  })
 }
 
 export function deleteAdjustmentService(id) {

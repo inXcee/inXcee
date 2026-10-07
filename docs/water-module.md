@@ -227,6 +227,7 @@ Tablodaki `Operasyon`, iki operasyon rolünü; `Müdür`, yalnızca `campus_mana
 | GET | `/reconciliation` | Operasyon | `month=YYYY-MM` ile ay uyuşturma verisi |
 | GET | `/reconciliation/:month/pdf` | Operasyon | Ay kapanış PDF özeti |
 | POST | `/stock-count` | Operasyon | Ürün sayımını ekle/güncelle |
+| POST | `/stock-count/:month/:productId/apply` | Müdür | Kayıtlı sayımın güncel farkını düzeltme fişine çevir (o ay içindeyse bugün, geçmiş ayda ay sonu tarihli; fark yoksa 400, kilitli ay 423). Arayüz: Ay kapanışı → **Stoğa işle** |
 | POST | `/monthly-close` | Müdür | Ayı snapshot ile kapat ve kilitle |
 | POST | `/monthly-close/:month/unlock` | Müdür | Ay kilidini aç |
 

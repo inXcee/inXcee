@@ -37,6 +37,7 @@ const DAILY_ROWS = [
 ]
 
 let reconciliationLocked = false
+let reconciliationCounted = false
 const DEFAULT_PIVOT_ROWS = [{ zone_id: 1, zone_name: 'OTC Kamp Alanı', cells: { 1: { base: 91, human: '91 damacana' } }, total_base: 91 }]
 let pivotRows = DEFAULT_PIVOT_ROWS
 const DEFAULT_WAYBILL_PHOTOS = [
@@ -118,9 +119,11 @@ vi.mock('../../shared/api/client.js', () => ({
         reasons: [{ key: 'fire_kirik', label: 'Fire / kırık' }, { key: 'sayim_farki', label: 'Sayım farkı' }],
         rows: [{ product_id: 1, product_name: 'Damacana', brand_name: 'MİLA SU', unit_label: 'damacana',
           opening_base: 100, month_in: 50, month_out: 30, month_adjust: 0, month_return: 0, system_base: 120,
-          counted_base: null, diff_base: null, reason: null, status: 'pending',
+          ...(reconciliationCounted
+            ? { counted_base: 110, diff_base: -10, reason: 'fire_kirik', status: 'short', counted_human: '110 damacana', diff_human: '-10 damacana' }
+            : { counted_base: null, diff_base: null, reason: null, status: 'pending', counted_human: null, diff_human: null }),
           opening_human: '100 damacana', month_in_human: '50 damacana', month_out_human: '30 damacana',
-          month_adjust_human: null, month_return_human: '0 damacana', system_human: '120 damacana', counted_human: null, diff_human: null }],
+          month_adjust_human: null, month_return_human: '0 damacana', system_human: '120 damacana' }],
         totals: { products: 1, counted: 0, pending: 1, mismatch: 0, system_base: 120 },
       } })
       if (url === '/water/alerts') return Promise.resolve({ data: {
@@ -237,6 +240,7 @@ describe('WaterPage tek-ekran pano smoke', () => {
     vi.clearAllMocks()
     confirmDialog.mockResolvedValue(true)
     reconciliationLocked = false
+    reconciliationCounted = false
     pivotRows = DEFAULT_PIVOT_ROWS
     waybillPhotos = DEFAULT_WAYBILL_PHOTOS
   })
@@ -519,6 +523,28 @@ describe('WaterPage tek-ekran pano smoke', () => {
     expect(await within(panel).findByText('120')).toBeInTheDocument() // sistem kalanı = 100 + 50 - 30
     expect(within(panel).getByLabelText('Damacana sayım')).toBeInTheDocument()
     expect(within(panel).getByText('📄 PDF Özet')).toBeInTheDocument() // W9 PDF butonu
+  })
+
+  it('müdür kayıtlı sayım farkını onayla stoğa işler; vardiya düğmeyi görmez', async () => {
+    reconciliationCounted = true
+    useAuthStore.setState({ user: { role: 'shift_supervisor', username: 'vardiya' } })
+    const { unmount } = renderWithProviders(<WaterPage />)
+    let panel = (await screen.findByText(/AY KAPANIŞI/)).closest('.panel')
+    fireEvent.click(within(panel).getByText('▼ Aç'))
+    expect(await within(panel).findByText('-10')).toBeInTheDocument()
+    expect(within(panel).queryByRole('button', { name: /sayım farkını stoğa işle/ })).not.toBeInTheDocument()
+    unmount()
+
+    useAuthStore.setState({ user: { role: 'campus_manager', username: 'mudur' } })
+    renderWithProviders(<WaterPage />)
+    panel = (await screen.findByText(/AY KAPANIŞI/)).closest('.panel')
+    fireEvent.click(within(panel).getByText('▼ Aç'))
+    fireEvent.click(await within(panel).findByRole('button', { name: 'Damacana sayım farkını stoğa işle' }))
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith(expect.stringMatching(/^\/water\/stock-count\/\d{4}-\d{2}\/1\/apply$/)))
+    expect(confirmDialog).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringMatching(/Fark: -10 damacana.*Fire \/ kırık/),
+    }))
+    useAuthStore.setState({ user: null })
   })
 
   it('kilitli ayda sayımı salt okunur gösterir ve kilit açıklamasını sunar', async () => {

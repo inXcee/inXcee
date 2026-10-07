@@ -1176,6 +1176,75 @@ describe('Su takip — Stok Düzeltme / Sayım Fişi (W7)', () => {
   })
 })
 
+describe('Su takip — Sayım farkını stoğa işle (W11)', () => {
+  const MONTH = '2026-03'
+  let pCnt, pNoCount, zone, supervisorToken
+  const auth = (r) => r.set('Authorization', `Bearer ${managerToken}`)
+  const sup = (r) => r.set('Authorization', `Bearer ${supervisorToken}`)
+  const balanceOf = async (id) => (await auth(request(app).get('/api/water/summary'))).body.stock.find(s => s.product_id === id)?.balance
+  const recRow = async (id) => (await auth(request(app).get(`/api/water/reconciliation?month=${MONTH}`))).body.rows.find(x => x.product_id === id)
+
+  beforeAll(async () => {
+    supervisorToken = (await request(app).post('/api/auth/login').send({ username: 'vardiya', password: 'admin123' })).body.token
+    pCnt = (await auth(request(app).post('/api/water/products'))
+      .send({ name: 'SAYIM UYGULA 0.5L', unit_label: 'koli', base_unit: 'koli', units_per_case: 1, cases_per_pallet: 140 })).body.id
+    pNoCount = (await auth(request(app).post('/api/water/products'))
+      .send({ name: 'SAYIMSIZ 1L', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 1 })).body.id
+    zone = (await auth(request(app).post('/api/water/zones')).send({ name: 'SAYIM Bölge' })).body.id
+    await auth(request(app).post('/api/water/intake')).send({ product_id: pCnt, input_qty: 100, input_unit: 'koli', move_date: '2026-03-05', waybill_no: 'SAY-1' })
+    await auth(request(app).post('/api/water/distribute')).send({ product_id: pCnt, zone_id: zone, input_qty: 30, input_unit: 'koli', move_date: '2026-03-10' })
+  })
+
+  it('vardiya amiri sayım girer ama farkı stoğa işleyemez (403)', async () => {
+    const count = await sup(request(app).post('/api/water/stock-count'))
+      .send({ month: MONTH, product_id: pCnt, counted_qty: 60, counted_unit: 'koli', reason: 'fire_kirik', note: 'Hermes sayım' })
+    expect(count.status).toBe(200)
+    expect(count.body).toMatchObject({ system_base: 70, counted_base: 60, diff_base: -10 })
+
+    const r = await sup(request(app).post(`/api/water/stock-count/${MONTH}/${pCnt}/apply`))
+    expect(r.status).toBe(403)
+    expect(await balanceOf(pCnt)).toBe(70)
+  })
+
+  it('müdür farkı işler → ay sonu tarihli düzeltme, stok sayıma eşitlenir, durum even', async () => {
+    const r = await auth(request(app).post(`/api/water/stock-count/${MONTH}/${pCnt}/apply`))
+    expect(r.status).toBe(201)
+    expect(r.body).toMatchObject({ direction: 'out', qty_base: 10, move_date: '2026-03-31', reason: 'fire_kirik', system_base: 60 })
+    expect(await balanceOf(pCnt)).toBe(60)
+
+    const adj = (await auth(request(app).get(`/api/water/adjustments?product_id=${pCnt}`))).body.rows
+    expect(adj).toHaveLength(1)
+    expect(adj[0]).toMatchObject({ id: r.body.adjustment_id, direction: 'out', qty_base: 10, input_unit: 'koli', reason: 'fire_kirik' })
+    expect(adj[0].note).toMatch(/Sayım farkı/)
+
+    const row = await recRow(pCnt)
+    expect(row).toMatchObject({ month_adjust: -10, system_base: 60, counted_base: 60, diff_base: 0, status: 'even', reason: 'fire_kirik' })
+  })
+
+  it('ikinci kez işlemek reddedilir (fark yok, 400) ve stok değişmez', async () => {
+    const r = await auth(request(app).post(`/api/water/stock-count/${MONTH}/${pCnt}/apply`))
+    expect(r.status).toBe(400)
+    expect(r.body.error).toMatch(/Fark yok/)
+    expect(await balanceOf(pCnt)).toBe(60)
+  })
+
+  it('sayımı olmayan ürün / geçersiz ay / gelecek ay 400', async () => {
+    expect((await auth(request(app).post(`/api/water/stock-count/${MONTH}/${pNoCount}/apply`))).status).toBe(400)
+    expect((await auth(request(app).post(`/api/water/stock-count/2026-3/${pCnt}/apply`))).status).toBe(400)
+    expect((await auth(request(app).post(`/api/water/stock-count/2999-01/${pCnt}/apply`))).status).toBe(400)
+  })
+
+  it('kilitli ayda işlenemez (423)', async () => {
+    await sup(request(app).post('/api/water/stock-count'))
+      .send({ month: MONTH, product_id: pCnt, counted_qty: 58, counted_unit: 'koli', reason: 'sayim_farki' })
+    expect((await auth(request(app).post('/api/water/monthly-close')).send({ month: MONTH })).status).toBe(201)
+    const r = await auth(request(app).post(`/api/water/stock-count/${MONTH}/${pCnt}/apply`))
+    expect(r.status).toBe(423)
+    expect(await balanceOf(pCnt)).toBe(60)
+    await auth(request(app).post(`/api/water/monthly-close/${MONTH}/unlock`))
+  })
+})
+
 describe('Su takip — Ürün/Marka güçlendirme (W8)', () => {
   const auth = (r) => r.set('Authorization', `Bearer ${managerToken}`)
 

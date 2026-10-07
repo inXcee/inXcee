@@ -546,6 +546,20 @@ function MonthClosurePanel({ month, label }) {
     },
     onError: (e) => toastErr(errMsg(e, 'Kaydedilemedi')),
   })
+  const applyCount = useMutation({
+    mutationFn: (row) => api.post(`/water/stock-count/${month}/${row.product_id}/apply`),
+    onSuccess: (_r, row) => { invalidateWaterQueries(qc, 'adjustments'); toastOk(`${row.product_name}: sayım farkı stoğa işlendi`) },
+    onError: (e) => toastErr(errMsg(e, 'İşlenemedi')),
+  })
+  const askApply = async (row) => {
+    const reasonLabel = reasons.find(r => r.key === row.reason)?.label || 'Sayım farkı'
+    if (await confirmDialog({
+      title: `${row.product_name} — sayım farkı stoğa işlensin mi?`,
+      message: `Sistem: ${row.system_human} · Sayım: ${row.counted_human} · Fark: ${row.diff_human}. ` +
+        `Bu fark "${reasonLabel}" sebebiyle düzeltme fişi olarak yazılır ve stok sayıma eşitlenir. Stok düzeltmeleri listesinden silinerek geri alınabilir.`,
+      confirmText: 'Stoğa İşle',
+    })) applyCount.mutate(row)
+  }
   const closeMonth = useMutation({
     mutationFn: () => api.post('/water/monthly-close', { month }),
     onSuccess: () => { invalidateWaterQueries(qc, 'reconciliation'); toastOk(`${label} kapatıldı 🔒`) },
@@ -659,8 +673,15 @@ function MonthClosurePanel({ month, label }) {
                           </select>
                         ) : <span style={{ color: 'var(--text3)' }}>—</span>}
                       </td>
-                      <td style={{ textAlign: 'right' }}>
+                      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                         <span style={{ fontSize: '10px', fontWeight: 600, color: meta.color }}>{meta.label}</span>
+                        {isManager && !locked && draftCounted == null && row.counted_base != null && row.diff_base != null && row.diff_base !== 0 && (
+                          <button type="button" className="btn btn-ghost btn-sm" disabled={applyCount.isPending}
+                            title="Sayım farkını düzeltme fişi olarak stoğa işle"
+                            aria-label={`${row.product_name} sayım farkını stoğa işle`}
+                            onClick={() => askApply(row)}
+                            style={{ marginLeft: '6px', fontSize: '10px', padding: '1px 6px' }}>Stoğa işle</button>
+                        )}
                       </td>
                     </tr>
                   )
