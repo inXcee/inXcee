@@ -3,7 +3,7 @@ import request from 'supertest'
 import app from '../../app.js'
 import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
-import { createApiKey, revokeApiKey, HISTORY_KEEP } from './vault.js'
+import { createApiKey, revokeApiKey, HISTORY_KEEP, vaultPath } from './vault.js'
 
 let ownerToken, managerToken, supervisorToken, ownerId, managerId
 const login = async (username) => (await request(app).post('/api/auth/login').send({ username, password: 'admin123' })).body.token
@@ -151,5 +151,19 @@ describe('Sahip hesabı başka müdürce değiştirilemez', () => {
     // sahip normal kullanıcıları yönetmeye devam eder
     const other = await as(ownerToken, request(app).patch(`/api/users/${managerId}/mobile-pin`)).send({ pin: null })
     expect(other.status).not.toBe(403)
+  })
+})
+
+describe('Kasa dosya yolu', () => {
+  it('ortamlar aynı klasörde olsa da ayrı kasa açar', () => {
+    const saved = process.env.DB_PATH
+    try {
+      process.env.DB_PATH = '/var/data/yys.db'
+      expect(vaultPath().replaceAll('\\', '/')).toMatch(/\/var\/data\/finance-vault\.db$/)
+      process.env.DB_PATH = '/var/data/yys-staging.db'
+      expect(vaultPath().replaceAll('\\', '/')).toMatch(/\/var\/data\/finance-vault\.yys-staging\.db$/)
+    } finally {
+      process.env.DB_PATH = saved
+    }
   })
 })

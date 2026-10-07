@@ -25,7 +25,11 @@ export function vaultPath() {
   if (process.env.PRIVATE_FINANCE_DB_PATH) return process.env.PRIVATE_FINANCE_DB_PATH
   const main = process.env.DB_PATH
   if (main === ':memory:') return ':memory:'
-  return path.join(path.dirname(resolveDatabasePath(main)), 'finance-vault.db')
+  // Aynı klasörde birden çok ortam olabilir (/var/data/yys.db + yys-staging.db): kasa adı ana
+  // DB'den türetilir ki staging canlının kasasını açmasın. yys.db → finance-vault.db.
+  const mainPath = resolveDatabasePath(main)
+  const stem = path.basename(mainPath, path.extname(mainPath))
+  return path.join(path.dirname(mainPath), stem === 'yys' ? 'finance-vault.db' : `finance-vault.${stem}.db`)
 }
 
 export function getVault() {
