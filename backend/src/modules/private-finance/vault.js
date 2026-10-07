@@ -9,6 +9,7 @@
 // Hermes gibi makine istemcileri kullanıcı oturumu yerine kapsamlı API anahtarı
 // kullanır; anahtar yalnız SHA-256 özeti olarak saklanır.
 import Database from 'better-sqlite3'
+import fs from 'node:fs'
 import path from 'node:path'
 import { createHash, randomBytes } from 'node:crypto'
 import { resolveDatabasePath } from '../../shared/db/index.js'
@@ -69,7 +70,17 @@ export function getVault() {
       revoked_at TEXT
     );
   `)
+  restrictPermissions(wanted)
   return vault
+}
+
+// Kasa kişisel veridir: sunucudaki diğer Linux kullanıcıları (ör. hermes) dosyayı okuyamasın.
+// WAL/SHM yan dosyaları da ana dosyanın içeriğini taşır.
+function restrictPermissions(file) {
+  if (file === ':memory:') return
+  for (const f of [file, `${file}-wal`, `${file}-shm`]) {
+    try { fs.chmodSync(f, 0o600) } catch { /* yan dosya henüz yok */ }
+  }
 }
 
 export function resetVaultForTests() {
