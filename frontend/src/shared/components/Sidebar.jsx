@@ -101,6 +101,16 @@ export default function Sidebar({ mobileOpen, onClose }) {
     refetchInterval: 30000,
   })
 
+  // Özel finans kasası: yalnız sahibe (users.is_owner) görünür. Diğer herkese /api/pf 404 döner;
+  // istek müdür olmayanlar için hiç atılmaz ve 404 sessizdir (bildirim yok).
+  const { data: pfOwner } = useQuery({
+    queryKey: ['pf-owner', user?.id],
+    queryFn: () => api.get('/pf/me').then(() => true).catch(() => false),
+    enabled: user?.role === 'campus_manager',
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  })
+
   const today = new Date()
   const dateStr = today.toLocaleDateString('tr-TR', { day: '2-digit', month: 'long', year: 'numeric' })
 
@@ -168,6 +178,17 @@ export default function Sidebar({ mobileOpen, onClose }) {
 
       {/* Nav */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '12px 10px' }}>
+        {pfOwner && (
+          <div style={{ marginBottom: '18px' }}>
+            <a href="/kasa/" target="_blank" rel="noopener noreferrer" onClick={onClose} style={{ textDecoration: 'none', display: 'block' }} data-testid="pf-link">
+              <div className="sidebar-nav-item" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 10px', borderRadius: '7px', cursor: 'pointer', borderLeft: '2px solid transparent', color: 'var(--text2)' }}>
+                <span style={{ fontSize: '14px', width: '18px', textAlign: 'center', flexShrink: 0 }}>🔒</span>
+                <span style={{ fontFamily: 'var(--sans)', fontSize: '13px', flex: 1 }}>Kasa</span>
+                <span style={{ fontSize: '9px', color: 'var(--text4)' }}>↗</span>
+              </div>
+            </a>
+          </div>
+        )}
         {NAV_GROUPS.map(group => {
           const visible = group.links.filter(l => !user?.role || l.roles.includes(user.role))
           if (visible.length === 0) return null
