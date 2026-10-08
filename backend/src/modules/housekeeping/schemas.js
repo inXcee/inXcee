@@ -17,6 +17,26 @@ export const roomNotesSchema = z.object({
   notes: z.string().trim().max(2000, 'Not çok uzun').nullish(),
 })
 
+const roomStateFields = {
+  use_state: z.enum(['open', 'closed', 'locked'], { errorMap: () => ({ message: 'Durum açık, kapalı ya da kilitli olmalı' }) }).optional(),
+  occupant_shift: z.enum(['day', 'night', 'mixed'], { errorMap: () => ({ message: 'Vardiya gündüz, gece ya da karışık olmalı' }) }).nullable().optional(),
+  state_note: z.string().trim().max(500, 'Not çok uzun').nullish(),
+  state_until: dateStr.nullish(),
+}
+const hasStateChange = (v) => v.use_state !== undefined || v.occupant_shift !== undefined || v.state_note !== undefined
+  || v.state_until !== undefined
+
+export const roomStateSchema = z.object(roomStateFields)
+  .refine(hasStateChange, { message: 'Değiştirilecek bir alan gerekli' })
+
+// Toplu: blok zorunlu; kat ve/veya oda numaraları daraltır (hiçbiri yoksa bütün blok)
+export const roomStateBulkSchema = z.object({
+  block: z.string().trim().min(1, 'Blok gerekli').max(10, 'Blok geçersiz'),
+  floor: z.coerce.number().int().min(0).max(20).nullish(),
+  room_nos: z.array(z.string().trim().min(1).max(10)).max(200).optional(),
+  ...roomStateFields,
+}).refine(hasStateChange, { message: 'Değiştirilecek bir alan gerekli' })
+
 export const noCleanSchema = z.object({
   no_clean: z.coerce.boolean().optional().default(false),
 })

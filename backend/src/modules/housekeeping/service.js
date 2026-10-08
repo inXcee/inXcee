@@ -98,6 +98,25 @@ export const unskipTaskService     = q.unskipTask
 
 export const getRoomWithFaultsService = q.getRoomWithFaults
 export const toggleNoCleanService     = q.toggleNoClean
+export const getRoomStateSummaryService = q.getRoomStateSummary
+export const listRoomsWithStateService  = q.listRoomsWithState
+
+const STATE_LABEL = { open: 'açık', closed: 'kapalı', locked: 'kilitli' }
+const SHIFT_LABEL = { day: 'gündüzcü', night: 'gececi', mixed: 'karışık' }
+
+// Tek oda (roomId) ya da blok/kat/oda listesi (target) → aynı durum; denetim kaydı her çağrıda bir satır
+export function setRoomStateService({ roomId, target, data, userId }) {
+  const ids = roomId ? [roomId] : q.findRoomIds(target)
+  if (!ids.length) throw new Error('Eşleşen oda yok')
+  const result = q.setRoomState(ids, data, userId)
+  const what = [data.use_state && STATE_LABEL[data.use_state], data.occupant_shift !== undefined
+    && (SHIFT_LABEL[data.occupant_shift] || 'vardiya bilgisi kaldırıldı')].filter(Boolean).join(', ')
+  const where = roomId ? `oda #${roomId}` : [target.block, target.floor != null && `${target.floor}. kat`,
+    target.room_nos?.length && target.room_nos.join(',')].filter(Boolean).join(' ')
+  logAudit(userId, 'room_state_change', 'housekeeping', roomId || null,
+    `${where}: ${what || 'not'}${data.state_note ? ` — ${data.state_note}` : ''}${data.state_until ? ` (${data.state_until}'e kadar)` : ''} · ${result.updated} oda`)
+  return result
+}
 export const updateRoomNotesService   = q.updateRoomNotes
 
 export function reportFaultService(location, description, userId, priority, photoBefore) {

@@ -1,5 +1,9 @@
 import { getDB } from '../../shared/db/index.js'
 
+// Oda durumundan doğan atlama gerekçeleri — durum değişince bugünkü görevi geri açmak için de bu metinler aranır
+export const ROOM_SKIP = { locked: 'Oda kilitli', noClean: 'Temizlik istenmiyor', closed: 'Oda kapalı' }
+const STATE_REASONS = Object.values(ROOM_SKIP)
+
 export function generateDailyTasks(date = new Date()) {
   const db = getDB()
   // YEREL tarih (toISOString UTC döndürür — 00:00-03:00 TR arasında üretim
@@ -14,10 +18,25 @@ export function generateDailyTasks(date = new Date()) {
       WHERE qr_location=? AND DATE(scheduled_at)=?
     )
   `)
+  // Oda görevi: kilitli / temizlik istemeyen oda atlanmış doğar (sahada görünür, "bekleyen" şişmez);
+  // gececi odası 07–19 uyur → 19:00'a planlanır.
+  const insertRoom = db.prepare(`
+    INSERT INTO cleaning_tasks(area, block, floor, task_type, scheduled_at, qr_location, skipped, skip_reason)
+    SELECT ?,?,?,'room',?,?,?,?
+    WHERE NOT EXISTS (
+      SELECT 1 FROM cleaning_tasks
+      WHERE qr_location=? AND DATE(scheduled_at)=?
+    )
+  `)
   let count = 0
   const tx = db.transaction(() => {
-    // M blokları için ortak alan task'i (sadece M tipi ortak banyo/WC içerir)
-    const mFloors = db.prepare("SELECT DISTINCT block, floor FROM rooms WHERE block LIKE 'M%'").all()
+    // Süresi dolan kapalı/kilitli durum kendiliğinden açılır (state_until = son gün)
+    db.prepare(`UPDATE rooms SET use_state='open', state_until=NULL, state_note=NULL, state_updated_at=datetime('now')
+                WHERE use_state!='open' AND state_until IS NOT NULL AND state_until < ?`).run(dateStr)
+    // M blokları için ortak alan task'i (sadece M tipi ortak banyo/WC içerir);
+    // katın bütün odaları kapalıysa o katın ortak alanı da temizlenmez
+    const mFloors = db.prepare(`SELECT block, floor FROM rooms WHERE block LIKE 'M%'
+                                GROUP BY block, floor HAVING SUM(use_state!='closed') > 0`).all()
     const commonAreas = [
       { code: 'corridor', label: 'Koridor' },
       { code: 'toilet', label: 'Tuvalet / WC' },
@@ -33,13 +52,16 @@ export function generateDailyTasks(date = new Date()) {
         ).changes
       })
     })
-    // Tüm aktif odalar için bireysel oda task'i (M, S ve Y bloklar dahil)
-    const allRooms = db.prepare("SELECT id, block, floor, room_no FROM rooms WHERE status='active'").all()
+    // Kullanımdaki aktif odalar için bireysel oda task'i (M, S ve Y bloklar dahil); kapalı odaya görev yok
+    const allRooms = db.prepare(`SELECT id, block, floor, room_no, use_state, occupant_shift, no_clean
+                                 FROM rooms WHERE status='active' AND use_state!='closed'`).all()
     allRooms.forEach(r => {
       const qrLocation = `${r.block}-${r.room_no}`
-      count += insert.run(
-        `${r.block} Oda ${r.room_no}`, r.block, r.floor, 'room', scheduled,
-        qrLocation, qrLocation, dateStr,
+      const at = `${dateStr} ${r.occupant_shift === 'night' ? '19:00:00' : '08:00:00'}`
+      const skipReason = r.use_state === 'locked' ? ROOM_SKIP.locked : (r.no_clean ? ROOM_SKIP.noClean : null)
+      count += insertRoom.run(
+        `${r.block} Oda ${r.room_no}`, r.block, r.floor, at, qrLocation,
+        skipReason ? 1 : 0, skipReason, qrLocation, dateStr,
       ).changes
     })
   })
@@ -255,8 +277,9 @@ export function getDNDRooms() {
 
   if (!nightShiftSleeping) return []
 
+  // Sakin kaydından gelen gececiler + sahada "gececi" diye işaretlenmiş odalar (sakin kaydı çoğu zaman yok)
   return db.prepare(`
-    SELECT DISTINCT r.id, r.block, r.floor, r.room_no,
+    SELECT r.id, r.block, r.floor, r.room_no,
       'night_sleeping' as dnd_reason,
       'night' as shift_type,
       COUNT(ra.id) as occupied_count
@@ -264,7 +287,16 @@ export function getDNDRooms() {
     JOIN room_assignments ra ON ra.room_id=r.id AND ra.check_out_at IS NULL
     JOIN personnel p ON p.id=ra.personnel_id AND p.check_out_date IS NULL
     JOIN shifts s ON s.personnel_id=p.id AND s.shift_type='night'
+    WHERE r.use_state!='closed'
     GROUP BY r.id
+    UNION
+    SELECT r.id, r.block, r.floor, r.room_no, 'night_sleeping', 'night', 0
+    FROM rooms r
+    WHERE r.occupant_shift='night' AND r.use_state!='closed'
+      AND r.id NOT IN (SELECT ra.room_id FROM room_assignments ra
+                       JOIN personnel p ON p.id=ra.personnel_id AND p.check_out_date IS NULL
+                       JOIN shifts s ON s.personnel_id=p.id AND s.shift_type='night'
+                       WHERE ra.check_out_at IS NULL)
   `).all()
 }
 
@@ -292,7 +324,116 @@ export function getRoomWithFaults(block, roomNo) {
 
 export function toggleNoClean(roomId, value) {
   const db = getDB()
-  db.prepare(`UPDATE rooms SET no_clean=? WHERE id=?`).run(value ? 1 : 0, roomId)
+  db.transaction(() => {
+    db.prepare(`UPDATE rooms SET no_clean=? WHERE id=?`).run(value ? 1 : 0, roomId)
+    syncTodayRoomTask(db, roomId)
+  })()
+}
+
+// ── Oda kullanım durumu (kapalı / kilitli / gececi) ────────────────────────────
+
+function localToday(db) {
+  return db.prepare("SELECT date('now','localtime') d").get().d
+}
+
+// Bugünkü oda görevini odanın yeni durumuna uydurur. Yalnız henüz yapılmamış görevlere ve yalnız
+// durumdan doğan atlamalara dokunur: elle "misafir istemedi" diye atlanmış görev geri açılmaz.
+function syncTodayRoomTask(db, roomId) {
+  const r = db.prepare('SELECT id, block, floor, room_no, status, use_state, occupant_shift, no_clean FROM rooms WHERE id=?').get(roomId)
+  if (!r) return
+  const today = localToday(db)
+  const qr = `${r.block}-${r.room_no}`
+  const task = db.prepare(`SELECT id, skipped, skip_reason, completed_at FROM cleaning_tasks
+                           WHERE qr_location=? AND DATE(scheduled_at)=? AND task_type='room'`).get(qr, today)
+  if (task?.completed_at) return
+  const reason = r.use_state === 'closed' ? ROOM_SKIP.closed
+    : r.use_state === 'locked' ? ROOM_SKIP.locked
+      : r.no_clean ? ROOM_SKIP.noClean : null
+  const at = `${today} ${r.occupant_shift === 'night' ? '19:00:00' : '08:00:00'}`
+  if (!task) {
+    // bugün kapalıyken üretilmemiş görev, oda açılınca bugüne eklenir
+    if (reason || r.status !== 'active') return
+    const hasToday = db.prepare('SELECT 1 FROM cleaning_tasks WHERE DATE(scheduled_at)=? LIMIT 1').get(today)
+    if (!hasToday) return // günlük üretim henüz çalışmadı; kendisi üretecek
+    db.prepare(`INSERT INTO cleaning_tasks(area, block, floor, task_type, scheduled_at, qr_location)
+                VALUES(?,?,?,'room',?,?)`).run(`${r.block} Oda ${r.room_no}`, r.block, r.floor, at, qr)
+    return
+  }
+  if (task.skipped && !STATE_REASONS.includes(task.skip_reason)) return
+  db.prepare('UPDATE cleaning_tasks SET skipped=?, skip_reason=?, scheduled_at=? WHERE id=?')
+    .run(reason ? 1 : 0, reason, at, task.id)
+}
+
+const STATE_FIELDS = ['use_state', 'occupant_shift', 'state_note', 'state_until']
+
+// Tek oda ya da seçili odalar: { use_state?, occupant_shift?, state_note?, state_until? } — verilmeyen alan değişmez.
+// Kapalı/kilitliden 'open'a dönünce not ve bitiş tarihi temizlenir.
+export function setRoomState(roomIds, data, userId) {
+  const db = getDB()
+  const sets = []
+  const params = []
+  for (const f of STATE_FIELDS) {
+    if (data[f] !== undefined) { sets.push(`${f}=?`); params.push(data[f] === '' ? null : data[f]) }
+  }
+  if (data.use_state === 'open') {
+    if (data.state_note === undefined) sets.push('state_note=NULL')
+    if (data.state_until === undefined) sets.push('state_until=NULL')
+  }
+  if (!sets.length) return { updated: 0 }
+  sets.push("state_updated_at=datetime('now')", 'state_updated_by=?')
+  params.push(userId)
+  const update = db.prepare(`UPDATE rooms SET ${sets.join(', ')} WHERE id=?`)
+  let updated = 0
+  db.transaction(() => {
+    for (const id of roomIds) {
+      updated += update.run(...params, id).changes
+      syncTodayRoomTask(db, id)
+    }
+  })()
+  return { updated }
+}
+
+// Blok / kat / oda numaralarından oda id'leri (Telegram ve toplu web işlemi için)
+export function findRoomIds({ block, floor, room_nos } = {}) {
+  const db = getDB()
+  let sql = 'SELECT id FROM rooms WHERE block=?'
+  const params = [block]
+  if (floor !== undefined && floor !== null) { sql += ' AND floor=?'; params.push(Number(floor)) }
+  if (room_nos?.length) {
+    sql += ` AND room_no IN (${room_nos.map(() => '?').join(',')})`
+    params.push(...room_nos.map(String))
+  }
+  return db.prepare(sql).all(...params).map(r => r.id)
+}
+
+// Blok başına durum sayıları + bugünkü temizlik ilerlemesi
+export function getRoomStateSummary() {
+  const db = getDB()
+  const today = localToday(db)
+  const blocks = db.prepare(`
+    SELECT block, COUNT(*) AS rooms,
+      SUM(use_state='open') AS open, SUM(use_state='closed') AS closed, SUM(use_state='locked') AS locked,
+      SUM(occupant_shift='night') AS night, SUM(occupant_shift='day') AS day, SUM(occupant_shift='mixed') AS mixed,
+      SUM(no_clean=1) AS no_clean
+    FROM rooms WHERE status='active' GROUP BY block ORDER BY block`).all()
+  const tasks = db.prepare(`
+    SELECT block, COUNT(*) AS total, SUM(completed_at IS NOT NULL) AS done, SUM(skipped=1) AS skipped,
+      SUM(completed_at IS NULL AND skipped=0) AS pending
+    FROM cleaning_tasks WHERE DATE(scheduled_at)=? GROUP BY block`).all(today)
+  const byBlock = Object.fromEntries(tasks.map(t => [t.block, t]))
+  return { date: today, blocks: blocks.map(b => ({ ...b, tasks: byBlock[b.block] || null })) }
+}
+
+export function listRoomsWithState({ block, use_state, occupant_shift } = {}) {
+  const db = getDB()
+  let sql = `SELECT id, block, floor, room_no, use_state, occupant_shift, no_clean, state_note, state_until, state_updated_at
+             FROM rooms WHERE status='active'`
+  const params = []
+  if (block) { sql += ' AND block=?'; params.push(block) }
+  if (use_state) { sql += ' AND use_state=?'; params.push(use_state) }
+  if (occupant_shift) { sql += ' AND occupant_shift=?'; params.push(occupant_shift) }
+  sql += ' ORDER BY block, floor, CAST(room_no AS INTEGER), room_no'
+  return db.prepare(sql).all(...params)
 }
 
 export function updateRoomNotes(roomId, notes) {

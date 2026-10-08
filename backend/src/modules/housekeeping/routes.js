@@ -7,11 +7,13 @@ import { validate } from '../../shared/middleware/validate.js'
 import {
   completeFloorSchema, skipTaskSchema, roomNotesSchema, noCleanSchema,
   faultReportSchema, createStaffSchema, updateStaffSchema, completeTaskSchema, photoRetentionSchema,
-  addTaskPhotoSchema, updateTaskPhotoSchema,
+  addTaskPhotoSchema, updateTaskPhotoSchema, roomStateSchema, roomStateBulkSchema,
 } from './schemas.js'
 
 export const housekeepingRouter = Router()
-const hkAccess = requireRole('campus_manager', 'housekeeper')
+// Vardiya amiri (ve onun hesabıyla çalışan Telegram botu) temizliği sahadan yönetir; fotoğraf silme /
+// saklama ayarı gibi kalıcı işler managerAccess'te kalır.
+const hkAccess = requireRole('campus_manager', 'shift_supervisor', 'housekeeper')
 const managerAccess = requireRole('campus_manager')
 const housekeepingPhotoUpload = createImageUpload('housekeeping')
 
@@ -155,6 +157,31 @@ housekeepingRouter.get('/room-details', ...hkAccess, (req, res) => {
 housekeepingRouter.patch('/rooms/:id/no-clean', ...hkAccess, validate(noCleanSchema), (req, res) => {
   try { svc.toggleNoCleanService(+req.params.id, req.validated.no_clean); res.json({ ok: true }) }
   catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// ── Oda kullanım durumu: kapalı / kilitli / gececi-gündüzcü ──
+housekeepingRouter.get('/rooms/state-summary', ...hkAccess, (req, res) => {
+  try { res.json(svc.getRoomStateSummaryService()) }
+  catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+housekeepingRouter.get('/rooms/state', ...hkAccess, (req, res) => {
+  try {
+    const { block, use_state, occupant_shift } = req.query
+    res.json({ rooms: svc.listRoomsWithStateService({ block, use_state, occupant_shift }) })
+  } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+housekeepingRouter.patch('/rooms/:id/state', ...hkAccess, validate(roomStateSchema), (req, res) => {
+  try { res.json({ ok: true, ...svc.setRoomStateService({ roomId: +req.params.id, data: req.validated, userId: req.user.id }) }) }
+  catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+housekeepingRouter.post('/rooms/state-bulk', ...hkAccess, validate(roomStateBulkSchema), (req, res) => {
+  try {
+    const { block, floor, room_nos, ...data } = req.validated
+    res.json({ ok: true, ...svc.setRoomStateService({ target: { block, floor, room_nos }, data, userId: req.user.id }) })
+  } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
 housekeepingRouter.patch('/rooms/:id/notes', ...hkAccess, validate(roomNotesSchema), (req, res) => {
