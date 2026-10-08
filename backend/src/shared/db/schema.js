@@ -314,7 +314,7 @@ CREATE TABLE IF NOT EXISTS leave_requests (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   staff_id INTEGER NOT NULL REFERENCES staff(id),
   leave_type TEXT NOT NULL
-    CHECK(leave_type IN ('annual','sick','emergency','maternity','paternity','marriage','bereavement','unpaid')),
+    CHECK(leave_type IN ('annual','sick','emergency','maternity','paternity','marriage','bereavement','unpaid','owed','other')),
   start_date TEXT NOT NULL,
   end_date TEXT NOT NULL,
   total_days INTEGER NOT NULL,

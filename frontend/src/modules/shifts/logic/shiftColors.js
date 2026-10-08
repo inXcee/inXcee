@@ -55,6 +55,7 @@ export function hexToRgba(hex, alpha = 1) {
 const LEAVE_HEX = {
   annual: '14B8A6', sick: 'F97316', emergency: 'F59E0B', maternity: 'EC4899',
   paternity: '3B82F6', marriage: 'A855F7', bereavement: '64748B', unpaid: '64748B',
+  owed: 'F59E0B',
 }
 export function leaveHex(type) { return LEAVE_HEX[type] || '14B8A6' }
 

@@ -38,6 +38,7 @@ export const LEAVE_CELL = {
   marriage:    { short: 'EVLİLİK', emoji: '💍', bg: 'rgba(168,85,247,.15)',  text: '#a855f7',       hex: 'A855F7' },
   bereavement: { short: 'VEFAT',   emoji: '🖤', bg: 'rgba(100,116,139,.2)',  text: 'var(--text2)',  hex: '64748B' },
   unpaid:      { short: 'ÜCRETSİZ', emoji: '⏸', bg: 'rgba(100,116,139,.2)',  text: '#94a3b8',       hex: '64748B' },
+  owed:        { short: 'ALACAK',  emoji: '⏳', bg: 'rgba(240,165,0,.15)',   text: 'var(--accent)', hex: 'F59E0B' },
 }
 export const LEAVE_CELL_DEFAULT = { short: 'İZİN', emoji: '🏖', bg: 'rgba(26,188,156,.15)', text: 'var(--teal)', hex: '14B8A6' }
 
