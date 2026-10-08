@@ -1,11 +1,17 @@
 // Koridor grid'inde tek bir oda kutucuğu. Saf presentational — tüm görsel durum
 // (temiz/atlandı/DND/temizlik-yok/bekliyor/görev-yok) priority sırasıyla hesaplanır.
-// State priority: done > skipped > DND > noClean > pending > noTask
+// State priority: done > closed > locked > skipped > DND > noClean > pending > noTask
+
+const SHIFT_BADGE = { night: ['☾', 'Gececi — 07–19 uyur, temizlik 19:00'], day: ['☀', 'Gündüzcü'], mixed: ['◐', 'Karışık vardiya'] }
 
 export default function RoomTile({ rno, task, roomInfo, isDnd, dndInfo, isM, isS2Floor2, selected, onSelect, faultCount }) {
   const isDone    = !!task?.completed_at
   const isSkipped = task?.skipped === 1
   const noClean   = roomInfo?.no_clean === 1
+  const isClosed  = roomInfo?.use_state === 'closed'
+  const isLocked  = roomInfo?.use_state === 'locked'
+  const shiftBadge = SHIFT_BADGE[roomInfo?.occupant_shift]
+  const stateTitle = [roomInfo?.state_note, roomInfo?.state_until && `${roomInfo.state_until} tarihine kadar`].filter(Boolean).join(' · ')
   const hasTask   = !!task
   const hasNote   = !!roomInfo?.notes
   const hasFault  = (faultCount || 0) > 0
@@ -22,6 +28,22 @@ export default function RoomTile({ rno, task, roomInfo, isDnd, dndInfo, isM, isS
     statusIcon  = '✓'
     statusLabel = 'TEMİZ'
     statusColor = 'var(--green)'
+  } else if (isClosed) {
+    stripe      = '#1f2937'
+    bg          = 'repeating-linear-gradient(135deg, rgba(31,41,55,.25) 0 6px, rgba(31,41,55,.1) 6px 12px)'
+    borderCol   = 'var(--border2)'
+    roomNoColor = 'var(--text4)'
+    statusIcon  = '⛔'
+    statusLabel = 'KAPALI'
+    statusColor = 'var(--text4)'
+  } else if (isLocked) {
+    stripe      = '#a855f7'
+    bg          = 'rgba(168,85,247,.12)'
+    borderCol   = 'rgba(168,85,247,.45)'
+    roomNoColor = '#a855f7'
+    statusIcon  = '🔒'
+    statusLabel = 'KİLİTLİ'
+    statusColor = '#a855f7'
   } else if (isSkipped) {
     stripe      = '#3d4e6a'
     bg          = 'rgba(61,78,106,.15)'
@@ -67,7 +89,7 @@ export default function RoomTile({ rno, task, roomInfo, isDnd, dndInfo, isM, isS
   return (
     <div
       onClick={() => onSelect(selected ? null : rno)}
-      title={`Oda ${rno} — ${statusLabel || 'Görev yok'}`}
+      title={`Oda ${rno} — ${statusLabel || 'Görev yok'}${stateTitle ? ` (${stateTitle})` : ''}${shiftBadge ? ` · ${shiftBadge[1]}` : ''}`}
       style={{
         width: '58px', height: '74px', borderRadius: '7px', flexShrink: 0,
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
@@ -90,7 +112,7 @@ export default function RoomTile({ rno, task, roomInfo, isDnd, dndInfo, isM, isS
         <div style={{
           fontFamily: 'var(--mono)', fontSize: '11px', fontWeight: 700,
           color: roomNoColor, lineHeight: 1,
-          textDecoration: (isSkipped || noClean) ? 'line-through' : 'none',
+          textDecoration: (isSkipped || noClean || isClosed) ? 'line-through' : 'none',
         }}>
           {rno}
         </div>
@@ -105,6 +127,9 @@ export default function RoomTile({ rno, task, roomInfo, isDnd, dndInfo, isM, isS
           )}
           {isS2Floor2 && (
             <span style={{ fontFamily: 'var(--mono)', fontSize: '5.5px', color: 'var(--accent)', background: 'rgba(240,165,0,.2)', borderRadius: '2px', padding: '0 2px', lineHeight: 1.5 }}>4K</span>
+          )}
+          {shiftBadge && (
+            <span style={{ fontSize: '9px', lineHeight: 1, opacity: 0.85 }} title={shiftBadge[1]}>{shiftBadge[0]}</span>
           )}
         </div>
       </div>

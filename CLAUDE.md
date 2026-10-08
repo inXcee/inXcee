@@ -100,7 +100,8 @@ Y blokları **özel banyolu, kapasite=1 placeholder** olarak gelir; gerçek yata
 - Karantina odalarına atama — INSERT trigger ile bloke
 - Zimmet imzası — canvas base64 olarak `digital_signature` kolonuna kaydedilir
 - SSE endpoint: `GET /api/notifications/stream` — token header ile
-- `housekeeping/queries.js generateDailyTasks` tüm bloklara oda task üretir; `common_area` task **sadece M** (ortak banyo)
+- `housekeeping/queries.js generateDailyTasks` aktif odalara oda task üretir; `common_area` task **sadece M** (ortak banyo)
+- Oda kullanım durumu (`rooms.use_state` open/closed/locked, `occupant_shift` day/night/mixed, migration 113): kapalı odaya görev yok, kilitli / `no_clean` oda atlanmış doğar, gececi odası 19:00'a planlanır; durum değişince bugünkü görev `syncTodayRoomTask` ile uyar (elle atlanan / yapılmış göreve dokunmaz). Telegram `/oda` ve web oda paneli aynı API'yi kullanır.
 - Y bloklar laundry akışında **premium** kabul edilir (özel banyo) — `STANDARD_BLOCKS` set'i M+S içerir, dışındakiler ironing/premium
 
 ## Veritabanı Değişiklik Kuralları

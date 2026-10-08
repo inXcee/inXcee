@@ -9,6 +9,7 @@ import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 import { BLOCK_BY_NAME } from '../../shared/blocks.js'
 import { CHECKLIST_ITEMS, SKIP_REASONS, PHOTO_CATEGORIES, PHOTO_CATEGORY_MAP } from './shared.jsx'
 import { downscalePhoto, dataUrlToBlob } from '../../shared/photo.js'
+import RoomStatePanel from './RoomStatePanel.jsx'
 
 export default function RoomDetailPanel({ block, floor, roomNo, task, isPrivateBath, onComplete, onUncomplete, onSkip, onClose, onInvalidateRooms }) {
   const qc = useQueryClient()
@@ -214,6 +215,11 @@ export default function RoomDetailPanel({ block, floor, roomNo, task, isPrivateB
             </div>
           )}
 
+          {room && (
+            <RoomStatePanel key={`${room.id}-${room.use_state}`} room={room} block={block} roomNo={roomNo}
+              onChanged={() => { refetchDetails(); onInvalidateRooms?.() }} />
+          )}
+
           {/* no_clean toggle */}
           {room && (
             <div
@@ -244,7 +250,7 @@ export default function RoomDetailPanel({ block, floor, roomNo, task, isPrivateB
                 <div style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: noClean ? 'var(--text2)' : 'var(--text3)', letterSpacing: '0.5px' }}>
                   Bu oda temizlik istemiyor
                 </div>
-                {noClean && <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text4)', marginTop: '2px' }}>Görevler yine de oluşturulur, atlanabilir</div>}
+                {noClean && <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text4)', marginTop: '2px' }}>Görev "Temizlik istenmiyor" diye atlanmış oluşturulur</div>}
               </div>
               <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: noClean ? 'var(--text2)' : 'var(--text4)' }}>
                 {noClean ? 'AKTİF' : 'PASİF'}
