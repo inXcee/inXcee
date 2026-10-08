@@ -82,6 +82,7 @@ import { reportErrorService } from './modules/error-log/service.js'
 import { backupRouter } from './modules/backup/routes.js'
 import { kvkkRouter } from './modules/kvkk/routes.js'
 import { systemRouter } from './modules/system/routes.js'
+import { agentRouter } from './modules/agent/routes.js'
 import { publicRouter } from './modules/public/routes.js'
 import { notificationPrefsRouter } from './modules/notification-prefs/routes.js'
 import { campusMapRouter } from './modules/campus-map/routes.js'
@@ -425,6 +426,7 @@ app.use('/api/error-log', writeLimiter, errorLogRouter)
 app.use('/api/backup', writeLimiter, backupRouter)
 app.use('/api/kvkk', readLimiter, kvkkRouter)
 app.use('/api/system', readLimiter, systemRouter)
+app.use('/api/agent', readLimiter, agentRouter)  // Hermes vb. ajan — salt-okunur, AGENT_API_TOKEN
 app.use('/api/notification-prefs', writeLimiter, notificationPrefsRouter)
 app.use('/api/campus-map', writeLimiter, campusMapRouter)
 app.use('/api/personnel', writeLimiter, personnelRouter)
