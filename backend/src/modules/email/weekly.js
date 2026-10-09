@@ -7,14 +7,16 @@ import { getDB } from '../../shared/db/index.js'
 import { getEmailSettings, getManagerEmails, getSetting, logEmailSend } from './queries.js'
 import { getOccupancyReport, getMaintenanceReport } from '../reports/service.js'
 import { sendEmail } from './service.js'
+import { buildSignatureCoverage } from '../shifts/signatureCheckRuns.js'
 import { logger } from '../../shared/logger.js'
 
 // Son 7 tam günün (bugün hariç) sayaçları + önceki 7 gün kıyası.
 export function buildWeeklyStats() {
   const db = getDB()
+  // Yerel gün (sv-SE = YYYY-MM-DD). toISOString UTC'dir: TR'de 00:00–03:00 arası bir önceki güne kayardı.
   const iso = (offsetDays) => {
     const d = new Date(); d.setDate(d.getDate() + offsetDays)
-    return d.toISOString().slice(0, 10)
+    return d.toLocaleDateString('sv-SE')
   }
   const range = { start: iso(-7), end: iso(-1) }
   const prevRange = { start: iso(-14), end: iso(-8) }
@@ -48,7 +50,56 @@ export function buildWeeklyStats() {
     `).get(range.start, range.end)?.h ?? null,
     occupancy: getOccupancyReport(),     // anlık doluluk (blok bazlı + totals)
     maintenance: getMaintenanceReport(), // son 7 gün open/closed/overdue (rapor zaten 7 günlük)
+    signature: weeklySignatureCoverage(range),
   }
+}
+
+// İmzalı föy dönüş takibi — hafta boyunca bölüm başına kontrol edilmeyen / uyarılı gün sayısı.
+// Föy kontrolü hiç kullanılmadıysa used=false (e-postada tek satırlık hatırlatma).
+export function weeklySignatureCoverage(range) {
+  const cov = buildSignatureCoverage({ from: range.start, to: range.end })
+  const departments = cov.departments
+    .map(d => {
+      const cells = Object.values(d.cells)
+      return {
+        name: d.name,
+        expected: cells.filter(c => c.planned > 0).length,
+        checked: cells.filter(c => c.run_id).length,
+        missing: cells.filter(c => c.status === 'missing').length,
+        warn: cells.filter(c => c.status === 'warn').length,
+      }
+    })
+    .filter(d => d.expected > 0)
+    .sort((a, b) => b.missing - a.missing || b.warn - a.warn || a.name.localeCompare(b.name, 'tr'))
+  return { ...cov.summary, used: cov.summary.checked > 0, departments }
+}
+
+const esc = s => String(s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]))
+
+function signatureSectionHtml(sig, kpi) {
+  if (!sig.expected) return ''
+  if (!sig.used) {
+    return `<h2>İmzalı Föy — Hafta</h2>
+<p style="font-size:13px;color:#64748b">Bu hafta hiç föy kontrolü yapılmadı (${sig.expected} bölüm-gün bekleniyordu).
+YYS → Çizelge → İmzalı föy kontrolü ya da Telegram <b>/foy</b> ile başlanabilir.</p>`
+  }
+  const rows = sig.departments.map(d => `<tr>
+     <td style="padding:4px 8px;border:1px solid #ddd">${esc(d.name)}</td>
+     <td style="padding:4px 8px;border:1px solid #ddd">${d.checked}/${d.expected}</td>
+     <td style="padding:4px 8px;border:1px solid #ddd;color:${d.missing ? '#dc2626' : 'inherit'}">${d.missing}</td>
+     <td style="padding:4px 8px;border:1px solid #ddd;color:${d.warn ? '#dc2626' : 'inherit'}">${d.warn}</td></tr>`).join('')
+  const th = t => `<th style="padding:6px 8px;border:1px solid #ddd;background:#f3f4f6;text-align:left">${t}</th>`
+  return `<h2>İmzalı Föy — Hafta</h2>
+<div class="kpi-grid">
+  ${kpi(`${sig.checked}/${sig.expected}`, 'Kontrol Edilen')}
+  ${kpi(`<span style="color:${sig.missing > 0 ? '#dc2626' : '#0369a1'}">${sig.missing}</span>`, 'Gelmeyen')}
+  ${kpi(`<span style="color:${sig.warn > 0 ? '#dc2626' : '#0369a1'}">${sig.warn}</span>`, 'Uyarılı')}
+</div>
+<table style="border-collapse:collapse;width:100%;margin-bottom:16px;font-size:13px">
+  <thead><tr>${th('Bölüm')}${th('Kontrol')}${th('Gelmeyen gün')}${th('Uyarılı gün')}</tr></thead>
+  <tbody>${rows}</tbody>
+</table>
+<p style="font-size:11px;color:#94a3b8">Föy kontrolü puantajı değiştirmez; yalnız ıslak imzalı föyün çizelgeyle farkını raporlar.</p>`
 }
 
 // Δ rozeti: önceki haftaya göre artış/azalış oku.
@@ -126,6 +177,8 @@ export function buildWeeklyReportHtml() {
   ${kpi(s.laundryAvgHours != null ? s.laundryAvgHours + ' sa' : '—', 'Ort. Teslim Süresi')}
   ${kpi(s.laundryPending, 'Şu An Bekleyen')}
 </div>
+
+${signatureSectionHtml(s.signature, kpi)}
 
 <hr style="margin-top:32px;border:none;border-top:1px solid #e5e7eb">
 <p style="font-size:11px;color:#94a3b8">Bu e-posta YYS tarafından her pazartesi otomatik oluşturulur. Ayarlar → Genel &amp; E-Posta'dan kapatılabilir (haftalık özet anahtarı).</p>

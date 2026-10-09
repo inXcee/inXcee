@@ -53,6 +53,36 @@ describe('buildWeeklyReportHtml', () => {
   })
 })
 
+describe('İmzalı föy bölümü', () => {
+  const gun = n => { const d = new Date(); d.setDate(d.getDate() - n); return d.toLocaleDateString('sv-SE') }
+  let dept
+
+  beforeAll(() => {
+    const db = getDB()
+    dept = Number(db.prepare("INSERT INTO departments(name, color_class) VALUES('Föy <Mail> Bölümü', 'blue')").run().lastInsertRowid)
+    const s = Number(db.prepare('INSERT INTO staff(full_name, department_id, is_active) VALUES(?, ?, 1)').run('Mail Föy Kişisi', dept).lastInsertRowid)
+    for (const n of [2, 3]) db.prepare("INSERT INTO shift_schedule(staff_id, work_date, status) VALUES(?, ?, 'scheduled')").run(s, gun(n))
+  })
+
+  it('hiç kontrol yokken tek satırlık hatırlatma gösterir', () => {
+    const html = buildWeeklyReportHtml()
+    expect(html).toContain('İmzalı Föy — Hafta')
+    expect(html).toContain('hiç föy kontrolü yapılmadı')
+  })
+
+  it('kontrol varsa bölüm tablosu: gelmeyen gün sayısı, isim HTML-kaçışlı', () => {
+    getDB().prepare(`INSERT INTO signature_check_runs(batch_id, work_date, department_id, warnings)
+                     VALUES('mail-test', ?, ?, 1)`).run(gun(2), dept)
+    const s = buildWeeklyStats().signature
+    const d = s.departments.find(x => x.name === 'Föy <Mail> Bölümü')
+    expect(d).toMatchObject({ expected: 2, checked: 1, missing: 1, warn: 1 })
+    const html = buildWeeklyReportHtml()
+    expect(html).toContain('Föy &lt;Mail&gt; Bölümü')
+    expect(html).not.toContain('Föy <Mail> Bölümü')
+    expect(html).toContain('Gelmeyen')
+  })
+})
+
 describe('sendWeeklyReport', () => {
   it('email_enabled=false iken sessizce atlar (throw etmez)', async () => {
     setSetting('email_enabled', 'false')
