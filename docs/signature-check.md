@@ -20,8 +20,11 @@ puantajı değiştirmez, yalnız fark raporlanır.
 
 `mark`: `signed` · `blank` · `off` · `report` · `annual` · `leave` (türü belirsiz İZİN) · `absent`.
 Satırda `staff_id` ya da `name` olmalı. İsim eşleştirmesi büyük/küçük harf ve Türkçe
-karakterden bağımsızdır (`foldName`). Aynı isimde birden fazla kişi varsa **tahmin
-yürütülmez**, satır `unmatched` içinde aday listesiyle döner.
+karakterden bağımsızdır (`foldName`). Kelimeleri aynı ama sırası farklı isim ("DEMİR AYŞE")
+kesin eşleşme sayılır; satırda `matched_by: "word_order"` + `sheet_name` döner. Aynı isimde
+birden fazla kişi varsa **tahmin yürütülmez**, satır `unmatched` içinde aday listesiyle döner.
+Bulunamayan isim için `suggestions[]` (en yakın 3 personel, benzerlik ≥ 0.72, aktifler önce)
+döner — **yalnız öneridir**, satır eşleşmiş sayılmaz.
 
 ## Yanıt
 
@@ -45,3 +48,9 @@ bölüm seçilir, her satıra bir kişi yazılır: `Ad Soyad` (imzalı) ya da
 `Ad Soyad - boş / off / rapor / izin / yıllık / gelmedi`. Ayraç `-`, `;`, `:`, `|` ya da
 sekme olabilir; üçüncü parça not olarak taşınır. Anlaşılmayan işaret tahmin edilmez,
 satır numarasıyla gösterilir ve gönderim engellenir (`logic/signatureSheetParse.js`).
+
+Excel'den **haftalık ızgara** da yapıştırılabilir: `Ad ⇥ Pzt ⇥ Sal …` (en az 3 gün sütunu).
+Hücreler sırayla haftanın günlerine eşlenir, boş hücre = imza yok, gün/tarih başlık satırı
+atlanır. Eşleşmeyen isimde önerilen kişiye tıklamak föy metnindeki ismi düzeltir.
+**📋 Raporu kopyala** uyarıları WhatsApp/Telegram'a yapıştırılacak düz metin olarak verir
+(`logic/signatureReport.js`).

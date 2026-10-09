@@ -107,6 +107,30 @@ describe('checkSignatureSheet', () => {
     expect(r.summary.not_on_sheet).toBe(r.not_on_sheet.length)
   })
 
+  it('soyad-önce yazılmış ismi kesin eşleştirir ve bunu belirtir', () => {
+    const r = checkSignatureSheet({ rows: [{ name: 'FÖYDEMİR AYŞE', date: GUN, mark: 'signed' }] })
+    expect(r.items[0]).toMatchObject({ staff_id: id.calisan, verdict: 'ok', matched_by: 'word_order', sheet_name: 'FÖYDEMİR AYŞE' })
+    expect(r.unmatched).toHaveLength(0)
+  })
+
+  it('yazım hatalı isim eşleşmez, yalnız öneri döner', () => {
+    const r = checkSignatureSheet({ rows: [
+      { name: 'Mehmet Föyimzasz', date: GUN, mark: 'blank' },   // harf eksik
+      { name: 'Föyimzasız Mehmt', date: GUN, mark: 'blank' },   // ters sıra + harf eksik
+      { name: 'Tamamen Başka', date: GUN, mark: 'signed' },
+    ] })
+    expect(r.items).toHaveLength(0)
+    expect(r.unmatched[0].suggestions[0]).toMatchObject({ id: id.imzasiz, full_name: 'Mehmet Föyimzasız' })
+    expect(r.unmatched[1].suggestions[0].id).toBe(id.imzasiz)
+    expect(r.unmatched[2].suggestions).toEqual([])
+  })
+
+  it('öneride aktif personel pasiften önce gelir', () => {
+    const r = checkSignatureSheet({ rows: [{ name: 'Selin Föypasf', date: GUN, mark: 'signed' }] })
+    const s = r.unmatched[0].suggestions.find(x => x.id === id.pasif)
+    expect(s).toMatchObject({ is_active: false })
+  })
+
   it('salt okuma: shift_schedule değişmez', () => {
     const db = getDB()
     const before = db.prepare('SELECT COUNT(*) c, group_concat(status) s FROM shift_schedule').get()

@@ -48,7 +48,7 @@ describe('İmzalı föy kontrolü paneli', () => {
     await user.click(screen.getByRole('button', { name: 'İmzalı föy kontrolü' }))
     await user.type(screen.getByLabelText('Föy satırları'), 'Ayşe Demir{enter}Mehmet Kaya - boş')
     await user.selectOptions(screen.getByLabelText('Bölüm'), '3')
-    await user.click(screen.getByRole('button', { name: /karşılaştır \(2 kişi\)/ }))
+    await user.click(screen.getByRole('button', { name: /karşılaştır \(2 satır\)/ }))
 
     expect(api.post).toHaveBeenCalledWith('/shifts/schedule/signature-check', {
       rows: [
@@ -61,6 +61,51 @@ describe('İmzalı föy kontrolü paneli', () => {
     expect(screen.getByText(/imza yok — gelmedi mi/)).toBeInTheDocument()
     expect(screen.getByText('Çalışıyor ama föyde yok (1)')).toBeInTheDocument()
     expect(screen.getByText('Burak Föyde')).toBeInTheDocument()
+  })
+
+  it('haftalık ızgarayı günlere dağıtarak gönderir', async () => {
+    const user = userEvent.setup()
+    ciz()
+    await user.click(screen.getByRole('button', { name: 'İmzalı föy kontrolü' }))
+    // userEvent.type sekmeyi odak değişimi sayar — yapıştırma gibi doğrudan ver.
+    const alan = screen.getByLabelText('Föy satırları')
+    alan.focus()
+    await user.paste('Ayşe Demir\t✓\t\t')
+    expect(screen.getByRole('button', { name: /\(2 satır · 2 gün\)/ })).toBeEnabled()
+    await user.click(screen.getByRole('button', { name: /karşılaştır/ }))
+    expect(api.post.mock.calls[0][1].rows).toEqual([
+      { name: 'Ayşe Demir', date: GUNLER[0], mark: 'signed' },
+      { name: 'Ayşe Demir', date: GUNLER[1], mark: 'blank' },
+    ])
+  })
+
+  it('eşleşmeyen isim için öneriye tıklayınca föy metnini düzeltir', async () => {
+    api.post.mockResolvedValueOnce({ data: {
+      dates: [GUNLER[0]],
+      summary: { rows: 1, matched: 0, signed_ok: 0, not_working_ok: 0, warnings: 0, unmatched: 1, duplicates: 0, not_on_sheet: 0 },
+      items: [], duplicates: [], not_on_sheet: [],
+      unmatched: [{ index: 0, name: 'Mehmt Kaya', reason: 'isim personel listesinde bulunamadı', candidates: [],
+        suggestions: [{ id: 2, full_name: 'Mehmet Kaya', department: 'Kat Hizmetleri', is_active: true, score: 0.9 }] }],
+    } })
+    const user = userEvent.setup()
+    ciz()
+    await user.click(screen.getByRole('button', { name: 'İmzalı föy kontrolü' }))
+    await user.type(screen.getByLabelText('Föy satırları'), 'Mehmt Kaya - off')
+    await user.click(screen.getByRole('button', { name: /karşılaştır/ }))
+    await user.click(await screen.findByRole('button', { name: 'Mehmet Kaya?' }))
+    expect(screen.getByLabelText('Föy satırları')).toHaveValue('Mehmet Kaya - off')
+    expect(screen.queryByLabelText('Föy kontrol sonucu')).not.toBeInTheDocument()
+  })
+
+  it('raporu panoya kopyalar', async () => {
+    const user = userEvent.setup()
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
+    ciz()
+    await user.click(screen.getByRole('button', { name: 'İmzalı föy kontrolü' }))
+    await user.type(screen.getByLabelText('Föy satırları'), 'Mehmet Kaya - boş')
+    await user.click(screen.getByRole('button', { name: /karşılaştır/ }))
+    await user.click(await screen.findByRole('button', { name: /Raporu kopyala/ }))
+    expect(writeText).toHaveBeenCalledWith(expect.stringMatching(/• Mehmet Kaya — Boş: .*imza yok/))
   })
 
   it('anlaşılmayan işaret varken göndermez', async () => {

@@ -4,6 +4,7 @@ import api from '../../../shared/api/client.js'
 import { useToastStore } from '../../../shared/store/toastStore.js'
 import { formatDate } from '../shared.jsx'
 import { parseSignatureSheet, MARK_LABELS } from '../logic/signatureSheetParse.js'
+import { replaceSheetName, signatureReportText } from '../logic/signatureReport.js'
 
 // İmzalı föy kontrolü.
 //
@@ -17,11 +18,14 @@ const LEVEL_COLOR = { warn: 'var(--red)', info: 'var(--text3)', ok: 'var(--green
 
 const ORNEK = 'Ayşe Demir\nMehmet Kaya - boş\nAli Veli - off\nFatma Yıldız - rapor'
 
-function Satir({ item }) {
+function Satir({ item, cokGun }) {
   return (
-    <li style={{ display: 'flex', gap: 8, alignItems: 'baseline', padding: '3px 0', fontSize: 12 }}>
+    <li style={{ display: 'flex', gap: 8, alignItems: 'baseline', padding: '3px 0', fontSize: 12, flexWrap: 'wrap' }}>
       <span style={{ color: LEVEL_COLOR[item.level], width: 14 }}>{item.level === 'warn' ? '⚠' : item.level === 'ok' ? '✓' : '·'}</span>
-      <strong style={{ minWidth: 160 }}>{item.full_name}</strong>
+      {cokGun && <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text3)', minWidth: 44 }}>{formatDate(item.date)}</span>}
+      <strong style={{ minWidth: 160 }} title={item.matched_by === 'word_order' ? `Föyde "${item.sheet_name}" yazıyor (ad/soyad sırası farklı)` : undefined}>
+        {item.full_name}{item.matched_by === 'word_order' && <span style={{ color: 'var(--text3)', fontWeight: 400 }}> ⇄</span>}
+      </strong>
       <span style={{ color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 11, minWidth: 70 }}>{MARK_LABELS[item.mark]}</span>
       <span style={{ color: item.level === 'warn' ? 'var(--text)' : 'var(--text3)' }}>{item.text}</span>
       {item.note && <em style={{ color: 'var(--text3)' }}>({item.note})</em>}
@@ -39,7 +43,19 @@ export default function SignatureCheckBoard({ weekDays = [], departments = [] })
   const [metin, setMetin] = useState('')
   const [sonuc, setSonuc] = useState(null)
 
-  const parsed = parseSignatureSheet(metin, tarih)
+  const parsed = parseSignatureSheet(metin, tarih, weekDays)
+  const gunSayisi = new Set(parsed.rows.map(r => r.date)).size
+
+  const oneriyiUygula = (eski, yeni) => { setMetin(m => replaceSheetName(m, eski, yeni)); setSonuc(null) }
+
+  const raporuKopyala = async () => {
+    try {
+      await navigator.clipboard.writeText(signatureReportText(sonuc))
+      useToastStore.getState().addToast('Rapor panoya kopyalandı', 'success')
+    } catch {
+      useToastStore.getState().addToast('Panoya kopyalanamadı', 'error')
+    }
+  }
 
   const kontrol = useMutation({
     mutationFn: () => api.post('/shifts/schedule/signature-check', {
@@ -53,6 +69,7 @@ export default function SignatureCheckBoard({ weekDays = [], departments = [] })
   const uyarilar = (sonuc?.items || []).filter(i => i.level === 'warn')
   const tamam = (sonuc?.items || []).filter(i => i.level !== 'warn')
   const s = sonuc?.summary
+  const cokGun = (sonuc?.dates || []).length > 1
 
   return (
     <div className="panel" style={{ marginBottom: 12, borderLeft: `3px solid ${s?.warnings ? 'var(--red)' : 'var(--accent)'}` }}>
@@ -79,6 +96,7 @@ export default function SignatureCheckBoard({ weekDays = [], departments = [] })
         <div style={{ padding: '0 14px 12px' }}>
           <p style={{ fontSize: 11, color: 'var(--text3)', margin: '0 0 8px' }}>
             Her satıra bir kişi yazın. İşaret yoksa satır <b>imzalı</b> sayılır; "Ad Soyad - boş / off / rapor / izin / yıllık / gelmedi".
+            Excel'den haftalık ızgara da yapıştırılabilir (Ad ⇥ Pzt ⇥ Sal …; boş hücre = imza yok), o zaman günler haftadan alınır.
             Puantaja hiçbir şey yazılmaz, yalnız çizelgeyle fark gösterilir.
           </p>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
@@ -114,13 +132,20 @@ export default function SignatureCheckBoard({ weekDays = [], departments = [] })
             onClick={() => kontrol.mutate()}
             style={{ marginTop: 6 }}
           >
-            {kontrol.isPending ? 'Kontrol ediliyor…' : `Çizelgeyle karşılaştır (${parsed.rows.length} kişi)`}
+            {kontrol.isPending
+              ? 'Kontrol ediliyor…'
+              : `Çizelgeyle karşılaştır (${parsed.rows.length} satır${gunSayisi > 1 ? ` · ${gunSayisi} gün` : ''})`}
           </button>
+          {sonuc && (
+            <button type="button" className="btn" onClick={raporuKopyala} style={{ marginTop: 6, marginLeft: 8 }}>
+              📋 Raporu kopyala
+            </button>
+          )}
 
           {sonuc && (
             <div style={{ marginTop: 12 }} aria-label="Föy kontrol sonucu">
               <div style={{ fontSize: 12, marginBottom: 6 }}>
-                <b>{formatDate(tarih)}</b> · imzalı {s.signed_ok} · imza aranmayan {s.not_working_ok} ·{' '}
+                <b>{cokGun ? `${formatDate(sonuc.dates[0])} – ${formatDate(sonuc.dates.at(-1))}` : formatDate(sonuc.dates?.[0] || tarih)}</b> · imzalı {s.signed_ok} · imza aranmayan {s.not_working_ok} ·{' '}
                 <span style={{ color: s.warnings ? 'var(--red)' : 'inherit' }}>uyarı {s.warnings}</span>
                 {s.unmatched > 0 && <> · <span style={{ color: 'var(--red)' }}>eşleşmeyen {s.unmatched}</span></>}
                 {s.not_on_sheet > 0 && <> · <span style={{ color: 'var(--red)' }}>föyde yok {s.not_on_sheet}</span></>}
@@ -129,7 +154,7 @@ export default function SignatureCheckBoard({ weekDays = [], departments = [] })
               {uyarilar.length > 0 && (
                 <>
                   <h4 style={{ fontSize: 12, margin: '8px 0 2px', color: 'var(--red)' }}>Kontrol edilmesi gerekenler</h4>
-                  <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>{uyarilar.map(i => <Satir key={i.index} item={i} />)}</ul>
+                  <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>{uyarilar.map(i => <Satir key={i.index} item={i} cokGun={cokGun} />)}</ul>
                 </>
               )}
 
@@ -137,10 +162,23 @@ export default function SignatureCheckBoard({ weekDays = [], departments = [] })
                 <>
                   <h4 style={{ fontSize: 12, margin: '8px 0 2px', color: 'var(--red)' }}>Eşleşmeyen satırlar</h4>
                   <ul style={{ fontSize: 12, margin: 0 }}>
-                    {sonuc.unmatched.map(u => (
-                      <li key={u.index}>
-                        <b>{u.name}</b>: {u.reason}
+                    {/* Haftalık ızgarada aynı isim 7 kez eşleşmez — bir kez göster. */}
+                    {sonuc.unmatched.filter((u, i, all) => all.findIndex(x => x.name === u.name && x.staff_id === u.staff_id) === i).map(u => (
+                      <li key={u.index} style={{ marginBottom: 2 }}>
+                        <b>{u.name ?? `#${u.staff_id}`}</b>: {u.reason}
                         {u.candidates.length > 0 && <> ({u.candidates.map(c => `#${c.id}`).join(', ')})</>}
+                        {u.name && u.suggestions?.map(o => (
+                          <button
+                            key={o.id}
+                            type="button"
+                            className="btn btn-sm"
+                            onClick={() => oneriyiUygula(u.name, o.full_name)}
+                            title={`Föy metninde "${u.name}" → "${o.full_name}" (${o.department || 'bölümsüz'}${o.is_active ? '' : ', pasif'})`}
+                            style={{ marginLeft: 6, fontSize: 11, padding: '1px 6px' }}
+                          >
+                            {o.full_name}?{!o.is_active && ' (pasif)'}
+                          </button>
+                        ))}
                       </li>
                     ))}
                   </ul>
@@ -154,7 +192,7 @@ export default function SignatureCheckBoard({ weekDays = [], departments = [] })
                     Çalışıyor ama föyde yok ({sonuc.not_on_sheet.length})
                   </summary>
                   <ul style={{ fontSize: 12, margin: 0 }}>
-                    {sonuc.not_on_sheet.map(n => <li key={`${n.staff_id}-${n.date}`}>{n.full_name} <span style={{ color: 'var(--text3)' }}>{n.department}</span></li>)}
+                    {sonuc.not_on_sheet.map(n => <li key={`${n.staff_id}-${n.date}`}>{cokGun && <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text3)' }}>{formatDate(n.date)} </span>}{n.full_name} <span style={{ color: 'var(--text3)' }}>{n.department}</span></li>)}
                   </ul>
                 </details>
               )}
@@ -162,7 +200,7 @@ export default function SignatureCheckBoard({ weekDays = [], departments = [] })
               {tamam.length > 0 && (
                 <details style={{ marginTop: 8 }}>
                   <summary style={{ fontSize: 12, cursor: 'pointer' }}>Sorunsuz {tamam.length} kişi</summary>
-                  <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>{tamam.map(i => <Satir key={i.index} item={i} />)}</ul>
+                  <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>{tamam.map(i => <Satir key={i.index} item={i} cokGun={cokGun} />)}</ul>
                 </details>
               )}
             </div>

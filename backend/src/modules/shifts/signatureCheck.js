@@ -83,7 +83,53 @@ export function judgeRow(mark, category) {
   }
 }
 
-function resolveStaff(row, byId, byFold) {
+// "DEMİR AYŞE" ile "Ayşe Demir" aynı anahtar — föylerde soyad-önce yazım yaygın.
+const tokenKey = folded => folded.split(' ').filter(Boolean).sort().join(' ')
+
+function levenshtein(a, b) {
+  if (a === b) return 0
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j)
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i]
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1))
+    }
+    prev = cur
+  }
+  return prev[b.length]
+}
+
+const similarity = (a, b) => (a && b ? 1 - levenshtein(a, b) / Math.max(a.length, b.length) : 0)
+
+export const SUGGEST_MIN_SCORE = 0.72
+
+// Bulunamayan isim için en yakın personeller. YALNIZ ÖNERİ — satır eşleşmiş sayılmaz,
+// kullanıcı düzeltip yeniden gönderir. Aktif personel öne alınır.
+export function suggestNames(name, staffRows, limit = 3) {
+  const key = foldName(name)
+  if (!key) return []
+  const keySorted = tokenKey(key)
+  return staffRows
+    .map(s => {
+      const f = foldName(s.full_name)
+      const score = Math.max(similarity(key, f), similarity(keySorted, tokenKey(f)))
+      return { id: s.id, full_name: s.full_name, department: s.department, is_active: !!s.is_active, score }
+    })
+    .filter(c => c.score >= SUGGEST_MIN_SCORE)
+    .sort((a, b) => (b.is_active - a.is_active) || (b.score - a.score) || a.full_name.localeCompare(b.full_name, 'tr'))
+    .slice(0, limit)
+    .map(c => ({ ...c, score: Math.round(c.score * 100) / 100 }))
+}
+
+function pickOne(hits, error) {
+  if (hits.length === 1) return { staff: hits[0] }
+  const active = hits.filter(s => s.is_active)
+  if (active.length === 1) return { staff: active[0] }
+  return { error, candidates: hits.map(s => ({ id: s.id, full_name: s.full_name })) }
+}
+
+function resolveStaff(row, lookup) {
+  const { byId, byFold, byTokens, staffRows } = lookup
   if (row.staff_id != null) {
     const s = byId.get(Number(row.staff_id))
     return s ? { staff: s } : { error: `#${row.staff_id} personel kaydı yok` }
@@ -91,13 +137,14 @@ function resolveStaff(row, byId, byFold) {
   const key = foldName(row.name)
   if (!key) return { error: 'isim okunamadı' }
   const hits = byFold.get(key) || []
-  if (hits.length === 1) return { staff: hits[0] }
-  if (hits.length > 1) {
-    const active = hits.filter(s => s.is_active)
-    if (active.length === 1) return { staff: active[0] }
-    return { error: 'aynı isimde birden fazla personel', candidates: hits.map(s => ({ id: s.id, full_name: s.full_name })) }
+  if (hits.length) return pickOne(hits, 'aynı isimde birden fazla personel')
+  // Kelime sırası farklı ama kelimeler birebir aynı — bulanık değil, kesin eşleşme.
+  const swapped = byTokens.get(tokenKey(key)) || []
+  if (swapped.length) {
+    const r = pickOne(swapped, 'ad/soyad sırası farklı, birden fazla personel uyuyor')
+    return r.staff ? { ...r, matched_by: 'word_order' } : r
   }
-  return { error: 'isim personel listesinde bulunamadı' }
+  return { error: 'isim personel listesinde bulunamadı', suggestions: suggestNames(row.name, staffRows) }
 }
 
 /**
@@ -111,11 +158,14 @@ export function checkSignatureSheet({ rows = [], department_id = null } = {}, db
   `).all()
   const byId = new Map(staffRows.map(s => [s.id, s]))
   const byFold = new Map()
+  const byTokens = new Map()
+  const push = (map, k, s) => { if (!map.has(k)) map.set(k, []); map.get(k).push(s) }
   for (const s of staffRows) {
     const k = foldName(s.full_name)
-    if (!byFold.has(k)) byFold.set(k, [])
-    byFold.get(k).push(s)
+    push(byFold, k, s)
+    push(byTokens, tokenKey(k), s)
   }
+  const lookup = { byId, byFold, byTokens, staffRows }
 
   const dates = [...new Set(rows.map(r => r.date))].sort()
   const cells = new Map()
@@ -131,9 +181,12 @@ export function checkSignatureSheet({ rows = [], department_id = null } = {}, db
   const seen = new Set()
   const duplicates = []
   rows.forEach((row, index) => {
-    const r = resolveStaff(row, byId, byFold)
+    const r = resolveStaff(row, lookup)
     if (!r.staff) {
-      unmatched.push({ index, name: row.name ?? null, staff_id: row.staff_id ?? null, date: row.date, mark: row.mark, reason: r.error, candidates: r.candidates || [] })
+      unmatched.push({
+        index, name: row.name ?? null, staff_id: row.staff_id ?? null, date: row.date, mark: row.mark,
+        reason: r.error, candidates: r.candidates || [], suggestions: r.suggestions || [],
+      })
       return
     }
     const s = r.staff
@@ -151,6 +204,7 @@ export function checkSignatureSheet({ rows = [], department_id = null } = {}, db
       full_name: s.full_name,
       department: s.department,
       is_active: !!s.is_active,
+      ...(r.matched_by ? { matched_by: r.matched_by, sheet_name: row.name } : {}),
       date: row.date,
       mark: row.mark,
       note: row.note || null,

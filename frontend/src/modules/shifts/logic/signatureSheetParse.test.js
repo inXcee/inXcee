@@ -38,6 +38,47 @@ describe('parseSignatureSheet', () => {
     expect(errors[0].reason).toMatch(/belki/)
   })
 
+  describe('haftalık ızgara (Excel yapıştırma)', () => {
+    const HAFTA = ['2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08', '2026-10-09', '2026-10-10', '2026-10-11']
+
+    it('başlığı atlar, hücreleri günlere dağıtır, boş hücre imza yok sayılır', () => {
+      const { rows, errors } = parseSignatureSheet([
+        'Ad Soyad\tPzt\tSal\tÇar\tPer\tCum\tCmt\tPaz',
+        'Ayşe Demir\t✓\t✓\t\trapor\t✓\toff\toff',
+      ].join('\n'), GUN, HAFTA)
+      expect(errors).toEqual([])
+      expect(rows).toHaveLength(7)
+      expect(rows.map(r => r.mark)).toEqual(['signed', 'signed', 'blank', 'report', 'signed', 'off', 'off'])
+      expect(rows[3]).toEqual({ name: 'Ayşe Demir', date: '2026-10-08', mark: 'report' })
+    })
+
+    it('tarihli başlığı ve satır sonu boş sütunları tolere eder', () => {
+      const { rows, errors } = parseSignatureSheet([
+        'İsim\t05.10\t06.10\t07.10',
+        'Mehmet Kaya\t+\t+\timza\t\t\t\t\t\t',
+      ].join('\n'), GUN, HAFTA)
+      expect(errors).toEqual([])
+      expect(rows.map(r => r.date)).toEqual(HAFTA)
+      expect(rows.slice(0, 3).every(r => r.mark === 'signed')).toBe(true)
+    })
+
+    it('tanınmayan hücrede satırın tamamı reddedilir, gün numarası söylenir', () => {
+      const { rows, errors } = parseSignatureSheet('Ali Veli\t✓\tbelki\t✓', GUN, HAFTA)
+      expect(rows).toEqual([])
+      expect(errors[0].reason).toMatch(/2\. gün.*belki/)
+    })
+
+    it('dolu fazla sütun hata verir', () => {
+      const { errors } = parseSignatureSheet(`Ali Veli${'\t✓'.repeat(8)}`, GUN, HAFTA)
+      expect(errors[0].reason).toMatch(/8 gün sütunu/)
+    })
+
+    it('"Ad ⇥ rapor ⇥ not" tek günlük biçim olarak kalır', () => {
+      const { rows } = parseSignatureSheet('Hasan Tan\trapor\tkenarda', GUN, HAFTA)
+      expect(rows).toEqual([{ name: 'Hasan Tan', date: GUN, mark: 'report', note: 'kenarda' }])
+    })
+  })
+
   it('isimde tire boşluksuzsa ayraç sayılmaz', () => {
     const { rows } = parseSignatureSheet('Ayşe Demir-Kaya', GUN)
     expect(rows[0]).toMatchObject({ name: 'Ayşe Demir-Kaya', mark: 'signed' })
