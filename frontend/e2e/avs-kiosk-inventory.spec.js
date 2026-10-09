@@ -25,10 +25,12 @@ test('envanter: login → Daha fazla → Malzeme → ürün al → stok düşer 
   await page.getByPlaceholder('Ad/soyad ara…').fill('Env Test')
   await page.getByRole('button', { name: new RegExp(WORKER.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) }).click()
 
-  // Numpad PIN 1234 (4. hanede otomatik giriş)
+  // Numpad PIN 1234
   for (const d of ['1', '2', '3', '4']) {
     await page.getByRole('button', { name: new RegExp(`^${d}$`) }).click()
   }
+  // PIN 4 ya da 6 haneli olabildiği için giriş artık açık basışla yapılır (8b763ab6).
+  await page.getByRole('button', { name: 'Giriş Yap' }).click()
   await expect(page.getByRole('tab', { name: /Vardiya/ })).toBeVisible({ timeout: 10_000 })
 
   // "Daha fazla" → "Malzeme" (envanter sekmesi overflow'da) — Profil'e girmeden görünür olmalı

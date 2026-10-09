@@ -24,13 +24,13 @@ export const WORK_MODES = [
     key: 'daily',
     label: 'Günlük operasyon',
     hint: 'Bugünü yürütme: eksik kadro, gün detayı, servis/yemek bağları',
-    panels: ['dayOperations', 'dayDetail', 'crossLinks', 'actionCenter', 'openShifts'],
+    panels: ['dayOperations', 'signatureCheck', 'dayDetail', 'crossLinks', 'actionCenter', 'openShifts'],
   },
   {
     key: 'payroll',
     label: 'Puantaj kontrolörü',
     hint: 'Dönem kapatma: hazırlık, aksiyon, proje geçişleri',
-    panels: ['readiness', 'actionCenter', 'crossover', 'dayDetail'],
+    panels: ['readiness', 'actionCenter', 'signatureCheck', 'crossover', 'dayDetail'],
   },
   {
     key: 'all',

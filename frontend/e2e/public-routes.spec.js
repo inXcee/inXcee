@@ -4,8 +4,9 @@ test.describe('public routes — smoke', () => {
   test('laundry kiosk loads', async ({ page }) => {
     await page.goto('/laundry-kiosk')
     await expect(page).toHaveURL(/\/laundry-kiosk/)
-    // Sayfa içeriğinin yüklendiğini doğrula — kiosk sekmelerinden biri görünmeli
-    await expect(page.getByText(/Giriş|Odalar|Ütü|Teslim|Durum/).first()).toBeVisible({ timeout: 10_000 })
+    // Sayfa içeriğinin yüklendiğini doğrula — kiosk personel girişi ekranı görünmeli
+    await expect(page.getByRole('heading', { name: 'Personel girişi' })).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByRole('searchbox', { name: 'Personel ara' })).toBeVisible()
   })
 
   test('mobile login shows role selection', async ({ page }) => {

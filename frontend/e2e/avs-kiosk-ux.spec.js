@@ -23,6 +23,8 @@ async function loginKiosk(page) {
   for (const digit of ['1', '2', '3', '4']) {
     await page.getByRole('button', { name: new RegExp(`^${digit}$`) }).click()
   }
+  // PIN 4 ya da 6 haneli olabildiği için giriş artık açık basışla yapılır (8b763ab6).
+  await page.getByRole('button', { name: 'Giriş Yap' }).click()
   await expect(page.getByRole('tab', { name: /Ana Sayfa/ })).toBeVisible({ timeout: 10_000 })
   const blockA = page.getByRole('button', { name: 'A', exact: true })
   if (await blockA.isVisible()) await blockA.click()
@@ -41,10 +43,11 @@ test('numpad ile giris + alt nav ile sekme gezme + varsayilan TR', async ({ page
   await page.getByPlaceholder('Ad/soyad ara…').fill('UX Test')
   await page.getByRole('button', { name: new RegExp(PINNED.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) }).click()
 
-  // Dokunmatik numpad ile 1-2-3-4 (4. hanede otomatik giris)
+  // Dokunmatik numpad ile 1-2-3-4, sonra Giriş Yap (PIN 4 ya da 6 haneli olabilir)
   for (const d of ['1', '2', '3', '4']) {
     await page.getByRole('button', { name: new RegExp(`^${d}$`) }).click()
   }
+  await page.getByRole('button', { name: 'Giriş Yap' }).click()
   // Giris sonrasi alt nav gorunur
   await expect(page.getByRole('tab', { name: /Vardiya/ })).toBeVisible({ timeout: 10_000 })
 
@@ -61,6 +64,7 @@ test('Kartlarım: giriş + yemek kartı ayrı görünür (QR ile)', async ({ pag
   for (const d of ['1', '2', '3', '4']) {
     await page.getByRole('button', { name: new RegExp(`^${d}$`) }).click()
   }
+  await page.getByRole('button', { name: 'Giriş Yap' }).click()
   await expect(page.getByRole('tab', { name: /Vardiya/ })).toBeVisible({ timeout: 10_000 })
 
   // "Kartlarım" nav taşmasında ("Daha fazla")

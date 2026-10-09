@@ -59,6 +59,7 @@ import {
 } from './service.js'
 import PDFDocument from 'pdfkit'
 import { drawSignaturePdf } from './signaturePdf.js'
+import { checkSignatureSheet } from './signatureCheck.js'
 import {
   checkConflicts, listHolidays, createHoliday, updateHoliday, deleteHoliday,
   getPayrollExport, getCombinedAbsences,
@@ -68,7 +69,7 @@ import {
 } from './queries.js'
 import { importSchedule, listImportBatches, undoImportBatch } from './import.js'
 import { annualLeaveSummary } from './leave-entitlement.js'
-import { importScheduleSchema } from './schemas.js'
+import { importScheduleSchema, signatureCheckSchema } from './schemas.js'
 import { validate } from '../../shared/middleware/validate.js'
 import { logAudit } from '../../shared/audit.js'
 import { documentUpload, verifyDocumentMagicBytes } from '../../shared/uploads/middleware.js'
@@ -816,6 +817,18 @@ shiftsRouter.post('/schedule/signature-pdf', ...managerOrSupervisor, (req, res) 
   } catch (e) {
     console.error('[signature-pdf]', e)
     if (!res.headersSent) res.status(500).json({ error: 'İmza föyü PDF oluşturulamadı' })
+  }
+})
+
+// İmzalı föy kontrolü — föyden okunan satırları çizelgeyle karşılaştırır.
+// Salt okuma: puantaja hiçbir şey yazmaz, yalnız kişi kişi fark raporu döner
+// (imza eksik, föyde RAPOR/OFF yazılmış ama çizelge farklı, föyde olmayan çalışan…).
+shiftsRouter.post('/schedule/signature-check', ...managerOrSupervisor, validate(signatureCheckSchema), (req, res) => {
+  try {
+    res.json(checkSignatureSheet(req.validated))
+  } catch (e) {
+    logger.error({ err: e.message }, '[shifts/signature-check]')
+    res.status(500).json({ error: 'İmza föyü kontrol edilemedi' })
   }
 })
 

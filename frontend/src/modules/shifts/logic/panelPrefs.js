@@ -13,6 +13,7 @@ export const SCHEDULE_PANELS = [
   { key: 'publish', label: 'Yayın durumu', hint: 'Hafta taslak mı, yayında mı; yayından beri değişenler' },
   { key: 'actionCenter', label: 'Aksiyon merkezi', hint: 'Onay bekleyen, çakışan, eksik — tek listede' },
   { key: 'dayOperations', label: 'Günlük operasyon', hint: 'Eksik kadro, yerine çağrılabilecekler, devir teslim' },
+  { key: 'signatureCheck', label: 'İmzalı föy kontrolü', hint: 'Islak imzalı föyü çizelgeyle karşılaştır: eksik imza, OFF/rapor farkı' },
   { key: 'openShifts', label: 'Açık vardiyalar', hint: 'İlan, başvuru ve aday uygunluğu' },
   { key: 'suitability', label: 'Uygunluk matrisi', hint: 'Bu vardiyaya kimleri koyabilirim' },
   { key: 'planning', label: 'Planlama önerisi', hint: 'Açık başına puanlı aday + senaryo karşılaştırması' },
