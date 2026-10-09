@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { getDB } from '../../shared/db/index.js'
 import { bumpTransportRevision } from './v2-core.js'
+import { NO_SHOW_AT_DEPARTURE } from './operations-service.js'
 
 function fail(message, status = 400) {
   const error = new Error(message)
@@ -146,16 +147,18 @@ export function driverTransition(token, action) {
       fail('Bu sefer başlatılamaz', 409)
     }
     const result = db.transaction(() => {
-      db.prepare(`
+      // Koşullu güncelleme: iki telefondan aynı anda "başlat" basılırsa ikincisi 409 alır.
+      const changed = db.prepare(`
         UPDATE transport_trips
         SET status='departed', departed_at=datetime('now'), updated_at=datetime('now')
-        WHERE id=?
-      `).run(trip.id)
+        WHERE id=? AND status IN ('published','boarding')
+      `).run(trip.id).changes
+      if (!changed) fail('Bu sefer başlatılamaz', 409)
       db.prepare(`
         UPDATE transport_trip_assignments
-        SET status='no_show', status_reason='Kalkışta binmedi', updated_at=datetime('now')
+        SET status='no_show', status_reason=?, updated_at=datetime('now')
         WHERE trip_id=? AND status='assigned'
-      `).run(trip.id)
+      `).run(NO_SHOW_AT_DEPARTURE, trip.id)
       addDriverEvent(trip.id, 'driver_started', trip.status, 'departed', { token_id: access.token_id })
       return 'departed'
     })()
@@ -163,11 +166,12 @@ export function driverTransition(token, action) {
   }
   if (action === 'complete') {
     if (trip.status !== 'departed') fail('Yalnızca yoldaki sefer tamamlanabilir', 409)
-    db.prepare(`
+    const changed = db.prepare(`
       UPDATE transport_trips
       SET status='completed', completed_at=datetime('now'), updated_at=datetime('now')
-      WHERE id=?
-    `).run(trip.id)
+      WHERE id=? AND status='departed'
+    `).run(trip.id).changes
+    if (!changed) fail('Yalnızca yoldaki sefer tamamlanabilir', 409)
     addDriverEvent(trip.id, 'driver_completed', trip.status, 'completed', { token_id: access.token_id })
     return { ok: true, status: 'completed', revision: bumpTransportRevision() }
   }

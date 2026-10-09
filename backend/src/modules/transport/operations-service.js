@@ -3,6 +3,10 @@ import { bumpTransportRevision, getTransportRevision } from './v2-core.js'
 import { notifyTripEvent } from './notifications.js'
 import { istanbulDate } from '../../shared/time.js'
 
+// Kalkışta binmeyenlere yazılan gerekçe (sürücü bağlantısı da aynısını yazar). Çevrimdışı okutma
+// geri bindirme yalnız bu gerekçeli no_show'u düzeltir; elle "binmedi" işaretleneni değil.
+export const NO_SHOW_AT_DEPARTURE = 'Kalkışta binmedi'
+
 const TRANSITIONS = {
   draft: ['published', 'cancelled'],
   published: ['boarding', 'cancelled'],
@@ -150,15 +154,19 @@ function assertRouteAndResources(trip) {
   if (occupied > trip.capacity_snapshot) fail('Kapasite aşımı giderilmeli')
 }
 
+// Çakışma penceresi saat farkıyla ölçülür; work_date yalnız aday daraltma (±1 gün). Eskiden aynı
+// work_date şartı vardı: 23:30 ve ertesi gün 00:30 gece seferleri aynı araç/şoföre çakışmadan atanabiliyordu.
+const NEAR_DAYS = "t.work_date BETWEEN date(?, '-1 day') AND date(?, '+1 day')"
+
 function assertResourceConflicts(trip, ignoreId = null) {
   const conflict = getDB().prepare(`
     SELECT t.id, r.name AS route_name
     FROM transport_trips t JOIN routes r ON r.id=t.route_id
-    WHERE t.id<>? AND t.work_date=? AND t.status<>'cancelled'
+    WHERE t.id<>? AND ${NEAR_DAYS} AND t.status<>'cancelled'
       AND (t.vehicle_id=? OR t.driver_id=?)
       AND abs((julianday(t.scheduled_departure)-julianday(?))*24*60) < 180
     LIMIT 1
-  `).get(ignoreId || 0, trip.work_date, trip.vehicle_id, trip.driver_id, trip.scheduled_departure)
+  `).get(ignoreId || 0, trip.work_date, trip.work_date, trip.vehicle_id, trip.driver_id, trip.scheduled_departure)
   if (conflict) fail(`Araç veya şoför ${conflict.route_name} seferiyle çakışıyor`, 409)
 }
 
@@ -275,9 +283,9 @@ export function transitionTrip(id, action, { reason, delay_minutes: delayMinutes
     if (target === 'departed') {
       db.prepare(`
         UPDATE transport_trip_assignments
-        SET status='no_show', status_reason='Kalkışta binmedi', updated_at=datetime('now')
+        SET status='no_show', status_reason=?, updated_at=datetime('now')
         WHERE trip_id=? AND status='assigned'
-      `).run(id)
+      `).run(NO_SHOW_AT_DEPARTURE, id)
     }
     addEvent(id, action, trip.status, target, user.id, {
       reason: reason || null,
@@ -313,10 +321,10 @@ function assertStaffConflict(staffId, trip) {
     JOIN transport_trips t ON t.id=a.trip_id
     JOIN routes r ON r.id=t.route_id
     WHERE a.staff_id=? AND a.status NOT IN ('cancelled','waitlisted')
-      AND t.status<>'cancelled' AND t.work_date=? AND t.id<>?
+      AND t.status<>'cancelled' AND ${NEAR_DAYS} AND t.id<>?
       AND abs((julianday(t.scheduled_departure)-julianday(?))*24*60) < 180
     LIMIT 1
-  `).get(staffId, trip.work_date, trip.id, trip.scheduled_departure)
+  `).get(staffId, trip.work_date, trip.work_date, trip.id, trip.scheduled_departure)
   if (conflict) fail(`Personel ${conflict.route_name} seferiyle çakışıyor`, 409)
 }
 
@@ -329,6 +337,8 @@ export function addAssignment(tripId, data, userId) {
     SELECT COUNT(*) AS count FROM transport_trip_assignments
     WHERE trip_id=? AND status IN ('assigned','boarded','no_show')
   `).get(tripId).count
+  // İstemci "assigned" isterse de kapasite geçerli (eskiden status verilince kontrol atlanıyordu).
+  if (data.status === 'assigned' && occupied >= trip.capacity_snapshot) fail('Sefer kapasitesi dolu — yedeğe ekleyin', 409)
   const status = data.status || (occupied >= trip.capacity_snapshot ? 'waitlisted' : 'assigned')
   const id = db.prepare(`
     INSERT INTO transport_trip_assignments(
@@ -346,9 +356,11 @@ export function addAssignment(tripId, data, userId) {
 function promoteWaitlist(tripId, userId, approveAfterDeparture = false) {
   const db = getDB()
   const trip = tripById(tripId)
+  // Terfi için "binmedi" koltuk BOŞTUR — eskiden sayılıyordu; dolu seferde (yedek ancak o zaman olur)
+  // no_show işaretlemesi yedeği hiç terfi ettirmiyordu.
   const occupied = db.prepare(`
     SELECT COUNT(*) AS count FROM transport_trip_assignments
-    WHERE trip_id=? AND status IN ('assigned','boarded','no_show')
+    WHERE trip_id=? AND status IN ('assigned','boarded')
   `).get(tripId).count
   if (occupied >= trip.capacity_snapshot) return null
   const waiting = db.prepare(`
@@ -426,10 +438,12 @@ export function scanTrip(tripId, data, userId) {
   if (existing) return { ...existing, duplicate: true, revision: getTransportRevision() }
   const tx = db.transaction(() => {
     const trip = tripById(tripId)
+    // Çevrimdışı kuyruk: kalkıştan ÖNCE okutulup sonra gelen okutma. Saatler sayı olarak karşılaştırılır
+    // (metin karşılaştırması "+03:00" ofsetli cihaz saatinde yanılıyordu). departed_at SQLite UTC'dir.
+    const deviceMs = data.device_time ? Date.parse(data.device_time) : NaN
+    const departedMs = trip.departed_at ? Date.parse(`${trip.departed_at.replace(' ', 'T')}Z`) : NaN
     const offlineBeforeDeparture = ['departed', 'completed'].includes(trip.status)
-      && data.device_time
-      && trip.departed_at
-      && data.device_time <= `${trip.departed_at.replace(' ', 'T')}Z`
+      && Number.isFinite(deviceMs) && Number.isFinite(departedMs) && deviceMs <= departedMs
     if (trip.status !== 'boarding' && !offlineBeforeDeparture) {
       fail('QR okutmak için biniş başlatılmalı', 409)
     }
@@ -445,12 +459,15 @@ export function scanTrip(tripId, data, userId) {
       `).get(tripId, staff.id)
       if (!assignment || assignment.status === 'cancelled') result = 'not_assigned'
       else if (assignment.status === 'boarded') result = 'already_boarded'
-      else if (assignment.status === 'assigned') {
+      else if (assignment.status === 'assigned'
+        // Kalkışta toplu "binmedi" yapılmış ama okutma kalkıştan önce: kişi gerçekten bindi.
+        || (offlineBeforeDeparture && assignment.status === 'no_show' && assignment.status_reason === NO_SHOW_AT_DEPARTURE)) {
         result = 'boarded'
+        const boardedAt = offlineBeforeDeparture ? new Date(deviceMs).toISOString().slice(0, 19).replace('T', ' ') : null
         db.prepare(`
-          UPDATE transport_trip_assignments SET status='boarded', boarded_at=datetime('now'),
+          UPDATE transport_trip_assignments SET status='boarded', boarded_at=COALESCE(?, datetime('now')),
             status_reason=NULL, updated_at=datetime('now') WHERE id=?
-        `).run(assignment.id)
+        `).run(boardedAt, assignment.id)
       } else result = 'rejected'
     }
     const id = db.prepare(`

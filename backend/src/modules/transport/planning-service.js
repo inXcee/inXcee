@@ -25,15 +25,16 @@ function dateRange(startDate, endDate) {
   return dates
 }
 
-function minutesOf(iso) {
-  const time = iso.slice(11, 16)
-  const [hour, minute] = time.split(':').map(Number)
-  return hour * 60 + minute
+// 'YYYY-MM-DDTHH:MM' (yerel, ofsetsiz) → mutlak dakika. İki taraf da aynı biçimde okunduğu için fark doğru.
+function absoluteMinutes(iso) {
+  return Date.parse(`${String(iso).slice(0, 16)}:00Z`) / 60000
 }
 
-function resourceConflict(a, b, field) {
-  if (!a[field] || a[field] !== b[field] || a.work_date !== b.work_date) return false
-  return Math.abs(minutesOf(a.scheduled_departure) - minutesOf(b.scheduled_departure)) < TRIP_WINDOW_MINUTES
+// Gerçek zaman farkı: eskiden aynı work_date şartı + günün dakikası (23:30=1410, 00:30=30) kullanılıyordu;
+// gece yarısını aşan aynı araç/şoför seferleri toplu planda çakışma sayılmıyordu.
+export function resourceConflict(a, b, field) {
+  if (!a[field] || a[field] !== b[field]) return false
+  return Math.abs(absoluteMinutes(a.scheduled_departure) - absoluteMinutes(b.scheduled_departure)) < TRIP_WINDOW_MINUTES
 }
 
 function templateRow(row) {
