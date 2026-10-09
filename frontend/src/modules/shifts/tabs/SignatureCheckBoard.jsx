@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
 import { useToastStore } from '../../../shared/store/toastStore.js'
 import { formatDate } from '../shared.jsx'
 import { parseSignatureSheet, MARK_LABELS } from '../logic/signatureSheetParse.js'
 import { replaceSheetName, signatureReportText } from '../logic/signatureReport.js'
+import SignatureCoverageGrid, { COVERAGE_KEY } from './SignatureCoverageGrid.jsx'
 
 // İmzalı föy kontrolü.
 //
@@ -42,6 +43,15 @@ export default function SignatureCheckBoard({ weekDays = [], departments = [] })
   const [bolum, setBolum] = useState('')
   const [metin, setMetin] = useState('')
   const [sonuc, setSonuc] = useState(null)
+  const [kaydet, setKaydet] = useState(true)
+  const qc = useQueryClient()
+
+  // Takip tablosundan "gelmedi" hücresi seçildi → o gün ve bölüm forma.
+  const hucreSec = ({ date, department_id }) => {
+    setTarih(date)
+    setBolum(String(department_id))
+    setSonuc(null)
+  }
 
   const parsed = parseSignatureSheet(metin, tarih, weekDays)
   const gunSayisi = new Set(parsed.rows.map(r => r.date)).size
@@ -61,8 +71,12 @@ export default function SignatureCheckBoard({ weekDays = [], departments = [] })
     mutationFn: () => api.post('/shifts/schedule/signature-check', {
       rows: parsed.rows,
       ...(bolum ? { department_id: Number(bolum) } : {}),
+      ...(kaydet ? { save: true, source: 'web' } : {}),
     }).then(r => r.data),
-    onSuccess: setSonuc,
+    onSuccess: data => {
+      setSonuc(data)
+      if (data.saved) qc.invalidateQueries({ queryKey: [COVERAGE_KEY] })
+    },
     onError: toastErr,
   })
 
@@ -94,6 +108,7 @@ export default function SignatureCheckBoard({ weekDays = [], departments = [] })
 
       {acik && (
         <div style={{ padding: '0 14px 12px' }}>
+          <SignatureCoverageGrid weekDays={weekDays} onPick={hucreSec} />
           <p style={{ fontSize: 11, color: 'var(--text3)', margin: '0 0 8px' }}>
             Her satıra bir kişi yazın. İşaret yoksa satır <b>imzalı</b> sayılır; "Ad Soyad - boş / off / rapor / izin / yıllık / gelmedi".
             Excel'den haftalık ızgara da yapıştırılabilir (Ad ⇥ Pzt ⇥ Sal …; boş hücre = imza yok), o zaman günler haftadan alınır.
@@ -110,6 +125,10 @@ export default function SignatureCheckBoard({ weekDays = [], departments = [] })
                 <option value="">Föydeki bölümler</option>
                 {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
               </select>
+            </label>
+            <label style={{ fontSize: 12 }} title="Kontrol sonucu föy dönüş takibine işlenir; puantaj değişmez">
+              <input type="checkbox" checked={kaydet} onChange={e => setKaydet(e.target.checked)} aria-label="Föy takibine işle" />{' '}
+              Föy takibine işle
             </label>
           </div>
           <textarea
@@ -149,6 +168,7 @@ export default function SignatureCheckBoard({ weekDays = [], departments = [] })
                 <span style={{ color: s.warnings ? 'var(--red)' : 'inherit' }}>uyarı {s.warnings}</span>
                 {s.unmatched > 0 && <> · <span style={{ color: 'var(--red)' }}>eşleşmeyen {s.unmatched}</span></>}
                 {s.not_on_sheet > 0 && <> · <span style={{ color: 'var(--red)' }}>föyde yok {s.not_on_sheet}</span></>}
+                {sonuc.saved && <span style={{ color: 'var(--text3)' }}> · takibe işlendi</span>}
               </div>
 
               {uyarilar.length > 0 && (
