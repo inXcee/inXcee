@@ -1,6 +1,7 @@
 import { getDB } from '../../shared/db/index.js'
 import { bumpTransportRevision, getTransportRevision } from './v2-core.js'
 import { notifyTripEvent } from './notifications.js'
+import { istanbulDate } from '../../shared/time.js'
 
 const TRIP_WINDOW_MINUTES = 180
 
@@ -131,7 +132,7 @@ export function deactivateDriver(id) {
 }
 
 export function listUnavailability({ from, to } = {}) {
-  const start = from || new Date().toISOString().slice(0, 10)
+  const start = from || istanbulDate()
   const end = to || '9999-12-31'
   return getDB().prepare(`
     SELECT u.*, v.plate AS vehicle_plate, d.full_name AS driver_name

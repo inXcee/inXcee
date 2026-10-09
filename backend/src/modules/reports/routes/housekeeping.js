@@ -3,12 +3,13 @@ import { createPDF, addTable, addSectionTitle, addKpiRow } from '../../../shared
 import * as service from '../service.js'
 import { logger } from '../../../shared/logger.js'
 import { mgrAccess } from './shared.js'
+import { istanbulDate } from '../../../shared/time.js'
 
 export const housekeepingReportsRouter = Router()
 
 housekeepingReportsRouter.get('/housekeeping/data', ...mgrAccess, (req, res) => {
   try {
-    const date = req.query.date || new Date().toISOString().split('T')[0]
+    const date = req.query.date || istanbulDate()
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'Invalid date format' })
     res.json(service.getHousekeepingReport(date))
   } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
@@ -16,7 +17,7 @@ housekeepingReportsRouter.get('/housekeeping/data', ...mgrAccess, (req, res) => 
 
 housekeepingReportsRouter.get('/housekeeping', ...mgrAccess, (req, res) => {
   try {
-    const date = req.query.date || new Date().toISOString().split('T')[0]
+    const date = req.query.date || istanbulDate()
     const { total, done, skipped, pending } = service.getHousekeepingReport(date)
     const { tasks, byStaff, byBlock } = service.getHousekeepingDetailSvc(date)
 

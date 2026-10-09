@@ -1,12 +1,13 @@
 import { getDB } from '../../shared/db/index.js'
 import { createNotification } from '../../shared/notifications/service.js'
+import { istanbulDate } from '../../shared/time.js'
 
 // I1 — Sertifika vade taraması: 60/30/14/7/1 gün kala ve vade günü bildirim üretir.
 // Cron günde bir çalıştığı için her eşik tek kez tetiklenir; dedup_key aynı gün
 // içindeki tekrar çalıştırmaları (sunucu restart) engeller.
 export const CERT_WARN_THRESHOLDS = [60, 30, 14, 7, 1, 0]
 
-export function checkCertExpiries(today = new Date().toISOString().slice(0, 10)) {
+export function checkCertExpiries(today = istanbulDate()) {
   const db = getDB()
   const rows = db.prepare(`
     SELECT a.id as attendance_id, a.cert_expires_at,

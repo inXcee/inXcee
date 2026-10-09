@@ -1,5 +1,6 @@
 import { getDB } from '../../shared/db/index.js'
 import { computeAnnualEntitlement } from '../shifts/leave-entitlement.js'
+import { istanbulDate } from '../../shared/time.js'
 
 const TIMELINE_KINDS = new Set([
   'shift', 'leave', 'overtime', 'attendance', 'document', 'performance',
@@ -8,7 +9,7 @@ const TIMELINE_KINDS = new Set([
 ])
 
 function isoToday() {
-  return new Date().toISOString().slice(0, 10)
+  return istanbulDate()
 }
 
 function daysFromToday(value) {
@@ -138,7 +139,7 @@ function documentSummary(db, person) {
   }
 
   const today = isoToday()
-  const expiringCutoff = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)
+  const expiringCutoff = istanbulDate(new Date(Date.now() + 30 * 86400000))
   const missing = requirements
     .filter(requirement => !latestByKind.has(requirement.document_kind))
     .map(requirement => ({
@@ -245,7 +246,7 @@ export function getDossier(staffId, { includeSensitive = false } = {}) {
 
   const identityLink = resolveIdentityLink(db, person)
   const today = isoToday()
-  const last30 = new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10)
+  const last30 = istanbulDate(new Date(Date.now() - 29 * 86400000))
 
   const todayShift = db.prepare(`
     SELECT ss.id, ss.work_date, ss.status, ss.leave_type, ss.absent_reason,
@@ -442,7 +443,7 @@ function timelineBounds(options = {}) {
   const page = Math.max(1, Number.parseInt(options.page, 10) || 1)
   const limit = Math.max(1, Math.min(100, Number.parseInt(options.limit, 10) || 30))
   const defaultTo = isoToday()
-  const defaultFrom = new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10)
+  const defaultFrom = istanbulDate(new Date(Date.now() - 365 * 86400000))
   const validDate = value =>
     typeof value === 'string'
     && /^\d{4}-\d{2}-\d{2}$/.test(value)

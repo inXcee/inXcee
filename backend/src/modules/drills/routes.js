@@ -5,6 +5,7 @@ import { getDB } from '../../shared/db/index.js'
 import { logAudit } from '../../shared/audit.js'
 import { validate } from '../../shared/middleware/validate.js'
 import { createDrillSchema } from './schemas.js'
+import { istanbulDate } from '../../shared/time.js'
 
 export const drillsRouter = Router()
 const mgmt = requireRole('campus_manager', 'shift_supervisor')
@@ -105,7 +106,7 @@ drillsRouter.get('/roster.pdf', requireAuth, (req, res) => {
   const doc = new PDFDocument({ size: 'A4', margin: 36 })
   res.setHeader('Content-Type', 'application/pdf')
   const fnameSuffix = block ? `${block}` : 'tum-bloklar'
-  const today = new Date().toISOString().slice(0, 10)
+  const today = istanbulDate()
   res.setHeader('Content-Disposition', `attachment; filename="tahliye-listesi-${fnameSuffix}-${today}.pdf"`)
   doc.pipe(res)
 

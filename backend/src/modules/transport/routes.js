@@ -24,6 +24,7 @@ import { getWorkSite, saveWorkSite } from './workSite.js'
 import * as planning from './planning-service.js'
 import * as operations from './operations-service.js'
 import * as driverAccess from './driver-access.js'
+import { istanbulDate } from '../../shared/time.js'
 import {
   createAnalyticsCsv,
   createAnalyticsWorkbook,
@@ -589,14 +590,14 @@ transportRouter.put('/staff/:id/pickup', ...mgr, validate(setPickupSchema), (req
 // ── Daily ops ──
 transportRouter.get('/daily', ...view, (req, res) => {
   try {
-    const date = req.query.date || new Date().toISOString().slice(0, 10)
+    const date = req.query.date || istanbulDate()
     res.json(q.getDailyOverview(date))
   } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 transportRouter.get('/routes/:id/manifest', ...view, (req, res) => {
   try {
-    const date = req.query.date || new Date().toISOString().slice(0, 10)
+    const date = req.query.date || istanbulDate()
     const m = q.getRouteManifest(+req.params.id, date)
     if (!m) return res.status(404).json({ error: 'Rota bulunamadı' })
     res.json(m)
@@ -605,7 +606,7 @@ transportRouter.get('/routes/:id/manifest', ...view, (req, res) => {
 
 transportRouter.post('/auto-assign', ...mgr, rejectLegacyTransportWrite, (req, res) => {
   try {
-    const date = req.body?.date || new Date().toISOString().slice(0, 10)
+    const date = req.body?.date || istanbulDate()
     const override = !!req.body?.override
     const stats = q.autoAssign(date, { overrideExisting: override })
     logAudit(req.user.id, 'transport_auto_assign', 'transport', null, `${date}: ${stats.assigned} atandı`)
@@ -633,7 +634,7 @@ transportRouter.get('/staff/:id/detail', ...view, (req, res) => {
 // PDF manifesto
 transportRouter.get('/routes/:id/manifest/pdf', ...view, (req, res) => {
   try {
-    const date = req.query.date || new Date().toISOString().slice(0, 10)
+    const date = req.query.date || istanbulDate()
     const m = q.getRouteManifest(+req.params.id, date)
     if (!m) return res.status(404).json({ error: 'Rota bulunamadı' })
 
@@ -710,7 +711,7 @@ transportRouter.get('/reports', ...view, (req, res) => {
 
 transportRouter.delete('/assign/:staff_id', ...mgr, rejectLegacyTransportWrite, (req, res) => {
   try {
-    const date = req.query.date || new Date().toISOString().slice(0, 10)
+    const date = req.query.date || istanbulDate()
     q.clearAssignment(+req.params.staff_id, date)
     logAudit(req.user.id, 'transport_assign_clear', 'transport', +req.params.staff_id, date)
     res.json({ ok: true })
@@ -724,7 +725,7 @@ transportRouter.post('/board-qr', ...mgr, rejectLegacyTransportWrite, validate(b
   try {
     const db = getDB()
     const token = req.validated.qr_token.replace(/^AVS:/i, '')
-    const date = req.validated.work_date || new Date().toISOString().slice(0, 10)
+    const date = req.validated.work_date || istanbulDate()
 
     const staff = db.prepare(`SELECT id, full_name FROM staff WHERE qr_token = ?`).get(token)
     if (!staff) return res.status(404).json({ error: 'QR tanınmadı — personel bulunamadı' })
@@ -776,7 +777,7 @@ transportRouter.get('/no-show', ...view, (req, res) => {
 // Faz 7: tüm rotaların manifesti tek PDF
 transportRouter.get('/manifest/all/pdf', ...view, (req, res) => {
   try {
-    const date = req.query.date || new Date().toISOString().slice(0, 10)
+    const date = req.query.date || istanbulDate()
     const routes = q.listRoutes({ activeOnly: true })
     if (!routes.length) return res.status(404).json({ error: 'Aktif rota yok' })
 

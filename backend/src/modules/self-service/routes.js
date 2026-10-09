@@ -26,6 +26,7 @@ import { sendFoundMessage } from '../laundry/whatsapp.js'
 import { createImageUpload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { logger } from '../../shared/logger.js'
 import { getStaffTransport } from '../transport/self-service.js'
+import { istanbulDate } from '../../shared/time.js'
 import {
   finalizeHandover, getCurrentHandover, getLoadSuggestions, listHandoverWorkers,
   markLoadProgress, startHandover, startMachineLoad,
@@ -416,7 +417,7 @@ selfServiceRouter.get('/my-transport', requireKioskOrStaff, (req, res) => {
   if (!req.user.personnelId) return res.status(403).json({ error: 'Kiosk token gerekli' })
   try {
     const db = getDB()
-    const date = req.query.date || new Date().toISOString().slice(0, 10)
+    const date = req.query.date || istanbulDate()
     const p = db.prepare('SELECT tc_no FROM personnel WHERE id=?').get(req.user.personnelId)
     if (!p?.tc_no) return res.json({ today: null, pickup: null, date, message: 'TC numarası kayıtlı değil' })
     const staff = db.prepare('SELECT id FROM staff WHERE tc_no = ? AND is_active = 1').get(p.tc_no)

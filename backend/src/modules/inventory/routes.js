@@ -14,6 +14,7 @@ import { lotsRouter, lotsByItemHandler } from './lots/routes.js'
 import { locationsRouter } from './locations/routes.js'
 import { analyticsRouter } from './analytics/routes.js'
 import { logger } from '../../shared/logger.js'
+import { istanbulDate } from '../../shared/time.js'
 
 export const inventoryRouter = Router()
 inventoryRouter.use('/suppliers', suppliersRouter)
@@ -173,7 +174,7 @@ inventoryRouter.get('/export/csv', ...mgrAccess, (req, res) => {
       `"${i.item_name}","${i.category}",${i.quantity},"${i.unit}",${i.reorder_threshold},"${i.location || ''}",${i.unit_price || 0},"${i.last_updated || ''}"`
     )
     res.set('Content-Type', 'text/csv; charset=utf-8')
-    res.set('Content-Disposition', `attachment; filename=envanter_${new Date().toISOString().slice(0,10)}.csv`)
+    res.set('Content-Disposition', `attachment; filename=envanter_${istanbulDate()}.csv`)
     res.send('\ufeff' + header + '\n' + rows.join('\n'))
   } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
@@ -239,7 +240,7 @@ inventoryRouter.get('/receipts/:id', ...mgrAccess, (req, res) => {
 inventoryRouter.post('/receipts', ...editAccess, validate(createReceiptSchema), (req, res) => {
   try {
     const { supplier, invoice_no, receipt_date, notes, items } = req.validated
-    const result = service.createReceipt(supplier, invoice_no, receipt_date || new Date().toISOString().slice(0, 10), notes, items, req.user.id)
+    const result = service.createReceipt(supplier, invoice_no, receipt_date || istanbulDate(), notes, items, req.user.id)
     res.status(201).json(result)
   } catch (e) { res.status(400).json({ error: e.message }) }
 })

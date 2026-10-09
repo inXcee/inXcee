@@ -1,4 +1,5 @@
 import { getDB } from '../../shared/db/index.js'
+import { istanbulDate } from '../../shared/time.js'
 import {
   syncLegacyAssignment,
   syncLegacyDate,
@@ -404,8 +405,8 @@ export function setBoarded(assignmentId, boarded, userId) {
 // Faz 6: devamsızlık top N — son N gün servise atanmış ama binmemiş kişiler
 export function getNoShowReport({ startDate, endDate, limit = 20 } = {}) {
   const db = getDB()
-  const s = startDate || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)
-  const e = endDate || new Date().toISOString().slice(0, 10)
+  const s = startDate || istanbulDate(new Date(Date.now() - 30 * 86400000))
+  const e = endDate || istanbulDate()
   return db.prepare(`
     SELECT s.id, s.full_name, s.phone, s.role_label,
       d.name as dept_name, d.color_class as dept_color,
@@ -576,7 +577,7 @@ export function getStaffTransportDetail(staffId) {
 // Bir tarihte / aralıkta servis kullanım raporları
 export function getReports({ startDate, endDate } = {}) {
   const db = getDB()
-  const s = startDate || new Date().toISOString().slice(0, 10)
+  const s = startDate || istanbulDate()
   const e = endDate || s
 
   // 1) Genel toplam

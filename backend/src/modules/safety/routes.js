@@ -9,6 +9,7 @@ import { validate } from '../../shared/middleware/validate.js'
 import { createSessionSchema, updateSessionSchema, createKkdSchema, kkdReturnSchema, createIncidentSchema, updateIncidentSchema } from './schemas.js'
 import { createNotification } from '../../shared/notifications/service.js'
 import { EVENT_KINDS } from '../../shared/notifications/events.js'
+import { istanbulDate } from '../../shared/time.js'
 
 export const safetyRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
@@ -188,7 +189,7 @@ safetyRouter.delete('/attendances/:id', ...mgr, (req, res) => {
 safetyRouter.get('/expiring-certs', ...view, (req, res) => {
   try {
     const days = Math.max(1, Math.min(365, parseInt(req.query.days, 10) || 30))
-    const cutoff = new Date(Date.now() + days * 86400000).toISOString().slice(0, 10)
+    const cutoff = istanbulDate(new Date(Date.now() + days * 86400000))
     const rows = getDB().prepare(`
       SELECT a.id as attendance_id, a.cert_expires_at, a.score,
         t.id as session_id, t.title, t.category,
@@ -532,9 +533,9 @@ safetyRouter.get('/accidents/:id/pdf', ...view, (req, res) => {
 safetyRouter.get('/compliance-summary', ...view, (req, res) => {
   try {
     const db = getDB()
-    const today = new Date().toISOString().slice(0, 10)
-    const in30 = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)
-    const year_ago = new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10)
+    const today = istanbulDate()
+    const in30 = istanbulDate(new Date(Date.now() + 30 * 86400000))
+    const year_ago = istanbulDate(new Date(Date.now() - 365 * 86400000))
 
     // Sertifikası süresi dolmuş aktif personel (en güncel cert_expires_at per staff)
     const expired = db.prepare(`

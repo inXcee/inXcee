@@ -1,6 +1,7 @@
 import { getDB } from '../../shared/db/index.js'
 import { isIsoDate } from '../../shared/validation/date.js'
 import { recordPersonnelEvent } from '../personnel/tracking-events.js'
+import { istanbulDate } from '../../shared/time.js'
 
 const CURRENT_ASSIGNMENT_JOIN = `
   LEFT JOIN staff_assignments sa ON sa.id = (
@@ -969,8 +970,8 @@ export function getPayrollExport(yearMonth) {
 // H4 V8 — Birleşik devamsızlık (vardiya absent + transport no-show)
 export function getCombinedAbsences({ startDate, endDate } = {}) {
   const db = getDB()
-  const s = startDate || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)
-  const e = endDate || new Date().toISOString().slice(0, 10)
+  const s = startDate || istanbulDate(new Date(Date.now() - 30 * 86400000))
+  const e = endDate || istanbulDate()
 
   return db.prepare(`
     SELECT * FROM (
