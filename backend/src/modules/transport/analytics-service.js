@@ -1,14 +1,15 @@
 import ExcelJS from 'exceljs'
 import PDFDocument from 'pdfkit'
 import { getDB } from '../../shared/db/index.js'
+import { istanbulDate } from '../../shared/time.js'
 
 const ALLOWED_STATUS = new Set(['draft', 'published', 'boarding', 'departed', 'completed', 'cancelled'])
 const ALLOWED_DIRECTION = new Set(['outbound', 'inbound'])
 
 function buildFilter(input = {}) {
   const where = ['t.work_date BETWEEN ? AND ?']
-  const start = input.start || new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10)
-  const end = input.end || new Date().toISOString().slice(0, 10)
+  const start = input.start || istanbulDate(new Date(Date.now() - 29 * 86400000))
+  const end = input.end || istanbulDate()
   const params = [start, end]
   const numeric = [
     ['route_id', 't.route_id'],

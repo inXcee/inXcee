@@ -8,6 +8,7 @@ import { getDB } from '../../shared/db/index.js'
 import { checkInService, checkOutService } from '../shifts/service.js'
 import { setBoarded } from '../transport/queries.js'
 import { logger } from '../../shared/logger.js'
+import { istanbulDate } from '../../shared/time.js'
 
 export const qrRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
@@ -138,7 +139,7 @@ qrRouter.post('/scan/transport', ...view, (req, res) => {
     const staff = db.prepare('SELECT id, full_name FROM staff WHERE qr_token = ?').get(cleaned)
     if (!staff) return res.status(404).json({ error: 'Geçersiz QR kod' })
 
-    const workDate = date || new Date().toISOString().slice(0, 10)
+    const workDate = date || istanbulDate()
     let query = `SELECT id, route_id, boarded FROM route_assignments WHERE staff_id = ? AND work_date = ?`
     const params = [staff.id, workDate]
     if (route_id) { query += ' AND route_id = ?'; params.push(+route_id) }

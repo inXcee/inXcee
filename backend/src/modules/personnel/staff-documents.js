@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { getDB } from '../../shared/db/index.js'
 import { canAccessDossierDocument } from './access-policy.js'
+import { istanbulDate } from '../../shared/time.js'
 
 // Birleşik personel belge kataloğu: staff_id'ye bağlı yeni belgeler (kanonik) +
 // izin/mesai/puantaj ekleri (leave_documents üzerinden salt-okunur gösterim).
@@ -28,7 +29,7 @@ const LEAVE_TYPE_LABELS = {
 }
 
 function isoToday() {
-  return new Date().toISOString().slice(0, 10)
+  return istanbulDate()
 }
 
 function isValidDate(value) {
@@ -47,7 +48,7 @@ export function resolveVisibility(documentKind, requested) {
 function documentStatus(document, today) {
   if (document.archived_at) return 'archived'
   if (document.expires_on && document.expires_on < today) return 'expired'
-  const soon = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)
+  const soon = istanbulDate(new Date(Date.now() + 30 * 86400000))
   if (document.expires_on && document.expires_on <= soon) return 'expiring'
   return 'active'
 }

@@ -27,6 +27,7 @@ import { reconcileAttendanceService } from '../../modules/shifts/service.js'
 import { cleanupHousekeepingPhotos } from '../../modules/housekeeping/photo-retention.js'
 import { cleanupLaundryPhotos } from '../../modules/laundry/photo-retention.js'
 import { notifyUpcomingTrips } from '../../modules/transport/notifications.js'
+import { istanbulDate } from '../time.js'
 
 let emailJob = null
 export const WATER_TRUCK_ALERT_CRON = '* * * * *'
@@ -87,7 +88,7 @@ export function startCronJobs() {
         createNotification({
           message: `Stok uyarısı: ${item.item_name} kritik seviyede (${item.quantity} ${item.unit})`,
           type: 'warning', module: 'inventory', target_role: 'campus_manager',
-          dedup_key: `stock_low_${item.id}_${new Date().toISOString().split('T')[0]}`,
+          dedup_key: `stock_low_${item.id}_${istanbulDate()}`,
         })
       })
     } catch (e) { logger.error('[Cron] Stok cron hatası:', e) }
@@ -223,7 +224,7 @@ export function startCronJobs() {
       } catch (e) { logger.error('[Cron] expirePastLots:', e.message) }
 
       const db = getDB()
-      const today = new Date().toISOString().split('T')[0]
+      const today = istanbulDate()
       const lots = db.prepare(`
         SELECT l.id, l.lot_no, l.expiry_date, i.item_name, i.unit, l.quantity,
           CAST(julianday(l.expiry_date) - julianday('now') AS INTEGER) as days_left
@@ -321,7 +322,7 @@ export function startCronJobs() {
         type: 'info',
         module: 'kvkk',
         target_role: 'campus_manager',
-        dedup_key: `kvkk_retention_${new Date().toISOString().slice(0, 10)}`,
+        dedup_key: `kvkk_retention_${istanbulDate()}`,
       })
     }
     if (result.errors > 0) {

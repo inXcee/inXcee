@@ -7,6 +7,7 @@ import fs from 'fs'
 import { getOccupancyReport, getMaintenanceReport, getHousekeepingReport } from '../reports/service.js'
 import { getDB } from '../../shared/db/index.js'
 import { logger } from '../../shared/logger.js'
+import { istanbulDate } from '../../shared/time.js'
 
 function getSmtpConfig() {
   return {
@@ -242,7 +243,7 @@ export function buildReportHtml(sections) {
   const activeSections = sections ?? (getSetting('email_sections') ?? 'occupancy,housekeeping,maintenance,laundry,checkinout').split(',')
   const has = (s) => activeSections.includes(s)
 
-  const today = new Date().toISOString().split('T')[0]
+  const today = istanbulDate()
   const occupancy   = has('occupancy')   ? getOccupancyReport()           : null
   const maintenance = has('maintenance') ? getMaintenanceReport()          : null
   const housekeeping = has('housekeeping') ? getHousekeepingReport(today)  : null
@@ -389,7 +390,7 @@ export async function sendReportNow({ subject, toOverride } = {}) {
   const cfg = getSmtpConfig()
   const from = cfg.from || 'YYS <noreply@yys.local>'
   const html = buildReportHtml()
-  const today = new Date().toISOString().split('T')[0]
+  const today = istanbulDate()
   const subj = `${subject || 'YYS Raporu'} — ${today}`
 
   let transport

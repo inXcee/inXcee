@@ -1,4 +1,5 @@
 import { getDB } from '../../shared/db/index.js'
+import { istanbulDate } from '../../shared/time.js'
 
 /* AVS personeli tek tabloda `staff`, yatakhane sakinleri `personnel`.
    Çoğu zaman aynı kişiler — TC numarası üzerinden bağlanırlar.
@@ -38,8 +39,8 @@ export function get360(staffId) {
     ORDER BY pinned DESC, created_at DESC LIMIT 50
   `).all(staffId)
 
-  const today = new Date().toISOString().slice(0, 10)
-  const last30 = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)
+  const today = istanbulDate()
+  const last30 = istanbulDate(new Date(Date.now() - 30 * 86400000))
 
   // Oda (aktif atama) — personnel üzerinden
   const room = personnelId ? db.prepare(`
@@ -167,7 +168,7 @@ export function get360(staffId) {
 // ── Timeline (kronolojik tüm olaylar — son 90g) ──
 export function getTimeline(staffId) {
   const db = getDB()
-  const since = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10)
+  const since = istanbulDate(new Date(Date.now() - 90 * 86400000))
   const personnelRow = db.prepare(`
     SELECT p.id FROM staff s
     LEFT JOIN personnel p ON p.tc_no IS NOT NULL AND p.tc_no = s.tc_no
@@ -376,9 +377,9 @@ export function listArchived({ q } = {}) {
 // ── R5 Risk Listesi ──
 export function getRiskList({ limit = 30 } = {}) {
   const db = getDB()
-  const last30 = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)
-  const today = new Date().toISOString().slice(0, 10)
-  const in30 = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)
+  const last30 = istanbulDate(new Date(Date.now() - 30 * 86400000))
+  const today = istanbulDate()
+  const in30 = istanbulDate(new Date(Date.now() + 30 * 86400000))
 
   /* Risk skoru:
      - Vardiya devamsızlık (status=absent) son 30g × 2

@@ -1,4 +1,5 @@
 import { getDB } from '../../shared/db/index.js'
+import { istanbulDate } from '../../shared/time.js'
 
 const ONBOARDING_DEFAULTS = [
   'İş sözleşmesi imzalandı',
@@ -130,7 +131,7 @@ export function cancelChecklist(checklistId) {
 
 // HR3 — Sözleşme yenileme uyarısı (staff.contract_end <= today + N days)
 export function getExpiringContracts({ days = 30 } = {}) {
-  const cutoff = new Date(Date.now() + days * 86400000).toISOString().slice(0, 10)
+  const cutoff = istanbulDate(new Date(Date.now() + days * 86400000))
   return getDB().prepare(`
     SELECT s.id, s.full_name, s.tc_no, s.phone, s.contract_end,
       d.name as dept_name, d.color_class as dept_color

@@ -9,6 +9,7 @@ import { getOccupancyReport, getMaintenanceReport } from '../reports/service.js'
 import { sendEmail } from './service.js'
 import { buildSignatureCoverage } from '../shifts/signatureCheckRuns.js'
 import { logger } from '../../shared/logger.js'
+import { istanbulDate } from '../../shared/time.js'
 
 // Son 7 tam günün (bugün hariç) sayaçları + önceki 7 gün kıyası.
 export function buildWeeklyStats() {
@@ -203,7 +204,7 @@ export async function sendWeeklyReportNow({ toOverride } = {}) {
     throw new Error(msg)
   }
   const html = buildWeeklyReportHtml()
-  const today = new Date().toISOString().slice(0, 10)
+  const today = istanbulDate()
   try {
     const result = await sendEmail({ to: to.join(', '), subject: `YYS Haftalık Özet — ${today}`, html })
     logEmailSend({ recipients: to.join(', '), status: 'success' })

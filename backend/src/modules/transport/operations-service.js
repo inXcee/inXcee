@@ -1,6 +1,7 @@
 import { getDB } from '../../shared/db/index.js'
 import { bumpTransportRevision, getTransportRevision } from './v2-core.js'
 import { notifyTripEvent } from './notifications.js'
+import { istanbulDate } from '../../shared/time.js'
 
 const TRANSITIONS = {
   draft: ['published', 'cancelled'],
@@ -85,7 +86,7 @@ function nextAction(status) {
 }
 
 export function getOperations({ date, direction, status, route_id: routeId } = {}) {
-  const workDate = date || new Date().toISOString().slice(0, 10)
+  const workDate = date || istanbulDate()
   const trips = listTrips({ date: workDate, direction, status, route_id: routeId })
   const active = trips.find(trip => ['boarding', 'departed'].includes(trip.status))
     || trips.find(trip => ['draft', 'published'].includes(trip.status))
