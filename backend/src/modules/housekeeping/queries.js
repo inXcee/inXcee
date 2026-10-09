@@ -1,4 +1,7 @@
 import { getDB } from '../../shared/db/index.js'
+import { createRequest as createMaintenanceRequest } from '../maintenance/queries.js'
+import { canonicalMaintenanceRow, resolveMaintenanceLocation } from '../maintenance/location.js'
+import { BLOCK_BY_NAME } from '../../shared/blocks.js'
 
 // Oda durumundan doğan atlama gerekçeleri — durum değişince bugünkü görevi geri açmak için de bu metinler aranır
 export const ROOM_SKIP = { locked: 'Oda kilitli', noClean: 'Temizlik istenmiyor', closed: 'Oda kapalı' }
@@ -35,8 +38,10 @@ export function generateDailyTasks(date = new Date()) {
                 WHERE use_state!='open' AND state_until IS NOT NULL AND state_until < ?`).run(dateStr)
     // M blokları için ortak alan task'i (sadece M tipi ortak banyo/WC içerir);
     // katın bütün odaları kapalıysa o katın ortak alanı da temizlenmez
-    const mFloors = db.prepare(`SELECT block, floor FROM rooms WHERE block LIKE 'M%'
+    // Blok tipi tek kaynaktan (shared/blocks.js); yalnız aktif odalar sayılır.
+    const mFloors = db.prepare(`SELECT block, floor FROM rooms WHERE status='active'
                                 GROUP BY block, floor HAVING SUM(use_state!='closed') > 0`).all()
+      .filter(({ block }) => BLOCK_BY_NAME[block]?.type === 'M')
     const commonAreas = [
       { code: 'corridor', label: 'Koridor' },
       { code: 'toilet', label: 'Tuvalet / WC' },
@@ -87,10 +92,15 @@ export function getTasks({ assigned_to, date, block, uncleaned } = {}) {
 
 export function completeTask(taskId, userId, checklist, viaQr = false, photoUrl = null) {
   const db = getDB()
+  // Zaten tamamlanmış göreve ikinci okutma/işaretleme ilk temizleyeni ve saatini EZMEZ (performans ve
+  // geçmiş "kim temizledi" doğru kalır); QR doğrulaması ve yeni fotoğraf/checklist eklenebilir.
+  // (SQLite SET ifadeleri satırın ESKİ değerlerini görür.)
   db.prepare(`
     UPDATE cleaning_tasks
-    SET completed_at=datetime('now'), assigned_to=?, verified_by_qr=?,
-        skipped=0, skip_reason=NULL, checklist=?,
+    SET completed_at=COALESCE(completed_at, datetime('now')),
+        assigned_to=CASE WHEN completed_at IS NULL THEN ? ELSE assigned_to END,
+        verified_by_qr=MAX(COALESCE(verified_by_qr, 0), ?),
+        skipped=0, skip_reason=NULL, checklist=COALESCE(?, checklist),
         photo_url=COALESCE(?, photo_url)
     WHERE id=?
   `).run(userId, viaQr ? 1 : 0, checklist ? JSON.stringify(checklist) : null, photoUrl, taskId)
@@ -303,13 +313,17 @@ export function getDNDRooms() {
 export function getRoomWithFaults(block, roomNo) {
   const db = getDB()
   const room = db.prepare(`SELECT * FROM rooms WHERE block=? AND room_no=?`).get(block, roomNo)
-  const faults = db.prepare(`
-    SELECT id, location, description, status, priority, opened_at, closed_at,
+  // Yalnız BU odanın arızaları: room_id eşleşmesi, eski kayıtta (room_id yok) konum metni bakım modülünün
+  // çözücüsüyle tam odaya çözülürse. Eskiden LIKE '%A%101%' A1-101'i, '%Oda 20%' 201-209'u da getiriyordu.
+  const faults = room ? db.prepare(`
+    SELECT id, location, block, room_id, description, status, priority, opened_at, closed_at,
            photo_before, photo_url
     FROM maintenance_requests
-    WHERE (location LIKE ? OR location LIKE ?)
+    WHERE room_id=? OR (room_id IS NULL AND location LIKE ?)
     ORDER BY opened_at DESC
-  `).all(`%${block}%${roomNo}%`, `%Oda ${roomNo}%`)
+  `).all(room.id, `%${roomNo}%`)
+    .filter(f => f.room_id === room.id || canonicalMaintenanceRow(db, f).canonical_room_id === room.id)
+    .map(({ block: _b, room_id: _r, ...f }) => f) : []
   const personnel = room ? db.prepare(`
     SELECT p.id, p.full_name, p.company, p.phone_number, ra.bed_no,
       COALESCE(s.shift_type, 'day') as shift_type
@@ -441,12 +455,13 @@ export function updateRoomNotes(roomId, notes) {
   db.prepare('UPDATE rooms SET notes=? WHERE id=?').run(notes, roomId)
 }
 
+// Bakım modülünün kayıt yoluyla: SLA deadline + blok/oda eşleşmesi gelir. Eskiden doğrudan INSERT
+// ediliyordu — sla_deadline NULL kalıyor, temizlik ekibinin bildirdiği arızalar SLA alarmına hiç düşmüyordu.
 export function reportFault(location, description, userId, priority, photoBefore) {
-  const db = getDB()
-  return db.prepare(`
-    INSERT INTO maintenance_requests(location, description, reporter_user_id, priority, photo_before)
-    VALUES(?,?,?,?,?)
-  `).run(location, description, userId, priority || 'medium', photoBefore || null).lastInsertRowid
+  const canonical = resolveMaintenanceLocation(getDB(), { location })
+  return createMaintenanceRequest({
+    location, description, priority: priority || 'medium', reporterUserId: userId, photoBefore, ...canonical,
+  })
 }
 
 // ── Cleaning Staff ───────────────────────────────────────────────────────────
