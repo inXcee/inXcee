@@ -5,6 +5,7 @@ import { asArray } from '../../../shared/asArray.js'
 import { useToastStore } from '../../../shared/store/toastStore.js'
 import { confirmDialog } from '../../../shared/components/ConfirmDialog.jsx'
 import { DossierSection, DossierMetric, DossierField, formatDossierDate } from './StaffDossierShared.jsx'
+import { ymd } from '../../../shared/logic/localDate.js'
 
 const toast = (message, type = 'success') => useToastStore.getState().addToast(message, type)
 
@@ -136,7 +137,7 @@ function LegacyStaffPerformancePanel({ staffId, canManage }) {
 export function StaffSafetyPanel({ staffId }) {
   const training = useStaffResource('staff-training', staffId, `/safety/staff/${staffId}/training`)
   const accidents = useStaffResource('staff-accidents', staffId, `/safety/accidents?staff_id=${staffId}`)
-  const today = new Date().toISOString().slice(0, 10)
+  const today = ymd(new Date())
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 12 }}>

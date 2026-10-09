@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { laundryApi } from '../api.js'
+import { ymd } from '../../../shared/logic/localDate.js'
 
 export default function DeliveredTodaySection() {
   const [open, setOpen] = useState(false)
-  const today = new Date().toISOString().slice(0, 10)
+  const today = ymd(new Date())
 
   const { data: items = [] } = useQuery({
     queryKey: ['laundry-delivered-today'],

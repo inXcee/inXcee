@@ -8,6 +8,7 @@ import EmptyState from '../../shared/components/EmptyState.jsx'
 import { useSavedFilters, SavedFiltersBar } from '../../shared/hooks/useSavedFilters.jsx'
 import { SkeletonCard } from '../../shared/components/Skeleton.jsx'
 import HelpHint from '../../shared/components/HelpHint.jsx'
+import { ymd } from '../../shared/logic/localDate.js'
 
 const EMPTY_FILTERS = {
   block: '', floor: '', company: '', company_id: '', q: '',
@@ -149,7 +150,7 @@ export default function BulkActionsPage() {
     const url = URL.createObjectURL(res.data)
     const a = document.createElement('a')
     a.href = url
-    a.download = `sakinler-${new Date().toISOString().slice(0,10)}.csv`
+    a.download = `sakinler-${ymd(new Date())}.csv`
     a.click()
     URL.revokeObjectURL(url)
   }

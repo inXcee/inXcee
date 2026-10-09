@@ -1,4 +1,5 @@
 import { findLocationColumn, resolveWorkLocation, splitLocationDecoratedValue } from './locationImport.js'
+import { ymd } from '../../../shared/logic/localDate.js'
 
 // Çizelge (Schedule) saf iş mantığı — UI'dan bağımsız, birim test edilebilir.
 // ScheduleTab bu fonksiyonları çağırır; davranış birebir korunur.
@@ -447,7 +448,7 @@ export function daysInMonth(month) {
 function addDaysIsoLocal(dateStr, offset) {
   const [year, month, day] = String(dateStr).split('-').map(Number)
   const date = new Date(Date.UTC(year, month - 1, day + offset))
-  return date.toISOString().slice(0, 10)
+  return ymd(date)
 }
 
 function dateRange(startDate, endDate) {
@@ -462,7 +463,7 @@ export function buildStaffRecentSummary(shiftHistory = [], overtimeRecords = [],
     ...shiftHistory.map(s => s.work_date),
     ...overtimeRecords.map(o => o.work_date),
   ].filter(Boolean)
-  const referenceDate = options.referenceDate || sourceDates.sort().at(-1) || new Date().toISOString().slice(0, 10)
+  const referenceDate = options.referenceDate || sourceDates.sort().at(-1) || ymd(new Date())
   const days = Number.isFinite(options.days) ? options.days : 30
   const startDate = addDaysIsoLocal(referenceDate, -(days - 1))
   const range = dateRange(startDate, referenceDate)

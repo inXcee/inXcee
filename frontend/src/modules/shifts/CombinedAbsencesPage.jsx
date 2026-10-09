@@ -3,11 +3,12 @@ import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import api from '../../shared/api/client.js'
 import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
+import { ymd } from '../../shared/logic/localDate.js'
 
 export default function CombinedAbsencesPage() {
   const nav = useNavigate()
-  const today = new Date().toISOString().slice(0, 10)
-  const ago30 = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)
+  const today = ymd(new Date())
+  const ago30 = ymd(new Date(Date.now() - 30 * 86400000))
   const [start, setStart] = useState(ago30)
   const [end, setEnd] = useState(today)
 

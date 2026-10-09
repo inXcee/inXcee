@@ -9,8 +9,9 @@ import { useLongPress } from '../../../shared/hooks/useLongPress.js'
 import { useSpeechRecognition } from '../../../shared/hooks/useSpeechRecognition.js'
 import { useToastStore } from '../../../shared/store/toastStore.js'
 import { enqueue } from '../../../shared/utils/offlineDB.js'
+import { ymd } from '../../../shared/logic/localDate.js'
 
-const today = new Date().toISOString().slice(0, 10)
+const today = ymd(new Date())
 
 const STATUS_LABEL = { pending: 'Bekliyor', done: 'Tamamlandı', skipped: 'Atlandı' }
 const STATUS_COLOR = { pending: '#f59e0b', done: '#10b981', skipped: '#9ca3af' }

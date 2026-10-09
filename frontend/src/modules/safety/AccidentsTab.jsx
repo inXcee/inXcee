@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
+import { ymd } from '../../shared/logic/localDate.js'
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
@@ -256,7 +257,7 @@ function AccidentDetail({ id, onClose }) {
             <div style={{ padding: 12, background: 'var(--surface)', borderRadius: 12, border: '1px solid var(--border)', marginBottom: 12 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', letterSpacing: 1.5 }}>SGK BİLDİRİMİ</div>
-                <button onClick={() => updateMut.mutate({ sgk_reported: a.sgk_reported ? 0 : 1, sgk_report_date: a.sgk_reported ? '' : new Date().toISOString().slice(0, 10) })}
+                <button onClick={() => updateMut.mutate({ sgk_reported: a.sgk_reported ? 0 : 1, sgk_report_date: a.sgk_reported ? '' : ymd(new Date()) })}
                   className="btn btn-ghost btn-xs" style={{ color: a.sgk_reported ? 'var(--green)' : 'var(--red)' }}>
                   {a.sgk_reported ? `✓ Yapıldı${a.sgk_report_date ? ` (${a.sgk_report_date})` : ''}` : '✗ Yapılmadı — işaretle'}
                 </button>

@@ -3,10 +3,11 @@ import { useQuery } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
 import { SkeletonTable } from '../../../shared/components/Skeleton.jsx'
 import { Section, KPI, Empty, Stat, BarList, todayStr, toast } from '../shared.jsx'
+import { ymd } from '../../../shared/logic/localDate.js'
 
 export default function ReportsTab() {
   const today = todayStr()
-  const weekAgo = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10)
+  const weekAgo = ymd(new Date(Date.now() - 6 * 86400000))
   const [start, setStart] = useState(weekAgo)
   const [end, setEnd] = useState(today)
 
@@ -57,7 +58,7 @@ export default function ReportsTab() {
         <input type="date" className="form-input" value={end} onChange={e => setEnd(e.target.value)} style={{ width: 'auto', fontSize: 12 }} />
         <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
           {[[7, 'SON 7G'], [30, 'SON 30G'], [90, 'SON 90G']].map(([n, l]) => (
-            <button key={n} onClick={() => { setStart(new Date(Date.now() - (n - 1) * 86400000).toISOString().slice(0, 10)); setEnd(today) }}
+            <button key={n} onClick={() => { setStart(ymd(new Date(Date.now() - (n - 1) * 86400000))); setEnd(today) }}
               className="btn btn-ghost btn-xs" style={{ borderRadius: 8 }}>{l}</button>
           ))}
         </div>

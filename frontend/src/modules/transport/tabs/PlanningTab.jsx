@@ -3,11 +3,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
 import { useAuthStore } from '../../../shared/store/authStore.js'
 import { KPI, Label, ModalActions, ModalShell, Section, todayStr, toast, toastErr } from '../shared.jsx'
+import { ymd } from '../../../shared/logic/localDate.js'
 
 const addDays = (date, days) => {
   const value = new Date(`${date}T12:00:00Z`)
   value.setUTCDate(value.getUTCDate() + days)
-  return value.toISOString().slice(0, 10)
+  return ymd(value)
 }
 
 export default function PlanningTab() {

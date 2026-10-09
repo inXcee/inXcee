@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import mobileApi from '../auth/mobileApi.js'
+import { ymd } from '../../../shared/logic/localDate.js'
 
-const today = new Date().toISOString().slice(0, 10)
+const today = ymd(new Date())
 
 export default function SupervisorHome() {
   const navigate = useNavigate()

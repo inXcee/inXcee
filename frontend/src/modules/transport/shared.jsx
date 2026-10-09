@@ -1,8 +1,9 @@
 // TransportPage sekmelerinin paylaştığı sunum primitive'leri ve helper'lar.
 // Birden çok sekme (Daily/Routes/Points/People/Reports) ortak kullanır.
 import { useToastStore } from '../../shared/store/toastStore.js'
+import { ymd } from '../../shared/logic/localDate.js'
 
-export const todayStr = () => new Date().toISOString().slice(0, 10)
+export const todayStr = () => ymd(new Date())
 export const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 export const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
 

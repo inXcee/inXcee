@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
 import { EmptyState, KPI, toast, toastErr } from '../shared.jsx'
+import { ymd } from '../../../shared/logic/localDate.js'
 
 const BREAKDOWNS = [
   ['route', 'HATLAR'],
@@ -12,8 +13,8 @@ const BREAKDOWNS = [
 ]
 
 export default function AnalyticsTab() {
-  const today = new Date().toISOString().slice(0, 10)
-  const monthAgo = new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10)
+  const today = ymd(new Date())
+  const monthAgo = ymd(new Date(Date.now() - 29 * 86400000))
   const [filters, setFilters] = useState({
     start: monthAgo,
     end: today,

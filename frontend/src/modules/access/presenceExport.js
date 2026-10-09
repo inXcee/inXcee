@@ -1,3 +1,4 @@
+import { ymd } from '../../shared/logic/localDate.js'
 // "İçeridekiler" (kampüs mevcudiyeti) listesi için CSV/Excel export kolonları.
 // Saf — React bağımlılığı yok, test edilebilir. PresencePage ve testler paylaşır.
 
@@ -17,5 +18,5 @@ export const PRESENCE_EXPORT_COLS = [
 ]
 
 export function presenceFilename(ext) {
-  return `iceridekiler-${new Date().toISOString().slice(0, 10)}.${ext}`
+  return `iceridekiler-${ymd(new Date())}.${ext}`
 }

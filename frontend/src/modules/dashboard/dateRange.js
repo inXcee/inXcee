@@ -1,8 +1,9 @@
+import { ymd } from '../../shared/logic/localDate.js'
 export const PRESET_LABELS = { '7': 'SON 7 GÜN', '30': 'SON 30 GÜN', '90': 'SON 90 GÜN' }
 export const MAX_DAYS = 90
 const DEFAULT_RANGE = '30'
 
-const isoDate = (ms) => new Date(ms).toISOString().slice(0, 10)
+const isoDate = (ms) => ymd(new Date(ms))
 
 export function parseRange(rawRange, rawFrom, rawTo) {
   if (rawRange === 'custom') {

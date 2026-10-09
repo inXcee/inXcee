@@ -4,6 +4,7 @@ import api from '../../../shared/api/client.js'
 import { confirmDialog } from '../../../shared/components/ConfirmDialog.jsx'
 import { useToastStore } from '../../../shared/store/toastStore.js'
 import { DossierMetric, DossierSection, formatDossierDate } from './StaffDossierShared.jsx'
+import { ymd } from '../../../shared/logic/localDate.js'
 
 const REVIEW_FIELDS = [
   ['productivity', 'Üretkenlik'],
@@ -66,7 +67,7 @@ function GoalCard({ goal, canManage, isPending, onSave, onDelete }) {
   }, [goal])
 
   const status = GOAL_STATUS[goal.status] || GOAL_STATUS.pending
-  const today = new Date().toISOString().slice(0, 10)
+  const today = ymd(new Date())
   const overdue = goal.target_date && goal.target_date < today && !['done', 'cancelled'].includes(goal.status)
 
   return (

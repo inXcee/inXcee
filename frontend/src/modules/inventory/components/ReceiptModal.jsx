@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
 import Modal from './Modal.jsx'
 import { money } from '../constants.js'
+import { ymd } from '../../../shared/logic/localDate.js'
 
 export default function ReceiptModal({ items, onClose }) {
   const qc = useQueryClient()
@@ -15,7 +16,7 @@ export default function ReceiptModal({ items, onClose }) {
 
   const [supplier, setSupplier] = useState('')
   const [invoiceNo, setInvoiceNo] = useState('')
-  const [receiptDate, setReceiptDate] = useState(new Date().toISOString().slice(0, 10))
+  const [receiptDate, setReceiptDate] = useState(ymd(new Date()))
   const [notes, setNotes] = useState('')
   const [lines, setLines] = useState([{ item_id: '', quantity: '', unit_price: '', lot_no: '', expiry_date: '', location_id: '' }])
   const [lineSearches, setLineSearches] = useState({})

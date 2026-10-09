@@ -7,6 +7,7 @@ import EmptyState from '../../shared/components/EmptyState.jsx'
 import { useStickyForm, StickyDraftBanner } from '../../shared/hooks/useStickyForm.jsx'
 import RosterPanel from './RosterPanel.jsx'
 import HelpHint from '../../shared/components/HelpHint.jsx'
+import { ymd } from '../../shared/logic/localDate.js'
 
 const TYPES = [
   { value: 'fire', label: '🔥 Yangın' },
@@ -21,7 +22,7 @@ export default function DrillsPage() {
   const toast = useToastStore(s => s.push)
   const [showForm, setShowForm] = useState(false)
   const initialForm = {
-    drill_type: 'fire', drill_date: new Date().toISOString().slice(0, 10),
+    drill_type: 'fire', drill_date: ymd(new Date()),
     expected_count: '', actual_count: '', duration_minutes: '',
     missing_names: '', findings: '', next_action: '', next_drill_date: '',
   }

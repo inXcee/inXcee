@@ -1,3 +1,4 @@
+import { ymd } from '../../../shared/logic/localDate.js'
 // Kullanıcının Excel "INDEX" sayfasının birebir karşılığı: marka bantlı ürün
 // sütunları, dağıtım yeri satırları, aylık gelen tır matrisi, palet çevrimleri
 // ve boş kap iadeleri. Saf fonksiyonlar — veri bileşenden gelir.
@@ -20,7 +21,7 @@ export function monthDayNumbers(from, to) {
   for (let time = utcDate(from); time <= utcDate(to); time += 86400000) {
     const date = new Date(time)
     days.push({
-      key: date.toISOString().slice(0, 10),
+      key: ymd(date),
       dayNo: date.getUTCDate(),
     })
   }

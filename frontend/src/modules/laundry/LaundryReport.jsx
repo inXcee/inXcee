@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { laundryApi } from './api.js'
 import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
+import { ymd } from '../../shared/logic/localDate.js'
 
 function WeeklyTrendChart({ data }) {
   const maxVal = Math.max(...data.map(d => Math.max(d.received, d.delivered, 1)))
@@ -74,9 +75,9 @@ function BusynessBars({ data, labelFor }) {
 export default function LaundryReport() {
   const [from, setFrom] = useState(() => {
     const d = new Date(); d.setDate(d.getDate() - 30)
-    return d.toISOString().slice(0, 10)
+    return ymd(d)
   })
-  const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10))
+  const [to, setTo] = useState(() => ymd(new Date()))
   const [personSearch, setPersonSearch] = useState('')
   const [personName, setPersonName] = useState(null)
 
