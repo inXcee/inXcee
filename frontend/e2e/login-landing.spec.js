@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { BLOCKS } from '../src/shared/blocks.js'
 
 // TP-OTC sinematik landing kabul turu — hero + 9 bölüm + HUD + dil + gerçek login.
 // Bölümler scroll-reveal'lı; görünür olması için viewport'a kaydırılır.
@@ -48,11 +49,12 @@ test.describe('login landing — sinematik redesign kabul turu', () => {
     await expect(stat).toHaveText('19', { timeout: 5_000 })
   })
 
-  test('heatmap 19 blok hücresi (M1 dahil)', async ({ page }) => {
+  // Hücre sayısı blok tanımından gelir (shared/blocks.js) — blok eklenince test değişmez.
+  test('heatmap her blok için bir hücre (M1 dahil)', async ({ page }) => {
     await page.goto('/login')
     const cells = page.locator('[data-testid="heat-cell"]')
     await cells.first().scrollIntoViewIfNeeded()
-    await expect(cells).toHaveCount(19)
+    await expect(cells).toHaveCount(BLOCKS.length)
     await expect(page.locator('[data-testid="heat-cell"]', { hasText: 'M1' })).toBeVisible()
   })
 

@@ -26,6 +26,8 @@ async function loginKiosk(page) {
   for (const d of ['1', '2', '3', '4']) {
     await page.getByRole('button', { name: new RegExp(`^${d}$`) }).click()
   }
+  // PIN 4 ya da 6 haneli olabildiği için giriş artık açık basışla yapılır (8b763ab6).
+  await page.getByRole('button', { name: 'Giriş Yap' }).click()
   await expect(page.getByRole('tab', { name: /Vardiya/ })).toBeVisible({ timeout: 10_000 })
 }
 
