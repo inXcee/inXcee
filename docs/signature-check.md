@@ -36,3 +36,12 @@ yürütülmez**, satır `unmatched` içinde aday listesiyle döner.
 - `summary`: sayımlar
 
 Kategori sınıflaması frontend'deki `classifySignatureCell` ile aynıdır.
+
+## Arayüz
+
+Çizelge → haftalık görünüm → **✍️ İmzalı föy kontrolü** paneli (panel tercihleri ve
+"Günlük operasyon" / "Puantaj kontrolörü" modlarında açık). Föy günü ve isteğe bağlı
+bölüm seçilir, her satıra bir kişi yazılır: `Ad Soyad` (imzalı) ya da
+`Ad Soyad - boş / off / rapor / izin / yıllık / gelmedi`. Ayraç `-`, `;`, `:`, `|` ya da
+sekme olabilir; üçüncü parça not olarak taşınır. Anlaşılmayan işaret tahmin edilmez,
+satır numarasıyla gösterilir ve gönderim engellenir (`logic/signatureSheetParse.js`).

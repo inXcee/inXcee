@@ -23,6 +23,7 @@ import ReadinessBoard from './ReadinessBoard.jsx'
 import PublishBar from './PublishBar.jsx'
 import ActionCenterBoard from './ActionCenterBoard.jsx'
 import DayOperationsBoard from './DayOperationsBoard.jsx'
+import SignatureCheckBoard from './SignatureCheckBoard.jsx'
 import OpenShiftsBoard from './OpenShiftsBoard.jsx'
 import SuitabilityMatrixBoard from './SuitabilityMatrixBoard.jsx'
 import PlanningSuggestionsBoard from './PlanningSuggestionsBoard.jsx'
@@ -847,6 +848,11 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
 
       {/* Bugün sahada ne eksik, kimi çağırabilirim, dün ne olmuştu. */}
       {scheduleView === 'weekly' && panels.dayOperations !== false && <DayOperationsBoard weekDays={weekDays} />}
+
+      {/* Islak imzalı föy geri gelince: eksik imza, föyde RAPOR/OFF ama çizelge farklı. */}
+      {scheduleView === 'weekly' && panels.signatureCheck !== false && (
+        <SignatureCheckBoard weekDays={weekDays} departments={departments} />
+      )}
 
       {scheduleView === 'weekly' && panels.openShifts !== false && (
         <OpenShiftsBoard weekDays={weekDays} shiftDefs={shiftDefs} canManage={canEdit} />
