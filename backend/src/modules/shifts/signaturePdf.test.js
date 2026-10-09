@@ -128,7 +128,9 @@ describe('İmza föyü PDF ucu', () => {
     const token = (await request(app).post('/api/auth/login')
       .send({ username: 'mudur', password: 'admin123' })).body.token
     auth = { Authorization: `Bearer ${token}` }
-  })
+    // Uygulama + DB + seed burada (dosya başında değil) yükleniyor; tam suite paralel koşarken bu
+    // varsayılan 10 sn hook süresini aşıp dosyayı assertion'sız "düşmüş" gösteriyordu.
+  }, 60_000)
 
   it('geçersiz model 400 döner', async () => {
     expect((await request(app).post('/api/shifts/schedule/signature-pdf').set(auth).send({})).status).toBe(400)
