@@ -6,6 +6,7 @@ import {
 } from '../shared.jsx'
 import { deptHex, leaveHex, shiftHex } from './shiftColors.js'
 import { departmentShiftDigest, digestLine, dayRoster, namesLine } from './departmentDigest.js'
+import { ymd } from '../../../shared/logic/localDate.js'
 
 const STATUS_HEX = {
   empty: 'F8FAFC',
@@ -379,7 +380,7 @@ function buildStyles(opts) {
 function renderScheduleBody(model) {
   const { opts, weekDays, groups, totals, perDay, legend, weekStart, weekEnd, filters } = model
   const generated = new Date().toLocaleString('tr-TR')
-  const publicationDate = opts.publicationDate || new Date().toISOString().slice(0, 10)
+  const publicationDate = opts.publicationDate || ymd(new Date())
   const title = escapeHtml(opts.title || DEFAULT_SCHEDULE_SHARE_OPTIONS.title)
   const filterText = [
     filters.visible ? 'gorunen liste' : 'tum personel',
@@ -733,7 +734,7 @@ export function renderScheduleToCanvas(model, scale = 2) {
   ctx.font = '700 10px Arial'
   ctx.fillText('Personel paylasim ciktisi', geom.width - pad, y + 8)
   if (opts.preparedBy) ctx.fillText(fitText(ctx, `Hazirlayan: ${opts.preparedBy}`, 240), geom.width - pad, y + 24)
-  const publicationDate = opts.publicationDate || new Date().toISOString().slice(0, 10)
+  const publicationDate = opts.publicationDate || ymd(new Date())
   ctx.fillText(fitText(ctx, `Yayin ${formatDate(publicationDate)} / Rev ${opts.revision || '1'}`, 260), geom.width - pad, y + 40)
   y += 52
   // accent çizgi

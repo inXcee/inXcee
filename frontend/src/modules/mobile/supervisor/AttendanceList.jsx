@@ -3,8 +3,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import mobileApi from '../auth/mobileApi.js'
 import { usePullToRefresh } from '../../../shared/hooks/usePullToRefresh.js'
 import { SkeletonTable } from '../../../shared/components/Skeleton.jsx'
+import { ymd } from '../../../shared/logic/localDate.js'
 
-const today = new Date().toISOString().slice(0, 10)
+const today = ymd(new Date())
 
 const STATUS_LABEL = {
   worked: { label: 'Geldi',     color: '#10b981' },

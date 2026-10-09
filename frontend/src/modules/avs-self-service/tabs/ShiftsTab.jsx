@@ -1,5 +1,6 @@
 import { useTranslation } from '../../../shared/i18n/index.js'
 import TabState from '../components/TabState.jsx'
+import { ymd } from '../../../shared/logic/localDate.js'
 
 export default function ShiftsTab({ query, data }) {
   const { t } = useTranslation()
@@ -8,7 +9,7 @@ export default function ShiftsTab({ query, data }) {
       isEmpty={(data?.shifts || []).length === 0} emptyText={t('avs_kiosk.shifts.none')}>
       <div className="space-y-2">
       {(data?.shifts || []).map(s => {
-        const today = new Date().toISOString().slice(0, 10)
+        const today = ymd(new Date())
         const isToday = s.work_date === today
         const color = s.status === 'worked' ? 'text-green-400' : s.status === 'absent' ? 'text-red-400'
           : s.status === 'on_leave' ? 'text-amber-400' : s.status === 'overtime' ? 'text-purple-400' : 'text-slate-400'

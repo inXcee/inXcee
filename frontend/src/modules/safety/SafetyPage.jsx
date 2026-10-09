@@ -11,6 +11,7 @@ import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 import { exportRowsToCsv } from '../../shared/utils/exportData.js'
 import HelpHint from '../../shared/components/HelpHint.jsx'
 import IncidentsTab from './IncidentsTab.jsx'
+import { ymd } from '../../shared/logic/localDate.js'
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
@@ -141,7 +142,7 @@ function SessionForm({ initial, onClose, onSaved }) {
   const [form, setForm] = useState({
     title: initial?.title || '',
     category: initial?.category || 'safety',
-    session_date: initial?.session_date || new Date().toISOString().slice(0, 10),
+    session_date: initial?.session_date || ymd(new Date()),
     duration_min: initial?.duration_min || 60,
     location: initial?.location || '',
     instructor: initial?.instructor || '',

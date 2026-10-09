@@ -3,6 +3,7 @@ import api from '../../shared/api/client.js'
 import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 import { exportRowsToXlsx } from '../../shared/utils/exportData.js'
 import { HOLDER_LABEL, fmtTs, PRESENCE_EXPORT_COLS, presenceFilename } from './presenceExport.js'
+import { ymd } from '../../shared/logic/localDate.js'
 
 export default function PresencePage() {
   const { data: presence, isLoading } = useQuery({
@@ -25,7 +26,7 @@ export default function PresencePage() {
     const url = URL.createObjectURL(res.data)
     const a = document.createElement('a')
     a.href = url
-    a.download = `erisim-hareketleri-${new Date().toISOString().slice(0, 10)}.csv`
+    a.download = `erisim-hareketleri-${ymd(new Date())}.csv`
     document.body.appendChild(a); a.click(); a.remove()
     URL.revokeObjectURL(url)
   }

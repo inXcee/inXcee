@@ -10,6 +10,7 @@ import HelpHint from '../../shared/components/HelpHint.jsx'
 import { useProjects, NO_PROJECT, PROJECTS_QUERY_KEY } from '../../shared/hooks/useProjects.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import PersonnelCard from './PersonnelCard.jsx'
+import { ymd } from '../../shared/logic/localDate.js'
 import './PersonnelListPage.css'
 
 const EXPORT_COLUMNS = [
@@ -155,12 +156,12 @@ export default function PersonnelListPage() {
           title="Birden fazla kişiyi seçip toplu olarak proje kadrosuna al"
           style={{ fontSize: 11 }}>☑ Kadro ata</button>
         <button type="button" className="btn btn-ghost btn-sm"
-          onClick={() => exportRowsToCsv(EXPORT_COLUMNS, filtered, `personel-${new Date().toISOString().slice(0, 10)}.csv`)}
+          onClick={() => exportRowsToCsv(EXPORT_COLUMNS, filtered, `personel-${ymd(new Date())}.csv`)}
           disabled={!filtered.length}
           title="Görünür kayıtları CSV olarak indir"
           style={{ fontSize: 11 }}>📄 CSV</button>
         <button type="button" className="btn btn-ghost btn-sm"
-          onClick={() => exportRowsToXlsx(EXPORT_COLUMNS, filtered, `personel-${new Date().toISOString().slice(0, 10)}.xlsx`, 'Personel')}
+          onClick={() => exportRowsToXlsx(EXPORT_COLUMNS, filtered, `personel-${ymd(new Date())}.xlsx`, 'Personel')}
           disabled={!filtered.length}
           title="Görünür kayıtları Excel olarak indir"
           style={{ fontSize: 11 }}>📊 Excel</button>

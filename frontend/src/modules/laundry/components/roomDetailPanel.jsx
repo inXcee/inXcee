@@ -11,6 +11,7 @@ import { STATUS_LABEL, STATUS_COLOR, formatRelative } from './roomsShared.js'
 import { OccupantRow, PremiumGarmentsCard } from './roomsCards.jsx'
 import { InlineNewRecord } from './roomsNewRecord.jsx'
 import LaundryCardPanel from '../../laundry-kiosk/LaundryCardPanel.jsx'
+import { ymd } from '../../../shared/logic/localDate.js'
 import {
   cardGateMessage, cardGateReady, cardRequestFields, emptyLaundryCard, useLaundryCardRequirement,
 } from '../laundryCard.js'
@@ -165,7 +166,7 @@ export default function RoomDetailPanel({ block, room_no, onClose }) {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    const stamp = new Date().toISOString().slice(0, 10)
+    const stamp = ymd(new Date())
     a.download = `oda-${block}-${room_no}-${stamp}.csv`
     document.body.appendChild(a)
     a.click()
@@ -182,7 +183,7 @@ export default function RoomDetailPanel({ block, room_no, onClose }) {
     for (let i = 13; i >= 0; i--) {
       const d = new Date()
       d.setDate(d.getDate() - i)
-      const k = d.toISOString().slice(0, 10)
+      const k = ymd(d)
       out.push(map[k] || 0)
     }
     return out

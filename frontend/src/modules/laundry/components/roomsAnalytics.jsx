@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { ymd } from '../../../shared/logic/localDate.js'
 
 // RoomsSection'ın sunumsal analiz/grafik bileşenleri — saf (veri prop → JSX).
 // RoomCard (Stat/Sparkline) ve RoomDetailPanel (geri kalan) tarafından kullanılır.
@@ -81,7 +82,7 @@ export function YearHeatmap({ points = [] }) {
   for (let w = 0; w < 53; w++) {
     const days = []
     for (let d = 0; d < 7; d++) {
-      const key = cursor.toISOString().slice(0, 10)
+      const key = ymd(cursor)
       const count = map[key] || 0
       const future = cursor.getTime() > today.getTime()
       days.push({ key, count, future })

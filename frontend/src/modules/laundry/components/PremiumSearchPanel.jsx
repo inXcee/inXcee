@@ -5,6 +5,7 @@ import { ColorPatternDisplay } from './ColorPatternPicker.jsx'
 import GarmentTagEditor from '../../laundry-kiosk/GarmentTagEditor.jsx'
 import { garmentTagSummary } from '../../laundry-kiosk/garmentTag.js'
 import { PATTERNS } from '../../laundry-kiosk/garmentPalette.js'
+import { ymd } from '../../../shared/logic/localDate.js'
 
 const STATUS_LABELS = {
   received: 'Teslim Alındı', ironing: 'Ütüde',
@@ -105,7 +106,7 @@ export default function PremiumSearchPanel() {
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = url; a.download = `kiyafet-listesi-${new Date().toISOString().slice(0,10)}.csv`
+    a.href = url; a.download = `kiyafet-listesi-${ymd(new Date())}.csv`
     a.click(); URL.revokeObjectURL(url)
   }
 

@@ -15,6 +15,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
+import { ymd } from '../../shared/logic/localDate.js'
 
 function daysLeft(dateStr) {
   if (!dateStr) return null
@@ -227,10 +228,10 @@ export default function CompaniesPage() {
             onChange={e => setSearch(e.target.value)}
           />
           <button type="button" className="btn btn-ghost btn-sm" disabled={!filtered.length}
-            onClick={() => exportRowsToCsv(COMPANY_EXPORT_COLS, filtered, `firmalar-${new Date().toISOString().slice(0, 10)}.csv`)}
+            onClick={() => exportRowsToCsv(COMPANY_EXPORT_COLS, filtered, `firmalar-${ymd(new Date())}.csv`)}
             style={{ fontSize: 11 }}>CSV</button>
           <button type="button" className="btn btn-ghost btn-sm" disabled={!filtered.length}
-            onClick={() => exportRowsToXlsx(COMPANY_EXPORT_COLS, filtered, `firmalar-${new Date().toISOString().slice(0, 10)}.xlsx`, 'Firmalar')}
+            onClick={() => exportRowsToXlsx(COMPANY_EXPORT_COLS, filtered, `firmalar-${ymd(new Date())}.xlsx`, 'Firmalar')}
             style={{ fontSize: 11 }}>Excel</button>
         </div>
         <div className="panel-body" style={{ padding: 0 }}>

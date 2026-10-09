@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
+import { ymd } from '../../shared/logic/localDate.js'
 
 const RESULT_OPTIONS = [
   ['', 'Tüm sorunlar'],
@@ -17,7 +18,7 @@ const RESULT_META = {
   override: ['GEREKÇELİ', '#7c3aed', '#ede9fe'],
 }
 
-function isoDate(date) { return date.toISOString().slice(0, 10) }
+function isoDate(date) { return ymd(date) }
 
 export default function LaundryScanIssuesPanel() {
   const [filters, setFilters] = useState(() => {

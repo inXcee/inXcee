@@ -2,8 +2,9 @@ import { useQuery } from '@tanstack/react-query'
 import mobileApi from '../auth/mobileApi.js'
 import { useMobileAuth } from '../auth/useMobileAuth.js'
 import { SkeletonTable } from '../../../shared/components/Skeleton.jsx'
+import { ymd } from '../../../shared/logic/localDate.js'
 
-const today = new Date().toISOString().slice(0, 10)
+const today = ymd(new Date())
 
 export default function TaskHistory() {
   const { user } = useMobileAuth()

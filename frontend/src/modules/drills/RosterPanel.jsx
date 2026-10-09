@@ -4,6 +4,7 @@ import api from '../../shared/api/client.js'
 import { useAuthStore } from '../../shared/store/authStore.js'
 import { BLOCKS } from '../../shared/blocks.js'
 import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
+import { ymd } from '../../shared/logic/localDate.js'
 
 // Tahliye / yoklama paneli — bu an blokta kim var? Drill ve gerçek tahliye için.
 export default function RosterPanel() {
@@ -29,7 +30,7 @@ export default function RosterPanel() {
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const blob = await res.blob()
-      const today = new Date().toISOString().slice(0, 10)
+      const today = ymd(new Date())
       const link = document.createElement('a')
       link.href = URL.createObjectURL(blob)
       link.download = `tahliye-listesi-${block || 'tum-bloklar'}-${today}.pdf`

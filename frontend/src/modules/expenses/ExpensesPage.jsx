@@ -6,6 +6,7 @@ import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import EmptyState from '../../shared/components/EmptyState.jsx'
 import { useStickyForm, StickyDraftBanner } from '../../shared/hooks/useStickyForm.jsx'
 import { exportRowsToCsv } from '../../shared/utils/exportData.js'
+import { ymd } from '../../shared/logic/localDate.js'
 
 const CATEGORIES = [
   { value: 'food', label: 'Yemek', color: '#f97316' },
@@ -28,7 +29,7 @@ export default function ExpensesPage() {
   const [showForm, setShowForm] = useState(false)
   const [filter, setFilter] = useState({ category: '', from: '', to: '' })
   const initialForm = {
-    category: 'food', description: '', amount: '', expense_date: new Date().toISOString().slice(0,10),
+    category: 'food', description: '', amount: '', expense_date: ymd(new Date()),
     invoice_no: '', company_id: '', notes: '',
   }
   const [form, setForm] = useState(initialForm)

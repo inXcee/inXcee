@@ -15,6 +15,7 @@ import {
   signaturePagesCss,
 } from '../logic/scheduleSignatureExport.js'
 import { downloadWeeklySignatureImages } from '../logic/weeklySignatureImageExport.js'
+import { ymd } from '../../../shared/logic/localDate.js'
 
 const SHARE_OPTIONS_KEY = 'shift_schedule_share_options_v3'
 const SHARE_PRESETS = [
@@ -29,7 +30,7 @@ function loadSavedOptions() {
 }
 
 function todayIso() {
-  return new Date().toISOString().slice(0, 10)
+  return ymd(new Date())
 }
 
 export default function ScheduleShareModal({

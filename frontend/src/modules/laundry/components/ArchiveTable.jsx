@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { laundryApi } from '../api.js'
 import CompensationModal from './CompensationModal.jsx'
+import { ymd } from '../../../shared/logic/localDate.js'
 
 const mono = { fontFamily: 'var(--mono)' }
 
@@ -28,8 +29,8 @@ export default function ArchiveTable({ onSelectItem }) {
       from.setDate(now.getDate() - days)
     }
     setFilters(f => ({
-      ...f, from: from.toISOString().slice(0, 10),
-      to: now.toISOString().slice(0, 10), page: 1,
+      ...f, from: ymd(from),
+      to: ymd(now), page: 1,
     }))
   }
 

@@ -5,6 +5,7 @@ import { useTranslation } from '../../shared/i18n/index.js'
 import LanguageSwitcher from '../../shared/components/LanguageSwitcher.jsx'
 import KioskSessionGate from '../../shared/components/KioskSessionGate.jsx'
 import { clearKioskSession, readKioskSession, writeKioskSession } from '../../shared/kioskSession.js'
+import { ymd } from '../../shared/logic/localDate.js'
 
 const SESSION_KEY = 'resident-kiosk-session'
 
@@ -531,7 +532,7 @@ export default function SelfServicePage() {
                 ) : (
                   <div className="space-y-1">
                     {myShifts.shifts.map(s => {
-                      const today = new Date().toISOString().slice(0, 10)
+                      const today = ymd(new Date())
                       const isToday = s.work_date === today
                       const isFuture = s.work_date > today
                       const LEAVE_TYPE_TR = { annual: 'Yıllık', sick: 'Raporlu', emergency: 'Acil', maternity: 'Doğum', paternity: 'Babalık', marriage: 'Evlilik', bereavement: 'Vefat' }
