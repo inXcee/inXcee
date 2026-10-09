@@ -8,6 +8,11 @@ import { canonicalMaintenanceRow } from './location.js'
 // SQL üretmek yerine sabit lookup. Geçersiz priority gelirse medium varsayar.
 const SLA_HOURS_BY_PRIORITY = { high: 4, medium: 24, low: 72 }
 
+// Aynı tablodan SQL ifadesi: datetime(<taban>, <bu>) önceliğe göre deadline verir. Değerler sabit
+// (kullanıcı girdisi değil) — öncelik değişince / talep yeniden açılınca SLA yeniden hesaplanır.
+const SLA_OFFSET_SQL = `CASE priority ${Object.entries(SLA_HOURS_BY_PRIORITY)
+  .map(([p, h]) => `WHEN '${p}' THEN '+${h} hours'`).join(' ')} ELSE '+24 hours' END`
+
 export function createRequest({
   location, block, roomId, description, priority, reporterUserId,
   reporterPersonnelId, photoBefore, waitReason, category, cleaningTaskId,
@@ -95,27 +100,35 @@ export function updateWaitReason(id, waitReason) {
   db.prepare('UPDATE maintenance_requests SET wait_reason=? WHERE id=?').run(waitReason || null, id)
 }
 
+// Öncelik değişince SLA da değişir: orta→acil 24 sa yerine 4 sa (açılış anından). Eskiden deadline
+// sabit kalıyordu — acile çekilen arıza alarm vermiyor, düşüğe çekilen yanlış alarm veriyordu.
 export function updateRequestPriority(id, priority) {
   const db = getDB()
-  db.prepare('UPDATE maintenance_requests SET priority=? WHERE id=?').run(priority, id)
+  return db.prepare(`
+    UPDATE maintenance_requests SET priority=?,
+      sla_deadline=datetime(COALESCE(opened_at, datetime('now')), ${SLA_OFFSET_SQL.replaceAll('priority', '?')})
+    WHERE id=?
+  `).run(priority, priority, id).changes
 }
 
+// Yalnız kapalı OLMAYAN talep kapanır: tekrar "kapatmak" closed_at'i ezip ortalama çözüm süresini bozuyordu.
 export function closeRequest(id, photoUrl) {
   const db = getDB()
-  db.prepare(`
+  return db.prepare(`
     UPDATE maintenance_requests
     SET status='done', photo_url=?, closed_at=datetime('now'), wait_reason=NULL
-    WHERE id=?
-  `).run(photoUrl || null, id)
+    WHERE id=? AND status != 'done'
+  `).run(photoUrl || null, id).changes
 }
 
+// Yeniden açılan talep yeni SLA ile başlar (eski, geçmiş deadline anında "SLA AŞILDI" veriyordu).
 export function reopenRequest(id) {
   const db = getDB()
-  db.prepare(`
+  return db.prepare(`
     UPDATE maintenance_requests
-    SET status='open', closed_at=NULL
-    WHERE id=?
-  `).run(id)
+    SET status='open', closed_at=NULL, started_at=NULL, sla_deadline=datetime('now', ${SLA_OFFSET_SQL})
+    WHERE id=? AND status='done'
+  `).run(id).changes
 }
 
 export function assignRequest(id, technicianId) {
@@ -145,7 +158,11 @@ export function updateStatus(id, newStatus) {
   const extras = []
   if (newStatus === 'in_progress') extras.push("started_at=datetime('now')")
   if (newStatus === 'done') { extras.push("closed_at=datetime('now')"); extras.push("wait_reason=NULL") }
-  if (newStatus === 'open') { extras.push("closed_at=NULL"); extras.push("started_at=NULL") }
+  if (newStatus === 'open') {
+    extras.push("closed_at=NULL"); extras.push("started_at=NULL")
+    // kapalıdan açığa dönüş = yeniden açma → yeni SLA (açıkken "açık" yapmak deadline'a dokunmaz)
+    extras.push(`sla_deadline=CASE WHEN status='done' THEN datetime('now', ${SLA_OFFSET_SQL}) ELSE sla_deadline END`)
+  }
   const setClause = ['status=?', ...extras].join(', ')
   const r = db.prepare(`UPDATE maintenance_requests SET ${setClause} WHERE id=?`).run(newStatus, id)
   return r.changes
@@ -192,7 +209,8 @@ export function getStats() {
     GROUP BY priority
   `).all()
 
-  const overdue = db.prepare("SELECT COUNT(*) as c FROM maintenance_requests WHERE status='open' AND sla_deadline IS NOT NULL AND sla_deadline < datetime('now')").get().c
+  // SLA cron'uyla aynı tanım: çözülmemiş (açık + üzerinde çalışılan) ve süresi geçmiş.
+  const overdue = db.prepare("SELECT COUNT(*) as c FROM maintenance_requests WHERE status != 'done' AND sla_deadline IS NOT NULL AND sla_deadline < datetime('now')").get().c
 
   return { total, open, waiting, closedToday, avgHours, overdue, byBlock, byPriority }
 }

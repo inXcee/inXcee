@@ -46,12 +46,28 @@ export function updateWaitReasonService(id, waitReason) {
   q.updateWaitReason(id, waitReason)
 }
 
+function httpError(status, message) {
+  const err = new Error(message)
+  err.status = status
+  return err
+}
+
+function requireRequest(id) {
+  const req = q.getRequestById(id)
+  if (!req) throw httpError(404, 'Arıza bulunamadı')
+  return req
+}
+
 export function updateRequestPriorityService(id, priority) {
+  requireRequest(id)
   q.updateRequestPriority(id, priority)
 }
 
+// Bildirim yalnız gerçekten kapandıysa: kapalıyı tekrar kapatmak 409 (eskiden her seferinde müdüre
+// "kapatıldı" bildirimi gidiyor, closed_at eziliyordu).
 export function closeRequestService(id, photoUrl) {
-  q.closeRequest(id, photoUrl)
+  if (requireRequest(id).status === 'done') throw httpError(409, 'Arıza zaten kapalı')
+  if (!q.closeRequest(id, photoUrl)) throw httpError(409, 'Arıza zaten kapalı')
   const req = q.getRequestById(id)
   createNotification({
     message: `Arıza #${id} (${req?.location || ''}) kapatıldı`,
@@ -63,7 +79,8 @@ export function closeRequestService(id, photoUrl) {
 }
 
 export function reopenRequestService(id) {
-  q.reopenRequest(id)
+  if (requireRequest(id).status !== 'done') throw httpError(409, 'Arıza zaten açık')
+  if (!q.reopenRequest(id)) throw httpError(409, 'Arıza zaten açık')
   createNotification({
     message: `Arıza #${id} yeniden açıldı`,
     type: 'warning',

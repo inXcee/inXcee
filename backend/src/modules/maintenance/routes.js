@@ -70,8 +70,9 @@ maintenanceRouter.patch('/requests/:id/wait-reason', ...techAccess, validate(wai
 maintenanceRouter.patch('/requests/:id/priority', ...techAccess, validate(updatePrioritySchema), (req, res) => {
   try {
     svc.updateRequestPriorityService(+req.params.id, req.validated.priority)
+    logAudit(req.user.id, 'maintenance_priority', 'maintenance', +req.params.id, req.validated.priority)
     res.json({ ok: true })
-  } catch (e) { res.status(400).json({ error: e.message }) }
+  } catch (e) { res.status(e.status || 400).json({ error: e.message }) }
 })
 
 maintenanceRouter.patch('/requests/:id/assign', ...techAccess, validate(assignSchema), (req, res) => {
@@ -100,17 +101,22 @@ maintenanceRouter.patch('/requests/:id/status', ...techAccess, validate(updateSt
 })
 
 maintenanceRouter.patch('/requests/:id/close', ...techAccess, upload.single('photo'), verifyMagicBytes, (req, res) => {
-  const photoUrl = req.file
-    ? `/uploads/${req.file.filename}`
-    : (req.body.photo_url?.startsWith('/uploads/') ? req.body.photo_url : null)
-  svc.closeRequestService(+req.params.id, photoUrl)
-  logAudit(req.user.id, 'maintenance_close', 'maintenance', +req.params.id, null)
-  res.json({ ok: true })
+  try {
+    const photoUrl = req.file
+      ? `/uploads/${req.file.filename}`
+      : (req.body.photo_url?.startsWith('/uploads/') ? req.body.photo_url : null)
+    svc.closeRequestService(+req.params.id, photoUrl)
+    logAudit(req.user.id, 'maintenance_close', 'maintenance', +req.params.id, null)
+    res.json({ ok: true })
+  } catch (e) { res.status(e.status || 400).json({ error: e.message }) }
 })
 
 maintenanceRouter.patch('/requests/:id/reopen', ...techAccess, (req, res) => {
-  try { svc.reopenRequestService(+req.params.id); res.json({ ok: true }) }
-  catch (e) { res.status(400).json({ error: e.message }) }
+  try {
+    svc.reopenRequestService(+req.params.id)
+    logAudit(req.user.id, 'maintenance_reopen', 'maintenance', +req.params.id, null)
+    res.json({ ok: true })
+  } catch (e) { res.status(e.status || 400).json({ error: e.message }) }
 })
 
 maintenanceRouter.delete('/requests/:id', ...requireRole('campus_manager'), (req, res) => {
