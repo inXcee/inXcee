@@ -40,6 +40,20 @@ döner — **yalnız öneridir**, satır eşleşmiş sayılmaz.
 
 Kategori sınıflaması frontend'deki `classifySignatureCell` ile aynıdır.
 
+## Föy dönüş takibi
+
+İstekte `save: true` (ve isteğe bağlı `source: "web" | "telegram"`) verilirse sonuç
+`signature_check_runs` tablosuna (migration 114) **gün × bölüm** parçaları halinde işlenir
+(eşleşen kişinin bölümü; eşleşmeyen satır seçilen bölüme, bölüm yoksa bölümsüz parçaya).
+Yanıta `saved: { batch_id, parts }` eklenir. Puantaj yine değişmez — yalnız "kontrol edildi,
+şu kadar uyarı" izi tutulur; aynı gün+bölüm yeniden kontrol edilirse **en son kayıt** geçerlidir.
+
+`GET /api/shifts/schedule/signature-check/coverage?from=YYYY-MM-DD&to=YYYY-MM-DD` (≤ 31 gün):
+çalışanı planlanmış her bölüm × gün için `status`:
+`clean` (kontrol edildi, fark yok) · `warn` (uyarı / eşleşmeyen / föyde olmayan var) ·
+`missing` (geçmiş gün, kontrol yok) · `pending` (bugün, föy bekleniyor) · `not_needed`
+(planlı çalışan yok). Kayıtlı hücrede uyarı sayıları + kısa `findings` listesi döner.
+
 ## Arayüz
 
 Çizelge → haftalık görünüm → **✍️ İmzalı föy kontrolü** paneli (panel tercihleri ve
@@ -52,5 +66,8 @@ satır numarasıyla gösterilir ve gönderim engellenir (`logic/signatureSheetPa
 Excel'den **haftalık ızgara** da yapıştırılabilir: `Ad ⇥ Pzt ⇥ Sal …` (en az 3 gün sütunu).
 Hücreler sırayla haftanın günlerine eşlenir, boş hücre = imza yok, gün/tarih başlık satırı
 atlanır. Eşleşmeyen isimde önerilen kişiye tıklamak föy metnindeki ismi düzeltir.
+Panelin üstünde haftanın **föy dönüş takibi** tablosu (bölüm × gün; ✓ temiz, ⚠ uyarılı,
+✗ gelmedi, … bekleniyor) durur; hücrenin üstüne gelince uyarılar görünür, ✗ hücresine
+tıklamak o gün ve bölümü forma taşır. "Föy takibine işle" kutusu varsayılan açıktır.
 **📋 Raporu kopyala** uyarıları WhatsApp/Telegram'a yapıştırılacak düz metin olarak verir
 (`logic/signatureReport.js`).

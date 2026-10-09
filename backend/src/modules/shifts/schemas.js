@@ -46,4 +46,7 @@ const signatureSheetRow = z.object({
 export const signatureCheckSchema = z.object({
   rows: z.array(signatureSheetRow).min(1, 'Föyden okunan satır yok').max(3000),
   department_id: z.coerce.number().int().positive().optional(),
+  // true → sonuç föy dönüş takibine (signature_check_runs) işlenir; puantaj yine değişmez.
+  save: z.boolean().optional(),
+  source: z.enum(['web', 'telegram']).optional(),
 })

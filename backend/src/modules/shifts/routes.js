@@ -60,6 +60,7 @@ import {
 import PDFDocument from 'pdfkit'
 import { drawSignaturePdf } from './signaturePdf.js'
 import { checkSignatureSheet } from './signatureCheck.js'
+import { recordSignatureCheck, buildSignatureCoverage } from './signatureCheckRuns.js'
 import {
   checkConflicts, listHolidays, createHoliday, updateHoliday, deleteHoliday,
   getPayrollExport, getCombinedAbsences,
@@ -825,10 +826,34 @@ shiftsRouter.post('/schedule/signature-pdf', ...managerOrSupervisor, (req, res) 
 // (imza eksik, föyde RAPOR/OFF yazılmış ama çizelge farklı, föyde olmayan çalışan…).
 shiftsRouter.post('/schedule/signature-check', ...managerOrSupervisor, validate(signatureCheckSchema), (req, res) => {
   try {
-    res.json(checkSignatureSheet(req.validated))
+    const { save, source, ...input } = req.validated
+    const result = checkSignatureSheet(input)
+    if (!save) return res.json(result)
+    const saved = recordSignatureCheck(result, { department_id: input.department_id, source, userId: req.user.id })
+    logAudit(req.user.id, 'signature_check', 'shifts', null,
+      `${result.dates.join(',')} · ${result.summary.rows} satır · ${result.summary.warnings} uyarı · ${source || 'web'}`)
+    res.json({ ...result, saved })
   } catch (e) {
     logger.error({ err: e.message }, '[shifts/signature-check]')
     res.status(500).json({ error: 'İmza föyü kontrol edilemedi' })
+  }
+})
+
+// Föy dönüş takibi: gün × bölüm — kontrol edildi (temiz / uyarılı), gelmedi, bekleniyor.
+shiftsRouter.get('/schedule/signature-check/coverage', ...managerOrSupervisor, (req, res) => {
+  const { from, to } = req.query
+  const iso = /^\d{4}-\d{2}-\d{2}$/
+  if (!iso.test(from || '') || !iso.test(to || '') || from > to) {
+    return res.status(400).json({ error: 'from ve to YYYY-MM-DD olmalı, from ≤ to' })
+  }
+  if ((Date.parse(to) - Date.parse(from)) / 86400000 > 31) {
+    return res.status(400).json({ error: 'En fazla 31 gün' })
+  }
+  try {
+    res.json(buildSignatureCoverage({ from, to }))
+  } catch (e) {
+    logger.error({ err: e.message }, '[shifts/signature-check/coverage]')
+    res.status(500).json({ error: 'Föy takibi okunamadı' })
   }
 })
 

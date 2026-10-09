@@ -20,8 +20,23 @@ function ciz() {
   )
 }
 
+const KAPSAMA = {
+  days: GUNLER,
+  today: GUNLER[1],
+  summary: { expected: 2, checked: 1, clean: 0, warn: 1, missing: 1, pending: 0 },
+  departments: [{
+    id: 3, name: 'Kat Hizmetleri',
+    cells: {
+      [GUNLER[0]]: { status: 'missing', planned: 4 },
+      [GUNLER[1]]: { status: 'warn', planned: 4, run_id: 7, source: 'telegram', checked_at: '2026-10-08 09:12:00', warnings: 2,
+        findings: [{ kind: 'warn', name: 'Mehmet Kaya', text: 'imza yok' }] },
+    },
+  }],
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
+  api.get.mockResolvedValue({ data: KAPSAMA })
   api.post.mockResolvedValue({ data: {
     dates: [GUNLER[0]],
     summary: { rows: 2, matched: 2, signed_ok: 1, not_working_ok: 0, warnings: 1, missing_signature: 1, mark_mismatch: 0, signed_not_working: 0, unmatched: 0, duplicates: 0, not_on_sheet: 1 },
@@ -56,6 +71,8 @@ describe('İmzalı föy kontrolü paneli', () => {
         { name: 'Mehmet Kaya', date: GUNLER[0], mark: 'blank' },
       ],
       department_id: 3,
+      save: true,
+      source: 'web',
     })
     expect(await screen.findByText('Kontrol edilmesi gerekenler')).toBeInTheDocument()
     expect(screen.getByText(/imza yok — gelmedi mi/)).toBeInTheDocument()
@@ -106,6 +123,31 @@ describe('İmzalı föy kontrolü paneli', () => {
     await user.click(screen.getByRole('button', { name: /karşılaştır/ }))
     await user.click(await screen.findByRole('button', { name: /Raporu kopyala/ }))
     expect(writeText).toHaveBeenCalledWith(expect.stringMatching(/• Mehmet Kaya — Boş: .*imza yok/))
+  })
+
+  it('föy takibi tablosu: gelmedi hücresi günü ve bölümü forma taşır', async () => {
+    const user = userEvent.setup()
+    ciz()
+    await user.click(screen.getByRole('button', { name: 'İmzalı föy kontrolü' }))
+    expect(await screen.findByText(/kontrol 1\/2/)).toBeInTheDocument()
+    expect(api.get).toHaveBeenCalledWith('/shifts/schedule/signature-check/coverage', { params: { from: GUNLER[0], to: GUNLER[1] } })
+    const uyarili = screen.getByRole('button', { name: `Kat Hizmetleri ${GUNLER[1]} kontrol edildi, uyarı var` })
+    expect(uyarili.title).toMatch(/Telegram/)
+    expect(uyarili.title).toMatch(/Mehmet Kaya: imza yok/)
+    await user.selectOptions(screen.getByLabelText('Bölüm'), '')
+    await user.click(screen.getByRole('button', { name: `Kat Hizmetleri ${GUNLER[0]} föy kontrol edilmedi` }))
+    expect(screen.getByLabelText('Föy günü')).toHaveValue(GUNLER[0])
+    expect(screen.getByLabelText('Bölüm')).toHaveValue('3')
+  })
+
+  it('"Föy takibine işle" kapatılınca kaydetmeden kontrol eder', async () => {
+    const user = userEvent.setup()
+    ciz()
+    await user.click(screen.getByRole('button', { name: 'İmzalı föy kontrolü' }))
+    await user.click(screen.getByLabelText('Föy takibine işle'))
+    await user.type(screen.getByLabelText('Föy satırları'), 'Ayşe Demir')
+    await user.click(screen.getByRole('button', { name: /karşılaştır/ }))
+    expect(api.post.mock.calls[0][1]).not.toHaveProperty('save')
   })
 
   it('anlaşılmayan işaret varken göndermez', async () => {
