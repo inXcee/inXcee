@@ -33,3 +33,17 @@ export const importScheduleSchema = z.object({
   excludeDepts: z.array(z.string()).optional(),          // içe aktarılmayacak departman adları
   mappings: z.record(z.string(), z.coerce.number()).optional(), // excelAdı → mevcut staffId
 })
+
+// İmzalı föy kontrolü — föyden okunan satırlar (fotoğraf/elle). Salt okuma.
+const signatureSheetRow = z.object({
+  staff_id: z.coerce.number().int().positive().optional(),
+  name: z.string().trim().min(1).max(160).optional(),
+  date: isoDate,
+  mark: z.enum(['signed', 'blank', 'off', 'report', 'annual', 'leave', 'absent']),
+  note: z.string().trim().max(300).optional(),
+}).refine(r => r.staff_id != null || r.name, 'Satırda staff_id ya da name olmalı')
+
+export const signatureCheckSchema = z.object({
+  rows: z.array(signatureSheetRow).min(1, 'Föyden okunan satır yok').max(3000),
+  department_id: z.coerce.number().int().positive().optional(),
+})
