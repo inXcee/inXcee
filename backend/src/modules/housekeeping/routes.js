@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { createImageUpload, upload, verifyMagicBytes, verifyImageMagicBytes } from '../../shared/uploads/middleware.js'
 import * as svc from './service.js'
+import { getDailyGenerationStatus, setDailyGenerationEnabled } from './generation.js'
 import { logger } from '../../shared/logger.js'
 import { validate } from '../../shared/middleware/validate.js'
 import {
@@ -15,6 +16,7 @@ export const housekeepingRouter = Router()
 // saklama ayarı gibi kalıcı işler managerAccess'te kalır.
 const hkAccess = requireRole('campus_manager', 'shift_supervisor', 'housekeeper')
 const managerAccess = requireRole('campus_manager')
+const supervisorAccess = requireRole('campus_manager', 'shift_supervisor')
 const housekeepingPhotoUpload = createImageUpload('housekeeping')
 
 housekeepingRouter.get('/tasks', ...hkAccess, (req, res) => {
@@ -25,6 +27,18 @@ housekeepingRouter.get('/tasks', ...hkAccess, (req, res) => {
 housekeepingRouter.post('/tasks/generate-daily', ...hkAccess, (req, res) => {
   try { const count = svc.generateDailyTasksService(); res.status(201).json({ count }) }
   catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// Günlük otomatik üretim aç/kapa — vardiya amiri (Telegram botu dahil) sahadan açıp kapatabilir
+housekeepingRouter.get('/generation', ...hkAccess, (req, res) => {
+  try { res.json(getDailyGenerationStatus()) }
+  catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+housekeepingRouter.patch('/generation', ...supervisorAccess, (req, res) => {
+  if (typeof req.body?.enabled !== 'boolean') return res.status(400).json({ error: 'enabled true/false olmalı' })
+  try { res.json(setDailyGenerationEnabled(req.body.enabled, req.user.id)) }
+  catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
 // Oda/ortak alan temizlik geçmişi (foto kanıtlı) — qr_location anahtarıyla
