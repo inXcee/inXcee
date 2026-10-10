@@ -2,6 +2,7 @@ import cron from 'node-cron'
 import fs from 'fs'
 import path from 'path'
 import { generateDailyTasks } from '../../modules/housekeeping/queries.js'
+import { isDailyGenerationEnabled } from '../../modules/housekeeping/generation.js'
 import { createNotification } from '../notifications/service.js'
 import { alertBucket } from '../notifications/cadence.js'
 import { getDB } from '../db/index.js'
@@ -74,6 +75,7 @@ export function startCronJobs() {
   // Her gün 05:50'de günlük temizlik görevleri oluştur
   cron.schedule('50 5 * * *', () => {
     try {
+      if (!isDailyGenerationEnabled()) { logger.info('[Cron] Temizlik görev üretimi kapalı — atlandı'); return }
       const count = generateDailyTasks()
       // daily task generation completed
     } catch (e) { logger.error('[Cron] Temizlik görev hatası:', e) }
