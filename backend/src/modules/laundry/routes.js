@@ -8,6 +8,7 @@ import {
 import { createImageUpload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import * as svc from './service.js'
+import { markReadyFromLedgerService, cancelOwnLedgerItemService } from './ledger.js'
 import { collectItemQuery, listGarmentTypesQuery, insertGarmentTypeQuery, updateGarmentTypeQuery, reorderGarmentTypesQuery, markReadyNotifiedQuery } from './queries.js'
 import { notifyItemReady, sendFoundMessage, notifyRoomPersonReady, sendWhatsApp } from './whatsapp.js'
 import { logger } from '../../shared/logger.js'
@@ -27,6 +28,9 @@ const laundryFull = requireRole('laundry', 'campus_manager')
 const laundryRead = requireRole('laundry', 'shift_supervisor', 'campus_manager')
 const cardScanReview = requireRole('shift_supervisor', 'campus_manager')
 const slaWrite    = requireRole('laundry', 'campus_manager')
+// Defter akışı: vardiya amiri (ve onun hesabıyla çalışan Telegram botu) torba kaydı açar,
+// hazıra alır, teslim eder ve kendi adımını geri alır. Makine/stok/silme işleri laundryFull'da kalır.
+const laundryDesk = requireRole('laundry', 'shift_supervisor', 'campus_manager')
 
 // `laundry-` öneki gecelik yetim dosya temizliğinin dosyaları hangi modüle ait
 // olduğunu anlamasını sağlar (bkz. photo-retention.js).
@@ -257,7 +261,7 @@ laundryRouter.get('/items/:id/damages', ...laundryRead, (req, res) => {
   res.json(svc.getDamagesService(+req.params.id))
 })
 
-laundryRouter.post('/items', ...laundryFull, (req, res) => {
+laundryRouter.post('/items', ...laundryDesk, (req, res) => {
   try {
     const gate = cardGate(req.body, AKSIYON.INTAKE, Number(req.body?.room_id))
     if (!gate.allowed) return rejectCardGate(res, gate, req.user.id)
@@ -288,7 +292,7 @@ laundryRouter.patch('/items/:id/advance', ...laundryFull, (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-laundryRouter.patch('/items/:id/deliver', ...laundryFull, (req, res) => {
+laundryRouter.patch('/items/:id/deliver', ...laundryDesk, (req, res) => {
   try {
     const roomId = resolveRoomId({ item_id: req.params.id })
     if (!roomId) return res.status(404).json({ error: 'Kayıt bulunamadı' })
@@ -299,13 +303,27 @@ laundryRouter.patch('/items/:id/deliver', ...laundryFull, (req, res) => {
   } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
 
-laundryRouter.patch('/items/:id/revert', ...laundryFull, (req, res) => {
+laundryRouter.patch('/items/:id/revert', ...laundryDesk, (req, res) => {
   try {
     const { target_status } = req.body
     if (!target_status) return res.status(400).json({ error: 'target_status gerekli' })
     const item = svc.revertItemService(+req.params.id, target_status, req.user.id)
     res.json(item)
   } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// Defterden "hazır": makine adımı olmadan rafa (bkz. ledger.js)
+laundryRouter.patch('/items/:id/mark-ready', ...laundryDesk, (req, res) => {
+  try {
+    const { shelf_location, note } = req.body || {}
+    res.json(markReadyFromLedgerService(+req.params.id, { shelf_location, note }, req.user.id))
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
+})
+
+// Defterden yanlış açılan kendi torbasını geri al (silme genelde laundryFull)
+laundryRouter.post('/items/:id/ledger-cancel', ...laundryDesk, (req, res) => {
+  try { res.json(cancelOwnLedgerItemService(+req.params.id, req.user.id)) }
+  catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
 
 laundryRouter.patch('/items/:id/lost', ...laundryFull, (req, res) => {
