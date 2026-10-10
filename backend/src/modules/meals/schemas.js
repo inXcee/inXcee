@@ -25,6 +25,15 @@ export const dietSchema = z.object({
   diet_flags: z.string().trim().max(200, 'Diyet bilgisi çok uzun').nullish(),
 })
 
+export const mealCountSchema = z.object({
+  meal_date: dateStr,
+  meal_type: z.enum(['breakfast', 'lunch', 'dinner', 'night', 'snack'], { errorMap: () => ({ message: 'Geçersiz öğün' }) }),
+  location: z.string().trim().max(60, 'Yer adı çok uzun').optional().default(''),
+  count: z.coerce.number().int('Sayı tam olmalı').min(0, 'Sayı negatif olamaz').max(20000, 'Sayı çok büyük'),
+  note: z.string().trim().max(300, 'Not çok uzun').nullish(),
+  source: z.enum(['web', 'telegram']).optional().default('web'),
+})
+
 export const menuSchema = z.object({
   meal_date: dateStr,
   meal_type: mealEnum,
