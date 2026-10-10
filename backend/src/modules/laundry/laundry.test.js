@@ -526,7 +526,7 @@ describe('Laundry routes — yetki kontrolleri', () => {
     expect(res.status).toBe(403)
   })
 
-  it('200 — shift_supervisor items listesi görür (sadece okuma)', async () => {
+  it('200 — shift_supervisor items listesi görür, defter kaydı açar ama makine işi yapamaz', async () => {
     const r = await request(app).post('/api/auth/login').send({ username: 'vardiya', password: 'admin123' })
     const list = await request(app)
       .get('/api/laundry/items')
@@ -536,7 +536,12 @@ describe('Laundry routes — yetki kontrolleri', () => {
       .post('/api/laundry/items')
       .set('Authorization', `Bearer ${r.body.token}`)
       .send({ room_id: roomId, item_count: 1 })
-    expect(create.status).toBe(403)
+    expect(create.status).toBe(201)
+    const machine = await request(app)
+      .patch(`/api/laundry/items/${create.body.id}/advance`)
+      .set('Authorization', `Bearer ${r.body.token}`)
+      .send({})
+    expect(machine.status).toBe(403)
   })
 
   it('200 — laundry rolü items listesi + CRUD tam yetki', async () => {
