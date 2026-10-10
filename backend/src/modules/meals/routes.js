@@ -4,8 +4,9 @@ import { logAudit } from '../../shared/audit.js'
 import { getDB } from '../../shared/db/index.js'
 import { logger } from '../../shared/logger.js'
 import { validate } from '../../shared/middleware/validate.js'
-import { logMealSchema, selectionSchema, dietSchema, menuSchema } from './schemas.js'
+import { logMealSchema, selectionSchema, dietSchema, menuSchema, mealCountSchema } from './schemas.js'
 import { mealDayFor, localDay } from './service.js'
+import { listMealCounts, setMealCount, deleteMealCount } from './counts.js'
 
 export const mealsRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
@@ -224,6 +225,26 @@ mealsRouter.get('/cost-summary', ...view, (req, res) => {
 
     res.json({ month: ym, by_meal: total, by_staff: perStaff })
   } catch (e) { logger.error('[meals/cost]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// ── Öğün başı sayım (kaç kişi yedi) ──
+mealsRouter.get('/counts', ...view, (req, res) => {
+  const re = /^\d{4}-\d{2}-\d{2}$/
+  const to = re.test(req.query.to || '') ? req.query.to : (re.test(req.query.date || '') ? req.query.date : localDay(getDB()))
+  const from = re.test(req.query.from || '') ? req.query.from : to
+  if (from > to) return res.status(400).json({ error: 'from, to\'dan sonra olamaz' })
+  try { res.json(listMealCounts({ from, to })) }
+  catch (e) { logger.error('[meals/counts get]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+mealsRouter.put('/counts', ...mgr, validate(mealCountSchema), (req, res) => {
+  try { res.json(setMealCount(req.validated, req.user.id)) }
+  catch (e) { logger.error('[meals/counts put]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+mealsRouter.delete('/counts/:id', ...mgr, (req, res) => {
+  try { res.json(deleteMealCount(+req.params.id, req.user.id)) }
+  catch (e) { res.status(e.statusCode || 400).json({ error: e.message }) }
 })
 
 // ── Menü ──
