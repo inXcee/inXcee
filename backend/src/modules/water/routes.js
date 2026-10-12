@@ -4,6 +4,7 @@ import { isIsoMonth } from '../../shared/validation/date.js'
 import fs from 'node:fs'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { logAudit } from '../../shared/audit.js'
+import { runIdempotent, sendIdempotent } from '../../shared/http/idempotency.js'
 import { createImageUpload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { removeUploadFile } from './file-lifecycle.js'
 import {
@@ -158,27 +159,33 @@ waterRouter.get('/movements', ...mgr, (req, res, next) => {
 // Giriş (irsaliye)
 waterRouter.post('/intake', ...mgr, (req, res, next) => {
   try {
-    const id = createIntakeService(req.body, req.user.id)
-    logAudit(req.user.id, 'water_intake', 'water', id, `${req.body.input_qty} ${req.body.input_unit}`)
-    res.status(201).json({ id })
+    sendIdempotent(res, runIdempotent(req, 'water.intake', () => {
+      const id = createIntakeService(req.body, req.user.id)
+      logAudit(req.user.id, 'water_intake', 'water', id, `${req.body.input_qty} ${req.body.input_unit}`)
+      return { status: 201, body: { id } }
+    }))
   } catch (e) { fail(next, e) }
 })
 
 // Toplu giriş (tek irsaliye, çok ürün)
 waterRouter.post('/intake/batch', ...mgr, (req, res, next) => {
   try {
-    const { ids, matched } = batchIntakeService(req.body, req.user.id)
-    logAudit(req.user.id, 'water_intake_batch', 'water', null, `irsaliye:${req.body.waybill_no || '-'} ${ids.length} satır`)
-    res.status(201).json({ ids, count: ids.length, matched })
+    sendIdempotent(res, runIdempotent(req, 'water.intake.batch', () => {
+      const { ids, matched } = batchIntakeService(req.body, req.user.id)
+      logAudit(req.user.id, 'water_intake_batch', 'water', null, `irsaliye:${req.body.waybill_no || '-'} ${ids.length} satır`)
+      return { status: 201, body: { ids, count: ids.length, matched } }
+    }))
   } catch (e) { fail(next, e) }
 })
 
 // Dağıtım (bölgeye bırakma)
 waterRouter.post('/distribute', ...mgr, (req, res, next) => {
   try {
-    const id = createDistributionService(req.body, req.user.id)
-    logAudit(req.user.id, 'water_distribute', 'water', id, `zone:${req.body.zone_id} ${req.body.input_qty} ${req.body.input_unit}`)
-    res.status(201).json({ id })
+    sendIdempotent(res, runIdempotent(req, 'water.distribute', () => {
+      const id = createDistributionService(req.body, req.user.id)
+      logAudit(req.user.id, 'water_distribute', 'water', id, `zone:${req.body.zone_id} ${req.body.input_qty} ${req.body.input_unit}`)
+      return { status: 201, body: { id } }
+    }))
   } catch (e) { fail(next, e) }
 })
 
@@ -190,9 +197,11 @@ waterRouter.post('/distribute/parse', ...mgr, (req, res, next) => {
 // Toplu dağıtım (yapılandırılmış satırlar)
 waterRouter.post('/distribute/batch', ...mgr, (req, res, next) => {
   try {
-    const ids = batchDistributeService(req.body, req.user.id)
-    logAudit(req.user.id, 'water_distribute_batch', 'water', null, `${ids.length} satır`)
-    res.status(201).json({ ids, count: ids.length })
+    sendIdempotent(res, runIdempotent(req, 'water.distribute.batch', () => {
+      const ids = batchDistributeService(req.body, req.user.id)
+      logAudit(req.user.id, 'water_distribute_batch', 'water', null, `${ids.length} satır`)
+      return { status: 201, body: { ids, count: ids.length } }
+    }))
   } catch (e) { fail(next, e) }
 })
 
@@ -238,16 +247,20 @@ waterRouter.get('/deposit', ...mgr, (req, res, next) => {
 })
 waterRouter.post('/returns', ...mgr, (req, res, next) => {
   try {
-    const id = createReturnService(req.body, req.user.id)
-    logAudit(req.user.id, 'water_return', 'water', id, `${req.body.input_qty} ${req.body.input_unit}`)
-    res.status(201).json({ id })
+    sendIdempotent(res, runIdempotent(req, 'water.return', () => {
+      const id = createReturnService(req.body, req.user.id)
+      logAudit(req.user.id, 'water_return', 'water', id, `${req.body.input_qty} ${req.body.input_unit}`)
+      return { status: 201, body: { id } }
+    }))
   } catch (e) { fail(next, e) }
 })
 waterRouter.post('/returns/batch', ...mgr, (req, res, next) => {
   try {
-    const ids = batchReturnService(req.body, req.user.id)
-    logAudit(req.user.id, 'water_return_batch', 'water', null, `${ids.length} satır`)
-    res.status(201).json({ ids, count: ids.length })
+    sendIdempotent(res, runIdempotent(req, 'water.return.batch', () => {
+      const ids = batchReturnService(req.body, req.user.id)
+      logAudit(req.user.id, 'water_return_batch', 'water', null, `${ids.length} satır`)
+      return { status: 201, body: { ids, count: ids.length } }
+    }))
   } catch (e) { fail(next, e) }
 })
 waterRouter.delete('/returns/:id', ...mgr, (req, res, next) => {
