@@ -3,6 +3,7 @@ import request from 'supertest'
 import app from '../../app.js'
 import { getDB, initDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
+import { istanbulDate } from '../../shared/time.js'
 
 let managerToken
 let supervisorToken
@@ -22,7 +23,8 @@ beforeAll(async () => {
     .send({ username: 'teknik', password: 'admin123' })).body.token
 
   const db = getDB()
-  today = new Date().toISOString().slice(0, 10)
+  // Kodla aynı saat dilimi: UTC gün TR 00:00–03:00 arası bir önceki gündür (gece koşusunda düşüyordu).
+  today = istanbulDate()
   const departmentId = db.prepare('SELECT id FROM departments ORDER BY id LIMIT 1').get().id
   const roleId = db.prepare('SELECT id FROM staff_roles ORDER BY id LIMIT 1').get().id
   const shiftId = db.prepare('SELECT id FROM shift_definitions ORDER BY id LIMIT 1').get().id

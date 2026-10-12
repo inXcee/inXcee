@@ -526,7 +526,7 @@ export function getDossierTimeline(staffId, options = {}) {
   if (accepts('document')) {
     const rows = db.prepare(`
       SELECT id, uploaded_at, archived_at, title, document_kind, visibility
-      FROM documents WHERE staff_id=? AND date(uploaded_at) BETWEEN ? AND ?
+      FROM documents WHERE staff_id=? AND date(uploaded_at, 'localtime') BETWEEN ? AND ?
     `).all(staffId, from, to)
     for (const row of rows) {
       if (!includeSensitive && row.visibility === 'sensitive') continue
@@ -542,7 +542,7 @@ export function getDossierTimeline(staffId, options = {}) {
   if (accepts('performance')) {
     const rows = db.prepare(`
       SELECT id, reviewed_at, period, total_score
-      FROM performance_reviews WHERE staff_id=? AND date(reviewed_at) BETWEEN ? AND ?
+      FROM performance_reviews WHERE staff_id=? AND date(reviewed_at, 'localtime') BETWEEN ? AND ?
     `).all(staffId, from, to)
     for (const row of rows) events.push(event({
       id: row.id, date: row.reviewed_at, kind: 'performance',
@@ -554,7 +554,7 @@ export function getDossierTimeline(staffId, options = {}) {
   if (accepts('goal')) {
     const rows = db.prepare(`
       SELECT id, created_at, title, status, progress
-      FROM performance_goals WHERE staff_id=? AND date(created_at) BETWEEN ? AND ?
+      FROM performance_goals WHERE staff_id=? AND date(created_at, 'localtime') BETWEEN ? AND ?
     `).all(staffId, from, to)
     for (const row of rows) events.push(event({
       id: row.id, date: row.created_at, kind: 'goal',

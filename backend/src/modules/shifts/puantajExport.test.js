@@ -44,6 +44,13 @@ describe('GET /api/shifts/puantaj-export', () => {
     expect(p.days['2026-10-05'].excel_code).toBe('H')
     expect(p.days['2026-10-06'].excel_code).toBe('S')
     expect(p.days['2026-10-07'].excel_code).toBeNull()
+    expect(p.aliases).toEqual([])
+  })
+
+  it('kalıcı ad eşleştirmelerini ajana verir', async () => {
+    getDB().prepare("INSERT INTO staff_aliases(staff_id, alias, alias_fold, source) VALUES(?, 'PUANTAJ AKTARIMKİŞİ', 'puantaj aktarımkişi', 'manual')").run(staffId)
+    const res = await request(app).get('/api/shifts/puantaj-export?month=2026-10').set('Authorization', `Bearer ${token}`)
+    expect(res.body.staff.find(s => s.staff_id === staffId).aliases).toEqual(['PUANTAJ AKTARIMKİŞİ'])
   })
 
   it('ay biçimi doğrulanır', async () => {

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest'
+import { istanbulDate } from '../../shared/time.js'
 import request from 'supertest'
 import app from '../../app.js'
 import { initDB, getDB } from '../../shared/db/index.js'
@@ -88,7 +89,7 @@ describe('H5 Q4 — Servis biniş scan', () => {
   })
 
   it('atama varsa boarded=1 yapar', async () => {
-    const today = new Date().toISOString().slice(0, 10)
+    const today = istanbulDate() // kodla aynı gün (TR); UTC gece 00–03 arası dünü verir
     // Rota + atama oluştur
     const route = (await request(app).post('/api/transport/routes').set('Authorization', `Bearer ${token}`)
       .send({ name: 'QR Test Hat', capacity: 10 })).body.id

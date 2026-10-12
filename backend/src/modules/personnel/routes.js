@@ -41,6 +41,8 @@ import {
   getTrackingOverview, listTrackingPeople, listTrackingEvents, getPersonTracking, getTrackingExportDetails,
 } from './tracking-read.js'
 import { getTrackingDrilldown } from './tracking-drilldown.js'
+import { ingestRoster, rosterReconciliation, applyRosterFills } from './hrRoster.js'
+import { listStaffAliases, addStaffAlias, deleteStaffAlias } from './staffAliases.js'
 
 export const personnelRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
@@ -58,6 +60,55 @@ function trackingError(res, error, context) {
   logger.error(context, error)
   return res.status(500).json({ error: 'Sunucu hatasi' })
 }
+
+// ── İK kadro senkronu (puantaj Excel'i) ─────────────────────────────────────
+// PC ajanı her akşam kadro listesini + Excel yazım turu özetini gönderir.
+personnelRouter.post('/hr-roster', ...mgr, (req, res) => {
+  try {
+    const result = ingestRoster(req.body || {}, req.user.id)
+    logAudit(req.user.id, 'hr_roster_ingest', 'personnel', result.snapshot_id, `${result.people} kişi`)
+    // Farklar takip uyarılarına hemen yansısın (06:40 cron'unu beklemeden).
+    try { evaluatePersonnelAlerts() } catch (error) { logger.error('[personnel/hr-roster] uyarı değerlendirme', error) }
+    res.status(201).json(result)
+  } catch (error) { trackingError(res, error, '[personnel/hr-roster]') }
+})
+
+personnelRouter.get('/hr-roster', ...mgr, (req, res) => {
+  try { res.json(rosterReconciliation()) }
+  catch (error) { trackingError(res, error, '[personnel/hr-roster-get]') }
+})
+
+// Puantajdaki TC / işe giriş / görev / proje ile YYS'deki BOŞ alanları doldurur (dolu alana dokunmaz).
+personnelRouter.post('/hr-roster/apply-fills', ...mgrOnly, (req, res) => {
+  try {
+    const result = applyRosterFills(req.user.id, { staffIds: req.body?.staff_ids })
+    try { evaluatePersonnelAlerts() } catch (error) { logger.error('[personnel/hr-roster-fill] uyarı değerlendirme', error) }
+    res.json(result)
+  } catch (error) { trackingError(res, error, '[personnel/hr-roster-fill]') }
+})
+
+// Kalıcı ad eşleştirmeleri (çizelge / puantaj yazım farkları).
+personnelRouter.get('/aliases', ...mgr, (req, res) => {
+  try { res.json(listStaffAliases({ staffId: req.query.staff_id })) }
+  catch (error) { trackingError(res, error, '[personnel/aliases]') }
+})
+
+personnelRouter.post('/aliases', ...mgrOnly, (req, res) => {
+  try {
+    const row = addStaffAlias({ staffId: req.body?.staff_id, alias: req.body?.alias, source: 'manual' }, req.user.id)
+    logAudit(req.user.id, 'staff_alias_add', 'personnel', row.staff_id, row.alias)
+    try { evaluatePersonnelAlerts() } catch (error) { logger.error('[personnel/aliases] uyarı değerlendirme', error) }
+    res.status(201).json(row)
+  } catch (error) { trackingError(res, error, '[personnel/aliases-add]') }
+})
+
+personnelRouter.delete('/aliases/:id', ...mgrOnly, (req, res) => {
+  try {
+    const row = deleteStaffAlias(req.params.id)
+    logAudit(req.user.id, 'staff_alias_delete', 'personnel', row.staff_id, row.alias)
+    res.json({ ok: true })
+  } catch (error) { trackingError(res, error, '[personnel/aliases-delete]') }
+})
 
 // Personel Takip Merkezi backend sozlesmeleri.
 personnelRouter.get('/tracking/overview', ...mgr, (req, res) => {

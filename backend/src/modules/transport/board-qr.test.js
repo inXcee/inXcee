@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeAll } from 'vitest'
+import { istanbulDate } from '../../shared/time.js'
 import request from 'supertest'
 import app from '../../app.js'
 import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
 
 let managerToken, staffId, routeId, assignmentId
-const today = new Date().toISOString().slice(0, 10)
+const today = istanbulDate() // kodla aynı gün (TR); UTC gece 00–03 arası dünü verir
 
 beforeAll(async () => {
   process.env.DB_PATH = ':memory:'; initDB(); seedDev()
