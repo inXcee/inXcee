@@ -11,6 +11,7 @@ import { SkeletonGrid } from '../../../shared/components/Skeleton.jsx'
 import { exportRowsToCsv, exportRowsToXlsx } from '../../../shared/utils/exportData.js'
 import ProjectBadge from '../../../shared/components/ProjectBadge.jsx'
 import PersonnelTrackingCenter from '../../personnel/PersonnelTrackingCenter.jsx'
+import HrRosterPanel from '../../personnel/HrRosterPanel.jsx'
 import { toastErr, toastOk, deptColor, BottomSheet } from '../shared.jsx'
 
 function localIsoDate() {
@@ -1037,11 +1038,13 @@ export default function StaffTab({ departments, onPersonClick }) {
   const toggleRiskFilter = risk => setFilters(previous => ({ ...previous, risk: previous.risk === risk ? '' : risk, focus: '' }))
   const selectedStaffRows = staffList.filter(staff => selected.has(staff.id))
 
-  const trackingMode = searchParams.get('view') === 'tracking'
+  const sectionView = searchParams.get('view')
+  const trackingMode = sectionView === 'tracking'
+  const rosterMode = sectionView === 'hr-roster'
   const setSectionMode = mode => {
     setSearchParams(previous => {
       const next = new URLSearchParams(previous)
-      if (mode === 'tracking') next.set('view', 'tracking')
+      if (mode === 'tracking' || mode === 'hr-roster') next.set('view', mode)
       else {
         next.delete('view')
         ;['range', 'from', 'to', 'project_id', 'department_id', 'status', 'event_type', 'q', 'alert'].forEach(key => next.delete(key))
@@ -1051,10 +1054,20 @@ export default function StaffTab({ departments, onPersonClick }) {
   }
   const sectionSwitcher = (
     <div className="staff-section-switcher" role="tablist" aria-label="Personel görünümü">
-      <button type="button" role="tab" aria-selected={!trackingMode} onClick={() => setSectionMode('list')}>Personel Listesi</button>
+      <button type="button" role="tab" aria-selected={!trackingMode && !rosterMode} onClick={() => setSectionMode('list')}>Personel Listesi</button>
       <button type="button" role="tab" aria-selected={trackingMode} onClick={() => setSectionMode('tracking')}>Takip Merkezi</button>
+      <button type="button" role="tab" aria-selected={rosterMode} onClick={() => setSectionMode('hr-roster')}>İK Kadro</button>
     </div>
   )
+
+  if (rosterMode) {
+    return (
+      <div className="fade-up">
+        {sectionSwitcher}
+        <HrRosterPanel onPersonClick={onPersonClick} />
+      </div>
+    )
+  }
 
   if (trackingMode) {
     return (
