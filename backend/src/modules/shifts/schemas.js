@@ -32,6 +32,17 @@ export const importScheduleSchema = z.object({
   // Seçim/eşleştirme kontrolü (opsiyonel)
   excludeDepts: z.array(z.string()).optional(),          // içe aktarılmayacak departman adları
   mappings: z.record(z.string(), z.coerce.number()).optional(), // excelAdı → mevcut staffId
+  // Zorunlu kontrol çözümleri
+  newStaff: z.record(z.string(), z.object({            // excelAdı → yeni personel bilgisi
+    hire_date: z.string().optional(),
+    position: z.string().trim().max(120).optional(),
+    project_id: z.coerce.number().int().positive().optional(),
+  })).optional(),
+  confirm: z.object({
+    unrecognized: z.boolean().optional(),               // tanımsız kodlu hücreler boş kalsın
+    fuzzy: z.boolean().optional(),                      // yazım farkıyla eşleşenler doğru kişi
+  }).optional(),
+  skipNames: z.array(z.string()).optional(),            // bu aktarımda atlanacak kişiler
 })
 
 // İmzalı föy kontrolü — föyden okunan satırlar (fotoğraf/elle). Salt okuma.

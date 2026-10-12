@@ -16,6 +16,7 @@ import { getDB } from '../../shared/db/index.js'
 import { guessGender } from './nameGender.js'
 import { analyzeAnomalies } from './analyze.js'
 import { recordPersonnelEvent } from '../personnel/tracking-events.js'
+import { isIsoDate } from '../../shared/validation/date.js'
 
 const IMPORT_SCHEDULE_FIELDS = ['dept_id', 'shift_def_id', 'work_location_id', 'status', 'leave_type']
 
@@ -135,15 +136,25 @@ function normalizeScheduleStatus(cell) {
 
 // Kanonik payload'ı uzlaştır + (dryRun değilse) DB'ye yaz. Tek transaction.
 // Dönüş: rapor (eşleşen/oluşturulan sayıları + isim listeleri + uyarılar).
-export function importSchedule(payload, userId, { dryRun = false, createMissing = true, excludeDepts = [], mappings = {} } = {}) {
+export function importSchedule(payload, userId, {
+  dryRun = false, createMissing = true, excludeDepts = [], mappings = {},
+  newStaff = {}, confirm = {}, skipNames = [],
+} = {}) {
   const db = getDB()
-  const { weekDates = [], unrecognized = [] } = payload || {}
+  const { weekDates = [] } = payload || {}
   let rows = payload?.rows || []
   // Seçilmeyen departmanları içe aktarımdan çıkar.
   if (excludeDepts.length) {
     const skip = new Set(excludeDepts.map(normalizeName))
     rows = rows.filter(r => !skip.has(normalizeName(r.deptName || '')))
   }
+  // Kullanıcının bu aktarımda bilerek atladığı kişiler (ör. bilgisi henüz olmayan yeni personel).
+  const skipSet = new Set((skipNames || []).map(normalizeName))
+  if (skipSet.size) rows = rows.filter(r => !skipSet.has(normalizeName(r.name || '')))
+  const keptNames = new Set(rows.map(r => normalizeName(r.name || '')))
+  const unrecognized = (payload?.unrecognized || []).filter(u => !u.name || keptNames.has(normalizeName(u.name)))
+  const newStaffInfo = new Map(Object.entries(newStaff || {}).map(([k, v]) => [normalizeName(k), v || {}]))
+  const projectIds = new Set(db.prepare('SELECT id FROM projects').all().map(p => p.id))
 
   // ── Mevcut varlıkları indeksle ──
   const deptByName = new Map(
@@ -187,7 +198,7 @@ export function importSchedule(payload, userId, { dryRun = false, createMissing 
     weekDates,
     depts: { matched: [], created: [] },
     shiftDefs: { matched: [], created: [] },
-    locations: { matched: [], unmatched: [], ambiguous: [], withoutLocation: 0 },
+    locations: { matched: [], unmatched: [], ambiguous: [], withoutLocation: 0, missing: [], missingCells: 0 },
     staff: { matched: 0, matchedNames: [], created: [], fuzzyMatched: [], genderGuessed: 0, genderUnknown: [] },
     scheduleEntries: 0,
     scheduleNew: 0,
@@ -201,15 +212,25 @@ export function importSchedule(payload, userId, { dryRun = false, createMissing 
   // Lokasyonlar mevcut tanımlarla uzlaştırılır. Belirsiz/yanlış adlar sessizce
   // başka bir noktaya atanmaz; önizlemede açıkça gösterilir ve kayıtta boş bırakılır.
   const locationReport = new Map()
+  // Görev yeri yazılamayacak çalışma hücreleri — kişi/gün bazında (boş, tanımsız ya da belirsiz).
+  const missingByPerson = new Map()
+  const noteMissing = (r, date, reason, raw) => {
+    const key = normalizeName(r.name || '')
+    if (!missingByPerson.has(key)) missingByPerson.set(key, { name: r.name, deptName: r.deptName || null, days: [] })
+    missingByPerson.get(key).days.push({ date, reason, ...(raw ? { raw } : {}) })
+    report.locations.missingCells++
+  }
   for (const r of rows) {
     for (const c of r.cells || []) {
       if (!['scheduled', 'worked', 'overtime'].includes(normalizeScheduleStatus(c))) continue
       const excelName = String(c.locationName || r.locationName || '').trim()
       if (!excelName) {
         report.locations.withoutLocation++
+        noteMissing(r, c.date, 'empty')
         continue
       }
       const resolved = resolveLocation(excelName)
+      if (resolved.status !== 'matched') noteMissing(r, c.date, resolved.status, excelName)
       const key = `${resolved.status}:${foldName(excelName)}`
       if (!locationReport.has(key)) {
         locationReport.set(key, {
@@ -223,6 +244,8 @@ export function importSchedule(payload, userId, { dryRun = false, createMissing 
       locationReport.get(key).count++
     }
   }
+  report.locations.missing = [...missingByPerson.values()]
+    .sort((a, b) => (a.deptName || '').localeCompare(b.deptName || '', 'tr') || a.name.localeCompare(b.name, 'tr'))
   for (const item of locationReport.values()) {
     const { status, ...summary } = item
     if (status === 'matched') report.locations.matched.push(summary)
@@ -264,7 +287,14 @@ export function importSchedule(payload, userId, { dryRun = false, createMissing 
       const gender = guessGender(r.name)
       if (gender) report.staff.genderGuessed++
       else report.staff.genderUnknown.push(r.name)
-      report.staff.created.push({ name: r.name, deptName: r.deptName || null, gender })
+      const info = newStaffInfo.get(normalizeName(r.name)) || {}
+      const details = {
+        hire_date: isIsoDate(info.hire_date) ? info.hire_date : null,
+        position: String(info.position || '').trim() || null,
+        project_id: projectIds.has(Number(info.project_id)) ? Number(info.project_id) : null,
+      }
+      const missingFields = Object.entries(details).filter(([, v]) => v == null).map(([k]) => k)
+      report.staff.created.push({ name: r.name, deptName: r.deptName || null, gender, ...details, missingFields })
     } else {
       report.staff.skippedNoStaff.push(r.name)
     }
@@ -280,6 +310,44 @@ export function importSchedule(payload, userId, { dryRun = false, createMissing 
     a.cellCount += r.cells?.length || 0
   }
   report.deptSummary = [...deptAgg.values()]
+
+  // ── Zorunlu kontroller — çözülmeden gerçek yazım yapılmaz (dryRun raporda gösterir) ──
+  report.blockers = []
+  if (unrecognized.length && !confirm.unrecognized) {
+    const byCode = new Map()
+    for (const u of unrecognized) {
+      const code = String(u.raw || '').trim() || '(boş)'
+      if (!byCode.has(code)) byCode.set(code, { code, count: 0, examples: [] })
+      const g = byCode.get(code)
+      g.count++
+      if (g.examples.length < 5) g.examples.push(`${u.name || '?'} ${u.date || ''}`.trim())
+    }
+    report.blockers.push({
+      kind: 'unknown_codes',
+      message: `${unrecognized.length} hücrede anlamı tanımsız kod var — bu hücreler boş kalacak. Kodları tanımlayın ya da boş kalmasını onaylayın.`,
+      items: [...byCode.values()],
+      resolve: 'confirm.unrecognized',
+    })
+  }
+  const fuzzyOpen = report.staff.fuzzyMatched
+  if (fuzzyOpen.length && !confirm.fuzzy) {
+    report.blockers.push({
+      kind: 'ambiguous_staff',
+      message: `${fuzzyOpen.length} kişi yazım/aksan farkıyla eşleşti — doğru kişi olduklarını onaylayın ya da elle eşleştirin.`,
+      items: fuzzyOpen,
+      resolve: 'mappings | confirm.fuzzy',
+    })
+  }
+  const incomplete = report.staff.created.filter(s => s.missingFields.length)
+  if (incomplete.length) {
+    report.blockers.push({
+      kind: 'new_staff_incomplete',
+      message: `${incomplete.length} yeni personel işe giriş tarihi / rol / proje olmadan açılamaz — bilgileri girin, mevcut kişiyle eşleştirin ya da bu aktarımda atlayın.`,
+      items: incomplete.map(s => ({ name: s.name, deptName: s.deptName, missingFields: s.missingFields })),
+      resolve: 'newStaff | mappings | skipNames',
+    })
+  }
+  report.canCommit = report.blockers.length === 0
 
   // ── Anomali analizi (saf yapısal: dinlenme/ardışık gün/gece) ──
   const anomalies = analyzeAnomalies(rows, weekDates)
@@ -325,6 +393,11 @@ export function importSchedule(payload, userId, { dryRun = false, createMissing 
   report.leaves.annualDays = leaveRuns.filter(r => r.leaveType === 'annual').reduce((n, r) => n + r.days, 0)
   report.leaves.sickDays = leaveRuns.filter(r => r.leaveType === 'sick').reduce((n, r) => n + r.days, 0)
 
+  if (!dryRun && !report.canCommit) {
+    throw Object.assign(new Error('Aktarım onay bekliyor: ' + report.blockers.map(b => b.message).join(' · ')),
+      { statusCode: 409, report })
+  }
+
   if (dryRun) {
     report.scheduleEntries = rows.reduce((n, r) => n + (r.cells?.length || 0), 0)
     const { nu, up } = countConflicts()
@@ -340,7 +413,8 @@ export function importSchedule(payload, userId, { dryRun = false, createMissing 
   // ── Gerçek yazım — tek transaction ──
   const insertDept = db.prepare('INSERT INTO departments(name, color_class, description) VALUES(?,?,?)')
   const insertShift = db.prepare('INSERT INTO shift_definitions(name, start_hour, end_hour, color_class) VALUES(?,?,?,?)')
-  const insertStaff = db.prepare('INSERT INTO staff(full_name, department_id, gender, is_active) VALUES(?,?,?,1)')
+  const insertStaff = db.prepare(`INSERT INTO staff(full_name, department_id, gender, hire_date, position, project_id, is_active)
+    VALUES(?,?,?,?,?,?,1)`)
   const upsert = db.prepare(`
     INSERT INTO shift_schedule(staff_id, dept_id, shift_def_id, work_location_id, work_date, status, leave_type, created_by)
     VALUES(@staff_id, @dept_id, @shift_def_id, @work_location_id, @work_date, @status, @leave_type, @created_by)
@@ -380,9 +454,9 @@ export function importSchedule(payload, userId, { dryRun = false, createMissing 
       sColor++
     }
     // Personel
-    for (const { name, deptName, gender } of report.staff.created) {
+    for (const { name, deptName, gender, hire_date, position, project_id } of report.staff.created) {
       const dept = deptName ? deptByName.get(normalizeName(deptName)) : null
-      const id = insertStaff.run(name, dept?.id || null, gender || null).lastInsertRowid
+      const id = insertStaff.run(name, dept?.id || null, gender || null, hire_date, position, project_id).lastInsertRowid
       staffByName.set(normalizeName(name), { id, full_name: name, department_id: dept?.id || null })
       undo.createdStaffIds.push(id)
       recordPersonnelEvent({

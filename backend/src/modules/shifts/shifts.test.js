@@ -506,6 +506,15 @@ describe('Shifts', () => {
 })
 
 describe('Excel çizelge içe aktarımı (/import)', () => {
+  let projectId
+  beforeAll(() => {
+    projectId = getDB().prepare("INSERT INTO projects(code, name) VALUES('AKT-TEST', 'Aktarım Test Projesi')").run().lastInsertRowid
+  })
+  // Yeni personel zorunlu bilgisi (işe giriş / rol / proje) + tanımsız kod onayı
+  const info = () => ({ hire_date: '2026-07-01', position: 'Görevli', project_id: projectId })
+  const withNew = (body, names, extra = {}) => ({
+    ...body, newStaff: Object.fromEntries(names.map(n => [n, info()])), ...extra,
+  })
   const payload = {
     weekDates: ['2026-07-06', '2026-07-07', '2026-07-08', '2026-07-09', '2026-07-10', '2026-07-11', '2026-07-12'],
     rows: [
@@ -575,8 +584,10 @@ describe('Excel çizelge içe aktarımı (/import)', () => {
     const res = await request(app)
       .post('/api/shifts/import')
       .set('Authorization', `Bearer ${managerToken}`)
-      .send(payload)
+      .send(withNew(payload, ['MELİKE EXCELTEST', 'ONUR EXCELTEST'], { confirm: { unrecognized: true } }))
     expect(res.status).toBe(200)
+    const created = getDB().prepare("SELECT hire_date, position, project_id FROM staff WHERE full_name='ONUR EXCELTEST'").get()
+    expect(created).toEqual({ hire_date: '2026-07-01', position: 'Görevli', project_id: projectId })
     expect(res.body.scheduleEntries).toBe(3)
     expect(res.body.staff.created.length).toBe(2)
 
@@ -598,7 +609,7 @@ describe('Excel çizelge içe aktarımı (/import)', () => {
     const res = await request(app)
       .post('/api/shifts/import')
       .set('Authorization', `Bearer ${managerToken}`)
-      .send(payload)
+      .send({ ...payload, confirm: { unrecognized: true } })
     expect(res.status).toBe(200)
     expect(res.body.staff.created.length).toBe(0)
     expect(res.body.staff.matched).toBe(2)
@@ -626,6 +637,78 @@ describe('Excel çizelge içe aktarımı (/import)', () => {
     expect(res.body.deptSummary.length).toBe(1)
   })
 
+  it('zorunlu kontrol: tanımsız kod + bilgisiz yeni personel varken gerçek aktarım 409 ile durur, hiçbir şey yazmaz', async () => {
+    const body = {
+      weekDates: ['2026-10-12'],
+      rows: [{ name: 'KAPI YENİKİŞİ', deptName: 'KAPI DEPT', cells: [
+        { date: '2026-10-12', startHour: 8, endHour: 17, status: 'scheduled', raw: '08:00 17:00' },
+      ] }],
+      unrecognized: [
+        { name: 'KAPI YENİKİŞİ', date: '2026-10-13', raw: 'PROTOKOL' },
+        { name: 'KAPI YENİKİŞİ', date: '2026-10-14', raw: 'PROTOKOL' },
+      ],
+    }
+    const dry = await request(app).post('/api/shifts/import?dryRun=1').set('Authorization', `Bearer ${managerToken}`).send(body)
+    expect(dry.status).toBe(200)
+    expect(dry.body.canCommit).toBe(false)
+    expect(dry.body.blockers.map(b => b.kind).sort()).toEqual(['new_staff_incomplete', 'unknown_codes'])
+    expect(dry.body.blockers.find(b => b.kind === 'unknown_codes').items[0]).toMatchObject({ code: 'PROTOKOL', count: 2 })
+    expect(dry.body.blockers.find(b => b.kind === 'new_staff_incomplete').items[0].missingFields)
+      .toEqual(['hire_date', 'position', 'project_id'])
+
+    const res = await request(app).post('/api/shifts/import').set('Authorization', `Bearer ${managerToken}`).send(body)
+    expect(res.status).toBe(409)
+    expect(res.body.blockers.length).toBe(2)
+    expect(getDB().prepare("SELECT COUNT(*) c FROM staff WHERE full_name='KAPI YENİKİŞİ'").get().c).toBe(0)
+    expect(getDB().prepare("SELECT COUNT(*) c FROM departments WHERE name='KAPI DEPT'").get().c).toBe(0)
+
+    // Yalnız kod onayı yetmez — personel bilgisi hâlâ eksik
+    const half = await request(app).post('/api/shifts/import').set('Authorization', `Bearer ${managerToken}`)
+      .send({ ...body, confirm: { unrecognized: true } })
+    expect(half.status).toBe(409)
+    expect(half.body.blockers.map(b => b.kind)).toEqual(['new_staff_incomplete'])
+
+    // Kişiyi atlamak da bir çözüm: satırı ve ona ait tanımsız kodları aktarımdan çıkarır
+    const skipped = await request(app).post('/api/shifts/import?dryRun=1').set('Authorization', `Bearer ${managerToken}`)
+      .send({ ...body, skipNames: ['KAPI YENİKİŞİ'], rows: [...body.rows, { name: 'MELİKE EXCELTEST', cells: [] }] })
+    expect(skipped.body.canCommit).toBe(true)
+  })
+
+  it('zorunlu kontrol: yazım farkıyla eşleşen kişi onaysız aktarılmaz', async () => {
+    const body = {
+      weekDates: ['2026-10-12'],
+      rows: [{ name: 'MELIKE EXCELTEST', deptName: 'KAT HİZMETLERİ EXCELTEST',
+        cells: [{ date: '2026-10-12', startHour: 8, endHour: 17, status: 'scheduled', raw: '08:00 17:00' }] }],
+      unrecognized: [],
+    }
+    const res = await request(app).post('/api/shifts/import').set('Authorization', `Bearer ${managerToken}`).send(body)
+    expect(res.status).toBe(409)
+    expect(res.body.blockers[0].kind).toBe('ambiguous_staff')
+    const ok = await request(app).post('/api/shifts/import').set('Authorization', `Bearer ${managerToken}`)
+      .send({ ...body, confirm: { fuzzy: true } })
+    expect(ok.status).toBe(200)
+  })
+
+  it('aktarım raporu eksik görev yerlerini kişi/gün bazında gösterir', async () => {
+    const body = {
+      weekDates: ['2026-10-19', '2026-10-20', '2026-10-21'],
+      rows: [{ name: 'MELİKE EXCELTEST', deptName: 'KAT HİZMETLERİ EXCELTEST', cells: [
+        { date: '2026-10-19', startHour: 8, endHour: 17, status: 'scheduled', locationName: 'İşçi Lokali' },
+        { date: '2026-10-20', startHour: 8, endHour: 17, status: 'scheduled' },
+        { date: '2026-10-21', startHour: 8, endHour: 17, status: 'scheduled', locationName: 'Olmayan Yer XYZ' },
+        { date: '2026-10-22', startHour: null, endHour: null, status: 'off', leaveType: 'weekly_off' },
+      ] }],
+      unrecognized: [],
+    }
+    const res = await request(app).post('/api/shifts/import?dryRun=1').set('Authorization', `Bearer ${managerToken}`).send(body)
+    expect(res.status).toBe(200)
+    expect(res.body.locations.missingCells).toBe(2)
+    expect(res.body.locations.missing).toEqual([{
+      name: 'MELİKE EXCELTEST', deptName: 'KAT HİZMETLERİ EXCELTEST',
+      days: [{ date: '2026-10-20', reason: 'empty' }, { date: '2026-10-21', reason: 'unmatched', raw: 'Olmayan Yer XYZ' }],
+    }])
+  })
+
   it('groupConsecutive: ardışık günleri tek koşuda toplar', () => {
     const runs = groupConsecutive(['2026-07-20', '2026-07-21', '2026-07-23'])
     expect(runs).toEqual([
@@ -645,7 +728,7 @@ describe('Excel çizelge içe aktarımı (/import)', () => {
       ] }],
       unrecognized: [],
     }
-    const res = await request(app).post('/api/shifts/import').set('Authorization', `Bearer ${managerToken}`).send(lp)
+    const res = await request(app).post('/api/shifts/import').set('Authorization', `Bearer ${managerToken}`).send(withNew(lp, ['İZİNLİ EXCELKİŞİ']))
     expect(res.status).toBe(200)
     expect(res.body.leaves.created).toBe(2)        // yıllık(2gün koşu) + rapor(1gün) = 2 talep
     expect(res.body.leaves.annualDays).toBe(2)
@@ -674,7 +757,7 @@ describe('Excel çizelge içe aktarımı (/import)', () => {
       ] }],
       unrecognized: [],
     }
-    const imp = await request(app).post('/api/shifts/import').set('Authorization', `Bearer ${managerToken}`).send(up)
+    const imp = await request(app).post('/api/shifts/import').set('Authorization', `Bearer ${managerToken}`).send(withNew(up, ['UNDO EXCELKİŞİ']))
     expect(imp.status).toBe(200)
     const batchId = imp.body.batchId
     expect(batchId).toBeTruthy()

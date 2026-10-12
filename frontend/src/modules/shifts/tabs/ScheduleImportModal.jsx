@@ -10,6 +10,8 @@ import { confirmDialog } from '../../../shared/components/ConfirmDialog.jsx'
 import { shiftColor, ModalOverlay, StaffSearch, formatShiftHours, leaveCellMeta, leaveTypeLabel } from '../shared.jsx'
 import { parseScheduleSheet } from '../logic/schedule.js'
 import { parseCampScheduleGrid } from '../logic/excelImport.js'
+import { gateStatus } from '../logic/importGate.js'
+import ImportGatePanel from './ImportGatePanel.jsx'
 
 export default function ScheduleImportModal({ onClose, allStaff, shiftDefs, weekDays, workLocations = [] }) {
   const qc = useQueryClient()
@@ -22,6 +24,10 @@ export default function ScheduleImportModal({ onClose, allStaff, shiftDefs, week
   const [campExclude, setCampExclude] = useState([])     // içe aktarılmayacak departman adları
   const [campMappings, setCampMappings] = useState({})   // excelAdı → mevcut staffId (elle eşleştirme)
   const [mapPickName, setMapPickName] = useState('')      // elle eşleştirme: seçili excel adı
+  // Zorunlu kontrol çözümleri (tanımsız kod / belirsiz kişi / yeni personel bilgisi / atlananlar)
+  const [campConfirm, setCampConfirm] = useState({})
+  const [campNewStaff, setCampNewStaff] = useState({})
+  const [campSkip, setCampSkip] = useState([])
 
   // Excel import submit (basit şablon — seçili haftaya yazar)
   const excelImport = useMutation({
@@ -29,7 +35,10 @@ export default function ScheduleImportModal({ onClose, allStaff, shiftDefs, week
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['schedule'] }); onClose(); setExcelPreview(null) }
   })
 
-  const withOptions = (payload) => ({ ...payload, excludeDepts: campExclude, mappings: campMappings })
+  // Önizleme onayları göndermez: engeller ekranda onay kutusuyla görünür kalır. Uygula hepsini gönderir.
+  const withOptions = (payload) => ({ ...payload, excludeDepts: campExclude, mappings: campMappings, newStaff: campNewStaff, skipNames: campSkip })
+  const withCommitOptions = (payload) => ({ ...withOptions(payload), confirm: campConfirm })
+  const resetGate = () => { setCampConfirm({}); setCampNewStaff({}); setCampSkip([]) }
 
   // Akıllı import — önizleme (dryRun): eksik personel/departman/vardiya raporu
   const campDryRun = useMutation({
@@ -40,16 +49,20 @@ export default function ScheduleImportModal({ onClose, allStaff, shiftDefs, week
 
   // Akıllı import — uygula: eksikleri oluştur + çizelgeye işle
   const campCommit = useMutation({
-    mutationFn: (payload) => api.post('/shifts/import', withOptions(payload)).then(r => r.data),
+    mutationFn: (payload) => api.post('/shifts/import', withCommitOptions(payload)).then(r => r.data),
     onSuccess: (report) => {
       qc.invalidateQueries({ queryKey: ['schedule'] })
       qc.invalidateQueries({ queryKey: ['staff-list-active'] })
       qc.invalidateQueries({ queryKey: ['import-batches'] })
       useToastStore.getState().addToast(
         `İçe aktarıldı: ${report.scheduleEntries} kayıt · ${report.staff.created.length} yeni personel · ${report.depts.created.length} yeni departman`, 'success')
-      onClose(); setCampPayload(null); setCampReport(null); setCampFileName(''); setCampExclude([]); setCampMappings({})
+      onClose(); setCampPayload(null); setCampReport(null); setCampFileName(''); setCampExclude([]); setCampMappings({}); resetGate()
     },
-    onError: (err) => useToastStore.getState().addToast(err?.response?.data?.error || 'İçe aktarma başarısız', 'error'),
+    onError: (err) => {
+      // 409 = sunucu zorunlu kontrolde durdu → güncel raporu göster, kullanıcı çözsün
+      if (err?.response?.status === 409 && err.response.data?.report) setCampReport(err.response.data.report)
+      useToastStore.getState().addToast(err?.response?.data?.error || 'İçe aktarma başarısız', 'error')
+    },
   })
 
   // İçe aktarım oturumları (geri-alma)
@@ -156,6 +169,7 @@ export default function ScheduleImportModal({ onClose, allStaff, shiftDefs, week
             // ── Akıllı import önizlemesi (KAMP ÇİZELGE formatı) ──
             (() => {
               const cr = campReport
+              const gate = gateStatus(cr, { confirm: campConfirm, newStaff: campNewStaff, skipNames: campSkip, mappings: campMappings })
               const wk = cr.weekDates?.length ? `${cr.weekDates[0]} → ${cr.weekDates[cr.weekDates.length - 1]}` : ''
               // Tam departman listesi (orijinal dosyadan) — dışlanınca bile seçenekte kalsın
               const allDeptStats = (() => {
@@ -191,6 +205,12 @@ export default function ScheduleImportModal({ onClose, allStaff, shiftDefs, week
                     {cr.unrecognized.length > 0 && <Card n={cr.unrecognized.length} label="Anlaşılmayan" color="#ef4444" bg="rgba(239,68,68,.1)" />}
                   </div>
 
+                  <ImportGatePanel report={cr}
+                    confirm={campConfirm} setConfirm={setCampConfirm}
+                    newStaff={campNewStaff} setNewStaff={setCampNewStaff}
+                    skipNames={campSkip} setSkipNames={setCampSkip}
+                    mappings={campMappings} />
+
                   {(cr.locations?.unmatched?.length > 0 || cr.locations?.ambiguous?.length > 0) && (
                     <div style={{ marginBottom: '12px', padding: '9px 12px', background: 'rgba(245,158,11,.08)', border: '1px solid rgba(245,158,11,.3)', borderRadius: '6px' }}>
                       <div style={{ fontSize: '11px', color: '#f59e0b', fontWeight: 600, marginBottom: '4px' }}>
@@ -221,19 +241,6 @@ export default function ScheduleImportModal({ onClose, allStaff, shiftDefs, week
                       {cr.leaves.annualDays > 0 && ` ${cr.leaves.annualDays} gün yıllık (bakiyeden düşülür)`}
                       {cr.leaves.annualDays > 0 && cr.leaves.sickDays > 0 && ' ·'}
                       {cr.leaves.sickDays > 0 && ` ${cr.leaves.sickDays} gün rapor`}
-                    </div>
-                  )}
-
-                  {/* Yazım/aksan farkıyla eşleşenler — kullanıcı doğrulasın */}
-                  {cr.staff.fuzzyMatched?.length > 0 && (
-                    <div style={{ marginBottom: '10px', padding: '8px 12px', background: 'rgba(99,102,241,.08)', border: '1px solid rgba(99,102,241,.25)', borderRadius: '6px' }}>
-                      <div style={{ fontSize: '11px', color: '#818cf8', fontWeight: 600, marginBottom: '4px' }}>
-                        Yazım/aksan farkıyla eşleşen ({cr.staff.fuzzyMatched.length}) — doğru kişiyse sorun yok:
-                      </div>
-                      <div style={{ fontSize: '11px', color: 'var(--text2)' }}>
-                        {cr.staff.fuzzyMatched.slice(0, 10).map(f => `${f.excelName} → ${f.matchedTo}`).join(' · ')}
-                        {cr.staff.fuzzyMatched.length > 10 && ` … +${cr.staff.fuzzyMatched.length - 10}`}
-                      </div>
                     </div>
                   )}
 
@@ -348,24 +355,15 @@ export default function ScheduleImportModal({ onClose, allStaff, shiftDefs, week
                       )}
                     </div>
                   )}
-                  {cr.unrecognized.length > 0 && (
-                    <div style={{ marginBottom: '12px', padding: '8px 12px', background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.2)', borderRadius: '6px' }}>
-                      <div style={{ fontSize: '11px', color: '#ef4444', fontWeight: 600, marginBottom: '4px' }}>Anlaşılmayan hücreler (atlanacak):</div>
-                      <div style={{ fontSize: '10px', color: 'var(--text2)', fontFamily: 'var(--mono)' }}>
-                        {cr.unrecognized.slice(0, 12).map(u => `${u.name} ${u.date}: "${u.raw}"`).join(' · ')}
-                        {cr.unrecognized.length > 12 && ` … +${cr.unrecognized.length - 12}`}
-                      </div>
-                    </div>
-                  )}
-
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <button className="btn btn-primary" style={{ flex: 1 }}
-                      disabled={campCommit.isPending}
+                      disabled={campCommit.isPending || !gate.resolved}
+                      title={gate.resolved ? '' : gate.open.map(b => b.message).join(' · ')}
                       onClick={() => campCommit.mutate(campPayload)}>
-                      {campCommit.isPending ? 'Aktarılıyor…' : `İçe Aktar (${cr.scheduleEntries} kayıt)`}
+                      {campCommit.isPending ? 'Aktarılıyor…' : gate.resolved ? `İçe Aktar (${cr.scheduleEntries} kayıt)` : `Onay bekliyor (${gate.open.length})`}
                     </button>
                     <button className="btn btn-ghost" disabled={campCommit.isPending}
-                      onClick={() => { setCampReport(null); setCampPayload(null); setCampFileName('') }}>Geri</button>
+                      onClick={() => { setCampReport(null); setCampPayload(null); setCampFileName(''); resetGate() }}>Geri</button>
                   </div>
                 </>
               )

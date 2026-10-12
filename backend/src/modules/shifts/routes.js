@@ -639,6 +639,9 @@ shiftsRouter.post('/import', ...managerOrSupervisor, validate(importScheduleSche
       dryRun, createMissing: true,
       excludeDepts: req.validated.excludeDepts || [],
       mappings: req.validated.mappings || {},
+      newStaff: req.validated.newStaff || {},
+      confirm: req.validated.confirm || {},
+      skipNames: req.validated.skipNames || [],
     })
     if (!dryRun) {
       logAudit(req.user.id, 'schedule_import', 'shifts', null,
@@ -646,6 +649,10 @@ shiftsRouter.post('/import', ...managerOrSupervisor, validate(importScheduleSche
     }
     res.json(report)
   } catch (e) {
+    // Zorunlu kontrol: bilinmeyen kod / belirsiz kişi / eksik bilgili yeni personel → onay gerekir.
+    if (e.statusCode === 409 && e.report) {
+      return res.status(409).json({ error: e.message, blockers: e.report.blockers, report: e.report })
+    }
     logger.error('[shifts/import]', e)
     res.status(400).json({ error: e.message })
   }
