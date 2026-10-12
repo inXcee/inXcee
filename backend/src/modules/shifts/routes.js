@@ -72,6 +72,7 @@ import { importSchedule, listImportBatches, undoImportBatch } from './import.js'
 import { annualLeaveSummary } from './leave-entitlement.js'
 import { computeAnnualBalance } from './leaveBalance.js'
 import { evaluatePersonnelAlerts } from '../personnel/tracking-alerts.js'
+import { puantajExport } from './puantajExport.js'
 import { createOpeningBalances, listOpeningBalances, decideOpeningBalance } from './leaveOpening.js'
 import { importScheduleSchema, signatureCheckSchema } from './schemas.js'
 import { validate } from '../../shared/middleware/validate.js'
@@ -295,6 +296,12 @@ shiftsRouter.get('/project-mismatch', ...managerOrSupervisor, (req, res) => {
   try {
     res.json(projectMismatchService({ from: req.query.from, to: req.query.to }))
   } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }) }
+})
+
+// Aylık puantaj dışa aktarımı — masaüstü puantaj Excel'ini güncelleyen PC ajanı okur (salt okuma).
+shiftsRouter.get('/puantaj-export', ...managerOrSupervisor, (req, res) => {
+  try { res.json(puantajExport(req.query.month)) }
+  catch (e) { res.status(e.statusCode || 500).json({ error: e.statusCode ? e.message : 'Sunucu hatası' }) }
 })
 
 shiftsRouter.get('/schedule', ...managerOrSupervisor, (req, res) => {
