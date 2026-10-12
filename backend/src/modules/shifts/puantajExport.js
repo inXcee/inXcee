@@ -45,12 +45,18 @@ export function puantajExport(month) {
     WHERE ss.work_date BETWEEN ? AND ?
     ORDER BY s.full_name, ss.work_date
   `).all(from, to)
+  // Kalıcı ad eşleştirmeleri: PC ajanı Excel'deki farklı yazımı bunlarla bulur.
+  const aliases = new Map()
+  for (const a of db.prepare('SELECT staff_id, alias FROM staff_aliases').all()) {
+    aliases.set(a.staff_id, [...(aliases.get(a.staff_id) || []), a.alias])
+  }
   const byStaff = new Map()
   for (const r of rows) {
     if (!byStaff.has(r.staff_id)) {
       byStaff.set(r.staff_id, {
         staff_id: r.staff_id, full_name: r.full_name, tc_no: r.tc_no || null,
-        project: r.project_name || null, department: r.dept_name || null, is_active: !!r.is_active, days: {},
+        project: r.project_name || null, department: r.dept_name || null, is_active: !!r.is_active,
+        aliases: aliases.get(r.staff_id) || [], days: {},
       })
     }
     const { code, manual } = excelCodeFor(r.status, r.leave_type)

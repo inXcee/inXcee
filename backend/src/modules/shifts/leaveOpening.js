@@ -3,32 +3,23 @@
 // (leave_balance.annual_total) hiçbir şey yazılmaz.
 import { getDB } from '../../shared/db/index.js'
 import { isIsoDate } from '../../shared/validation/date.js'
-import { normalizeName, foldName } from './import.js'
+import { buildStaffResolver } from '../personnel/staffAliases.js'
 import { computeAnnualBalance } from './leaveBalance.js'
 
 const httpError = (message, statusCode) => Object.assign(new Error(message), { statusCode })
 
+// Ortak çözümleyici (TC → birebir ad → kayıtlı eşleştirme → aksansız ad); yalnız aktif personel.
 function staffResolver(db) {
-  const rows = db.prepare('SELECT id, full_name FROM staff WHERE is_active=1').all()
-  const byNorm = new Map(), byFold = new Map()
-  for (const s of rows) {
-    const n = normalizeName(s.full_name), f = foldName(s.full_name)
-    byNorm.set(n, [...(byNorm.get(n) || []), s])
-    byFold.set(f, [...(byFold.get(f) || []), s])
-  }
-  const byId = new Map(rows.map(s => [s.id, s]))
+  const resolve = buildStaffResolver(db)
   return (row) => {
     if (row.staff_id) {
-      const s = byId.get(Number(row.staff_id))
+      const s = resolve.byId.get(Number(row.staff_id))
       return s ? { staff: s } : { error: `#${row.staff_id} aktif personel değil` }
     }
-    const exact = byNorm.get(normalizeName(row.name || '')) || []
-    if (exact.length === 1) return { staff: exact[0] }
-    if (exact.length > 1) return { error: `"${row.name}" birden çok kişiyle eşleşiyor` }
-    const fold = byFold.get(foldName(row.name || '')) || []
-    if (fold.length === 1) return { staff: fold[0], fuzzy: true }
-    if (fold.length > 1) return { error: `"${row.name}" birden çok kişiyle eşleşiyor` }
-    return { error: `"${row.name}" aktif personelde bulunamadı` }
+    const r = resolve(row.name || '', row.tc)
+    if (r.method === 'ambiguous') return { error: `"${row.name}" birden çok kişiyle eşleşiyor` }
+    if (!r.staff) return { error: `"${row.name}" aktif personelde bulunamadı` }
+    return { staff: r.staff, fuzzy: r.method === 'fold' }
   }
 }
 

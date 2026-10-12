@@ -2,6 +2,7 @@ import { getDB } from '../../shared/db/index.js'
 import { createNotification } from '../../shared/notifications/service.js'
 import { logger } from '../../shared/logger.js'
 import { createFollowup } from './staff-followups.js'
+import { rosterFindings } from './hrRoster.js'
 
 const SEVERITIES = new Set(['info', 'warning', 'critical'])
 const ALERT_STATUSES = new Set(['open', 'acknowledged', 'resolved', 'dismissed'])
@@ -39,6 +40,26 @@ function notifyAlert(alert, transition) {
       })
     } catch (error) {
       logger.warn({ error: error.message, alertId: alert.id, role }, '[personnel-alert] bildirim gonderilemedi')
+    }
+  }
+}
+
+function notifyRosterSummary(items, today) {
+  const message = `İK kadro mutabakatı: ${items.length} yeni/güncellenen fark (puantaj Excel'i ↔ YYS)`
+  for (const role of ['campus_manager', 'shift_supervisor']) {
+    try {
+      createNotification({
+        message,
+        severity: items.some(i => i.alert.severity !== 'info') ? 'warning' : 'info',
+        module: 'personnel',
+        target_role: role,
+        entity_type: 'hr_roster',
+        entity_id: null,
+        link: '/shifts?tab=staff&view=hr-roster',
+        dedup_key: `hr-roster-summary:${today}:${items.map(i => i.alert.id).sort((a, b) => a - b).join(',')}:${role}`,
+      })
+    } catch (error) {
+      logger.warn({ error: error.message, role }, '[hr-roster] özet bildirimi gönderilemedi')
     }
   }
 }
@@ -267,9 +288,45 @@ function overdueFollowupDetections(db, rule, today) {
   }))
 }
 
+// İK kadro mutabakatı (puantaj Excel'i) — bulgular bir değerlendirmede bir kez hesaplanır.
+function hrRosterDetections(db, rule, today, cache) {
+  if (!cache.roster) cache.roster = rosterFindings(db, { today })
+  const f = cache.roster
+  const month = f.snapshot?.month || 'güncel'
+  const period = { period_start: f.snapshot?.received_at?.slice(0, 10) || today, period_end: today }
+  if (rule.rule_key === 'hr_roster_exit_pending') {
+    return f.exit_pending.map(x => detection(rule, x.staff_id, {
+      message: `${x.full_name}: İK puantajında çıkış ${x.exit_date}, YYS'de aktif (işten çıkış başlatılmamış)`,
+      metric_value: 1, ...period,
+    }))
+  }
+  if (rule.rule_key === 'hr_roster_archived_present') {
+    return f.archived_present.map(x => detection(rule, x.staff_id, {
+      message: `${x.full_name}: YYS'de arşivli${x.archive_reason ? ` (${x.archive_reason})` : ''}, ${month} İK puantajında çalışıyor görünüyor`,
+      metric_value: 1, ...period,
+    }))
+  }
+  if (rule.rule_key === 'hr_roster_missing') {
+    return f.missing.map(x => detection(rule, x.staff_id, {
+      message: `${x.full_name}: YYS'de aktif ama ${month} İK puantajında yok (yazım farkı ya da ayrılmış olabilir)`,
+      metric_value: 1, ...period,
+    }))
+  }
+  if (rule.rule_key === 'hr_roster_mismatch') {
+    const label = { hire_date: 'işe giriş', project_id: 'proje' }
+    return f.mismatches.map(x => detection(rule, x.staff_id, {
+      message: `${x.full_name}: ${x.diffs.map(d => `${label[d.field] || d.field} YYS ${d.yys} ≠ puantaj ${d.roster}`).join('; ')}`,
+      metric_value: x.diffs.length, ...period,
+    }))
+  }
+  return []
+}
+
 function collectDetections(db, rules, today) {
   const result = []
+  const cache = {}
   for (const rule of rules.filter(row => row.enabled)) {
+    if (rule.rule_key.startsWith('hr_roster_')) { result.push(...hrRosterDetections(db, rule, today, cache)); continue }
     if (rule.rule_key === 'sick_leave') result.push(...sickLeaveDetections(db, rule, today))
     else if (rule.rule_key === 'overtime_monthly') result.push(...overtimeDetections(db, rule, today))
     else if (rule.rule_key === 'shift_changes') result.push(...eventCountDetections(db, rule, today, 'shift_changed', 'vardiya revizyonu'))
@@ -356,7 +413,12 @@ export function evaluatePersonnelAlerts() {
     }
   })
   save()
-  for (const item of notifications) notifyAlert(item.alert, item.transition)
+  // İK kadro farkları ilk değerlendirmede toplu açılır: kişi başı bildirim yerine tek özet.
+  const roster = notifications.filter(item => item.alert.rule_key.startsWith('hr_roster_'))
+  for (const item of notifications) {
+    if (!item.alert.rule_key.startsWith('hr_roster_')) notifyAlert(item.alert, item.transition)
+  }
+  if (roster.length) notifyRosterSummary(roster, today)
   return { evaluated_at: new Date().toISOString(), detections: detections.length }
 }
 

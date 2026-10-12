@@ -13,9 +13,13 @@
 // hiçbir şey yazmaz, sadece "ne olurdu" raporunu döndürür (önizleme).
 
 import { getDB } from '../../shared/db/index.js'
+import { normalizeName, foldName } from '../../shared/names.js'
 import { guessGender } from './nameGender.js'
 import { analyzeAnomalies } from './analyze.js'
 import { recordPersonnelEvent } from '../personnel/tracking-events.js'
+import { addStaffAlias } from '../personnel/staffAliases.js'
+import { rosterLookupFactory } from '../personnel/hrRoster.js'
+import { validTc } from '../../shared/names.js'
 import { isIsoDate } from '../../shared/validation/date.js'
 
 const IMPORT_SCHEDULE_FIELDS = ['dept_id', 'shift_def_id', 'work_location_id', 'status', 'leave_type']
@@ -24,21 +28,8 @@ function importedScheduleChanged(before, after) {
   return IMPORT_SCHEDULE_FIELDS.some(field => (before?.[field] ?? null) !== (after?.[field] ?? null))
 }
 
-// İsim normalizasyonu — büyük/küçük harf + fazla boşlukları yok say (TR locale).
-export function normalizeName(s) {
-  return String(s || '').toLocaleLowerCase('tr').trim().replace(/\s+/g, ' ')
-}
-
-// Aksan-katlamalı isim anahtarı — Türkçe diakritikleri sadeleştirir ki
-// "Melike Akca" ile "MELİKE AKÇA" aynı kişi sayılsın (mükerrer personel önlenir).
-const FOLD_MAP = { ç: 'c', ğ: 'g', ı: 'i', İ: 'i', i: 'i', ö: 'o', ş: 's', ü: 'u', â: 'a', î: 'i', û: 'u' }
-export function foldName(s) {
-  return normalizeName(s)
-    .replace(/[çğıİiöşüâîû]/g, ch => FOLD_MAP[ch] || ch)
-    .replace(/[^a-z0-9 ]/g, '') // kalan noktalama/aksanı at
-    .replace(/\s+/g, ' ')
-    .trim()
-}
+// İsim kuralları ortak modülde (shared/names.js); eski içe aktarımlar bozulmasın diye buradan da verilir.
+export { normalizeName, foldName } from '../../shared/names.js'
 
 // Otomatik oluşturulan departman/vardiya için renk paletleri.
 const DEPT_COLORS = ['bg-blue-600', 'bg-teal-600', 'bg-amber-600', 'bg-purple-600', 'bg-rose-600', 'bg-cyan-600', 'bg-lime-600', 'bg-indigo-600']
@@ -171,15 +162,33 @@ export function importSchedule(payload, userId, {
     ORDER BY sort_order, name
   `).all()
   const resolveLocation = buildLocationResolver(workLocationRows)
-  const allStaffRows = db.prepare('SELECT id, full_name, department_id FROM staff').all()
-  const staffByName = new Map(allStaffRows.map(s => [normalizeName(s.full_name), s]))
+  const allStaffRows = db.prepare('SELECT id, full_name, department_id, is_active, tc_no FROM staff').all()
+  // Aynı ada arşivlenmiş mükerrer kayıt da sahip olabilir: aktif kayıt her zaman önce gelir
+  // (eskiden listede sonra gelen arşiv kaydı seçilebiliyordu).
+  const setPreferActive = (map, key, s) => {
+    if (!key) return
+    const cur = map.get(key)
+    if (!cur || (!cur.is_active && s.is_active)) map.set(key, s)
+  }
+  const staffByName = new Map()
   // Aksan-katlamalı ikincil indeks — yazım farkından doğan mükerrerleri yakalar.
   const staffByFold = new Map()
   for (const s of allStaffRows) {
-    const k = foldName(s.full_name)
-    if (k && !staffByFold.has(k)) staffByFold.set(k, s)
+    setPreferActive(staffByName, normalizeName(s.full_name), s)
+    setPreferActive(staffByFold, foldName(s.full_name), s)
   }
   const staffById = new Map(allStaffRows.map(s => [s.id, s]))
+  // Kalıcı ad eşleştirmeleri: daha önce "aynı kişi" onaylanan yazımlar birebir eşleşme sayılır (yeniden sorulmaz).
+  const staffByAlias = new Map(), staffByAliasFold = new Map()
+  for (const a of db.prepare('SELECT staff_id, alias, alias_fold FROM staff_aliases').all()) {
+    const s = staffById.get(a.staff_id)
+    if (!s) continue
+    setPreferActive(staffByAlias, a.alias_fold, s)
+    setPreferActive(staffByAliasFold, foldName(a.alias), s)
+  }
+  const usedTc = new Set(allStaffRows.map(s => validTc(s.tc_no)).filter(Boolean))
+  // İK puantajı (resmi kadro): yeni kişinin işe giriş / görev / proje / TC bilgisi buradan tamamlanır.
+  const rosterInfo = rosterLookupFactory(db)
   // Kullanıcının elle yaptığı eşleştirmeler (excelAdı → mevcut staffId).
   const mapNorm = new Map(Object.entries(mappings || {}).map(([k, v]) => [normalizeName(k), +v]))
   // Excel adını mevcut personele eşle: önce elle eşleştirme, sonra birebir, sonra aksan-katlamalı.
@@ -188,6 +197,8 @@ export function importSchedule(payload, userId, {
     if (mapped && staffById.has(mapped)) return { staff: staffById.get(mapped), fuzzy: false, manual: true }
     const exact = staffByName.get(normalizeName(name))
     if (exact) return { staff: exact, fuzzy: false }
+    const alias = staffByAlias.get(normalizeName(name)) || staffByAliasFold.get(foldName(name))
+    if (alias) return { staff: alias, fuzzy: false, alias: true }
     const fold = staffByFold.get(foldName(name))
     if (fold) return { staff: fold, fuzzy: true }
     return { staff: null, fuzzy: false }
@@ -199,7 +210,7 @@ export function importSchedule(payload, userId, {
     depts: { matched: [], created: [] },
     shiftDefs: { matched: [], created: [] },
     locations: { matched: [], unmatched: [], ambiguous: [], withoutLocation: 0, missing: [], missingCells: 0 },
-    staff: { matched: 0, matchedNames: [], created: [], fuzzyMatched: [], genderGuessed: 0, genderUnknown: [] },
+    staff: { matched: 0, matchedNames: [], created: [], fuzzyMatched: [], aliasMatched: 0, genderGuessed: 0, genderUnknown: [] },
     scheduleEntries: 0,
     scheduleNew: 0,
     scheduleUpdated: 0,
@@ -278,23 +289,39 @@ export function importSchedule(payload, userId, {
   // Personel
   for (const r of rows) {
     if (!r.name) continue
-    const { staff, fuzzy } = resolveStaff(r.name)
+    const { staff, fuzzy, alias } = resolveStaff(r.name)
     if (staff) {
       report.staff.matched++
       report.staff.matchedNames.push(r.name)
-      if (fuzzy) report.staff.fuzzyMatched.push({ excelName: r.name, matchedTo: staff.full_name })
+      if (alias) report.staff.aliasMatched++
+      if (fuzzy) report.staff.fuzzyMatched.push({ excelName: r.name, matchedTo: staff.full_name, staffId: staff.id })
     } else if (createMissing) {
       const gender = guessGender(r.name)
       if (gender) report.staff.genderGuessed++
       else report.staff.genderUnknown.push(r.name)
       const info = newStaffInfo.get(normalizeName(r.name)) || {}
-      const details = {
+      // Elle girilen bilgi önceliklidir; eksik kalan alan İK puantajından (resmi kadro) tamamlanır.
+      const hr = rosterInfo(r.name)
+      const manual = {
         hire_date: isIsoDate(info.hire_date) ? info.hire_date : null,
         position: String(info.position || '').trim() || null,
         project_id: projectIds.has(Number(info.project_id)) ? Number(info.project_id) : null,
       }
+      const fromHr = {
+        hire_date: hr?.hire_date || null,
+        position: hr?.position || null,
+        project_id: hr?.project_id && projectIds.has(hr.project_id) ? hr.project_id : null,
+      }
+      const details = Object.fromEntries(Object.keys(manual).map(k => [k, manual[k] ?? fromHr[k]]))
+      const infoSource = Object.keys(manual).filter(k => manual[k] == null && fromHr[k] != null)
+      const tc = hr?.tc_no && !usedTc.has(hr.tc_no) ? hr.tc_no : null
+      if (tc) usedTc.add(tc)
       const missingFields = Object.entries(details).filter(([, v]) => v == null).map(([k]) => k)
-      report.staff.created.push({ name: r.name, deptName: r.deptName || null, gender, ...details, missingFields })
+      report.staff.created.push({
+        name: r.name, deptName: r.deptName || null, gender, ...details, tc_no: tc, missingFields,
+        ...(infoSource.length ? { fromHrRoster: infoSource } : {}),
+        ...(hr?.exit_date ? { hrExitDate: hr.exit_date } : {}),
+      })
     } else {
       report.staff.skippedNoStaff.push(r.name)
     }
@@ -414,8 +441,8 @@ export function importSchedule(payload, userId, {
   // ── Gerçek yazım — tek transaction ──
   const insertDept = db.prepare('INSERT INTO departments(name, color_class, description) VALUES(?,?,?)')
   const insertShift = db.prepare('INSERT INTO shift_definitions(name, start_hour, end_hour, color_class) VALUES(?,?,?,?)')
-  const insertStaff = db.prepare(`INSERT INTO staff(full_name, department_id, gender, hire_date, position, project_id, is_active)
-    VALUES(?,?,?,?,?,?,1)`)
+  const insertStaff = db.prepare(`INSERT INTO staff(full_name, department_id, gender, hire_date, position, project_id, tc_no, is_active)
+    VALUES(?,?,?,?,?,?,?,1)`)
   const upsert = db.prepare(`
     INSERT INTO shift_schedule(staff_id, dept_id, shift_def_id, work_location_id, work_date, status, leave_type, created_by)
     VALUES(@staff_id, @dept_id, @shift_def_id, @work_location_id, @work_date, @status, @leave_type, @created_by)
@@ -428,7 +455,7 @@ export function importSchedule(payload, userId, {
   `)
 
   // Geri alma (undo) için snapshot: oturumun yarattığı + üzerine yazdığı her şey.
-  const undo = { createdStaffIds: [], createdDeptIds: [], createdShiftDefIds: [], createdLeaves: [], schedulePrev: [], scheduleInserted: [] }
+  const undo = { createdStaffIds: [], createdDeptIds: [], createdShiftDefIds: [], createdLeaves: [], schedulePrev: [], scheduleInserted: [], createdAliasIds: [] }
   const getPrevStmt = db.prepare('SELECT * FROM shift_schedule WHERE staff_id = ? AND work_date = ?')
   const getScheduleStmt = db.prepare('SELECT * FROM shift_schedule WHERE staff_id = ? AND work_date = ?')
   const insBatch = db.prepare(`INSERT INTO schedule_import_batches(created_by, label, summary, undo_data) VALUES(?,?,?,?)`)
@@ -455,9 +482,9 @@ export function importSchedule(payload, userId, {
       sColor++
     }
     // Personel
-    for (const { name, deptName, gender, hire_date, position, project_id } of report.staff.created) {
+    for (const { name, deptName, gender, hire_date, position, project_id, tc_no } of report.staff.created) {
       const dept = deptName ? deptByName.get(normalizeName(deptName)) : null
-      const id = insertStaff.run(name, dept?.id || null, gender || null, hire_date, position, project_id).lastInsertRowid
+      const id = insertStaff.run(name, dept?.id || null, gender || null, hire_date, position, project_id, tc_no || null).lastInsertRowid
       staffByName.set(normalizeName(name), { id, full_name: name, department_id: dept?.id || null })
       undo.createdStaffIds.push(id)
       recordPersonnelEvent({
@@ -471,6 +498,28 @@ export function importSchedule(payload, userId, {
         actorUserId: userId || null,
         metadata: { source: 'schedule_import' },
       })
+    }
+
+    // Kullanıcının onayladığı eşleştirmeler kalıcı olur: elle eşleştirilen ve "yazım farkı ama doğru kişi"
+    // onaylanan adlar bir sonraki aktarımda birebir sayılır. Çakışan (başka kişiye bağlı) ad atlanır, raporlanır.
+    report.aliases = { saved: [], skipped: [] }
+    const aliasPairs = [
+      ...[...mapNorm.entries()].map(([excelNorm, staffId]) => ({
+        excelName: Object.keys(mappings || {}).find(k => normalizeName(k) === excelNorm), staffId,
+      })),
+      ...(confirm.fuzzy ? report.staff.fuzzyMatched.map(f => ({ excelName: f.excelName, staffId: f.staffId })) : []),
+    ]
+    for (const { excelName, staffId } of aliasPairs) {
+      const target = staffById.get(staffId)
+      if (!excelName || !target || normalizeName(excelName) === normalizeName(target.full_name)) continue
+      const before = db.prepare('SELECT id FROM staff_aliases WHERE alias_fold=?').get(normalizeName(excelName))
+      try {
+        const row = addStaffAlias({ staffId, alias: excelName, source: 'cizelge' }, userId, db)
+        if (!before) undo.createdAliasIds.push(row.id)
+        report.aliases.saved.push({ alias: excelName, staffId })
+      } catch (error) {
+        report.aliases.skipped.push({ alias: excelName, staffId, reason: error.message })
+      }
     }
 
     // Çizelge upsert — yeni-oluşturulanlar staffByName'e zaten eklendi, resolveStaff onları görür.
@@ -634,6 +683,10 @@ export function undoImportBatch(batchId, userId = null) {
   const result = { scheduleRestored: 0, scheduleDeleted: 0, leavesDeleted: 0, staffDeleted: 0, deptsDeleted: 0, shiftDefsDeleted: 0 }
 
   db.transaction(() => {
+    // 0) Bu aktarımda kaydedilen ad eşleştirmelerini sil
+    for (const aliasId of undo.createdAliasIds || []) {
+      db.prepare('DELETE FROM staff_aliases WHERE id=?').run(aliasId)
+    }
     // 1) Oluşturulan izinleri sil + bakiyeyi geri yükle
     for (const lv of undo.createdLeaves || []) {
       const before = db.prepare('SELECT * FROM leave_requests WHERE id=?').get(lv.id)
