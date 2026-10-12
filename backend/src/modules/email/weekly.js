@@ -52,6 +52,31 @@ export function buildWeeklyStats() {
     occupancy: getOccupancyReport(),     // anlık doluluk (blok bazlı + totals)
     maintenance: getMaintenanceReport(), // son 7 gün open/closed/overdue (rapor zaten 7 günlük)
     signature: weeklySignatureCoverage(range),
+    meals: weeklyMeals(range, prevRange),
+  }
+}
+
+const MEAL_LABELS = { breakfast: 'Kahvaltı', lunch: 'Öğle', dinner: 'Akşam', night: 'Gece', snack: 'Ara Öğün' }
+
+// Yemekhane — iki bağımsız kaynak: elle girilen öğün sayımı (meal_counts, web + Telegram /yemek)
+// ve kart okutma kayıtları (meal_logs). Sayım lokasyon başına tutulur, öğün tipinde toplanır.
+export function weeklyMeals(range, prevRange) {
+  const db = getDB()
+  const byType = (sql, r) => Object.fromEntries(
+    db.prepare(sql).all(r.start, r.end).map(x => [x.meal_type, x.c]))
+  const countsSql = `SELECT meal_type, SUM(count) c FROM meal_counts WHERE meal_date BETWEEN ? AND ? GROUP BY meal_type`
+  const logsSql = `SELECT meal_type, COUNT(*) c FROM meal_logs WHERE meal_date BETWEEN ? AND ? GROUP BY meal_type`
+  const sum = o => Object.values(o).reduce((a, b) => a + b, 0)
+  const counts = byType(countsSql, range)
+  const logs = byType(logsSql, range)
+  return {
+    counts, logs,
+    countsTotal: sum(counts),
+    logsTotal: sum(logs),
+    prevCountsTotal: sum(byType(countsSql, prevRange)),
+    prevLogsTotal: sum(byType(logsSql, prevRange)),
+    countedDays: db.prepare(`SELECT COUNT(DISTINCT meal_date) c FROM meal_counts WHERE meal_date BETWEEN ? AND ?`)
+      .get(range.start, range.end)?.c ?? 0,
   }
 }
 
@@ -73,6 +98,28 @@ export function weeklySignatureCoverage(range) {
     .filter(d => d.expected > 0)
     .sort((a, b) => b.missing - a.missing || b.warn - a.warn || a.name.localeCompare(b.name, 'tr'))
   return { ...cov.summary, used: cov.summary.checked > 0, departments }
+}
+
+function mealsSectionHtml(m, kpi) {
+  if (!m.countsTotal && !m.logsTotal) {
+    return `<h2>Yemekhane — Hafta</h2>
+<p style="font-size:13px;color:#64748b">Bu hafta öğün sayımı ya da kart okutma kaydı yok.
+YYS → Yemekhane ya da Telegram <b>/yemek</b> ile öğün sayısı girilebilir.</p>`
+  }
+  const types = Object.keys(MEAL_LABELS).filter(t => m.counts[t] || m.logs[t])
+  const th = t => `<th style="padding:6px 8px;border:1px solid #ddd;background:#f3f4f6;text-align:left">${t}</th>`
+  const td = v => `<td style="padding:4px 8px;border:1px solid #ddd">${v ?? '—'}</td>`
+  const rows = types.map(t => `<tr>${td(MEAL_LABELS[t])}${td(m.counts[t])}${td(m.logs[t])}</tr>`).join('')
+  return `<h2>Yemekhane — Hafta</h2>
+<div class="kpi-grid">
+  ${m.countsTotal ? kpi(m.countsTotal, 'Sayılan Öğün', delta(m.countsTotal, m.prevCountsTotal)) : ''}
+  ${m.countsTotal ? kpi(`${m.countedDays}/7`, 'Sayım Girilen Gün') : ''}
+  ${m.logsTotal ? kpi(m.logsTotal, 'Kart Okutma', delta(m.logsTotal, m.prevLogsTotal)) : ''}
+</div>
+<table style="border-collapse:collapse;width:100%;margin-bottom:16px;font-size:13px">
+  <thead><tr>${th('Öğün')}${th('Sayım')}${th('Kart okutma')}</tr></thead>
+  <tbody>${rows}</tbody>
+</table>`
 }
 
 const esc = s => String(s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]))
@@ -178,6 +225,8 @@ export function buildWeeklyReportHtml() {
   ${kpi(s.laundryAvgHours != null ? s.laundryAvgHours + ' sa' : '—', 'Ort. Teslim Süresi')}
   ${kpi(s.laundryPending, 'Şu An Bekleyen')}
 </div>
+
+${mealsSectionHtml(s.meals, kpi)}
 
 ${signatureSectionHtml(s.signature, kpi)}
 

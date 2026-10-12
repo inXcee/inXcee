@@ -100,6 +100,36 @@ describe('sendWeeklyReport', () => {
   })
 })
 
+describe('Yemekhane bölümü', () => {
+  const gun = n => { const d = new Date(); d.setDate(d.getDate() - n); return d.toLocaleDateString('sv-SE') }
+
+  it('veri yokken hatırlatma satırı gösterir', () => {
+    const html = buildWeeklyReportHtml()
+    expect(html).toContain('Yemekhane — Hafta')
+    expect(html).toContain('öğün sayımı ya da kart okutma kaydı yok')
+  })
+
+  it('sayımı öğün tipinde toplar, önceki haftayla kıyaslar', () => {
+    const db = getDB()
+    const ins = db.prepare(`INSERT INTO meal_counts(meal_date, meal_type, location, count) VALUES (?,?,?,?)`)
+    ins.run(gun(2), 'lunch', 'A', 120)
+    ins.run(gun(2), 'lunch', 'B', 30)
+    ins.run(gun(3), 'dinner', 'A', 90)
+    ins.run(gun(10), 'lunch', 'A', 100) // önceki hafta
+    ins.run(gun(0), 'lunch', 'A', 999)  // bugün — kapsam dışı
+    const m = buildWeeklyStats().meals
+    expect(m.counts.lunch).toBe(150)
+    expect(m.counts.dinner).toBe(90)
+    expect(m.countsTotal).toBe(240)
+    expect(m.prevCountsTotal).toBe(100)
+    expect(m.countedDays).toBe(2)
+    const html = buildWeeklyReportHtml()
+    expect(html).toContain('Sayılan Öğün')
+    expect(html).toContain('2/7')
+    expect(html).not.toContain('kart okutma kaydı yok')
+  })
+})
+
 describe('weekly routes', () => {
   it('GET /api/settings/email/weekly/preview HTML döndürür (admin)', async () => {
     const res = await request(app).get('/api/settings/email/weekly/preview')
