@@ -139,6 +139,30 @@ describe('izin açılış bakiyesi (İK onaylı, tarihli)', () => {
       .send({ decision: 'reject' })).status).toBe(409)
   })
 
+  it('bekleyen kayıtta onaylanırsa kalan önizlemesi; toplu onay yalnız bekleyenleri karara bağlar', async () => {
+    const db = getDB()
+    const other = db.prepare(`INSERT INTO staff(full_name, hire_date, is_active) VALUES('TOPLU ONAY KİŞİ', '2020-01-15', 1)`).run().lastInsertRowid
+    db.prepare(`INSERT INTO leave_requests(staff_id, leave_type, start_date, end_date, total_days, status)
+      VALUES(?, 'annual', '2026-10-06', '2026-10-08', 3, 'approved')`).run(other)
+    const created = await request(app).post('/api/shifts/leave/opening-balances').set(auth(supervisorToken))
+      .send({ as_of_date: '2026-09-30', source: 'excel', rows: [{ staff_id: other, days: 14 }] })
+    expect(created.status).toBe(201)
+    const list = (await request(app).get('/api/shifts/leave/opening-balances?status=pending').set(auth(managerToken))).body
+    const row = list.find(r => r.staff_id === other)
+    expect(row.projected_remaining).toBe(11)        // 14 − 06.10 sonrası 3 gün
+    // vardiya amiri toplu onay veremez
+    expect((await request(app).post('/api/shifts/leave/opening-balances/decision-bulk').set(auth(supervisorToken))
+      .send({ ids: [row.id], decision: 'approve' })).status).toBe(403)
+    const res = await request(app).post('/api/shifts/leave/opening-balances/decision-bulk').set(auth(managerToken))
+      .send({ ids: [row.id, row.id, 999999], decision: 'approve' })
+    expect(res.status).toBe(200)
+    expect(res.body).toMatchObject({ decided: 1, skipped: [999999], status: 'approved' })
+    const bal = (await request(app).get(`/api/shifts/leave/annual-balance/${other}`).set(auth(managerToken))).body
+    expect(bal).toMatchObject({ basis: 'opening', remaining: 11 })
+    expect((await request(app).post('/api/shifts/leave/opening-balances/decision-bulk').set(auth(managerToken))
+      .send({ ids: [], decision: 'approve' })).status).toBe(400)
+  })
+
   it('izin ekranı, kiosk ucu ve personel dosyası aynı kalanı verir', async () => {
     const a = (await request(app).get(`/api/shifts/leave/entitlement/${staffId}`).set(auth(managerToken))).body
     const b = (await request(app).get(`/api/shifts/leave/balance/${staffId}`).set(auth(managerToken))).body
