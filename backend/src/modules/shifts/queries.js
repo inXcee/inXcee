@@ -2,6 +2,7 @@ import { getDB } from '../../shared/db/index.js'
 import { isIsoDate } from '../../shared/validation/date.js'
 import { recordPersonnelEvent } from '../personnel/tracking-events.js'
 import { istanbulDate } from '../../shared/time.js'
+import { computeAnnualBalance } from './leaveBalance.js'
 
 const CURRENT_ASSIGNMENT_JOIN = `
   LEFT JOIN staff_assignments sa ON sa.id = (
@@ -2110,18 +2111,21 @@ export function getOperationsDashboardData({ date, monthStart, monthEnd, deptId 
     balanceDeptSql = ' AND s.department_id = ?'
     balanceParams.push(idParam(deptId))
   }
+  // Kalan izin tek kaynaktan (leaveBalance.js). Hesaplanamayan (dayanağı olmayan) kişi
+  // "düşük bakiye" sayılmaz — eskiden varsayılan 15 gün üzerinden yanlış listeleniyordu.
+  balanceParams.shift()
   const lowLeaveBalances = db.prepare(`
-    SELECT s.id AS staff_id, s.full_name, s.department_id AS dept_id,
-      d.name AS dept_name, COALESCE(lb.annual_total, 15) AS annual_total,
-      COALESCE(lb.annual_used, 0) AS annual_used,
-      COALESCE(lb.annual_total, 15) - COALESCE(lb.annual_used, 0) AS remaining
+    SELECT s.id AS staff_id, s.full_name, s.department_id AS dept_id, d.name AS dept_name
     FROM staff s
     LEFT JOIN departments d ON d.id=s.department_id
-    LEFT JOIN leave_balance lb ON lb.staff_id=s.id AND lb.year=?
     WHERE s.is_active=1${balanceDeptSql}
-      AND COALESCE(lb.annual_total, 15) - COALESCE(lb.annual_used, 0) <= 3
-    ORDER BY remaining, s.full_name
   `).all(...balanceParams)
+    .map(row => {
+      const b = computeAnnualBalance(row.staff_id)
+      return { ...row, basis: b?.basis, annual_used: b?.used ?? 0, remaining: b?.remaining ?? null }
+    })
+    .filter(row => row.remaining != null && row.remaining <= 3)
+    .sort((a, b) => a.remaining - b.remaining || a.full_name.localeCompare(b.full_name, 'tr'))
 
   const activeStaffParams = [date, date]
   let activeStaffSql = ''

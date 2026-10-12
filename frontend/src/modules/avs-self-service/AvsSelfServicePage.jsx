@@ -551,9 +551,8 @@ export default function AvsSelfServicePage() {
 
   // İzin: talep edilen gün sayısı (backend ile aynı) + yıllık bakiye aşımı guard'ı
   const leaveReqDays = leaveDays(leaveForm.start_date, leaveForm.end_date)
-  const annualRemaining = leaveData?.balance
-    ? (leaveData.balance.annual_total - leaveData.balance.annual_used)
-    : null
+  // Kalan izin sunucuda tek kaynaktan hesaplanır; null = dayanak yok (işe giriş / açılış bakiyesi eksik)
+  const annualRemaining = leaveData?.balance?.remaining ?? null
   const overAnnualBalance =
     leaveForm.leave_type === 'annual' && annualRemaining != null && leaveReqDays > annualRemaining
 

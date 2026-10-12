@@ -228,18 +228,21 @@ function futureAfterExitDetections(db, rule, today) {
 
 function leaveMismatchDetections(db, rule, today) {
   const year = Number(today.slice(0, 4))
+  // better-sqlite3 JS sayısını REAL bağlar: CAST(2026 AS TEXT) = '2026.0' olur ve hiçbir tarihle
+  // eşleşmez → onaylı izin hep 0 görünüp sahte uyuşmazlık uyarısı doğuyordu. Metin bağla.
+  const yearText = String(year)
   return db.prepare(`
     SELECT s.id, s.full_name, COALESCE(lb.annual_used,0) AS balance_used,
       COALESCE((SELECT SUM(lr.total_days) FROM leave_requests lr
         WHERE lr.staff_id=s.id AND lr.leave_type='annual' AND lr.status='approved'
-          AND substr(lr.start_date,1,4)=CAST(? AS TEXT)),0) AS approved_used
+          AND substr(lr.start_date,1,4)=?),0) AS approved_used
     FROM staff s
     LEFT JOIN leave_balance lb ON lb.staff_id=s.id AND lb.year=?
     WHERE s.is_active=1
       AND ABS(COALESCE(lb.annual_used,0) - COALESCE((SELECT SUM(lr.total_days) FROM leave_requests lr
         WHERE lr.staff_id=s.id AND lr.leave_type='annual' AND lr.status='approved'
-          AND substr(lr.start_date,1,4)=CAST(? AS TEXT)),0))>=?
-  `).all(year, year, year, rule.threshold_primary).map(row => detection(rule, row.id, {
+          AND substr(lr.start_date,1,4)=?),0))>=?
+  `).all(yearText, year, yearText, rule.threshold_primary).map(row => detection(rule, row.id, {
     message: `${row.full_name}: bakiye ${row.balance_used} gun, onayli izin ${row.approved_used} gun`,
     metric_value: Math.abs(Number(row.balance_used) - Number(row.approved_used)),
     metric_secondary: row.approved_used,

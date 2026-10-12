@@ -6,7 +6,7 @@ import { createRequest } from '../maintenance/queries.js'
 import { changeKioskPin, issuePersonnelKioskSession } from '../../shared/auth/service.js'
 import { createLeaveService } from '../shifts/service.js'
 import { getCardSettings, resolveScan, recordScan, scanResponse, AKSIYON } from '../laundry/cardScan.js'
-import { getLeaveBalance } from '../shifts/queries.js'
+import { leaveBalanceService } from '../shifts/service.js'
 import { createNotification } from '../../shared/notifications/service.js'
 import { validate } from '../../shared/middleware/validate.js'
 import { maintenanceSchema, feedbackSchema } from './schemas.js'
@@ -363,7 +363,7 @@ selfServiceRouter.get('/my-leaves', requireKioskOrStaff, (req, res) => {
       FROM leave_requests WHERE staff_id = ?
       ORDER BY created_at DESC LIMIT 20
     `).all(staff.id)
-    const balance = getLeaveBalance(staff.id, new Date().getFullYear())
+    const balance = leaveBalanceService(staff.id)
     res.json({ leaves, balance })
   } catch (e) { console.error('[my-leaves]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })

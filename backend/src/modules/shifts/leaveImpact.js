@@ -1,5 +1,6 @@
 import { getDB } from '../../shared/db/index.js'
 import { isIsoDate, isoGun, findReplacements } from './dailyOperations.js'
+import { computeAnnualBalance, BASIS_LABEL } from './leaveBalance.js'
 
 // Faz 8 — İzin etki analizi.
 //
@@ -78,26 +79,27 @@ export function buildLeaveImpact({ staff_id, start, end, leave_type = 'annual' }
   // Yıllık izin dışındaki türlerde yıllık bakiye ölçüt DEĞİL; "bakiye yeterli"
   // demek yanıltıcı olurdu.
   let balance = { applicable: leave_type === 'annual', reason: null }
+  // Kalan izin TEK KAYNAKTAN (leaveBalance.js) — ekrandaki ve personel dosyasındaki ile aynı sayı.
   if (leave_type === 'annual') {
-    const yil = Number(String(start).slice(0, 4))
-    const bakiye = guvenli(db,
-      'SELECT annual_total, annual_used FROM leave_balance WHERE staff_id = ? AND year = ?',
-      [staffId, yil], 'leave_balance', sorunlar, true)
-    if (bakiye) {
-      const toplam = Number(bakiye.annual_total || 0)
-      const kullanilan = Number(bakiye.annual_used || 0)
+    let hesap = null
+    try { hesap = computeAnnualBalance(staffId, { db }) } catch (e) {
+      sorunlar.push({ source: 'leave_balance', error: e.message })
+    }
+    if (hesap && hesap.remaining != null) {
       balance = {
         applicable: true,
-        year: yil,
-        total: toplam,
-        used: kullanilan,
-        remaining: toplam - kullanilan,
+        basis: hesap.basis,
+        basis_label: BASIS_LABEL[hesap.basis],
+        used: hesap.used,
+        remaining: hesap.remaining,
         requested: gunler.length,
-        after: toplam - kullanilan - gunler.length,
-        sufficient: toplam - kullanilan >= gunler.length,
+        after: hesap.remaining - gunler.length,
+        sufficient: hesap.remaining >= gunler.length,
+        carryover_unknown: !!hesap.carryover_unknown,
       }
     } else {
-      balance = { applicable: true, year: yil, known: false, reason: 'Bu yıl için bakiye kaydı yok — hak ediş hesaplanmamış' }
+      balance = { applicable: true, known: false, basis: hesap?.basis || 'unknown',
+        reason: hesap?.reason || 'Kalan izin hesaplanamadı' }
     }
   } else {
     balance.reason = `${leave_type} türünde yıllık bakiye ölçüt değil`
@@ -203,13 +205,15 @@ export function buildLeaveImpact({ staff_id, start, end, leave_type = 'annual' }
     WHERE staff_id = ? AND status = 'approved' AND leave_type = 'annual' AND start_date > ?
   `, [staffId, end], 'leave_requests', sorunlar, true)
 
+  // Kalan, onaylı gelecek izinleri ZATEN düşmüş durumda (tek kaynak onaylı talep defteri);
+  // burada yeniden çıkarmak iki kez saymak olur. other_approved_future yalnız bilgi amaçlı.
   const year_end_forecast = (balance.applicable && balance.remaining != null && yilSonu)
     ? {
       known: true,
       remaining_now: balance.remaining,
       this_request: gunler.length,
       other_approved_future: Number(yilSonu.gun || 0),
-      projected: balance.remaining - gunler.length - Number(yilSonu.gun || 0),
+      projected: balance.remaining - gunler.length,
     }
     : { known: false, reason: 'Bakiye kaydı olmadan yıl sonu tahmini yapılamaz' }
 

@@ -1,4 +1,5 @@
 import { getDB } from '../../shared/db/index.js'
+import { computeAnnualBalance } from './leaveBalance.js'
 
 // Türk İş Kanunu m.53 — yıllık ücretli izin hak edişi.
 // Hizmet süresi 1 yıldan az → hak doğmamış. Kıdeme göre:
@@ -100,9 +101,11 @@ export function annualLeaveSummary(staffId, { asOf } = {}) {
   const year = new Date().getFullYear()
   db.prepare('INSERT OR IGNORE INTO leave_balance(staff_id, year) VALUES(?,?)').run(staffId, year)
   const balance = db.prepare('SELECT * FROM leave_balance WHERE staff_id=? AND year=?').get(staffId, year)
-  const used = balance?.annual_used || 0
   const trackedTotal = balance?.annual_total ?? null
-  const remaining = entitlement.has_started ? Math.max(0, entitlement.entitled_days - used) : 0
+  // Kalan ve kullanılan tek kaynaktan (leaveBalance.js) — onay ekranıyla aynı.
+  const unified = computeAnnualBalance(staffId, { asOf })
+  const used = unified?.used ?? (balance?.annual_used || 0)
+  const remaining = unified?.remaining ?? null
   return {
     staff_id: staff.id,
     hire_date: staff.hire_date,
@@ -111,6 +114,9 @@ export function annualLeaveSummary(staffId, { asOf } = {}) {
     annual_used: used,
     tracked_total: trackedTotal,
     remaining,
+    basis: unified?.basis || 'unknown',
+    opening: unified?.opening || null,
+    pending_opening: unified?.pending_opening || null,
     // Yasal hak ile takip edilen bakiye uyuşmuyorsa uyarı (annual_total elle set edilmiş olabilir).
     mismatch: entitlement.has_started && trackedTotal != null && trackedTotal !== entitlement.entitled_days,
   }

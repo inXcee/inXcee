@@ -13,7 +13,9 @@ beforeAll(() => {
   db = new Database(':memory:')
   db.exec(`
     CREATE TABLE staff (id INTEGER PRIMARY KEY, full_name TEXT, department_id INTEGER,
-      is_active INTEGER DEFAULT 1, role_id INTEGER);
+      is_active INTEGER DEFAULT 1, role_id INTEGER, hire_date TEXT, birth_date TEXT);
+    CREATE TABLE leave_opening_balances (id INTEGER PRIMARY KEY AUTOINCREMENT, staff_id INTEGER,
+      as_of_date TEXT, days REAL, source TEXT, source_label TEXT, status TEXT, decided_at TEXT);
     CREATE TABLE departments (id INTEGER PRIMARY KEY, name TEXT);
     CREATE TABLE staff_roles (id INTEGER PRIMARY KEY, name TEXT);
     CREATE TABLE shift_definitions (id INTEGER PRIMARY KEY, name TEXT);
@@ -35,10 +37,15 @@ beforeAll(() => {
 
 beforeEach(() => {
   db.exec(`DELETE FROM shift_schedule; DELETE FROM leave_requests; DELETE FROM leave_balance;
-           DELETE FROM overtime_records; DELETE FROM shift_coverage_rules;`)
+           DELETE FROM overtime_records; DELETE FROM shift_coverage_rules; DELETE FROM leave_opening_balances;
+           UPDATE staff SET hire_date=NULL, birth_date=NULL;`)
 })
 
 const etki = (over = {}) => buildLeaveImpact({ staff_id: 10, start: OCAK, end: OCAK, ...over }, db)
+// Kalan izin tek kaynaktan (leaveBalance.js): onaylı talep defteri + yasal hak / onaylı açılış.
+const ise = (date) => db.prepare('UPDATE staff SET hire_date=? WHERE id=10').run(date)
+const onayli = (start, days) => db.prepare(`INSERT INTO leave_requests(staff_id,leave_type,start_date,end_date,total_days,status)
+  VALUES(10,'annual',?,?,?,'approved')`).run(start, start, days)
 
 describe('gün aralığı', () => {
   it('kapalı aralık üretir', () => {
@@ -56,23 +63,37 @@ describe('gün aralığı', () => {
 })
 
 describe('bakiye', () => {
-  it('yıllık izinde kalan ve sonrasını hesaplar', () => {
-    db.prepare('INSERT INTO leave_balance VALUES(10, 2026, 14, 4)').run()
+  it('yıllık izinde kalan ve sonrasını hesaplar (yasal hak − bu yılki onaylı izin)', () => {
+    ise('2020-01-01')            // 6 yıl → 20 gün
+    onayli('2026-03-02', 4)
+    db.prepare('INSERT INTO leave_balance VALUES(10, 2026, 15, 99)').run() // sayaç/varsayılan 15 artık ölçüt değil
     const b = etki({ end: '2026-01-07' }).balance
-    expect(b).toMatchObject({ remaining: 10, requested: 3, after: 7, sufficient: true })
+    expect(b).toMatchObject({ basis: 'legal', remaining: 16, requested: 3, after: 13, sufficient: true, carryover_unknown: true })
   })
 
   it('bakiye yetmiyorsa uyarır', () => {
-    db.prepare('INSERT INTO leave_balance VALUES(10, 2026, 14, 13)').run()
+    ise('2020-01-01')
+    onayli('2026-03-02', 19)
     const r = etki({ end: '2026-01-07' })
     expect(r.balance.sufficient).toBe(false)
     expect(r.warnings).toContain('Yıllık izin bakiyesi yetersiz')
   })
 
-  // Kayıt yoksa "0 kaldı" demek yanlış; hak ediş hiç hesaplanmamış olabilir.
-  it('bakiye kaydı yoksa bilinmiyor der', () => {
-    expect(etki().balance).toMatchObject({ known: false })
-    expect(etki().balance.reason).toMatch(/bakiye kaydı yok/)
+  it('onaylı açılış bakiyesi varsa ondan hesaplar', () => {
+    ise('2020-01-01')
+    db.prepare("INSERT INTO leave_opening_balances(staff_id,as_of_date,days,status) VALUES(10,'2026-09-30',12,'approved')").run()
+    db.prepare("INSERT INTO leave_opening_balances(staff_id,as_of_date,days,status) VALUES(10,'2026-09-30',99,'pending')").run()
+    onayli('2026-09-01', 5)      // açılıştan önce — açılışın içinde sayılır, düşülmez
+    onayli('2026-10-05', 3)      // açılıştan sonra — düşülür
+    const b = etki().balance
+    expect(b).toMatchObject({ basis: 'opening', remaining: 9 })
+  })
+
+  // Dayanak yoksa "15 kaldı" demek yanlış; hak ediş hiç hesaplanmamış olabilir.
+  it('işe giriş tarihi ve açılış bakiyesi yoksa bilinmiyor der', () => {
+    db.prepare('INSERT INTO leave_balance VALUES(10, 2026, 15, 0)').run()
+    expect(etki().balance).toMatchObject({ known: false, basis: 'unknown' })
+    expect(etki().balance.reason).toMatch(/İşe giriş tarihi/)
   })
 
   // Raporlu/ücretsizde yıllık bakiye ölçüt değil.
@@ -143,11 +164,12 @@ describe('kapsama kaybı', () => {
 })
 
 describe('yıl sonu ve örüntü', () => {
-  it('gelecek onaylı izinlerle birlikte yıl sonunu tahmin eder', () => {
-    db.prepare('INSERT INTO leave_balance VALUES(10, 2026, 14, 0)').run()
+  // Kalan, onaylı gelecek izinleri zaten düşmüş durumda — tahmin onları ikinci kez çıkarmaz.
+  it('gelecek onaylı izinleri bir kez sayarak yıl sonunu tahmin eder', () => {
+    ise('2023-01-01')            // 3 yıl → 14 gün
     db.prepare("INSERT INTO leave_requests(staff_id,leave_type,start_date,end_date,total_days,status) VALUES(10,'annual','2026-07-01','2026-07-10',10,'approved')").run()
     const r = etki({ end: '2026-01-09' })
-    expect(r.year_end_forecast).toMatchObject({ remaining_now: 14, this_request: 5, other_approved_future: 10, projected: -1 })
+    expect(r.year_end_forecast).toMatchObject({ remaining_now: 4, this_request: 5, other_approved_future: 10, projected: -1 })
     expect(r.warnings).toContain('Yıl sonunda bakiye açığa düşüyor')
   })
 

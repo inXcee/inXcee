@@ -10,7 +10,7 @@ export default function LeaveTab({
       <div className="bg-slate-900 rounded-2xl p-5">
         <div className="text-xs text-slate-500">{t('avs_kiosk.leave.balance_remaining')}</div>
         <div className="text-3xl font-bold text-green-400">
-          {leaveData?.balance ? (leaveData.balance.annual_total - leaveData.balance.annual_used) : '—'} <span className="text-base text-slate-400">{t('avs_kiosk.leave.days')}</span>
+          {leaveData?.balance?.remaining ?? '—'} <span className="text-base text-slate-400">{t('avs_kiosk.leave.days')}</span>
         </div>
         {leaveData?.balance && (
           <div className="text-xs text-slate-500 mt-2">

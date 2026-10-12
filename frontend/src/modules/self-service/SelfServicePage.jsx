@@ -570,15 +570,15 @@ export default function SelfServicePage() {
                   <h2 className="font-medium text-slate-300 mb-3">🌴 {myLeaves.balance.year} İzin Bakiyesi</h2>
                   <div className="grid grid-cols-3 gap-2">
                     <div className="bg-slate-800 rounded-xl p-3 text-center">
-                      <div className="text-2xl font-bold text-blue-400">{myLeaves.balance.annual_total}</div>
-                      <div className="text-xs text-slate-500 mt-1">Yıllık Hak</div>
+                      <div className="text-sm font-bold text-blue-400 leading-8">{myLeaves.balance.basis_label || '—'}</div>
+                      <div className="text-xs text-slate-500 mt-1">Hesap Dayanağı</div>
                     </div>
                     <div className="bg-slate-800 rounded-xl p-3 text-center">
-                      <div className="text-2xl font-bold text-amber-400">{myLeaves.balance.annual_used}</div>
+                      <div className="text-2xl font-bold text-amber-400">{myLeaves.balance.used_ledger ?? myLeaves.balance.annual_used}</div>
                       <div className="text-xs text-slate-500 mt-1">Kullanılan</div>
                     </div>
                     <div className="bg-slate-800 rounded-xl p-3 text-center">
-                      <div className="text-2xl font-bold text-green-400">{myLeaves.balance.annual_total - myLeaves.balance.annual_used}</div>
+                      <div className="text-2xl font-bold text-green-400">{myLeaves.balance.remaining ?? '—'}</div>
                       <div className="text-xs text-slate-500 mt-1">Kalan</div>
                     </div>
                   </div>

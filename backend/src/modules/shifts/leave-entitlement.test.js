@@ -58,6 +58,9 @@ describe('leave entitlement api + dossier integration', () => {
     `).run().lastInsertRowid
     db.prepare('INSERT INTO leave_balance(staff_id, year, annual_total, annual_used) VALUES(?,?,?,?)')
       .run(staffId, new Date().getFullYear(), 14, 4)
+    // Kullanılan gün kaynağı onaylı talep defteri (sayaç yalnız önbellek)
+    db.prepare(`INSERT INTO leave_requests(staff_id, leave_type, start_date, end_date, total_days, status)
+      VALUES(?, 'annual', ?, ?, 4, 'approved')`).run(staffId, `${new Date().getFullYear()}-02-02`, `${new Date().getFullYear()}-02-05`)
   })
 
   it('returns entitlement + remaining via the endpoint', async () => {
@@ -68,6 +71,7 @@ describe('leave entitlement api + dossier integration', () => {
     expect(res.body.entitled_days).toBe(14)
     expect(res.body.annual_used).toBe(4)
     expect(res.body.remaining).toBe(10)
+    expect(res.body.basis).toBe('legal')
   })
 
   it('exposes annual_leave inside the dossier payload', async () => {
@@ -77,5 +81,69 @@ describe('leave entitlement api + dossier integration', () => {
     expect(res.body.annual_leave.entitled_days).toBe(14)
     expect(res.body.annual_leave.remaining).toBe(10)
     expect(res.body.annual_leave.entitlement_start_date).toBeTruthy()
+  })
+})
+
+describe('izin açılış bakiyesi (İK onaylı, tarihli)', () => {
+  let managerToken, supervisorToken, staffId
+  beforeAll(async () => {
+    process.env.DB_PATH = ':memory:'
+    initDB()
+    seedDev()
+    managerToken = (await request(app).post('/api/auth/login').send({ username: 'mudur', password: 'admin123' })).body.token
+    supervisorToken = (await request(app).post('/api/auth/login').send({ username: 'vardiya', password: 'admin123' })).body.token
+    const db = getDB()
+    staffId = db.prepare(`INSERT INTO staff(full_name, hire_date, is_active) VALUES('AÇILIŞ TESTKİŞİ', '2019-11-15', 1)`).run().lastInsertRowid
+    db.prepare(`INSERT INTO staff(full_name, is_active) VALUES('İKİZ AD', 1), ('İKİZ AD', 1)`).run()
+    db.prepare(`INSERT INTO leave_requests(staff_id, leave_type, start_date, end_date, total_days, status)
+      VALUES(?, 'annual', '2026-10-05', '2026-10-06', 2, 'approved')`).run(staffId)
+  })
+  const auth = t => ({ Authorization: `Bearer ${t}` })
+
+  it('belirsiz/bulunamayan isim varsa hiçbir satır yazılmaz (422)', async () => {
+    const res = await request(app).post('/api/shifts/leave/opening-balances').set(auth(supervisorToken))
+      .send({ as_of_date: '2026-09-30', source: 'excel', rows: [
+        { name: 'Açılış Testkişi', days: 11 }, { name: 'İKİZ AD', days: 5 }, { name: 'YOK BÖYLE', days: 3 },
+      ] })
+    expect(res.status).toBe(422)
+    expect(res.body.errors.map(e => e.line)).toEqual([2, 3])
+    expect(getDB().prepare('SELECT COUNT(*) c FROM leave_opening_balances').get().c).toBe(0)
+  })
+
+  it('giriş beklemeye düşer; onaylanana kadar kalan değişmez', async () => {
+    const before = (await request(app).get(`/api/shifts/leave/annual-balance/${staffId}`).set(auth(managerToken))).body
+    expect(before.basis).toBe('legal')
+    const res = await request(app).post('/api/shifts/leave/opening-balances').set(auth(supervisorToken))
+      .send({ as_of_date: '2026-09-30', source: 'excel', source_label: '30.09 İK Excel', rows: [{ name: 'Açılış Testkişi', days: 11 }] })
+    expect(res.status).toBe(201)
+    const id = res.body.ids[0]
+    const pending = (await request(app).get(`/api/shifts/leave/annual-balance/${staffId}`).set(auth(managerToken))).body
+    expect(pending.basis).toBe('legal')
+    expect(pending.pending_opening).toMatchObject({ id, days: 11 })
+    // yıllık hak alanına yazılmadı
+    expect(getDB().prepare('SELECT annual_total FROM leave_balance WHERE staff_id=?').get(staffId)?.annual_total ?? 15).toBe(15)
+
+    // vardiya amiri onaylayamaz
+    expect((await request(app).post(`/api/shifts/leave/opening-balances/${id}/decision`).set(auth(supervisorToken))
+      .send({ decision: 'approve' })).status).toBe(403)
+    const ok = await request(app).post(`/api/shifts/leave/opening-balances/${id}/decision`).set(auth(managerToken))
+      .send({ decision: 'approve', note: 'İK ile mutabık' })
+    expect(ok.status).toBe(200)
+    // 11 gün açılış + 15.11.2026 yıl dönümü henüz gelmedi − 05.10 sonrası 2 gün = 9
+    expect(ok.body.balance).toMatchObject({ basis: 'opening', remaining: 9, accrued: 0, used: 2 })
+    // yıl dönümü geçince 20 gün eklenir (7 yıl)
+    const later = (await request(app).get(`/api/shifts/leave/annual-balance/${staffId}?asOf=2026-11-20`).set(auth(managerToken))).body
+    expect(later).toMatchObject({ basis: 'opening', accrued: 20, remaining: 29 })
+    // ikinci karar reddedilir
+    expect((await request(app).post(`/api/shifts/leave/opening-balances/${id}/decision`).set(auth(managerToken))
+      .send({ decision: 'reject' })).status).toBe(409)
+  })
+
+  it('izin ekranı, kiosk ucu ve personel dosyası aynı kalanı verir', async () => {
+    const a = (await request(app).get(`/api/shifts/leave/entitlement/${staffId}`).set(auth(managerToken))).body
+    const b = (await request(app).get(`/api/shifts/leave/balance/${staffId}`).set(auth(managerToken))).body
+    const c = (await request(app).get(`/api/personnel/${staffId}/dossier`).set(auth(managerToken))).body.annual_leave
+    expect([a.remaining, b.remaining, c.remaining]).toEqual([9, 9, 9])
+    expect([a.basis, b.basis, c.basis]).toEqual(['opening', 'opening', 'opening'])
   })
 })

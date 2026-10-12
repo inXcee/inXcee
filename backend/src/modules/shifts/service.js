@@ -40,6 +40,7 @@ import {
 } from './queries.js'
 import { getDB } from '../../shared/db/index.js'
 import { computeAnnualEntitlement } from './leave-entitlement.js'
+import { computeAnnualBalance, BASIS_LABEL } from './leaveBalance.js'
 import { buildDayDetail } from './dayDetail.js'
 import { sendPushToWorker } from '../../shared/notifications/push.js'
 import { createNotification } from '../../shared/notifications/service.js'
@@ -1341,9 +1342,19 @@ export function leaveListService(filters) {
   return getLeaveRequests(filters)
 }
 
+// Ham sayaç satırı (geriye uyum) + tek kaynaktan kalan. Ekranlar `remaining`'i kullanır;
+// remaining=null → dayanak yok (işe giriş tarihi / onaylı açılış bakiyesi eksik).
 export function leaveBalanceService(staffId) {
   const year = new Date().getFullYear()
-  return getLeaveBalance(staffId, year)
+  const row = getLeaveBalance(staffId, year)
+  const b = computeAnnualBalance(Number(staffId))
+  return {
+    ...row,
+    remaining: b?.remaining ?? null,
+    basis: b?.basis || 'unknown',
+    basis_label: BASIS_LABEL[b?.basis || 'unknown'],
+    used_ledger: b?.used ?? null,
+  }
 }
 
 function uploadedDocumentRows(files = []) {
