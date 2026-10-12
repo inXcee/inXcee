@@ -29,6 +29,7 @@ import { cleanupHousekeepingPhotos } from '../../modules/housekeeping/photo-rete
 import { cleanupLaundryPhotos } from '../../modules/laundry/photo-retention.js'
 import { notifyUpcomingTrips } from '../../modules/transport/notifications.js'
 import { istanbulDate } from '../time.js'
+import { evaluatePersonnelAlerts } from '../../modules/personnel/tracking-alerts.js'
 
 let emailJob = null
 export const WATER_TRUCK_ALERT_CRON = '* * * * *'
@@ -170,6 +171,12 @@ export function startCronJobs() {
   // Her 15 dakikada maintenance SLA kontrolü (overlap-safe, laundry'den ayrı lock)
   cron.schedule('*/15 * * * *', withLock('maintenance-sla', () => {
     checkMaintenanceSla()
+  }), TZ)
+
+  // Her gün 06:40 — personel takip uyarılarını yeniden değerlendir. Eskiden yalnız uyarı listesi
+  // açılınca hesaplanıyordu; kimse açmazsa veri düzelse bile uyarılar günlerce "açık" kalıyordu.
+  cron.schedule('40 6 * * *', withLock('personnel-alerts', () => {
+    evaluatePersonnelAlerts()
   }), TZ)
 
   // Her gün 07:00 — yaklaşan/geçmiş personel sözleşmeleri için bildirim (günlük yeterli)

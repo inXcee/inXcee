@@ -219,14 +219,19 @@ export function DossierAnnualLeave({ annual, compact = false }) {
   const serviceLabel = annual.has_hire_date
     ? `${annual.service_years} yıl${annual.service_months ? ` ${annual.service_months} ay` : ''}`
     : '—'
-  if (!annual.has_hire_date) {
+  const fromOpening = annual.basis === 'opening'
+  const pendingNote = annual.pending_opening && (
+    <DossierField label="Bekleyen açılış" value={`${annual.pending_opening.days} gün @ ${formatDossierDate(annual.pending_opening.as_of_date)} — İK onayı bekliyor`} />
+  )
+  if (!annual.has_hire_date && !fromOpening) {
     return (
       <div style={{ padding: '9px 11px', borderRadius: 8, color: 'var(--accent)', background: 'rgba(240,165,0,.08)', border: '1px solid rgba(240,165,0,.25)', fontSize: 11 }}>
-        İşe giriş tarihi eksik — yıllık izin hakkı hesaplanamıyor. "Düzenle" ile ekleyin.
+        İşe giriş tarihi eksik — yıllık izin hakkı hesaplanamıyor. "Düzenle" ile ekleyin ya da İK onaylı açılış bakiyesi girin.
+        {pendingNote && <div style={{ marginTop: 6 }}>{pendingNote}</div>}
       </div>
     )
   }
-  if (!annual.has_started) {
+  if (!annual.has_started && !fromOpening) {
     return (
       <div style={{ display: 'grid', gap: 8 }}>
         <div style={{ padding: '9px 11px', borderRadius: 8, color: 'var(--blue)', background: 'rgba(59,140,240,.08)', border: '1px solid rgba(59,140,240,.25)', fontSize: 11 }}>
@@ -242,9 +247,16 @@ export function DossierAnnualLeave({ annual, compact = false }) {
   return (
     <div style={{ display: 'grid', gap: 10 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(90px, 1fr))', gap: 8 }}>
-        <DossierMetric label="HAK EDİLEN" value={`${annual.entitled_days}g`} color="var(--blue)" />
+        {fromOpening
+          ? <DossierMetric label="AÇILIŞ" value={`${annual.opening.days}g`} color="var(--blue)" />
+          : <DossierMetric label="HAK EDİLEN" value={`${annual.entitled_days}g`} color="var(--blue)" />}
         <DossierMetric label="KULLANILAN" value={`${annual.annual_used}g`} color={annual.annual_used ? 'var(--accent)' : 'var(--text3)'} />
-        <DossierMetric label="KALAN" value={`${annual.remaining}g`} color={annual.remaining > 0 ? 'var(--green)' : 'var(--red)'} />
+        <DossierMetric label="KALAN" value={annual.remaining == null ? '—' : `${annual.remaining}g`} color={annual.remaining > 0 ? 'var(--green)' : 'var(--red)'} />
+      </div>
+      <div style={{ fontSize: 10, color: 'var(--text3)' }}>
+        {fromOpening
+          ? `Dayanak: ${formatDossierDate(annual.opening.as_of_date)} itibarıyla İK onaylı açılış bakiyesi + sonraki hak edişler − sonraki onaylı izinler`
+          : 'Dayanak: yasal hak − bu yılki onaylı izinler (önceki yıllardan devir dahil değil; varsa İK açılış bakiyesi girin)'}
       </div>
       {!compact && (
         <div>
@@ -254,6 +266,7 @@ export function DossierAnnualLeave({ annual, compact = false }) {
           <DossierField label="Sonraki yenilenme" value={formatDossierDate(annual.next_anniversary)} />
           {annual.age_rule_applied && <DossierField label="Yaş kuralı" value="Uygulandı (min 20 gün)" />}
           {annual.mismatch && <DossierField label="Uyarı" value="Takip edilen bakiye yasal hak ile uyuşmuyor" />}
+          {pendingNote}
         </div>
       )}
     </div>

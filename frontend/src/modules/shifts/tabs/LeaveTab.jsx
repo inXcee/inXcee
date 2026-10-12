@@ -8,6 +8,7 @@ import {
   ModalOverlay, StaffSearch,
 } from '../shared.jsx'
 import LeaveImpactPanel from './LeaveImpactPanel.jsx'
+import OpeningBalancesPanel from './OpeningBalancesPanel.jsx'
 
 const EMPTY_FORM = {
   staff_id: '', leave_type: 'annual', start_date: '', end_date: '', leave_hours: '', reason: '', files: [],
@@ -152,6 +153,8 @@ export default function LeaveTab({ departments, onPersonClick }) {
           </div>
         ))}
       </div>
+
+      <div style={{ marginBottom: '16px' }}><OpeningBalancesPanel /></div>
 
       <div className="panel">
         <div className="panel-header">

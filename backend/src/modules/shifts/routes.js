@@ -70,6 +70,9 @@ import {
 } from './queries.js'
 import { importSchedule, listImportBatches, undoImportBatch } from './import.js'
 import { annualLeaveSummary } from './leave-entitlement.js'
+import { computeAnnualBalance } from './leaveBalance.js'
+import { evaluatePersonnelAlerts } from '../personnel/tracking-alerts.js'
+import { createOpeningBalances, listOpeningBalances, decideOpeningBalance } from './leaveOpening.js'
 import { importScheduleSchema, signatureCheckSchema } from './schemas.js'
 import { validate } from '../../shared/middleware/validate.js'
 import { logAudit } from '../../shared/audit.js'
@@ -644,6 +647,8 @@ shiftsRouter.post('/import', ...managerOrSupervisor, validate(importScheduleSche
       skipNames: req.validated.skipNames || [],
     })
     if (!dryRun) {
+      // Aktarım izin/vardiya verisini değiştirir → takip uyarıları bayat kalmasın
+      try { evaluatePersonnelAlerts() } catch (err) { logger.error('[shifts/import] uyarı değerlendirme', err) }
       logAudit(req.user.id, 'schedule_import', 'shifts', null,
         `${report.scheduleEntries} kayıt · ${report.staff.created.length} yeni personel · ${report.depts.created.length} yeni departman`)
     }
@@ -1007,6 +1012,40 @@ shiftsRouter.get('/personnel', ...managerOrSupervisor, (req, res) => {
 // ── Leave requests ──
 shiftsRouter.get('/leave/balance/:staffId', ...managerOrSupervisor, (req, res) => {
   res.json(leaveBalanceService(req.params.staffId))
+})
+
+// Kalan yıllık izin — tek kaynak (dayanak: onaylı açılış / yasal hak / bilinmiyor).
+shiftsRouter.get('/leave/annual-balance/:staffId', ...managerOrSupervisor, (req, res) => {
+  try {
+    const b = computeAnnualBalance(+req.params.staffId, { asOf: req.query.asOf })
+    if (!b) return res.status(404).json({ error: 'Personel bulunamadı' })
+    res.json(b)
+  } catch (e) { logger.error('[shifts/annual-balance]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+// Tarihli izin açılış bakiyeleri (İK Excel'i vb.) — giriş beklemeye düşer, müdür kişi kişi onaylar.
+shiftsRouter.get('/leave/opening-balances', ...managerOrSupervisor, (req, res) => {
+  try { res.json(listOpeningBalances({ status: ['pending', 'approved', 'rejected'].includes(req.query.status) ? req.query.status : undefined })) }
+  catch (e) { logger.error('[shifts/opening-balances]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
+})
+
+shiftsRouter.post('/leave/opening-balances', ...managerOrSupervisor, (req, res) => {
+  try {
+    const source = ['manual', 'excel', 'telegram'].includes(req.body?.source) ? req.body.source : 'manual'
+    const dryRun = req.query.dryRun === '1' || req.body?.dryRun === true
+    const result = createOpeningBalances({ ...req.body, source, dryRun }, req.user.id)
+    if (!result.ok) return res.status(422).json(result)
+    if (!dryRun) logAudit(req.user.id, 'leave_opening_create', 'shifts', null, `${result.ids.length} açılış bakiyesi (${source})`)
+    res.status(dryRun ? 200 : 201).json(result)
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.statusCode ? e.message : 'Sunucu hatası' }) }
+})
+
+shiftsRouter.post('/leave/opening-balances/:id/decision', ...managerOnly, (req, res) => {
+  try {
+    const row = decideOpeningBalance(+req.params.id, req.body || {}, req.user.id)
+    logAudit(req.user.id, `leave_opening_${row.status}`, 'shifts', row.id, `staff:${row.staff_id} ${row.days} gün @ ${row.as_of_date}`)
+    res.json(row)
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.statusCode ? e.message : 'Sunucu hatası' }) }
 })
 
 // Yıllık izin hak edişi (İş Kanunu m.53) — kıdem + yaş kuralı + kalan.

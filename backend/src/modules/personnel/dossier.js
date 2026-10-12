@@ -1,5 +1,6 @@
 import { getDB } from '../../shared/db/index.js'
 import { computeAnnualEntitlement } from '../shifts/leave-entitlement.js'
+import { computeAnnualBalance } from '../shifts/leaveBalance.js'
 import { istanbulDate } from '../../shared/time.js'
 
 const TIMELINE_KINDS = new Set([
@@ -290,11 +291,16 @@ export function getDossier(staffId, { includeSensitive = false } = {}) {
     'SELECT annual_total, annual_used FROM leave_balance WHERE staff_id=? AND year=?'
   ).get(staffId, balanceYear)
   const annualUsed = annualBalance?.annual_used || 0
+  // Kalan tek kaynaktan — izin onayı ve izin ekranıyla aynı sayı.
+  const unified = computeAnnualBalance(staffId)
   const annualLeave = {
     ...entitlement,
     year: balanceYear,
-    annual_used: annualUsed,
-    remaining: entitlement.has_started ? Math.max(0, entitlement.entitled_days - annualUsed) : 0,
+    annual_used: unified?.used ?? annualUsed,
+    remaining: unified?.remaining ?? null,
+    basis: unified?.basis || 'unknown',
+    opening: unified?.opening || null,
+    pending_opening: unified?.pending_opening || null,
   }
 
   const counters = db.prepare(`
