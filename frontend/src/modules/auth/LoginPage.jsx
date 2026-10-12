@@ -113,6 +113,18 @@ export default function LoginPage() {
     await finishLogin(user)
   }
 
+  // Passkey teklifi: destekleyen tarayıcıda, bu cihazda kayıt yoksa bir kez sor.
+  // Parola ve 2FA girişlerinin ikisi de buradan geçer (2FA'lı hesaplar da teklif görür).
+  const offerPasskeyOrFinish = async (user) => {
+    if (!passkeyCred && !localStorage.getItem(PASSKEY_KEY + '_dismissed')) {
+      try {
+        const { browserSupportsWebAuthn } = await webAuthnBrowser()
+        if (browserSupportsWebAuthn()) { setPasskeyOffer(user); return }
+      } catch { /* destek yoksa normal akış */ }
+    }
+    await finishLogin(user)
+  }
+
   // ── Login (gerçek auth + timeout + cooldown + a11y) ──────────
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -126,14 +138,7 @@ export default function LoginPage() {
         setFailCount(0)
         return
       }
-      // Passkey teklifi: destekleyen tarayıcıda, bu cihazda kayıt yoksa bir kez sor.
-      if (!passkeyCred && !localStorage.getItem(PASSKEY_KEY + '_dismissed')) {
-        try {
-          const { browserSupportsWebAuthn } = await webAuthnBrowser()
-          if (browserSupportsWebAuthn()) { setPasskeyOffer(res.data.user); return }
-        } catch { /* destek yoksa normal akış */ }
-      }
-      await finishLogin(res.data.user)
+      await offerPasskeyOrFinish(res.data.user)
     } catch (err) {
       if (err.response?.status === 401) {
         setError(t('login.card.err_credentials', 'Kullanıcı adı veya şifre hatalı'))
@@ -153,7 +158,8 @@ export default function LoginPage() {
     setLoading(true); setError(''); setLoadingText(t('login.card.loading_2fa', 'Kod doğrulanıyor'))
     try {
       const res = await api.post('/auth/2fa/verify-login', { challenge_token: twoFA.challenge_token, code }, { timeout: 8000 })
-      await finishLogin(res.data.user)
+      setTwoFA(null)
+      await offerPasskeyOrFinish(res.data.user)
     } catch (err) {
       setError(err.response?.data?.error || 'Kod doğrulanamadı')
       setShake(true); setTimeout(() => setShake(false), 450)
