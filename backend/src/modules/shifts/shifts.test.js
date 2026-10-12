@@ -645,7 +645,7 @@ describe('Excel çizelge içe aktarımı (/import)', () => {
       ] }],
       unrecognized: [
         { name: 'KAPI YENİKİŞİ', date: '2026-10-13', raw: 'PROTOKOL' },
-        { name: 'KAPI YENİKİŞİ', date: '2026-10-14', raw: 'PROTOKOL' },
+        { name: 'KAPI YENİKİŞİ', date: '2026-10-14', raw: 'protokol' },
       ],
     }
     const dry = await request(app).post('/api/shifts/import?dryRun=1').set('Authorization', `Bearer ${managerToken}`).send(body)

@@ -316,7 +316,8 @@ export function importSchedule(payload, userId, {
   if (unrecognized.length && !confirm.unrecognized) {
     const byCode = new Map()
     for (const u of unrecognized) {
-      const code = String(u.raw || '').trim() || '(boş)'
+      // "protokol" ve "PROTOKOL" aynı kod — kullanıcıya tek satırda sorulur
+      const code = String(u.raw || '').trim().toLocaleUpperCase('tr') || '(boş)'
       if (!byCode.has(code)) byCode.set(code, { code, count: 0, examples: [] })
       const g = byCode.get(code)
       g.count++
