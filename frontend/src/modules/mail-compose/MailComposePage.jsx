@@ -67,6 +67,11 @@ export default function MailComposePage() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['email-templates'] }); toastOk('Şablon kaydedildi') },
     onError: (e) => toastErr(e?.response?.data?.error || 'Şablon kaydedilemedi'),
   })
+  const updateTemplate = useMutation({
+    mutationFn: ({ id, ...payload }) => api.put(`/settings/email/templates/${id}`, payload),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['email-templates'] }); toastOk('Şablon güncellendi') },
+    onError: (e) => toastErr(e?.response?.data?.error || 'Şablon güncellenemedi'),
+  })
   const deleteTemplate = useMutation({
     mutationFn: (id) => api.delete(`/settings/email/templates/${id}`),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['email-templates'] }); toastOk('Şablon silindi') },
@@ -133,6 +138,18 @@ export default function MailComposePage() {
     } finally {
       setSending(false)
     }
+  }
+
+  // Seçili özel şablon yerinde düzenlenebilir; hazır (builtin) şablonlar kodda durur, yalnız kopyalanır.
+  const activeTemplate = templates.find(t => t.id === activeTemplateId)
+  const activeIsCustom = activeTemplate && !activeTemplate.builtin
+  const activeDirty = activeIsCustom && (activeTemplate.subject !== rawSubject || activeTemplate.body !== rawBody)
+  const updateActiveTemplate = () => {
+    if (!activeDirty) return
+    updateTemplate.mutate({
+      id: activeTemplate.id.replace('custom:', ''),
+      category: activeTemplate.category, name: activeTemplate.name, subject: rawSubject, body: rawBody,
+    })
   }
 
   const saveAsTemplate = async () => {
@@ -296,7 +313,16 @@ export default function MailComposePage() {
             </div>
 
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-              <button className="btn btn-ghost btn-sm" onClick={saveAsTemplate}>💾 Şablon Olarak Kaydet</button>
+              {activeIsCustom && (
+                <button className="btn btn-ghost btn-sm" onClick={updateActiveTemplate}
+                  disabled={!activeDirty || updateTemplate.isPending}
+                  title={activeDirty ? `"${activeTemplate.name}" şablonunun üstüne yaz` : 'Değişiklik yok'}>
+                  ✎ Şablonu Güncelle
+                </button>
+              )}
+              <button className="btn btn-ghost btn-sm" onClick={saveAsTemplate}>
+                💾 {activeIsCustom ? 'Yeni Şablon Olarak Kaydet' : 'Şablon Olarak Kaydet'}
+              </button>
               <button className="btn btn-ghost btn-sm" onClick={copyToClipboard}>📋 Kopyala</button>
               <button className="btn btn-primary" onClick={send} disabled={sending}>
                 {sending ? 'Gönderiliyor...' : '✉ Gönder'}

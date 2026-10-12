@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fireEvent, screen } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { renderWithProviders } from '../../test/renderWithProviders.jsx'
 
 vi.mock('../../shared/api/client.js', () => ({
@@ -13,6 +13,7 @@ vi.mock('../../shared/api/client.js', () => ({
           ],
           templates: [
             { id: 'builtin:aylik-durum', category: 'rapor', name: 'Aylık Durum Raporu', subject: '{{ay}} Raporu', body: 'Sayın {{yetkili}}', builtin: true },
+            { id: 'custom:7', category: 'rapor', name: 'Haftalık Not', subject: 'Not', body: 'Eski metin', builtin: false },
             { id: 'builtin:genel-duyuru', category: 'personel', name: 'Genel Duyuru', subject: 'Duyuru', body: 'Merhaba', builtin: true },
           ],
         } })
@@ -22,11 +23,13 @@ vi.mock('../../shared/api/client.js', () => ({
       return Promise.resolve({ data: [] })
     }),
     post: vi.fn(() => Promise.resolve({ data: { ok: true } })),
+    put: vi.fn(() => Promise.resolve({ data: { ok: true } })),
     delete: vi.fn(() => Promise.resolve({ data: {} })),
   },
 }))
 
 import MailComposePage from './MailComposePage.jsx'
+import api from '../../shared/api/client.js'
 
 describe('MailComposePage smoke', () => {
   beforeEach(() => vi.clearAllMocks())
@@ -46,5 +49,20 @@ describe('MailComposePage smoke', () => {
     renderWithProviders(<MailComposePage />)
     expect(await screen.findByText('Sipariş Formu')).toBeInTheDocument()
     expect(screen.getByText(/Arşive Dosya Yükle/)).toBeInTheDocument()
+  })
+
+  it('özel şablon yerinde güncellenir, hazır şablonda güncelle düğmesi yok', async () => {
+    renderWithProviders(<MailComposePage />)
+    fireEvent.click(await screen.findByText('Aylık Durum Raporu'))
+    expect(screen.queryByText(/Şablonu Güncelle/)).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('Haftalık Not'))
+    const btn = screen.getByRole('button', { name: /Şablonu Güncelle/ })
+    expect(btn).toBeDisabled() // değişiklik yokken
+    fireEvent.change(screen.getByDisplayValue('Eski metin'), { target: { value: 'Yeni metin' } })
+    expect(btn).not.toBeDisabled()
+    fireEvent.click(btn)
+    await waitFor(() => expect(api.put).toHaveBeenCalledWith('/settings/email/templates/7',
+      { category: 'rapor', name: 'Haftalık Not', subject: 'Not', body: 'Yeni metin' }))
   })
 })
