@@ -103,7 +103,7 @@ export function latestSnapshot(db = getDB()) {
 // Bulgular. stale (ya da hiç görüntü yok) → boş listeler; uyarılar açılmaz.
 export function rosterFindings(db = getDB(), { today = istanbulDate(), includeStale = false } = {}) {
   const snapshot = latestSnapshot(db)
-  const empty = { snapshot, exit_pending: [], archived_present: [], missing: [], roster_only: [], mismatches: [], fillable: [] }
+  const empty = { snapshot, exit_pending: [], archived_present: [], missing: [], roster_only: [], mismatches: [], fillable: [], exempt: [] }
   if (!snapshot || (snapshot.stale && !includeStale)) return empty
 
   const people = db.prepare('SELECT * FROM hr_roster_people WHERE snapshot_id=? ORDER BY name').all(snapshot.id)
@@ -166,10 +166,15 @@ export function rosterFindings(db = getDB(), { today = istanbulDate(), includeSt
 
   const listed = new Set(byStaff.keys())
   const departments = new Map(db.prepare('SELECT id, name FROM departments').all().map(d => [d.id, d.name]))
+  // Son vardiya günü (ileri tarihli plan dahil; OFF/izin sayılmaz): hâlâ çalışıyor mu, ayrılmış mı ayırt edilsin.
+  const lastScheduled = db.prepare(`SELECT MAX(work_date) d FROM shift_schedule
+    WHERE staff_id=? AND COALESCE(status,'') NOT IN ('off','on_leave','absent')`)
   for (const s of resolve.staff) {
     if (!s.is_active || listed.has(s.id)) continue
-    out.missing.push({ staff_id: s.id, full_name: s.full_name, department: departments.get(s.department_id) || null,
-      project: projects.get(s.project_id) || null })
+    const row = { staff_id: s.id, full_name: s.full_name, department: departments.get(s.department_id) || null,
+      project: projects.get(s.project_id) || null }
+    if (s.hr_roster_exempt) out.exempt.push({ ...row, reason: s.hr_roster_exempt })
+    else out.missing.push({ ...row, last_scheduled: lastScheduled.get(s.id)?.d || null })
   }
   // Eşleşmeyen iki taraf için "aynı kişi olabilir" adayları (ör. ASLAN/ARSLAN).
   for (const r of out.roster_only) {
@@ -180,7 +185,7 @@ export function rosterFindings(db = getDB(), { today = istanbulDate(), includeSt
       .sort((a, b) => b.score - a.score)
       .slice(0, 3)
   }
-  for (const k of ['exit_pending', 'archived_present', 'missing', 'mismatches', 'fillable']) {
+  for (const k of ['exit_pending', 'archived_present', 'missing', 'mismatches', 'fillable', 'exempt']) {
     out[k].sort((a, b) => a.full_name.localeCompare(b.full_name, 'tr'))
   }
   return out
@@ -188,9 +193,23 @@ export function rosterFindings(db = getDB(), { today = istanbulDate(), includeSt
 
 export function rosterReconciliation() {
   const f = rosterFindings(getDB(), { includeStale: true })
-  const counts = Object.fromEntries(['exit_pending', 'archived_present', 'missing', 'roster_only', 'mismatches', 'fillable']
+  const counts = Object.fromEntries(['exit_pending', 'archived_present', 'missing', 'roster_only', 'mismatches', 'fillable', 'exempt']
     .map(k => [k, f[k].length]))
   return { ...f, counts }
+}
+
+// ── Puantaj dışı işareti (müdür) ─────────────────────────────────────────────
+// reason dolu → işaretle, null → kaldır. Önceki gerekçe döner (Hermes geri alması için).
+export function setRosterExempt(userId, staffId, reason) {
+  const db = getDB()
+  const id = Number(staffId)
+  const staff = Number.isInteger(id) && id > 0 ? db.prepare('SELECT id, full_name, hr_roster_exempt FROM staff WHERE id=?').get(id) : null
+  if (!staff) throw fail('Personel bulunamadı', 404)
+  const next = reason === null ? null : clean(reason, 200)
+  if (reason !== null && !next) throw fail('Gerekçe zorunlu (ör. taşeron firma personeli)')
+  db.prepare('UPDATE staff SET hr_roster_exempt=? WHERE id=?').run(next, id)
+  logAudit(userId, next ? 'staff_hr_roster_exempt' : 'staff_hr_roster_exempt_remove', 'personnel', id, next || staff.hr_roster_exempt || '')
+  return { staff_id: id, full_name: staff.full_name, reason: next, previous: staff.hr_roster_exempt || null }
 }
 
 // ── Boş alanları doldur (müdür) ──────────────────────────────────────────────

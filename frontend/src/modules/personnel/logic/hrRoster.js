@@ -8,11 +8,13 @@ export const SECTIONS = [
   { key: 'roster_only', title: 'Puantajda var, YYS\'de karşılığı yok', tone: 'amber',
     hint: 'Yazım farkıysa aday kişiyle eşleştirin; gerçekten yeni ise çizelge aktarımında bilgileriyle açılır.' },
   { key: 'missing', title: 'YYS\'de aktif, puantajda yok', tone: 'amber',
-    hint: 'Yazım farkı (yukarıdaki listeyle eşleştirin) ya da ayrılmış olabilir.' },
+    hint: 'Yazım farkı (yukarıdaki listeyle eşleştirin), ayrılmış ya da puantaj dışı (ör. taşeron) olabilir. Son vardiyası güncelse çalışıyordur: İK kaydını kontrol edin ya da "puantaj dışı" işaretleyin.' },
   { key: 'mismatches', title: 'Kayıt farkı (işe giriş / proje)', tone: 'blue',
     hint: 'İki taraf da dolu ama farklı; doğru olanı personel kartında düzeltin. Otomatik değiştirilmez.' },
   { key: 'fillable', title: 'Doldurulabilir boş alanlar', tone: 'green',
     hint: 'YYS\'de boş (ya da geçersiz TC) alanlar puantajdan doldurulabilir. Dolu alana dokunulmaz.' },
+  { key: 'exempt', title: 'Puantaj dışı (işaretli)', tone: 'green',
+    hint: 'Müdürün işaretlediği, İK puantajında olmaması normal personel. "Puantajda yok" uyarısı üretmez.' },
 ]
 
 export const FIELD_LABEL = { tc_no: 'TC', hire_date: 'işe giriş', position: 'görev', project_id: 'proje' }

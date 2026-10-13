@@ -159,6 +159,43 @@ describe('İK kadro senkronu', () => {
     expect(lookup('HİÇ YOK')).toBeNull()
   })
 
+  it('"puantajda yok" satırı son vardiya gününü gösterir', async () => {
+    const db = getDB()
+    const dept = db.prepare('SELECT id FROM departments ORDER BY id LIMIT 1').get().id
+    const def = db.prepare('SELECT id FROM shift_definitions ORDER BY id LIMIT 1').get().id
+    const ins = db.prepare("INSERT INTO shift_schedule(staff_id, dept_id, shift_def_id, work_date, status) VALUES(?,?,?,?,?)")
+    ins.run(ids.kayip, dept, def, daysAgo(3), 'scheduled')
+    ins.run(ids.kayip, dept, def, daysAgo(1), 'off')          // OFF / izin "çalıştı" sayılmaz
+    const rec = (await request(app).get('/api/personnel/hr-roster').set(auth(mgr))).body
+    expect(rec.missing.find(x => x.staff_id === ids.kayip).last_scheduled).toBe(daysAgo(3))
+  })
+
+  it('puantaj dışı işareti (yalnız müdür): kişi "puantajda yok"tan çıkar, uyarısı kapanır, işaret kaldırılabilir', async () => {
+    const send = (t, body) => request(app).post('/api/personnel/hr-roster/exempt').set(auth(t)).send(body)
+    expect((await send(sup, { staff_id: ids.kayip, reason: 'Taşeron' })).status).toBe(403)
+    expect((await send(mgr, { staff_id: ids.kayip, reason: '  ' })).status).toBe(400)
+    expect((await send(mgr, { staff_id: 999999, reason: 'Taşeron' })).status).toBe(404)
+    const res = await send(mgr, { staff_id: ids.kayip, reason: 'Taşeron (yemek firması)' })
+    expect(res.status).toBe(200)
+    expect(res.body).toMatchObject({ staff_id: ids.kayip, reason: 'Taşeron (yemek firması)', previous: null })
+
+    const rec = (await request(app).get('/api/personnel/hr-roster').set(auth(mgr))).body
+    expect(rec.missing.map(x => x.staff_id)).not.toContain(ids.kayip)
+    expect(rec.exempt).toEqual([expect.objectContaining({ staff_id: ids.kayip, reason: 'Taşeron (yemek firması)' })])
+    expect(rec.counts.exempt).toBe(1)
+    const db = getDB()
+    expect(db.prepare("SELECT status FROM personnel_tracking_alerts WHERE staff_id=? AND rule_key='hr_roster_missing'").get(ids.kayip).status)
+      .toBe('resolved')
+    expect(db.prepare("SELECT COUNT(*) c FROM audit_log WHERE action='staff_hr_roster_exempt' AND target_id=?").get(ids.kayip).c).toBe(1)
+
+    const del = await request(app).delete(`/api/personnel/hr-roster/exempt/${ids.kayip}`).set(auth(mgr))
+    expect(del.status).toBe(200)
+    expect(del.body.previous).toBe('Taşeron (yemek firması)')
+    const again = (await request(app).get('/api/personnel/hr-roster').set(auth(mgr))).body
+    expect(again.missing.map(x => x.staff_id)).toContain(ids.kayip)
+    expect(again.exempt).toEqual([])
+  })
+
   it('14 günden eski görüntü bayattır: bulgu ve uyarı üretmez, doldurma reddedilir', async () => {
     const db = getDB()
     db.prepare("UPDATE hr_roster_snapshots SET received_at=datetime('now','-15 days')").run()

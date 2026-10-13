@@ -41,7 +41,7 @@ import {
   getTrackingOverview, listTrackingPeople, listTrackingEvents, getPersonTracking, getTrackingExportDetails,
 } from './tracking-read.js'
 import { getTrackingDrilldown } from './tracking-drilldown.js'
-import { ingestRoster, rosterReconciliation, applyRosterFills } from './hrRoster.js'
+import { ingestRoster, rosterReconciliation, applyRosterFills, setRosterExempt } from './hrRoster.js'
 import { listStaffAliases, addStaffAlias, deleteStaffAlias } from './staffAliases.js'
 
 export const personnelRouter = Router()
@@ -86,6 +86,17 @@ personnelRouter.post('/hr-roster/apply-fills', ...mgrOnly, (req, res) => {
     res.json(result)
   } catch (error) { trackingError(res, error, '[personnel/hr-roster-fill]') }
 })
+
+// "Puantaj dışı" işareti: YYS'de çalışan ama İK puantajında olmayan (ör. taşeron) personel.
+const exemptHandler = reasonOf => (req, res) => {
+  try {
+    const result = setRosterExempt(req.user.id, req.params.staffId ?? req.body?.staff_id, reasonOf(req))
+    try { evaluatePersonnelAlerts() } catch (error) { logger.error('[personnel/hr-roster-exempt] uyarı değerlendirme', error) }
+    res.json(result)
+  } catch (error) { trackingError(res, error, '[personnel/hr-roster-exempt]') }
+}
+personnelRouter.post('/hr-roster/exempt', ...mgrOnly, exemptHandler(req => String(req.body?.reason ?? '')))
+personnelRouter.delete('/hr-roster/exempt/:staffId', ...mgrOnly, exemptHandler(() => null))
 
 // Kalıcı ad eşleştirmeleri (çizelge / puantaj yazım farkları).
 personnelRouter.get('/aliases', ...mgr, (req, res) => {
