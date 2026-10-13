@@ -601,6 +601,12 @@ personnelRouter.get('/:id/tracking', ...mgr, (req, res) => {
   catch (error) { trackingError(res, error, '[personnel/person-tracking]') }
 })
 
+// Kadro kararı (çıkış / arşiv / işe dönüş) İK mutabakatını değiştirir: takip uyarıları ertesi sabahki
+// değerlendirmeyi beklemesin (Hermes'in rapor satırı ve özetler tabloyu doğrudan okur).
+function refreshAlerts(context) {
+  try { evaluatePersonnelAlerts() } catch (error) { logger.error(`[personnel/${context}] uyarı değerlendirme`, error) }
+}
+
 personnelRouter.get('/:id/offboarding-impact', ...mgr, (req, res) => {
   try { res.json(getOffboardingImpact(+req.params.id, req.query.exit_date)) }
   catch (error) { trackingError(res, error, '[personnel/offboarding-impact]') }
@@ -610,6 +616,7 @@ personnelRouter.post('/:id/offboarding/start', ...mgr, validate(offboardingStart
   try {
     const result = startOffboarding(+req.params.id, req.validated, req.user.id)
     logAudit(req.user.id, 'staff_offboarding_start', 'personnel', +req.params.id, req.validated.reason)
+    refreshAlerts('offboarding-start')
     res.status(201).json(result)
   } catch (error) { trackingError(res, error, '[personnel/offboarding-start]') }
 })
@@ -618,6 +625,7 @@ personnelRouter.post('/:id/offboarding/finalize', ...mgr, validate(offboardingFi
   try {
     const result = finalizeOffboarding(+req.params.id, req.validated, req.user.id)
     logAudit(req.user.id, 'staff_offboarding_finalize', 'personnel', +req.params.id, '')
+    refreshAlerts('offboarding-finalize')
     res.json(result)
   } catch (error) { trackingError(res, error, '[personnel/offboarding-finalize]') }
 })
@@ -628,6 +636,7 @@ personnelRouter.post('/:id/archive', ...mgr, validate(archiveSchema), (req, res)
     const reason = req.validated.reason
     const result = startArchiveCompatibility(+req.params.id, reason, req.user.id)
     logAudit(req.user.id, 'staff_archive', 'personnel', +req.params.id, reason || '')
+    refreshAlerts('archive')
     res.status(202).json({ ok: true, offboarding_started: true, ...result })
   } catch (error) { trackingError(res, error, '[personnel/archive]') }
 })
@@ -636,6 +645,7 @@ personnelRouter.post('/:id/restore', ...mgr, validate(restoreEmploymentSchema), 
   try {
     const result = restoreEmployment(+req.params.id, req.validated, req.user.id)
     logAudit(req.user.id, 'staff_restore', 'personnel', +req.params.id, req.validated.reason || '')
+    refreshAlerts('restore')
     res.json(result)
   } catch (error) { trackingError(res, error, '[personnel/restore]') }
 })
