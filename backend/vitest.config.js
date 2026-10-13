@@ -17,6 +17,12 @@ import { defineConfig } from 'vitest/config'
 // Bir çekirdek boşta bırakılır: küçük makinede (2 çekirdek → 2 fork) makineyi
 // dövmez, geliştirme makinesinde (12 çekirdek → 11) hızı kısmaz. Sabit bir üst
 // sınır koymak büyük makineyi boşuna yavaşlatıyordu (70 sn → 89 sn).
+// Saat dilimi canlıyla aynı (sunucu TZ=Europe/Istanbul). SQLite 'localtime'
+// süreç TZ'sini kullanır; CI UTC'de koşunca TR 00:00–03:00 arası 'localtime' ile
+// istanbulDate() farklı gün verip testler düşüyordu. Fork'lar env'i buradan alır.
+// Elle verilen TZ'ye dokunulmaz (bilerek başka dilimde koşturmak için).
+process.env.TZ ||= 'Europe/Istanbul'
+
 const cekirdek = os.cpus()?.length || 2
 const maxForks = Math.max(2, cekirdek - 1)
 
