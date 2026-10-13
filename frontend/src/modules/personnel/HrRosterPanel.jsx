@@ -40,6 +40,8 @@ export default function HrRosterPanel({ onPersonClick }) {
   const isManager = useAuthStore(s => s.user?.role) === 'campus_manager'
   const [openKeys, setOpenKeys] = useState(() => new Set(['exit_pending', 'archived_present', 'roster_only']))
   const [manualPick, setManualPick] = useState(null) // roster_only adı → elle personel seçimi
+  const [exemptFor, setExemptFor] = useState(null)   // "puantaj dışı" gerekçesi yazılan satır (staff_id)
+  const [exemptReason, setExemptReason] = useState('')
   const toggle = key => setOpenKeys(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
 
   const { data, isLoading, error } = useQuery({
@@ -56,6 +58,16 @@ export default function HrRosterPanel({ onPersonClick }) {
     mutationFn: ({ staffId, alias }) => api.post('/personnel/aliases', { staff_id: staffId, alias }).then(r => r.data),
     onSuccess: (row) => { toast(`"${row.alias}" eşleştirildi — bundan sonra her aktarımda tanınır`); setManualPick(null); refresh() },
     onError: e => toast(e?.response?.data?.error || 'Eşleştirilemedi', 'error'),
+  })
+  const setExempt = useMutation({
+    mutationFn: ({ staffId, reason }) => api.post('/personnel/hr-roster/exempt', { staff_id: staffId, reason }).then(r => r.data),
+    onSuccess: r => { toast(`${r.full_name} puantaj dışı işaretlendi`); setExemptFor(null); refresh() },
+    onError: e => toast(e?.response?.data?.error || 'İşaretlenemedi', 'error'),
+  })
+  const removeExempt = useMutation({
+    mutationFn: staffId => api.delete(`/personnel/hr-roster/exempt/${staffId}`).then(r => r.data),
+    onSuccess: r => { toast(`${r.full_name}: puantaj dışı işareti kaldırıldı`); refresh() },
+    onError: e => toast(e?.response?.data?.error || 'Kaldırılamadı', 'error'),
   })
   const applyFills = useMutation({
     mutationFn: () => api.post('/personnel/hr-roster/apply-fills', {}).then(r => r.data),
@@ -168,6 +180,36 @@ export default function HrRosterPanel({ onPersonClick }) {
                       {def.key === 'missing' && <>
                         <td style={cell}>{person(r.staff_id, r.full_name)}</td>
                         <td style={{ ...cell, color: 'var(--text3)' }}>{[r.department, r.project].filter(Boolean).join(' · ')}</td>
+                        <td style={cell}>{r.last_scheduled ? `son vardiya ${fmtDate(r.last_scheduled)}` : 'vardiya kaydı yok'}</td>
+                        <td style={cell}>
+                          {isManager && (exemptFor === r.staff_id ? (
+                            <form style={{ display: 'flex', gap: 4 }} onSubmit={e => {
+                              e.preventDefault()
+                              if (exemptReason.trim()) setExempt.mutate({ staffId: r.staff_id, reason: exemptReason.trim() })
+                            }}>
+                              <input className="input" autoFocus aria-label="Puantaj dışı gerekçesi" placeholder="Gerekçe (ör. taşeron)"
+                                value={exemptReason} onChange={e => setExemptReason(e.target.value)} style={{ fontSize: 11, padding: '2px 6px', minWidth: 150 }} />
+                              <button type="submit" className="btn btn-primary btn-sm" style={{ fontSize: 10 }}
+                                disabled={!exemptReason.trim() || setExempt.isPending}>Kaydet</button>
+                              <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 10 }} onClick={() => setExemptFor(null)}>Vazgeç</button>
+                            </form>
+                          ) : (
+                            <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 10 }}
+                              title="İK puantajında olmaması normal (ör. taşeron) — uyarı üretmesin"
+                              onClick={() => { setExemptFor(r.staff_id); setExemptReason('') }}>puantaj dışı…</button>
+                          ))}
+                        </td>
+                      </>}
+                      {def.key === 'exempt' && <>
+                        <td style={cell}>{person(r.staff_id, r.full_name)}</td>
+                        <td style={cell}>{r.reason}</td>
+                        <td style={{ ...cell, color: 'var(--text3)' }}>{[r.department, r.project].filter(Boolean).join(' · ')}</td>
+                        <td style={cell}>
+                          {isManager && (
+                            <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 10 }} disabled={removeExempt.isPending}
+                              onClick={() => removeExempt.mutate(r.staff_id)}>işareti kaldır</button>
+                          )}
+                        </td>
                       </>}
                       {def.key === 'mismatches' && <>
                         <td style={cell}>{person(r.staff_id, r.full_name)}</td>

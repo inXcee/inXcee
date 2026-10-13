@@ -9,7 +9,8 @@ vi.mock('../../shared/components/ConfirmDialog.jsx', () => ({ confirmDialog: vi.
 vi.mock('../../shared/api/client.js', () => ({
   default: {
     get: vi.fn(() => Promise.resolve({ data: payload })),
-    post: vi.fn((url) => Promise.resolve({ data: url.includes('apply-fills') ? { staff: 1, fields: 3 } : { alias: 'BERNA ASLAN', staff_id: 7 } })),
+    post: vi.fn((url) => Promise.resolve({ data: url.includes('apply-fills') ? { staff: 1, fields: 3 } : { alias: 'BERNA ASLAN', staff_id: 7, full_name: 'BERNA ARSLAN' } })),
+    delete: vi.fn(() => Promise.resolve({ data: { staff_id: 8, full_name: 'BUSE ÜNSAL', previous: 'Taşeron' } })),
   },
 }))
 
@@ -20,7 +21,8 @@ const base = (over = {}) => ({
   snapshot: { id: 1, age_hours: 3, people_count: 184, month: '2026-10', stale: false,
     run: { counts: { written: 4, conflicts: 1 }, conflicts: [{ name: 'BEDİA KORUM', date: '2026-10-04', cell: 'J16', excel: 'S', yys: 'H', reason: 'elle girilmiş özel kod' }] } },
   exit_pending: [{ staff_id: 3, full_name: 'HAKAN ERKEK', exit_date: '2026-10-05', project: 'Kamp Alanı' }],
-  archived_present: [], missing: [{ staff_id: 7, full_name: 'BERNA ARSLAN', department: 'İkram', project: null }],
+  archived_present: [], missing: [{ staff_id: 7, full_name: 'BERNA ARSLAN', department: 'İkram', project: null, last_scheduled: '2026-10-18' }],
+  exempt: [{ staff_id: 8, full_name: 'BUSE ÜNSAL', reason: 'Taşeron', department: 'Mutfak' }],
   roster_only: [{ name: 'BERNA ASLAN', position: 'Garson', project: 'Kamp Alanı', candidates: [{ staff_id: 7, full_name: 'BERNA ARSLAN', score: 0.95 }] }],
   mismatches: [], fillable: [{ staff_id: 9, full_name: 'ALİ VELİ', fields: { tc_no: '10000000146', position: 'Aşçı', project_id: 2 }, project_name: 'FPU' }],
   ...over,
@@ -59,6 +61,28 @@ describe('HrRosterPanel', () => {
     expect(screen.queryByRole('button', { name: /= BERNA ARSLAN/ })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Doldurulabilir boş alanlar/ }))
     expect(screen.queryByRole('button', { name: /Boş alanları doldur/ })).not.toBeInTheDocument()
+  })
+
+  it('puantajda yok: son vardiya görünür; gerekçeyle puantaj dışı işaretlenir, işaret kaldırılabilir', async () => {
+    renderWithProviders(<HrRosterPanel />)
+    fireEvent.click(await screen.findByRole('button', { name: /YYS'de aktif, puantajda yok/ }))
+    expect(screen.getByText('son vardiya 18.10.2026')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /puantaj dışı…/ }))
+    const save = screen.getByRole('button', { name: 'Kaydet' })
+    expect(save).toBeDisabled()                                  // gerekçesiz gönderilmez
+    fireEvent.change(screen.getByLabelText('Puantaj dışı gerekçesi'), { target: { value: 'Taşeron yemek firması' } })
+    fireEvent.click(save)
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/personnel/hr-roster/exempt', { staff_id: 7, reason: 'Taşeron yemek firması' }))
+    fireEvent.click(screen.getByRole('button', { name: /Puantaj dışı \(işaretli\)/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'işareti kaldır' }))
+    await waitFor(() => expect(api.delete).toHaveBeenCalledWith('/personnel/hr-roster/exempt/8'))
+  })
+
+  it('vardiya amiri puantaj dışı işaretleyemez', async () => {
+    role = 'shift_supervisor'
+    renderWithProviders(<HrRosterPanel />)
+    fireEvent.click(await screen.findByRole('button', { name: /YYS'de aktif, puantajda yok/ }))
+    expect(screen.queryByRole('button', { name: /puantaj dışı…/ })).not.toBeInTheDocument()
   })
 
   it('bayat liste uyarısı ve liste yokken bilgi', async () => {

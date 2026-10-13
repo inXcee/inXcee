@@ -21,7 +21,7 @@ function push(map, key, value) {
 export function buildStaffResolver(db = getDB(), { includeInactive = false } = {}) {
   const staff = db.prepare(`
     SELECT id, full_name, tc_no, is_active, hire_date, position, project_id, archive_reason, archived_at,
-      offboarding_started_at, exit_date, department_id
+      offboarding_started_at, exit_date, department_id, hr_roster_exempt
     FROM staff ${includeInactive ? '' : 'WHERE is_active=1'}
   `).all()
   const byId = new Map(staff.map(s => [s.id, s]))
