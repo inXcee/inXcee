@@ -12,6 +12,7 @@
 // yalnız sayaçtır (personel takip uyarısı ikisinin farkını izler).
 import { getDB } from '../../shared/db/index.js'
 import { istanbulDate } from '../../shared/time.js'
+import { isIsoDate } from '../../shared/validation/date.js'
 import { computeAnnualEntitlement } from './leave-entitlement.js'
 
 function addYearsIso(iso, n) {
@@ -98,6 +99,15 @@ export function computeAnnualBalance(staffId, { asOf, db = getDB() } = {}) {
     remaining: null,
     reason: 'İşe giriş tarihi ya da onaylı açılış bakiyesi yok — kalan izin hesaplanamaz',
   }
+}
+
+// Bekleyen bir açılış bakiyesi onaylansaydı kalan ne olurdu — onaylı hesapla aynı formül.
+export function projectOpening(staffId, opening, { asOf, db = getDB() } = {}) {
+  const staff = db.prepare('SELECT hire_date, birth_date FROM staff WHERE id=?').get(staffId)
+  if (!staff || !isIsoDate(opening?.as_of_date)) return null
+  const today = asOf || istanbulDate()
+  const accrued = accruedBetween({ hireDate: staff.hire_date, birthDate: staff.birth_date, after: opening.as_of_date, until: today })
+  return Number(opening.days) + accrued.days - approvedAnnualDays(db, staffId, { after: opening.as_of_date })
 }
 
 export const BASIS_LABEL = {

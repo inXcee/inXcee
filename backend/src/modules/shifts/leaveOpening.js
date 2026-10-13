@@ -4,7 +4,7 @@
 import { getDB } from '../../shared/db/index.js'
 import { isIsoDate } from '../../shared/validation/date.js'
 import { buildStaffResolver } from '../personnel/staffAliases.js'
-import { computeAnnualBalance } from './leaveBalance.js'
+import { computeAnnualBalance, projectOpening } from './leaveBalance.js'
 
 const httpError = (message, statusCode) => Object.assign(new Error(message), { statusCode })
 
@@ -74,7 +74,10 @@ export function listOpeningBalances({ status } = {}) {
   // Bekleyenlerde "onaylanırsa kalan" önizlemesi — kararı veren farkı görsün.
   return rows.map(r => {
     const current = computeAnnualBalance(r.staff_id)
-    return { ...r, current_basis: current?.basis, current_remaining: current?.remaining ?? null }
+    return {
+      ...r, current_basis: current?.basis, current_remaining: current?.remaining ?? null,
+      ...(r.status === 'pending' ? { projected_remaining: projectOpening(r.staff_id, r) } : {}),
+    }
   })
 }
 
@@ -88,4 +91,25 @@ export function decideOpeningBalance(id, { decision, note }, userId) {
     SET status=?, decided_by=?, decided_at=datetime('now'), decision_note=? WHERE id=?`)
     .run(decision === 'approve' ? 'approved' : 'rejected', userId || null, String(note || '').trim() || null, id)
   return { ...db.prepare('SELECT * FROM leave_opening_balances WHERE id=?').get(id), balance: computeAnnualBalance(row.staff_id) }
+}
+
+// Toplu karar (müdür): yalnız hâlâ bekleyen kayıtlar karara bağlanır, diğerleri atlanır. Tek transaction.
+export function decideOpeningBalancesBulk(ids, { decision, note }, userId) {
+  const db = getDB()
+  if (!['approve', 'reject'].includes(decision)) throw httpError('Karar approve ya da reject olmalı', 400)
+  const list = [...new Set((Array.isArray(ids) ? ids : []).map(Number).filter(n => Number.isInteger(n) && n > 0))]
+  if (!list.length) throw httpError('En az bir kayıt seçin', 400)
+  if (list.length > 1000) throw httpError('Tek seferde en fazla 1000 kayıt', 400)
+  const status = decision === 'approve' ? 'approved' : 'rejected'
+  const upd = db.prepare(`UPDATE leave_opening_balances SET status=?, decided_by=?, decided_at=datetime('now'), decision_note=?
+    WHERE id=? AND status='pending'`)
+  const skipped = []
+  let decided = 0
+  db.transaction(() => {
+    for (const id of list) {
+      if (upd.run(status, userId || null, String(note || '').trim() || null, id).changes) decided++
+      else skipped.push(id)
+    }
+  })()
+  return { decided, skipped, status }
 }

@@ -73,7 +73,7 @@ import { annualLeaveSummary } from './leave-entitlement.js'
 import { computeAnnualBalance } from './leaveBalance.js'
 import { evaluatePersonnelAlerts } from '../personnel/tracking-alerts.js'
 import { puantajExport } from './puantajExport.js'
-import { createOpeningBalances, listOpeningBalances, decideOpeningBalance } from './leaveOpening.js'
+import { createOpeningBalances, listOpeningBalances, decideOpeningBalance, decideOpeningBalancesBulk } from './leaveOpening.js'
 import { importScheduleSchema, signatureCheckSchema } from './schemas.js'
 import { validate } from '../../shared/middleware/validate.js'
 import { logAudit } from '../../shared/audit.js'
@@ -1044,6 +1044,14 @@ shiftsRouter.post('/leave/opening-balances', ...managerOrSupervisor, (req, res) 
     if (!result.ok) return res.status(422).json(result)
     if (!dryRun) logAudit(req.user.id, 'leave_opening_create', 'shifts', null, `${result.ids.length} açılış bakiyesi (${source})`)
     res.status(dryRun ? 200 : 201).json(result)
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.statusCode ? e.message : 'Sunucu hatası' }) }
+})
+
+shiftsRouter.post('/leave/opening-balances/decision-bulk', ...managerOnly, (req, res) => {
+  try {
+    const result = decideOpeningBalancesBulk(req.body?.ids, req.body || {}, req.user.id)
+    logAudit(req.user.id, `leave_opening_bulk_${result.status}`, 'shifts', null, `${result.decided} kayıt${result.skipped.length ? `, ${result.skipped.length} atlandı` : ''}`)
+    res.json(result)
   } catch (e) { res.status(e.statusCode || 500).json({ error: e.statusCode ? e.message : 'Sunucu hatası' }) }
 })
 

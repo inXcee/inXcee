@@ -2,6 +2,7 @@
 // "Yıllık hak" alanına yazılmaz: tarihli açılış olarak beklemeye düşer, müdür kişi kişi onaylar.
 // Onaylanan kayıt, kalan izin hesabının (ekran, onay, kiosk, personel dosyası) başlangıcı olur.
 import { useState } from 'react'
+import { confirmDialog } from '../../../shared/components/ConfirmDialog.jsx'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
 import { useAuthStore } from '../../../shared/store/authStore.js'
@@ -50,6 +51,25 @@ export default function OpeningBalancesPanel() {
     },
     onError: e => toast(e?.response?.data?.error || 'Gönderilemedi', 'error'),
   })
+
+  const [selected, setSelected] = useState(() => new Set())
+  const toggleRow = id => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const bulk = useMutation({
+    mutationFn: ({ ids, decision }) => api.post('/shifts/leave/opening-balances/decision-bulk', { ids, decision }).then(r => r.data),
+    onSuccess: (r) => {
+      toast(`${r.decided} kayıt ${r.status === 'approved' ? 'onaylandı' : 'reddedildi'}${r.skipped.length ? ` · ${r.skipped.length} zaten karara bağlıydı` : ''}`)
+      setSelected(new Set()); invalidate()
+    },
+    onError: e => toast(e?.response?.data?.error || 'Toplu karar kaydedilemedi', 'error'),
+  })
+  const bulkDecide = async (decision) => {
+    const ids = [...selected].filter(id => pending.some(r => r.id === id))
+    if (!ids.length) return
+    const verb = decision === 'approve' ? 'onaylansın' : 'reddedilsin'
+    if (await confirmDialog({ title: 'Toplu karar', body: `${ids.length} açılış bakiyesi ${verb} mı? Onaylananlar kalan izin hesabının başlangıcı olur.`, danger: decision === 'reject' })) {
+      bulk.mutate({ ids, decision })
+    }
+  }
 
   const decide = useMutation({
     mutationFn: ({ id, decision }) => api.post(`/shifts/leave/opening-balances/${id}/decision`, { decision }).then(r => r.data),
@@ -116,14 +136,41 @@ export default function OpeningBalancesPanel() {
 
           <div>
             <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginBottom: 4 }}>ONAY BEKLEYEN</div>
+            {pending.length > 0 && isManager && (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 6 }}>
+                <label style={{ fontSize: 11, display: 'flex', gap: 4, alignItems: 'center', cursor: 'pointer' }}>
+                  <input type="checkbox" aria-label="Tümünü seç"
+                    checked={pending.length > 0 && pending.every(r => selected.has(r.id))}
+                    onChange={e => setSelected(e.target.checked ? new Set(pending.map(r => r.id)) : new Set())} />
+                  Tümünü seç
+                </label>
+                <button className="btn btn-primary btn-sm" disabled={!selected.size || bulk.isPending} onClick={() => bulkDecide('approve')}>
+                  Seçilenleri onayla ({selected.size})
+                </button>
+                <button className="btn btn-ghost btn-sm" disabled={!selected.size || bulk.isPending} onClick={() => bulkDecide('reject')}>
+                  Seçilenleri reddet
+                </button>
+              </div>
+            )}
             {pending.length === 0 ? <div style={{ fontSize: 11, color: 'var(--text3)' }}>Yok</div> : (
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <tbody>
                   {pending.map(r => (
                     <tr key={r.id}>
-                      <td style={cell}>{r.full_name}<div style={{ fontSize: 9, color: 'var(--text3)' }}>{r.dept_name || ''} {r.source_label ? `· ${r.source_label}` : ''}</div></td>
+                      {isManager && (
+                        <td style={{ ...cell, width: 22 }}>
+                          <input type="checkbox" aria-label={`${r.full_name} seç`} checked={selected.has(r.id)} onChange={() => toggleRow(r.id)} />
+                        </td>
+                      )}
+                      <td style={cell}>{r.full_name}
+                        <div style={{ fontSize: 9, color: 'var(--text3)' }}>{r.dept_name || ''} {r.source_label ? `· ${r.source_label}` : ''}</div>
+                        {r.note && <div style={{ fontSize: 9, color: /boş|farklı/.test(r.note) ? 'var(--accent)' : 'var(--text3)' }}>{r.note}</div>}
+                      </td>
                       <td style={cell}>{r.days} gün @ {fmt(r.as_of_date)}</td>
-                      <td style={{ ...cell, color: 'var(--text3)' }}>şu an: {r.current_remaining ?? '—'} ({BASIS[r.current_basis] || '—'})</td>
+                      <td style={{ ...cell, color: 'var(--text3)' }}>
+                        şu an: {r.current_remaining ?? '—'} ({BASIS[r.current_basis] || '—'})
+                        {r.projected_remaining != null && <div style={{ color: 'var(--text)' }}>onaylanırsa: <b>{r.projected_remaining}</b> gün</div>}
+                      </td>
                       <td style={{ ...cell, whiteSpace: 'nowrap', textAlign: 'right' }}>
                         {isManager ? (
                           <>
