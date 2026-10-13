@@ -181,9 +181,16 @@ shiftsRouter.post('/staff', ...managerOrSupervisor, (req, res) => {
   }
 })
 
+// İK mutabakatına giren alanlar: değişince takip uyarıları (kayıt farkı, puantajda yok…) hemen tazelensin.
+const HR_ROSTER_FIELDS = ['hire_date', 'project_id', 'is_active', 'full_name', 'tc_no']
+
 shiftsRouter.put('/staff/:id', ...managerOrSupervisor, (req, res) => {
   try {
-    staffUpdateService(req.params.id, allowedStaffMutation(req.body, req.user.role), req.user.id)
+    const patch = allowedStaffMutation(req.body, req.user.role)
+    staffUpdateService(req.params.id, patch, req.user.id)
+    if (HR_ROSTER_FIELDS.some(key => patch?.[key] !== undefined)) {
+      try { evaluatePersonnelAlerts() } catch (err) { logger.error('[shifts/staff-update] uyarı değerlendirme', err) }
+    }
     res.json({ ok: true })
   } catch (e) {
     res.status(400).json({ error: e.message })

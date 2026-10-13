@@ -196,12 +196,36 @@ describe('İK kadro senkronu', () => {
     expect(again.exempt).toEqual([])
   })
 
+  it('kadro kararları takip uyarısını beklemeden kapatır: çıkış başlatma, arşivden dönüş, kayıt düzeltme', async () => {
+    const db = getDB()
+    const status = (rule, id) => db.prepare(`SELECT status FROM personnel_tracking_alerts
+      WHERE staff_id=? AND rule_key=? ORDER BY id DESC LIMIT 1`).get(id, rule)?.status
+    expect(status('hr_roster_exit_pending', ids.gidecek)).toBe('open')
+    expect(status('hr_roster_archived_present', ids.eski)).toBe('open')
+    expect(status('hr_roster_mismatch', ids.tarih)).toBe('open')
+
+    const exit = await request(app).post(`/api/personnel/${ids.gidecek}/offboarding/start`).set(auth(mgr))
+      .send({ exit_date: daysAgo(2), exit_type: 'resignation', reason: 'İK puantajında çıkış' })
+    expect(exit.status).toBe(201)
+    expect(status('hr_roster_exit_pending', ids.gidecek)).toBe('resolved')
+
+    const back = await request(app).post(`/api/personnel/${ids.eski}/restore`).set(auth(mgr))
+      .send({ reason: 'İK puantajında çalışıyor' })
+    expect(back.status).toBe(200)
+    expect(status('hr_roster_archived_present', ids.eski)).toBe('resolved')
+
+    const fix = await request(app).put(`/api/shifts/staff/${ids.tarih}`).set(auth(mgr))
+      .send({ hire_date: '2024-12-20', project_id: kampId })
+    expect(fix.status).toBe(200)
+    expect(status('hr_roster_mismatch', ids.tarih)).toBe('resolved')
+  })
+
   it('14 günden eski görüntü bayattır: bulgu ve uyarı üretmez, doldurma reddedilir', async () => {
     const db = getDB()
     db.prepare("UPDATE hr_roster_snapshots SET received_at=datetime('now','-15 days')").run()
     const rec = (await request(app).get('/api/personnel/hr-roster').set(auth(mgr))).body
     expect(rec.snapshot.stale).toBe(true)
-    expect(rec.exit_pending.length).toBe(1)   // panel yine gösterir (bayat uyarısıyla)
+    expect(rec.missing.map(x => x.staff_id)).toContain(ids.kayip)   // panel yine gösterir (bayat uyarısıyla)
     expect(rosterLookupFactory(db)('Yeni Kişi Roster')).toBeNull()
     expect((await request(app).post('/api/personnel/hr-roster/apply-fills').set(auth(mgr)).send({})).status).toBe(409)
     await request(app).get('/api/personnel/tracking/overview').set(auth(mgr))   // değerlendirmeyi tetikler
