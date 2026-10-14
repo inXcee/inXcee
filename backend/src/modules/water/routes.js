@@ -21,6 +21,7 @@ import {
   pendingDistributionsService,
   templatesService, createTemplateService, deleteTemplateService,
   adjustmentsService, createAdjustmentService, deleteAdjustmentService, COUNT_REASONS,
+  fifoStartService, setFifoStartService,
   reviewQueueService, approveReviewsService,
   truckArrivalsService, createTruckArrivalService, updateTruckArrivalService, deleteTruckArrivalService,
   truckGateEntryService, buildTruckGateEntryPDF, buildTruckGateEntryExcel,
@@ -466,6 +467,19 @@ waterRouter.delete('/adjustments/:id', ...managerOnly, (req, res, next) => {
     deleteAdjustmentService(+req.params.id)
     logAudit(req.user.id, 'water_adjustment_delete', 'water', +req.params.id, null)
     res.json({ ok: true })
+  } catch (e) { fail(next, e) }
+})
+
+// ── FIFO başlangıç (geçiş) tarihi: öncesi devirle kapanmış geçmiş, eşleştirmeye katılmaz ──
+waterRouter.get('/fifo-start', ...mgr, (req, res, next) => {
+  try { res.json(fifoStartService()) } catch (e) { fail(next, e) }
+})
+waterRouter.put('/fifo-start', ...managerOnly, (req, res, next) => {
+  try {
+    const result = setFifoStartService(req.body?.date ?? null)
+    logAudit(req.user.id, 'water_fifo_start_set', 'water', null,
+      `${result.before || '—'} → ${result.date || '—'} · serbest ${result.released} · eşleşen ${result.matched} · açık inceleme ${result.open_reviews}`)
+    res.json(result)
   } catch (e) { fail(next, e) }
 })
 
