@@ -359,6 +359,23 @@ describe('Su takip — toplu giriş + metinden dağıtım + düşük stok + ay s
     expect(items.every(i => i.zone_id === zoneA)).toBe(true)
   })
 
+  it('metinden dağıtım — ondalık virgül (0,5ml) satırı bölmez, "5 L" ürünü "15"/"0.5" içindeki 5\'e takılmaz', async () => {
+    // Canlı hata (Ekim 2026): "KARARGAH BİNASI 15 koli 0,5ml" → virgülden bölünüp "15 koli 0" + "5ml" oluyordu,
+    // ikisi de "5 L Su"ya (adındaki "5" → "15" alt dizesi) eşleşiyordu. Doğrusu: tek kalem, 0.5 L, 15 koli.
+    const auth = { Authorization: `Bearer ${managerToken}` }
+    const p5l = (await request(app).get('/api/water/products').set(auth)).body.find(p => p.name === '5 L Su').id  // mig 029 tohumu
+    const text = 'B Blok Yemekhane 15 koli 0,5ml\nC Blok Şantiye 2 palet 0,33 lt, 3 paket 5 lt'
+    const r = await request(app).post('/api/water/distribute/parse').set(auth).send({ text })
+    const items = r.body.items
+    expect(items.length).toBe(3)
+    expect(items[0]).toMatchObject({ zone_id: zoneA, product_id: p05, input_qty: 15, input_unit: 'koli', ok: true })
+    expect(items[1]).toMatchObject({ zone_id: zoneB, product_id: p033, input_qty: 2, input_unit: 'palet', ok: true })
+    expect(items[2]).toMatchObject({ zone_id: zoneB, product_id: p5l, input_qty: 3, input_unit: 'paket', ok: true })
+    // virgülle ayrılmış liste hâlâ bölünür ("5 koli 0.5, 10 damacana" → 2 kalem)
+    const list = await request(app).post('/api/water/distribute/parse').set(auth).send({ text: 'B Blok Yemekhane 5 koli 0,5, 10 damacana' })
+    expect(list.body.items.map(i => [i.product_id, i.input_qty])).toEqual([[p05, 5], [pDam, 10]])
+  })
+
   it('toplu dağıtım kaydı — bölgeye yazılır', async () => {
     const r = await request(app).post('/api/water/distribute/batch').set('Authorization', `Bearer ${managerToken}`)
       .send({ move_date: '2026-08-02', lines: [
