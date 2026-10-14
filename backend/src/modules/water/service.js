@@ -325,12 +325,20 @@ function productKeywords(p) {
   return [...kws]
 }
 
+// Sayısal anahtar ("5", "0.5", "19") yalnız TEK BAŞINA duran sayıyla eşleşir: "5 L Su"nun "5"i "15"in
+// ya da "0.5"in içindeki 5'e takılmamalı (Ekim 2026 canlı hata: "15 koli 0,5ml" → 5 L Su).
+function hasKeyword(seg, kw) {
+  if (!/^\d+(\.\d+)?$/.test(kw)) return seg.includes(kw)
+  const esc = kw.replace(/\./g, '\\.')
+  return new RegExp(`(?<!\\d)(?<!\\d\\.)${esc}(?!\\d)(?!\\.\\d)`).test(seg)
+}
+
 function matchProduct(segment, products) {
   const seg = normTr(segment)
   let best = null, bestScore = 0
   for (const p of products) {
     let score = 0
-    for (const kw of productKeywords(p)) if (seg.includes(kw)) score += kw.length
+    for (const kw of productKeywords(p)) if (hasKeyword(seg, kw)) score += kw.length
     if (score > bestScore) { bestScore = score; best = p }
   }
   return best
@@ -419,7 +427,8 @@ export function parseDistributionText(text) {
       const re = new RegExp(zoneOnLine.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
       rest = line.replace(re, ' ')
     }
-    const segments = rest.split(/[,;]|\s\+\s|\bve\b/i).map(s => s.trim()).filter(Boolean)
+    // Virgül, iki rakam arasındaysa ondalıktır ("0,5ml", "0,33 lt") → ayraç DEĞİL; liste virgülü bölünür.
+    const segments = rest.split(/(?<!\d),|,(?!\d)|;|\s\+\s|\bve\b/i).map(s => s.trim()).filter(Boolean)
     const segsWithQty = segments.filter(s => /\d/.test(s))
     const useSegs = segsWithQty.length ? segsWithQty : [rest]
     for (const seg of useSegs) {
