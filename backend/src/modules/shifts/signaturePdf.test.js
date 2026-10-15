@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import PDFDocument from 'pdfkit'
-import { drawSignaturePdf, signatureColumnWidths, signatureRowHeight } from './signaturePdf.js'
+import { drawSignaturePdf, signatureColumnWidths, signatureRowHeight, MARKER_PT } from './signaturePdf.js'
+import { decodeMarkerIds } from './signatureMarkers.js'
 
 function gun(label, kategori = 'working', detail = '') {
   return { date: '2026-08-10', category: kategori, label, detail, can_sign: kategori === 'working' }
@@ -144,6 +145,82 @@ describe('İmza föyü PDF ucu', () => {
     expect(res.headers['content-disposition']).toContain('imza-foyu-2026-08-10.pdf')
     expect(res.body.length).toBeGreaterThan(1000)
   })
+
+  it('her basım baskı no alır (istemcinin verdiği yok sayılır); yerleşim ve PDF geri okunur', async () => {
+    const res = await request(app).post('/api/shifts/schedule/signature-pdf')
+      .set(auth).send({ model: MODEL, meta: { weekStart: '2026-08-10', printId: 4242 } })
+    expect(res.status).toBe(200)
+    const id = Number(res.headers['x-signature-print-id'])
+    expect(id).toBeGreaterThan(0)
+    expect(id).not.toBe(4242)
+
+    const kayit = await request(app).get(`/api/shifts/schedule/signature-prints/${id}`).set(auth)
+    expect(kayit.status).toBe(200)
+    expect(kayit.body).toMatchObject({ id, week_start: '2026-08-10', page_count: 2, dates: MODEL.dates })
+    expect(kayit.body.layout.pages[0].rows.filter(r => !r.blank).map(r => r.staff_id)).toEqual([1, 2])
+
+    const pdf = await request(app).get(`/api/shifts/schedule/signature-prints/${id}/pdf`).set(auth)
+    expect(pdf.status).toBe(200)
+    expect(pdf.headers['content-type']).toContain('application/pdf')
+    expect(pdf.body.length).toBe(res.body.length)
+    expect((await request(app).get('/api/shifts/schedule/signature-prints/999999').set(auth)).status).toBe(404)
+  })
+
+  it('baskı kaydı yetkisiz rolde 403', async () => {
+    const t = (await request(app).post('/api/auth/login').send({ username: 'camasir', password: 'admin123' })).body.token
+    expect((await request(app).get('/api/shifts/schedule/signature-prints/1').set({ Authorization: `Bearer ${t}` })).status).toBe(403)
+  })
+})
+
+describe('İmza föyü — makine okuma (köşe işaretleri + yerleşim)', () => {
+  function ciz(model, meta) {
+    const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 28, bufferPages: true })
+    doc.on('data', () => {})
+    const sonuc = drawSignaturePdf(doc, model, meta)
+    expect(sonuc.pageCount).toBe(doc.bufferedPageRange().count)
+    doc.end()
+    return sonuc
+  }
+
+  it('her fiziksel sayfa köşelerinde dört işaret taşır; işaretler baskı no ve sayfayı verir', () => {
+    const { layout, pageCount } = ciz(MODEL, { printId: 4321 })
+    expect(layout.pages).toHaveLength(pageCount)
+    layout.pages.forEach((p, i) => {
+      const ids = Object.fromEntries(Object.entries(p.markers).map(([rol, m]) => [rol, m.id]))
+      expect(decodeMarkerIds(ids)).toEqual({ printId: 4321, pageIndex: i })
+      expect(p.markers.tl).toMatchObject({ x: 28, y: 28, size: MARKER_PT })
+      expect(p.markers.br.x + MARKER_PT).toBeCloseTo(layout.page.width - 28)
+      expect(p.markers.br.y + MARKER_PT).toBeCloseTo(layout.page.height - 28)
+    })
+    expect(layout.pages.map(p => p.kind)).toEqual(['roster', 'changes'])
+  })
+
+  it('kadro satırları kişi, konum ve gün hücreleriyle kaydedilir; boş satır ayrıca işaretlenir', () => {
+    const { layout } = ciz(MODEL, { printId: 7 })
+    const [ilk] = layout.pages
+    const kisiler = ilk.rows.filter(r => !r.blank)
+    expect(kisiler.map(r => [r.sira, r.staff_id])).toEqual([[1, 1], [2, 2]])
+    expect(kisiler[0].days).toEqual([
+      { date: '2026-08-10', can_sign: true, category: 'working' },
+      { date: '2026-08-11', can_sign: false, category: 'leave' },
+      { date: '2026-08-12', can_sign: true, category: 'working' },
+    ])
+    expect(ilk.rows.filter(r => r.blank).length).toBeGreaterThan(0)
+    // satırlar üst üste binmez, işaretlerin arasındaki alanda kalır
+    let alt = 0
+    for (const r of ilk.rows) {
+      expect(r.y).toBeGreaterThanOrEqual(alt - 0.01)
+      alt = r.y + r.h
+    }
+    expect(ilk.rows[0].y).toBeGreaterThan(ilk.markers.tl.y + MARKER_PT)
+    expect(alt).toBeLessThan(ilk.markers.bl.y)
+    expect(layout.columns.map(c => c.date)).toEqual(MODEL.dates)
+    expect(layout.columns.at(-1).x + layout.columns.at(-1).w).toBeCloseTo(layout.page.width - 28)
+  })
+
+  it('baskı no yoksa işaret de yerleşim de yok (eski çıktı)', () => {
+    expect(ciz(MODEL, {}).layout).toBeUndefined()
+  })
 })
 
 // 30 kişi tek sayfaya sığmalı: satır yüksekliği sabit 26pt iken A4 yatayda
@@ -219,6 +296,12 @@ describe('İmza föyü sayfalama', () => {
   }
   it('30 kişi tek kadro sayfasına sığar', () => {
     expect(sayfaSay(foy(30))).toBe(2) // 1 kadro + 1 değişiklik
+  })
+
+  // Köşe işaretleri başlık/alt bilgiyi içe kaydırır ama satır bütçesine dokunmaz.
+  it('köşe işaretli (makine okunur) föyde de 30 kişi tek sayfaya sığar', () => {
+    expect(sayfaSay(foy(30), { printId: 1 })).toBe(2)
+    expect(sayfaSay(foy(60), { printId: 1 })).toBe(sayfaSay(foy(60)))
   })
 
   // Sığmayınca düzgün ikinci sayfa açılmalı, onlarca bozuk sayfa değil.
