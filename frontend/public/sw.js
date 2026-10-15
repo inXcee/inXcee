@@ -16,6 +16,7 @@ const NO_CACHE_API = [
   '/api/kiosk-device',
   '/api/kiosk-management',
   '/api/stations',
+  '/api/hermes', // sesli asistan: kişiye özel, akış — asla önbelleğe alınmaz
 ]
 
 self.addEventListener('install', e => {

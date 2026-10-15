@@ -1,0 +1,19 @@
+{
+  "id": "/hermes/",
+  "name": "Hermes — Sesli Asistan",
+  "short_name": "Hermes",
+  "description": "AVS asistanı Hermes'e sesle sor",
+  "lang": "tr",
+  "dir": "ltr",
+  "start_url": "/hermes/?src=pwa",
+  "scope": "/hermes/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b0f1a",
+  "theme_color": "#0b0f1a",
+  "icons": [
+    { "src": "/hermes-pub/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/hermes-pub/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/hermes-pub/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

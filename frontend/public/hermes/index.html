@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0f1a">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Hermes</title>
+  <link rel="manifest" href="/hermes-pub/manifest.webmanifest">
+  <link rel="icon" type="image/png" href="/hermes-pub/icon-192.png">
+  <link rel="apple-touch-icon" href="/hermes-pub/icon-192.png">
+  <link rel="stylesheet" href="app.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <main class="app">
+    <header class="bar">
+      <div class="brand">
+        <span id="dot" class="dot" title="Bağlantı"></span>
+        <h1>Hermes</h1>
+      </div>
+      <div class="bar-actions">
+        <button id="newChat" class="ghost" type="button">Yeni sohbet</button>
+        <button id="settingsBtn" class="ghost icon" type="button" aria-label="Ayarlar">⚙</button>
+      </div>
+    </header>
+
+    <p id="notice" class="notice" role="status" hidden></p>
+
+    <section class="stage">
+      <button id="mic" class="mic" type="button" aria-label="Konuş">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a3.5 3.5 0 0 0 3.5-3.5v-6a3.5 3.5 0 1 0-7 0v6A3.5 3.5 0 0 0 12 15Zm6-3.5a1 1 0 1 0-2 0 4 4 0 0 1-8 0 1 1 0 1 0-2 0 6 6 0 0 0 5 5.91V20H8.5a1 1 0 1 0 0 2h7a1 1 0 1 0 0-2H13v-2.59a6 6 0 0 0 5-5.91Z"/></svg>
+      </button>
+      <p id="hint" class="hint">Dokun ve konuş</p>
+      <p id="live" class="live" aria-live="polite"></p>
+    </section>
+
+    <section id="turn" class="turn" hidden>
+      <p id="question" class="question"></p>
+      <ol id="steps" class="steps"></ol>
+      <div id="approval" class="approval" hidden>
+        <p class="approval-title">Hermes onay istiyor</p>
+        <code id="approvalCmd" class="approval-cmd"></code>
+        <div class="row">
+          <button id="approveOnce" class="primary" type="button">Bir kez izin ver</button>
+          <button id="approveDeny" class="danger" type="button">Reddet</button>
+        </div>
+      </div>
+      <p id="answer" class="answer" aria-live="polite"></p>
+      <div class="row turn-actions">
+        <button id="stop" class="ghost" type="button" hidden>Durdur</button>
+        <button id="speakAgain" class="ghost" type="button" hidden>Tekrar oku</button>
+      </div>
+    </section>
+
+    <form id="typeForm" class="type" autocomplete="off">
+      <input id="typeInput" type="text" enterkeyhint="send" maxlength="2000" placeholder="Ya da yaz…" aria-label="Soru">
+      <button class="primary" type="submit">Gönder</button>
+    </form>
+
+    <section class="history">
+      <h2>Bu sohbet</h2>
+      <ol id="history"></ol>
+    </section>
+
+    <dialog id="settings">
+      <form method="dialog" class="settings">
+        <h2>Ayarlar</h2>
+        <label><input type="checkbox" name="autoListen"> Açılınca hemen dinle</label>
+        <label><input type="checkbox" name="speak"> Yanıtı sesli oku</label>
+        <label><input type="checkbox" name="conversation"> Sohbet modu (yanıttan sonra yine dinle)</label>
+        <label><input type="checkbox" name="keepAwake"> Konuşurken ekranı açık tut</label>
+        <p class="small">"Tamam", "teşekkürler" ya da "kapat" deyince sohbet modu durur.</p>
+        <button class="primary" value="ok">Kapat</button>
+      </form>
+    </dialog>
+  </main>
+</body>
+</html>
