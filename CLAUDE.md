@@ -144,6 +144,7 @@ Y blokları **özel banyolu, kapasite=1 placeholder** olarak gelir; gerçek yata
 
 - **Yedekler `/var/data/backups`'tadır** — `BACKUP_DIR` env'i oraya işaret eder. `/opt/avskamp/backups` **eski konumdur**, Mayıs 2026'da donmuştur; oraya bakıp "yedek alınmıyor" sonucuna varma. (Mayıs dosyaları o dönemin tek kalan kopyası olduğu için silinmedi.)
 - İki mekanizma birlikte çalışır: PM2 `yys-backup` (gece 03:00, `cron_restart`) ve uygulama içi cron. Günde ~4 yedek oluşur.
+- **Saklama (tek kaynak `modules/backup/retention.js`):** son 7 gün hepsi, 7–30 gün her gün için tek yedek, 30+ gün silinir; `pre-restore` hiç silinmez. PM2 betiği B2'ye `rclone sync` yaptığı için yereldeki silme B2'ye de yansır — yerel saklamayı kısaltmak sunucu dışı güvenceyi de kısaltır.
 - **PM2'de `yys-backup` durumunun `stopped` görünmesi normaldir** — `autorestart: false` olduğu için işini yapıp çıkar, bir sonraki 03:00'e kadar öyle durur. Arıza sanma.
 - Yedeğin gerçekten geri yüklenebilir olduğunu doğrulamak için:
   `sqlite3 -readonly <yedek> 'PRAGMA integrity_check;'` + tablo sayımlarını canlıyla karşılaştır.
