@@ -74,9 +74,12 @@ function isDuplicateInWindow(key, windowMs = DEFAULT_DEDUP_WINDOW_MS) {
 }
 export function _resetDedupWindowForTests() { dedupWindow.clear() }
 
+// dedup_lookback_days: DB tekrar kontrolü varsayılan olarak yalnız AYNI GÜNE bakar (günlük hatırlatma).
+// alertBucket gibi kendi ömrü olan kova anahtarlarında kovanın ömrü kadar geriye bakılmalı — yoksa 7 gün
+// sabit kalan haftalık kova her gün yeniden bildirim doğurur (bkz. ALERT_BUCKET_LOOKBACK_DAYS).
 export function createNotification({
   message, type, severity, module, target_role, target_user_id, dedup_key,
-  event_kind, entity_type, entity_id, link, dedup_window_ms,
+  event_kind, entity_type, entity_id, link, dedup_window_ms, dedup_lookback_days,
 }) {
   const db = getDB()
 
@@ -97,10 +100,12 @@ export function createNotification({
   if (dedup_key) {
     // 1) Time-window dedup (60s default)
     if (isDuplicateInWindow(dedup_key, dedup_window_ms)) return null
-    // 2) Aynı günde DB'de aynı dedup_key varsa atla
-    const existing = db.prepare(
-      "SELECT id FROM notifications WHERE dedup_key=? AND date(created_at)=date('now')"
-    ).get(dedup_key)
+    // 2) DB'de aynı dedup_key: aynı gün (varsayılan) ya da son dedup_lookback_days gün içinde varsa atla
+    const lookback = Math.floor(Number(dedup_lookback_days) || 0)
+    const existing = lookback > 1
+      ? db.prepare("SELECT id FROM notifications WHERE dedup_key=? AND created_at >= datetime('now', ?)")
+        .get(dedup_key, `-${lookback} days`)
+      : db.prepare("SELECT id FROM notifications WHERE dedup_key=? AND date(created_at)=date('now')").get(dedup_key)
     if (existing) return null
   }
 
