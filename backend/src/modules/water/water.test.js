@@ -5,7 +5,7 @@ import app from '../../app.js'
 import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
 import PDFDocument from 'pdfkit'
-import { toBase, humanize, availableUnits, checkTruckArrivalAlerts, waterDailyDigest, buildReconciliationPDF, waterEscalations } from './service.js'
+import { toBase, humanize, availableUnits, checkTruckArrivalAlerts, waterDailyDigest, buildReconciliationPDF, waterEscalations, pendingDistributionsService } from './service.js'
 import { reconciliationRow, reconciliationRows } from './queries.js'
 import { uploadFilePathFromUrl } from './file-lifecycle.js'
 
@@ -1523,6 +1523,30 @@ describe('Su takip — Eskalasyon (V5)', () => {
     // aynı gün ikinci çağrı → hepsi dedup, yeni bildirim yok
     const r2 = waterEscalations({ now: NOW })
     expect(r2.created).toBe(0)
+  })
+
+  // Canlı Ekim 2026: geciken HER dağıtım için her gün ayrı critical bildirim → günde 190–442 bildirim
+  // (14 günde ~3.900, okunan 1). Geciken dağıtımlar artık günde TEK özet bildirimde toplanır.
+  it('geciken dağıtımlar rol başına günde tek özet bildirimde toplanır', async () => {
+    const DAY = new Date('2027-05-20T11:00:00+03:00')
+    const pSum = (await auth(request(app).post('/api/water/products')).send({ name: 'ÖZET 1L', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 1 })).body.id
+    const zA = (await auth(request(app).post('/api/water/zones')).send({ name: 'ÖZET A' })).body.id
+    const zB = (await auth(request(app).post('/api/water/zones')).send({ name: 'ÖZET B' })).body.id
+    for (const [zone, date] of [[zA, '2027-05-02'], [zA, '2027-05-10'], [zB, '2027-05-12']]) {
+      await auth(request(app).post('/api/water/distribute')).send({ product_id: pSum, zone_id: zone, input_qty: 5, input_unit: 'adet', move_date: date })
+    }
+
+    const overdue = pendingDistributionsService({ today: '2027-05-20' }).rows.filter(r => r.severity === 'overdue')
+    expect(overdue.filter(r => r.product_name === 'ÖZET 1L')).toHaveLength(3)
+
+    waterEscalations({ now: DAY })
+    const rows = getDB().prepare("SELECT target_role, message FROM notifications WHERE dedup_key LIKE 'water_esc_pending_2027-05-20%'").all()
+    expect(rows.map(r => r.target_role).sort()).toEqual(['campus_manager', 'shift_supervisor'])
+    const oldest = Math.max(...overdue.map(r => r.waiting_days))
+    expect(rows[0].message).toMatch(new RegExp(`^Su: ${overdue.length} dağıtım 3\\+ gündür irsaliye bekliyor — en eskisi ${oldest} gün`))
+    // dağıtım başına ayrı bildirim YOK (eski biçim: "Su: ÖZET 1L → ÖZET A dağıtımı N gündür …")
+    expect(getDB().prepare("SELECT COUNT(*) c FROM notifications WHERE message LIKE 'Su: ÖZET 1L → %'").get().c).toBe(0)
+    expect(waterEscalations({ now: DAY }).created).toBe(0) // aynı gün tekrar → yok
   })
 })
 
