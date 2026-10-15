@@ -177,7 +177,8 @@ app.use(cors({
     // Postman, curl gibi origin'siz isteklere izin ver (server-to-server, healthcheck)
     if (!origin) return callback(null, true)
     if (allowedOrigins.includes(origin) || isDevelopmentLoopbackOrigin(origin)) return callback(null, true)
-    callback(new Error(`CORS: ${origin} origin'ine izin verilmiyor`))
+    // 403: istemci reddi — sunucu hatası değil (IP'ye gelen tarayıcı botları hata kaydını dolduruyordu)
+    callback(Object.assign(new Error(`CORS: ${origin} origin'ine izin verilmiyor`), { status: 403 }))
   },
   credentials: true,
 }))
@@ -453,11 +454,16 @@ app.use((req, res) => {
 setupSentryErrorHandler(app)
 
 // ── Global Error Handler ─────────────────────────────────────────────────────
-app.use((err, req, res, _next) => {
+// Yabancı anahtar ihlali: kayıt başka kayıtlara bağlı. Kullanıcı "Sunucu hatası" yerine ne olduğunu görür
+// (409); yine de hata kaydına düşer — çoğu zaman kodda eksik bir ON DELETE / temizlik kuralını gösterir.
+const FK_VIOLATION_MESSAGE = 'Bu kayıt başka kayıtlara bağlı olduğu için silinemedi ya da değiştirilemedi. Bağlı kayıtları düzenleyip tekrar deneyin.'
+
+export function globalErrorHandler(err, req, res, _next) {
   logger.error({ err, method: req.method, url: req.originalUrl }, '[Express] request failed')
-  const status = err.status || err.statusCode || 500
+  const fkViolation = err?.code === 'SQLITE_CONSTRAINT_FOREIGNKEY'
+  const status = fkViolation ? 409 : (err.status || err.statusCode || 500)
   // 5xx hataları DB'ye logla (4xx normal akış — istemci hatası)
-  if (status >= 500 && process.env.NODE_ENV !== 'test') {
+  if ((status >= 500 || fkViolation) && process.env.NODE_ENV !== 'test') {
     try {
       reportErrorService({
         source: 'backend',
@@ -471,7 +477,8 @@ app.use((err, req, res, _next) => {
     } catch { /* ignore — hata loglarken hata olursa sessiz */ }
   }
   if (res.headersSent) return _next(err)
-  res.status(status).json({ error: status < 500 ? err.message : 'Sunucu hatası' })
-})
+  res.status(status).json({ error: fkViolation ? FK_VIOLATION_MESSAGE : status < 500 ? err.message : 'Sunucu hatası' })
+}
+app.use(globalErrorHandler)
 
 export default app
