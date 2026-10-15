@@ -26,8 +26,13 @@ async function loginKiosk(page) {
   // PIN 4 ya da 6 haneli olabildiği için giriş artık açık basışla yapılır (8b763ab6).
   await page.getByRole('button', { name: 'Giriş Yap' }).click()
   await expect(page.getByRole('tab', { name: /Ana Sayfa/ })).toBeVisible({ timeout: 10_000 })
+  // Blok seçimi istemci durumudur; seçici ancak "overview" verisi gelince çizilir. Eskiden `isVisible()` (beklemez)
+  // veri geç geldiğinde A'yı seçmeden geçiyordu → görev sekmesi oda yerine blok seçici gösterdi, CI aralıklı düştü.
+  // Test işçisinin atanmış bloğu yok (beforeAll) → seçici her zaman gelir: bekle, seç, seçildiğini doğrula.
   const blockA = page.getByRole('button', { name: 'A', exact: true })
-  if (await blockA.isVisible()) await blockA.click()
+  await expect(blockA).toBeVisible({ timeout: 10_000 })
+  await blockA.click()
+  await expect(blockA).toHaveAttribute('aria-pressed', 'true')
 }
 
 async function expectNoHorizontalOverflow(page, viewportWidth) {
