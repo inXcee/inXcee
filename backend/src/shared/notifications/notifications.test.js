@@ -93,6 +93,31 @@ describe('Notification deduplication', () => {
     const rows = getDB().prepare('SELECT COUNT(*) as c FROM notifications').get()
     expect(rows.c).toBe(2)
   })
+
+  const ageKey = (key, modifier) =>
+    getDB().prepare("UPDATE notifications SET created_at=datetime('now', ?) WHERE dedup_key=?").run(modifier, key)
+
+  // Canlı Ağu–Eki 2026: alertBucket'ın haftalık kovası 7 gün sabit kalsa da DB kontrolü yalnız "aynı gün"e
+  // bakıyordu → kronik çamaşır SLA uyarısı her gün yeniden doğdu (tek ürün için 72 günde 74 bildirim).
+  it('dedup_lookback_days: aynı anahtar geriye bakılan süre boyunca bir kez bildirilir', () => {
+    const key = 'sla_7_crit_w2951'
+    const send = () => createNotification({ message: 'Kronik', type: 'critical', dedup_key: key, dedup_lookback_days: 7 })
+    expect(send()).not.toBeNull()
+    ageKey(key, '-3 days')
+    _resetDedupWindowForTests()
+    expect(send()).toBeNull()
+    ageKey(key, '-8 days')
+    _resetDedupWindowForTests()
+    expect(send()).not.toBeNull()
+  })
+
+  it('varsayılan davranış korunur: dünkü anahtar bugün yeniden bildirilir', () => {
+    const key = 'water_low_3'
+    createNotification({ message: 'Düşük', type: 'warning', dedup_key: key })
+    ageKey(key, '-1 day')
+    _resetDedupWindowForTests()
+    expect(createNotification({ message: 'Düşük', type: 'warning', dedup_key: key })).not.toBeNull()
+  })
 })
 
 describe('SSE client eviction', () => {

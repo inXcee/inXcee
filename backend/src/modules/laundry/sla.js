@@ -1,6 +1,6 @@
 import { getDB } from '../../shared/db/index.js'
 import { createNotification } from '../../shared/notifications/service.js'
-import { alertBucket } from '../../shared/notifications/cadence.js'
+import { alertBucket, ALERT_BUCKET_LOOKBACK_DAYS } from '../../shared/notifications/cadence.js'
 import { sendSlaAlert, shouldSendSlaNotification } from './whatsapp.js'
 
 /**
@@ -33,6 +33,7 @@ export async function checkSlaViolations() {
       target_role: isCritical ? null : 'shift_supervisor',
       // Kova yaşla birlikte genişler: taze sorun günde bir, kronikleşen haftada bir.
       dedup_key: `sla_${v.id}_${isCritical ? 'crit' : 'warn'}_${alertBucket(v.hours)}`,
+      dedup_lookback_days: ALERT_BUCKET_LOOKBACK_DAYS,
     })
 
     if (v.whatsapp_notify && shouldSendSlaNotification(db, v.id, v.status)) {
@@ -175,6 +176,7 @@ export function checkStuckWashingItems() {
       target_role: 'laundry',
       // Eskiden burada SAAT kovası vardı; tek bir torba için binlerce kopya üretti.
       dedup_key: `stuck_washing_${item.id}_${alertBucket(item.hours_overdue)}`,
+      dedup_lookback_days: ALERT_BUCKET_LOOKBACK_DAYS,
     })
   }
 

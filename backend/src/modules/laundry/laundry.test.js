@@ -599,6 +599,25 @@ describe('SLA engine', () => {
     expect(typeof count).toBe('number')
   })
 
+  // Canlı Ağu–Eki 2026: rafta unutulan ürün için 72 günde 74 "SLA KRİTİK" bildirimi — kronik sorun haftalık
+  // kovaya geçse de bildirim tekrar kontrolü yalnız aynı güne bakıyordu, uyarı her gün yeniden doğdu.
+  it('kronik SLA ihlali haftalık kovada bir kez bildirilir, ertesi gün tekrar etmez', async () => {
+    const { checkSlaViolations } = await import('./sla.js')
+    const { _resetDedupWindowForTests } = await import('../../shared/notifications/service.js')
+    const db = getDB()
+    const id = db.prepare(`INSERT INTO laundry_items(room_id, status, item_count, created_at, updated_at)
+      VALUES(?, 'ready', 2, datetime('now','-100 hours'), datetime('now','-100 hours'))`).run(roomId).lastInsertRowid
+    const sent = () => db.prepare("SELECT COUNT(*) c FROM notifications WHERE dedup_key LIKE ?").get(`sla_${id}_crit_w%`).c
+
+    await checkSlaViolations()
+    expect(sent()).toBe(1)
+    db.prepare("UPDATE notifications SET created_at=datetime('now','-1 day') WHERE dedup_key LIKE ?").run(`sla_${id}_crit_w%`)
+    _resetDedupWindowForTests()
+    await checkSlaViolations()
+    expect(sent()).toBe(1)
+    db.prepare("UPDATE laundry_items SET status='delivered' WHERE id=?").run(id)
+  })
+
   it('checkMachineTimers hata vermez', async () => {
     const { checkMachineTimers } = await import('./sla.js')
     const count = checkMachineTimers()

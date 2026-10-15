@@ -20,6 +20,11 @@ function haftaKovasi(now) {
   return `w${Math.floor(now.getTime() / (7 * 24 * 60 * 60 * 1000))}`
 }
 
+// createNotification({ dedup_lookback_days }) ile birlikte kullanılır: bildirim tekrar kontrolü kovanın ömrü
+// kadar geriye bakmalı. Varsayılan "aynı gün" kontrolüyle haftalık kova her gün yeniden bildirim doğuruyordu
+// (canlıda rafta unutulan tek ürün için 72 günde 74 "SLA KRİTİK"). Günlük kova anahtarı zaten güne özgüdür.
+export const ALERT_BUCKET_LOOKBACK_DAYS = 7
+
 export function alertBucket(ageHours, now = new Date()) {
   if (ageHours != null && ageHours >= KRONIK_ESIGI_SAAT) return haftaKovasi(now)
   return gunKovasi(now)
