@@ -4,6 +4,7 @@ import { assertMonthUnlocked } from './reconciliation.js'
 import { checkLowStock } from './notifications.js'
 import { normalizeIntakeLot } from './lot-fields.js'
 import { isIsoDate } from '../../shared/validation/date.js'
+import { istanbulDate } from '../../shared/time.js'
 
 const errorWithStatus = (message, statusCode) => Object.assign(new Error(message), { statusCode })
 const lotCanServe = (lot, moveDate) => {
@@ -96,7 +97,7 @@ export function reconcileProductAllocations(productIds) {
 // FIFO başlangıç (geçiş) tarihini ayarla ya da kaldır (null) ve eşleştirmeyi buna göre yeniden kur — tek transaction.
 // Tarihi aşan eşleşmeler serbest bırakılır, tarih öncesi dağıtımların inceleme işareti kalkar, tüm ürünler yeniden
 // eşleştirilir. Serbest kalıp hâlâ karşılanamayan (tarih sonrası) dağıtım incelemeye düşer.
-export function setFifoStartService(date, { today = new Date().toLocaleDateString('sv-SE') } = {}) {
+export function setFifoStartService(date, { today = istanbulDate() } = {}) {
   const value = date === undefined || date === null || date === '' ? null : String(date)
   if (value !== null && !isIsoDate(value)) throw errorWithStatus('Tarih YYYY-MM-DD olmalı', 400)
   if (value && value > today) throw errorWithStatus('Başlangıç tarihi ileri bir gün olamaz', 400)
