@@ -461,9 +461,12 @@ setupSentryErrorHandler(app)
 const FK_VIOLATION_MESSAGE = 'Bu kayıt başka kayıtlara bağlı olduğu için silinemedi ya da değiştirilemedi. Bağlı kayıtları düzenleyip tekrar deneyin.'
 
 export function globalErrorHandler(err, req, res, _next) {
-  logger.error({ err, method: req.method, url: req.originalUrl }, '[Express] request failed')
   const fkViolation = err?.code === 'SQLITE_CONSTRAINT_FOREIGNKEY'
   const status = fkViolation ? 409 : (err.status || err.statusCode || 500)
+  // İstemci hatası (404 "bulunamadı", 400 doğrulama, CORS 403…) normal akıştır: yığın izi olmadan uyarı.
+  // Hata seviyesi + yığın izi yalnız sunucu hatasına ve FK ihlaline (kodda eksik kural) ayrılır.
+  if (status >= 500 || fkViolation) logger.error({ err, method: req.method, url: req.originalUrl }, '[Express] request failed')
+  else logger.warn({ status, method: req.method, url: req.originalUrl, msg: err.message }, '[Express] istemci hatası')
   // 5xx hataları DB'ye logla (4xx normal akış — istemci hatası)
   if ((status >= 500 || fkViolation) && process.env.NODE_ENV !== 'test') {
     try {
