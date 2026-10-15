@@ -61,6 +61,10 @@ hata bekçisini gereksiz tetiklemesin).
 3. nginx: `nginx/hermes-voice.conf` → `/etc/nginx/snippets/hermes-voice.conf`; canlı ve staging server
    bloklarında `include /etc/nginx/snippets/finance-kasa.conf;` satırının ardına
    `include /etc/nginx/snippets/hermes-voice.conf;` → `nginx -t && systemctl reload nginx`.
+4. **Staging'de KAPALI:** `/opt/avskamp-staging/ecosystem.staging.config.cjs → env_production.HERMES_API_KEY_FILE
+   = /etc/avskamp/hermes-api.staging.key` (dosya yok → `configured:false`). Staging internete açık ve DB'si
+   canlı kopyası; zayıf bir staging şifresiyle terminal yetkili ajana erişilmesin. Bilerek denemek için o dosyaya
+   anahtarı geçici koy, iş bitince sil.
 
 ## Telefonda kurulum (Android)
 
