@@ -101,6 +101,7 @@ import { kioskDeviceRouter, kioskManagementRouter } from './modules/kiosk-manage
 import { locationPortalRouter } from './modules/location-portal/routes.js'
 import { roomPortalRouter } from './modules/location-portal/public-routes.js'
 import { privateFinanceRouter } from './modules/private-finance/routes.js'
+import { hermesVoiceRouter } from './modules/hermes-voice/routes.js'
 
 if (process.env.NODE_ENV === 'production' && !process.env.ALLOWED_ORIGIN) {
   logger.error('[Startup] HATA: ALLOWED_ORIGIN env değişkeni production\'da zorunludur.')
@@ -401,6 +402,7 @@ app.use('/api/whatsapp', writeLimiter, whatsappRouter)
 app.use('/api/shifts', writeLimiter, shiftsRouter)
 app.use('/api/water', writeLimiter, waterRouter)
 app.use('/api/pf', readLimiter, privateFinanceRouter)
+app.use('/api/hermes', writeLimiter, hermesVoiceRouter)
 app.use('/api/checkout', writeLimiter, checkoutRouter)
 app.use('/api/bulk-actions', writeLimiter, bulkActionsRouter)
 app.use('/api/companies', writeLimiter, companiesRouter)
