@@ -281,6 +281,8 @@ describe('CORS', () => {
       .set('Origin', 'http://evil.example.com')
     // CORS hatası — CORS header olmamalı
     expect(res.headers['access-control-allow-origin']).toBeUndefined()
+    // Canlıda IP'ye gelen tarayıcı botları 500 "Sunucu hatası" + hata kaydı üretiyordu: ret 403'tür.
+    expect(res.status).toBe(403)
   })
 })
 
