@@ -942,15 +942,30 @@ export function waterDailyDigest({
 }
 
 // ── Eskalasyon (V5) — 3+ gün bekleyen irsaliye + kritik stok → critical bildirim (push'a fan-out) ──
+// Geciken dağıtımlar günde TEK özet bildirimde toplanır. Dağıtım başına bildirim Ekim 2026'da günde
+// 190–442 critical bildirim üretti (14 günde ~3.900, okunan 1); gerçek uyarılar bu selde kayboldu.
+function pendingEscalationMessage(rows) {
+  const oldest = rows.reduce((a, b) => (b.waiting_days > a.waiting_days ? b : a))
+  const byZone = new Map()
+  for (const r of rows) byZone.set(r.zone_name, (byZone.get(r.zone_name) || 0) + 1)
+  const zones = [...byZone].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'tr'))
+  const top = zones.slice(0, 3).map(([name, n]) => `${name} ${n}`).join(', ')
+  const more = zones.length > 3 ? ` (+${zones.length - 3} bölge)` : ''
+  return `Su: ${rows.length} dağıtım 3+ gündür irsaliye bekliyor — en eskisi ${oldest.waiting_days} gün `
+    + `(${oldest.product_name} → ${oldest.zone_name}). En çok: ${top}${more}. `
+    + 'Gelen tırı girin ya da Su → İrsaliye Bekleyen listesinden inceleyin.'
+}
+
 export function waterEscalations({ now = new Date() } = {}) {
   const clock = trClock(now)
   const today = clock.date
   let created = 0
-  for (const p of pendingDistributionsService({ today }).rows.filter(r => r.severity === 'overdue')) {
+  const overdue = pendingDistributionsService({ today }).rows.filter(r => r.severity === 'overdue')
+  if (overdue.length) {
     const notifications = notifyWaterOperations({
-      message: `Su: ${p.product_name} → ${p.zone_name} dağıtımı ${p.waiting_days} gündür irsaliye bekliyor (bekleyen ${p.unallocated_human}).`,
+      message: pendingEscalationMessage(overdue),
       severity: 'critical', module: 'water',
-      dedup_key: `water_esc_pending_${p.movement_id}_${today}`, link: '/water',
+      dedup_key: `water_esc_pending_${today}`, link: '/water',
     })
     if (notifications.length) created += 1
   }
