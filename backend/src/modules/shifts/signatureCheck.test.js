@@ -107,6 +107,13 @@ describe('checkSignatureSheet', () => {
     expect(r.summary.not_on_sheet).toBe(r.not_on_sheet.length)
   })
 
+  // Fotoğraftan sayfa sayfa okunan basılı föy: diğer sayfadaki kişi "föyde yok" sayılmamalı.
+  it('basılı föyün kadrosu (sheet_staff_ids) verilince başka sayfadaki kişi "föyde yok" sayılmaz', () => {
+    const r = checkSignatureSheet({ rows: rows(), sheet_staff_ids: [id.foydeYok, id.calisan] })
+    expect(r.not_on_sheet.map(n => n.staff_id)).not.toContain(id.foydeYok)
+    expect(r.summary.not_on_sheet).toBe(r.not_on_sheet.length)
+  })
+
   it('soyad-önce yazılmış ismi kesin eşleştirir ve bunu belirtir', () => {
     const r = checkSignatureSheet({ rows: [{ name: 'FÖYDEMİR AYŞE', date: GUN, mark: 'signed' }] })
     expect(r.items[0]).toMatchObject({ staff_id: id.calisan, verdict: 'ok', matched_by: 'word_order', sheet_name: 'FÖYDEMİR AYŞE' })

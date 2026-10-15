@@ -151,7 +151,9 @@ function resolveStaff(row, lookup) {
  * @param {{ rows: Array<{staff_id?: number, name?: string, date: string, mark: string, note?: string}>,
  *           department_id?: number }} input
  */
-export function checkSignatureSheet({ rows = [], department_id = null } = {}, db = getDB()) {
+// sheet_staff_ids: basılı föyde (TÜM sayfalarında) yer alan herkes — fotoğraftan sayfa sayfa okunurken diğer
+// sayfadaki kişiler "çalışıyor ama föyde yok" sayılmasın. Verilmezse eski davranış.
+export function checkSignatureSheet({ rows = [], department_id = null, sheet_staff_ids = null } = {}, db = getDB()) {
   const staffRows = db.prepare(`
     SELECT s.id, s.full_name, s.is_active, s.department_id, COALESCE(d.name, '') AS department
     FROM staff s LEFT JOIN departments d ON d.id = s.department_id
@@ -218,11 +220,13 @@ export function checkSignatureSheet({ rows = [], department_id = null } = {}, db
   const deptFilter = department_id != null
     ? new Set([Number(department_id)])
     : new Set(items.map(i => byId.get(i.staff_id)?.department_id).filter(v => v != null))
+  const onSheet = Array.isArray(sheet_staff_ids) ? new Set(sheet_staff_ids.map(Number)) : null
   const notOnSheet = []
   for (const [key, cell] of cells) {
     if (seen.has(key) || classifyScheduleCell(cell) !== 'working') continue
     const s = byId.get(cell.staff_id)
     if (!s || !s.is_active || !deptFilter.has(s.department_id)) continue
+    if (onSheet && onSheet.has(s.id)) continue   // föyde basılı, yalnız bu fotoğraftaki sayfada değil
     notOnSheet.push({ staff_id: s.id, full_name: s.full_name, department: s.department, date: cell.work_date })
   }
   notOnSheet.sort((a, b) => a.date.localeCompare(b.date) || a.full_name.localeCompare(b.full_name, 'tr'))
