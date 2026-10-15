@@ -19,6 +19,7 @@ import { logAudit } from '../audit.js'
 import { logger } from '../logger.js'
 import { pruneTokenBlacklist } from '../auth/service.js'
 import { runBackupService, listBackupsService, deleteBackupService } from '../../modules/backup/service.js'
+import { backupsToPrune } from '../../modules/backup/retention.js'
 import { enforceKvkkRetentionService } from '../../modules/kvkk/service.js'
 import PDFDocument from 'pdfkit'
 import { checkTruckArrivalAlerts, waterDailyDigest, buildReconciliationPDF, waterEscalations, notifyWaterOperations } from '../../modules/water/service.js'
@@ -347,14 +348,11 @@ export function startCronJobs() {
       return
     }
     logger.info(`[Cron] Otomatik yedekleme: ${result.name} (${(result.size / 1024 / 1024).toFixed(1)} MB)`)
-    // 7 günden eski yedekleri sil (28 yedeği koruma hedefi)
-    const backups = listBackupsService().filter(b => !b.name.includes('pre-restore'))
-    const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000
-    for (const backup of backups) {
-      if (new Date(backup.created_at).getTime() < cutoff) {
-        deleteBackupService(backup.name)
-        logger.info(`[Cron] Eski yedek silindi: ${backup.name}`)
-      }
+    // Saklama: son 7 gün hepsi, 7–30 gün her gün için tek yedek, 30+ gün silinir (backup/retention.js).
+    // Eskiden 7 günden eskinin hepsi siliniyordu → rclone sync B2'ye de yansıtıyor, 30 günlük güvence 7 gündü.
+    for (const name of backupsToPrune(listBackupsService())) {
+      deleteBackupService(name)
+      logger.info(`[Cron] Eski yedek silindi: ${name}`)
     }
   }), TZ)
 
