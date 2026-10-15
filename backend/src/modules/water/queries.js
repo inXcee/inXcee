@@ -282,7 +282,71 @@ export function updateIntakeMovement(id, movement) {
   `).run({ ...movement, id }).changes > 0
 }
 
+// ── FIFO başlangıç (geçiş) tarihi ──
+// Ekim 2026: Temmuz–Eylül tır girişleri hiç girilmemişti; devir (açılış stoğu) Ekim girişi olarak yazıldı.
+// FIFO her yeni girişi EN ESKİ karşılıksız dağıtıma bağladığı için Ekim girişleri Eylül açığına gidiyor,
+// Ekim dağıtımları kalıcı olarak "karşılıksız / inceleme" kalıyordu. Ayar doluysa o tarihten önceki
+// giriş ve dağıtımlar eşleştirmeye katılmaz (devirle kapanmış geçmiş). Boşsa davranış eskisiyle aynı.
+export const FIFO_START_KEY = 'water_fifo_start_date'
+
+export function getFifoStartDate() {
+  const value = getDB().prepare('SELECT value FROM system_settings WHERE key=?').get(FIFO_START_KEY)?.value
+  return /^\d{4}-\d{2}-\d{2}$/.test(value || '') ? value : null
+}
+
+export function getFifoStartSetting() {
+  const row = getDB().prepare('SELECT value, updated_at FROM system_settings WHERE key=?').get(FIFO_START_KEY)
+  return { date: getFifoStartDate(), updated_at: row?.updated_at || null }
+}
+
+export function writeFifoStartDate(date) {
+  const db = getDB()
+  if (date) {
+    db.prepare(`
+      INSERT INTO system_settings(key, value) VALUES(?, ?)
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=datetime('now')
+    `).run(FIFO_START_KEY, date)
+  } else {
+    db.prepare('DELETE FROM system_settings WHERE key=?').run(FIFO_START_KEY)
+  }
+}
+
+// Tarih SONRASI olup tarih öncesi bir girişle eşleşmiş dağıtımlar: serbest kalınca yeniden karşılanamazlarsa incelemeye.
+export function crossingPostStartOutIds(start) {
+  return getDB().prepare(`
+    SELECT DISTINCT a.out_movement_id AS id FROM water_movement_allocations a
+    JOIN water_movements i ON i.id = a.in_movement_id
+    JOIN water_movements o ON o.id = a.out_movement_id
+    WHERE i.move_date < @start AND o.move_date >= @start
+  `).all({ start }).map(r => r.id)
+}
+
+// Geçiş tarihini aşan eşleşmeler (giriş ve dağıtımdan biri tarihten önce, diğeri sonra) → serbest bırakılır.
+export function releaseCrossingAllocations(start) {
+  return getDB().prepare(`
+    DELETE FROM water_movement_allocations
+    WHERE rowid IN (
+      SELECT a.rowid FROM water_movement_allocations a
+      JOIN water_movements i ON i.id = a.in_movement_id
+      JOIN water_movements o ON o.id = a.out_movement_id
+      WHERE (i.move_date >= @start AND o.move_date < @start) OR (i.move_date < @start AND o.move_date >= @start)
+    )
+  `).run({ start }).changes
+}
+
+// Geçiş öncesi dağıtımların inceleme işareti kalkar: devirle kapanmış geçmiş, karar bekleyen iş değil.
+export function clearReviewsBefore(start) {
+  return getDB().prepare(`
+    UPDATE water_movements SET needs_review=0 WHERE type='out' AND needs_review=1 AND move_date < ?
+  `).run(start).changes
+}
+
+export function movementProductIds() {
+  return getDB().prepare('SELECT DISTINCT product_id FROM water_movements').all().map(r => r.product_id)
+}
+
 export function openIntakeLots(productId) {
+  const start = getFifoStartDate()
   return getDB().prepare(`
     SELECT mv.id, mv.product_id, mv.move_date, mv.waybill_no, mv.qty_base,
            mv.lot_no, mv.production_date, mv.expiry_date, mv.lot_status,
@@ -292,12 +356,12 @@ export function openIntakeLots(productId) {
     FROM water_movements mv
     JOIN water_products p ON p.id=mv.product_id
     LEFT JOIN water_movement_allocations wa ON wa.in_movement_id = mv.id
-    WHERE mv.type='in' AND mv.product_id=? AND mv.lot_status='active'
+    WHERE mv.type='in' AND mv.product_id=? AND mv.lot_status='active'${start ? ' AND mv.move_date >= ?' : ''}
     GROUP BY mv.id
     HAVING remaining_base > 0
     ORDER BY CASE WHEN mv.expiry_date IS NULL THEN 1 ELSE 0 END,
       mv.expiry_date ASC, mv.move_date ASC, mv.id ASC
-  `).all(productId)
+  `).all(...(start ? [productId, start] : [productId]))
 }
 
 export function getIntakeLot(id) {
@@ -359,6 +423,8 @@ export function openDistributionNeeds(productId) {
   const params = []
   let where = "mv.type='out'"
   if (productId) { where += ' AND mv.product_id=?'; params.push(productId) }
+  const start = getFifoStartDate()
+  if (start) { where += ' AND mv.move_date >= ?'; params.push(start) }
   return getDB().prepare(`
     SELECT mv.id, mv.product_id, mv.move_date, mv.qty_base,
            COALESCE(SUM(wa.qty_base), 0) AS allocated_base,
@@ -596,11 +662,12 @@ export function deleteTemplate(id) {
 export function flagReviewForUnallocated(ids) {
   if (!ids?.length) return 0
   const ph = ids.map(() => '?').join(',')
+  const start = getFifoStartDate()  // geçiş öncesi dağıtım incelemeye düşmez (devirle kapanmış geçmiş)
   return getDB().prepare(`
     UPDATE water_movements SET needs_review=1
-    WHERE id IN (${ph}) AND type='out'
+    WHERE id IN (${ph}) AND type='out'${start ? ' AND move_date >= ?' : ''}
       AND qty_base > (SELECT COALESCE(SUM(qty_base),0) FROM water_movement_allocations WHERE out_movement_id=water_movements.id)
-  `).run(...ids).changes
+  `).run(...ids, ...(start ? [start] : [])).changes
 }
 export function reviewQueue() {
   return getDB().prepare(`
@@ -654,8 +721,10 @@ export function clearResolvedReviews(productIds = null) {
   `).run(...ids).changes
 }
 
-// İrsaliye bekleyen (eşleşmemiş) tüm dağıtımlar — detaylı liste (W3)
+// İrsaliye bekleyen (eşleşmemiş) tüm dağıtımlar — detaylı liste (W3). FIFO başlangıç tarihi varsa öncesi
+// listelenmez (aksi hâlde devirle kapanmış eski dağıtımlar sonsuza dek "gecikmiş" eskalasyonu üretir).
 export function pendingDistributions() {
+  const start = getFifoStartDate()
   return getDB().prepare(`
     SELECT mv.id, mv.move_date, mv.qty_base, mv.note,
            p.name AS product_name, p.unit_label, p.units_per_case, p.cases_per_pallet,
@@ -669,11 +738,11 @@ export function pendingDistributions() {
     JOIN water_products p ON p.id = mv.product_id
     LEFT JOIN water_brands b ON b.id = p.brand_id
     LEFT JOIN water_zones z ON z.id = mv.zone_id
-    WHERE mv.type='out'
+    WHERE mv.type='out'${start ? ' AND mv.move_date >= ?' : ''}
     GROUP BY mv.id
     HAVING unallocated_base > 0
     ORDER BY mv.move_date ASC, mv.id ASC
-  `).all()
+  `).all(...(start ? [start] : []))
 }
 
 // Verilen günde hiç dağıtım (out) kaydı girilmemiş aktif bölgeler (Uyarı Merkezi)

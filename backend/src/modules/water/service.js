@@ -27,6 +27,8 @@ export {
   updateDistributionService,
   updateIntakeService,
   updateMovementService,
+  setFifoStartService,
+  fifoStartService,
 } from './movements.js'
 export {
   assertMonthUnlocked,
@@ -849,7 +851,7 @@ export function pendingDistributionsService({ today } = {}) {
     overdue: rows.filter(x => x.severity === 'overdue').length,
     unallocated_base: rows.reduce((s, x) => s + x.unallocated_base, 0),
   }
-  return { date: day, rows, totals }
+  return { date: day, rows, totals, fifo_start: q.getFifoStartDate() }
 }
 
 // ── Onay akışı (W10) ──

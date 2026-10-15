@@ -8,6 +8,7 @@ const queryMocks = vi.hoisted(() => ({
   createMovementsBatchWithAllocations: vi.fn(),
   deleteMovement: vi.fn(),
   flagReviewForUnallocated: vi.fn(),
+  getFifoStartDate: vi.fn(() => null),
   getMovement: vi.fn(),
   getProduct: vi.fn(),
   getZone: vi.fn(),

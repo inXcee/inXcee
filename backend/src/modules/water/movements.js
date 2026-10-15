@@ -4,6 +4,7 @@ import { assertMonthUnlocked } from './reconciliation.js'
 import { checkLowStock } from './notifications.js'
 import { normalizeIntakeLot } from './lot-fields.js'
 import { isIsoDate } from '../../shared/validation/date.js'
+import { istanbulDate } from '../../shared/time.js'
 
 const errorWithStatus = (message, statusCode) => Object.assign(new Error(message), { statusCode })
 const lotCanServe = (lot, moveDate) => {
@@ -31,8 +32,13 @@ function validateMovement(data, requireZone) {
 function buildAllocationPlans(rows) {
   const lotsByProduct = new Map()
   const plans = []
+  const start = q.getFifoStartDate()
 
   for (const row of rows) {
+    if (start && row.move_date < start) {  // geçiş öncesine geç girilen dağıtım: devirle kapanmış geçmiş, lot almaz
+      plans.push({ movement: row, allocations: [] })
+      continue
+    }
     if (!lotsByProduct.has(row.product_id)) {
       lotsByProduct.set(row.product_id, q.openIntakeLots(row.product_id).map(lot => ({ ...lot })))
     }
@@ -86,6 +92,29 @@ function reconcileUnallocatedOut(productIds) {
 
 export function reconcileProductAllocations(productIds) {
   return reconcileUnallocatedOut(productIds)
+}
+
+// FIFO başlangıç (geçiş) tarihini ayarla ya da kaldır (null) ve eşleştirmeyi buna göre yeniden kur — tek transaction.
+// Tarihi aşan eşleşmeler serbest bırakılır, tarih öncesi dağıtımların inceleme işareti kalkar, tüm ürünler yeniden
+// eşleştirilir. Serbest kalıp hâlâ karşılanamayan (tarih sonrası) dağıtım incelemeye düşer.
+export function setFifoStartService(date, { today = istanbulDate() } = {}) {
+  const value = date === undefined || date === null || date === '' ? null : String(date)
+  if (value !== null && !isIsoDate(value)) throw errorWithStatus('Tarih YYYY-MM-DD olmalı', 400)
+  if (value && value > today) throw errorWithStatus('Başlangıç tarihi ileri bir gün olamaz', 400)
+  return q.runInTransaction(() => {
+    const before = q.getFifoStartDate()
+    q.writeFifoStartDate(value)
+    const affected = value ? q.crossingPostStartOutIds(value) : []
+    const released = value ? q.releaseCrossingAllocations(value) : 0
+    const clearedOld = value ? q.clearReviewsBefore(value) : 0
+    const matched = reconcileUnallocatedOut(q.movementProductIds())
+    const flagged = q.flagReviewForUnallocated(affected)
+    return { before, date: value, released, cleared_old_reviews: clearedOld, matched, flagged, open_reviews: q.reviewQueue().length }
+  })
+}
+
+export function fifoStartService() {
+  return q.getFifoStartSetting()
 }
 
 export function createIntakeService(data, userId) {

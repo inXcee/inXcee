@@ -478,7 +478,8 @@ function PendingWaybillPanel({ alertSnapshot }) {
       title={`🧾 İRSALİYE BEKLEYEN DAĞITIMLAR (${t.count})`}
       subtitle={<>{hasOverdue
         ? <span style={{ color: 'var(--red)', fontWeight: 600 }}>{query.data ? `${t.overdue} tanesi` : 'gecikmiş kayıt var'} · 3+ gündür bekliyor</span>
-        : 'hepsi taze'} · yeni irsaliye girince otomatik kapanır</>}
+        : 'hepsi taze'} · yeni irsaliye girince otomatik kapanır
+        {query.data?.fifo_start && <> · {query.data.fifo_start.split('-').reverse().join('.')} öncesi devirle kapalı</>}</>}
       style={{ marginTop: '16px', borderTop: `3px solid ${hasOverdue ? 'var(--red)' : 'var(--accent)'}` }}
     >
       <div style={{ overflowX: 'auto' }}>
