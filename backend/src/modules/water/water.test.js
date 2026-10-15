@@ -1372,6 +1372,25 @@ describe('Su takip — Onay akışı (W10)', () => {
     })
     expect(decision.unallocated_base).toBeGreaterThan(0)
   })
+
+  // Canlı 10.10.2026: onaylanmış dağıtımı silmek "FOREIGN KEY constraint failed" (500) veriyordu —
+  // karar geçmişi hareketi kilitliyordu. Karar kaydı kalır, yalnız hareket bağlantısı boşalır.
+  it('karar geçmişi olan dağıtım tek tek ve dönem temizliğiyle silinebilir; karar kaydı korunur', async () => {
+    const one = (await auth(request(app).post('/api/water/distribute')).send({ product_id: pRev, zone_id: zRev, input_qty: 3, input_unit: 'adet', move_date: '2027-02-10' })).body.id
+    const two = (await auth(request(app).post('/api/water/distribute')).send({ product_id: pRev, zone_id: zRev, input_qty: 4, input_unit: 'adet', move_date: '2027-02-11' })).body.id
+    const note = 'Silme öncesi onaylanan istisna'
+    expect((await auth(request(app).post('/api/water/review/approve')).send({ ids: [one, two], note })).body.approved).toBe(2)
+
+    const del = await auth(request(app).delete(`/api/water/movements/${one}`))
+    expect(del.status).toBe(200)
+    const clear = await auth(request(app).post('/api/water/movements/clear')).send({ from: '2027-02-11', to: '2027-02-11' })
+    expect(clear.status).toBe(200)
+    expect(clear.body.deleted).toBe(1)
+
+    expect(getDB().prepare('SELECT count(*) AS n FROM water_movements WHERE id IN (?, ?)').get(one, two).n).toBe(0)
+    const kept = getDB().prepare('SELECT movement_id, unallocated_base FROM water_review_decisions WHERE note=? ORDER BY id').all(note)
+    expect(kept).toEqual([{ movement_id: null, unallocated_base: 3 }, { movement_id: null, unallocated_base: 4 }])
+  })
 })
 
 describe('Su takip — Tüketim öngörüsü & sipariş önerisi (V1)', () => {
