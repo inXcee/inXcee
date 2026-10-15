@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, vi } from 'vitest'
 import { globalErrorHandler } from './app.js'
 import { initDB, getDB } from './shared/db/index.js'
+import { logger } from './shared/logger.js'
 
 beforeAll(() => { process.env.DB_PATH = ':memory:'; initDB() })
 
@@ -38,5 +39,22 @@ describe('Global hata işleyici', () => {
     globalErrorHandler(Object.assign(new Error('Tarih YYYY-MM-DD olmalı'), { statusCode: 400 }), req, res, () => {})
     expect(res.status).toHaveBeenCalledWith(400)
     expect(res.json).toHaveBeenCalledWith({ error: 'Tarih YYYY-MM-DD olmalı' })
+  })
+
+  it('istemci hatası uyarı seviyesinde ve yığın izisiz; sunucu hatası hata seviyesinde günlüğe düşer', () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {})
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => {})
+    try {
+      globalErrorHandler(Object.assign(new Error('Hareket bulunamadı'), { statusCode: 404 }), req, mockRes(), () => {})
+      expect(error).not.toHaveBeenCalled()
+      expect(warn).toHaveBeenCalledWith(
+        { status: 404, method: 'DELETE', url: '/api/ornek/1', msg: 'Hareket bulunamadı' }, '[Express] istemci hatası')
+      globalErrorHandler(new Error('beklenmeyen'), req, mockRes(), () => {})
+      expect(error).toHaveBeenCalledTimes(1)
+      expect(error.mock.calls[0][0].err.message).toBe('beklenmeyen')
+    } finally {
+      warn.mockRestore()
+      error.mockRestore()
+    }
   })
 })
