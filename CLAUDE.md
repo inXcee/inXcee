@@ -55,6 +55,7 @@ cd backend && node -e "import('./src/shared/db/index.js').then(m=>m.initDB()).th
 - Ürün miktarı sessizce yuvarlanmaz; kullanıcı miktarı tam baz birime dönüşmüyorsa 400 döner.
 - Frontend mutation'ları merkezi `invalidateWaterQueries` kapsamlarını kullanır; yeni dağınık query-key listeleri eklenmez.
 - Gerçek tır maili `water.truck-mail` kalıcı kuyruğundan gider. `mark-mail-sent` yalnızca harici gönderim teyididir.
+- Repo dışı Excel köprüsü (Hermes `su_excel.py` + PC'deki SU_TAKIP ajanı) `GET /movements` alanlarına ve işlem anahtarının 90 gün tekrar oynatılmasına bağlıdır — değiştirmeden önce `docs/water-module.md` → "Excel Köprüsü".
 
 ### İmza Föyü (basım → fotoğraftan okuma → föy takibi)
 
