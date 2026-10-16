@@ -57,6 +57,16 @@ export function retryFailed({ type, ids } = {}) {
   `).run(now).changes
 }
 
+// Biten ve basarisiz isler sonsuza dek kalmasin (gece 02:00 temizligi). Basarisiz is duzeltilip yeniden
+// denenmek uzere 30 gun listede durur; sonra sagliktaki "failed" sayisi yalniz guncel sorunlari gosterir
+// (Temmuz'daki 7 SMTP hatasi aylarca "failed: 7" diye kaldi, yeni bir hata bu sayinin icinde kaybolurdu).
+export function pruneJobs({ days = 30 } = {}) {
+  const db = getDB()
+  const cutoff = Math.floor(Date.now() / 1000) - days * 86400
+  const del = db.prepare('DELETE FROM job_queue WHERE status=? AND updated_at < ?')
+  return { done: del.run('done', cutoff).changes, failed: del.run('failed', cutoff).changes }
+}
+
 // Tek bir tick: bir is varsa onu islet, true don. Yoksa false.
 export async function tickOnce() {
   const db = getDB()

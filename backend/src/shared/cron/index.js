@@ -18,6 +18,7 @@ import { runDisciplineAutomation } from '../../modules/discipline/automation.js'
 import { logAudit } from '../audit.js'
 import { logger } from '../logger.js'
 import { pruneTokenBlacklist } from '../auth/service.js'
+import { pruneJobs } from '../jobs/index.js'
 import { runBackupService, listBackupsService, deleteBackupService } from '../../modules/backup/service.js'
 import { backupsToPrune } from '../../modules/backup/retention.js'
 import { enforceKvkkRetentionService } from '../../modules/kvkk/service.js'
@@ -273,7 +274,7 @@ export function startCronJobs() {
     } catch (e) { logger.error('[Cron] Disiplin otomasyon hatasi:', e.message) }
   }), TZ)
 
-  // Her gece 02:00 — eski audit log + okunmuş bildirimler 90 gün, hata logları 30 gün
+  // Her gece 02:00 — eski audit log + okunmuş bildirimler 90 gün, hata logları ve biten/başarısız işler 30 gün
   cron.schedule('0 2 * * *', withLock('cleanup', () => {
     try {
       const db = getDB()
@@ -290,6 +291,8 @@ export function startCronJobs() {
       // Süresi dolmuş token blacklist kayıtlarını temizle
       const pruned = pruneTokenBlacklist()
       if (pruned > 0) logger.info(`[Cron] ${pruned} süresi dolmuş token blacklist kaydı temizlendi`)
+      const jobs = pruneJobs()
+      if (jobs.done || jobs.failed) logger.info(`[Cron] İş kuyruğu temizliği (30 gün+): ${jobs.done} biten, ${jobs.failed} başarısız`)
       const waterFiles = cleanupWaterFiles()
       if (waterFiles.orphan_files_deleted || waterFiles.reports_deleted) {
         logger.info(`[Cron] Su dosya temizliği: ${waterFiles.orphan_files_deleted} yetim dosya, ${waterFiles.reports_deleted} eski rapor`)

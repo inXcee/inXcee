@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest'
 import { initDB, getDB } from '../db/index.js'
-import { enqueue, tickOnce, getStats } from './index.js'
+import { enqueue, tickOnce, getStats, pruneJobs } from './index.js'
 import { handlers } from './handlers.js'
 
 beforeAll(() => {
@@ -108,5 +108,22 @@ describe('getStats', () => {
     const stats = getStats()
     expect(stats.pending).toBe(2)
     expect(stats.done).toBe(0)
+  })
+})
+
+describe('pruneJobs', () => {
+  it('30 günden eski biten/başarısız işleri siler; bekleyen, çalışan ve yenilere dokunmaz', () => {
+    const db = getDB()
+    const now = Math.floor(Date.now() / 1000)
+    const old = now - 31 * 86400
+    const ins = db.prepare('INSERT INTO job_queue(type, payload, status, updated_at) VALUES(?,?,?,?)')
+    ins.run('t', '{}', 'done', old)
+    ins.run('t', '{}', 'failed', old)          // Temmuz'daki SMTP hatası gibi: aylarca "failed: 7" kalıyordu
+    ins.run('t', '{}', 'pending', old)         // ileri tarihli bekleyen iş silinmez
+    ins.run('t', '{}', 'processing', old)
+    ins.run('t', '{}', 'done', now - 3600)
+    ins.run('t', '{}', 'failed', now - 29 * 86400)  // hâlâ yeniden denenebilir
+    expect(pruneJobs()).toEqual({ done: 1, failed: 1 })
+    expect(getStats()).toMatchObject({ pending: 1, processing: 1, done: 1, failed: 1 })
   })
 })
