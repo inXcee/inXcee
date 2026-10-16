@@ -313,6 +313,27 @@ Kritik regresyonlar: tam baz miktar matematiği, giriş+FEFO atomikliği, geçmi
 6. Kilit açılması gerekiyorsa gerekçeyi operasyon notuna yaz; düzeltme sonrası yeniden kapat.
 7. Sistem Sağlığı ekranında cron, job queue ve `error_log` durumunu takip et.
 
+## Excel Köprüsü (repo dışı istemciler)
+
+Saha iki Excel ile çalışıyor: Arda'nın aylık **SUCU** dosyası (bölge sayfaları gün × ürün; INDEX'te gelen tır,
+önceki ay sayımı, teslim edilen boşlar) ve kullanıcının masaüstündeki **SU_TAKIP** çalışma kitabı. Kayıt sahibi
+YYS'dir; iki istemci de yalnız bu API üzerinden konuşur:
+
+| İstemci | Yön | Kullandığı uçlar |
+|---|---|---|
+| Hermes `su_excel.py` (Telegram'a atılan .xlsx, yapay zekâsız) | Excel → YYS | `POST /distribute/batch`, `/intake/batch` (irsaliyesiz, not: `İRSALİYESİZ: Arda'nın Excel'inden`), `/returns/batch`, `/zones`; geri alma `DELETE /movements/:id[?force=1]`, `/returns/:id` |
+| PC ajanı `yys_su_sync.py` (15 dk'da bir, servis kullanıcısı `puantaj_ajan`) | YYS → Excel | `GET /movements?from&to&limit=1000` (8 günlük pencereler) |
+
+- Hermes yalnız YYS'de **hiç olmayan** günleri, eksik tırları ve boş iadelerini yazar (sıra: tır → gün → iade).
+  Bölge dağılımı farkı (ürün toplamı aynı) düzeltilmez, gösterilir. Hareket notunda `xlsx:<jeton>:<tür>:<gün>` bulunur.
+- Devir (açılış stoku) girişinden önceki ay yalnız karşılaştırılır; o ayı işlemek stoku iki kez sayar.
+- PC ajanı SU_TAKIP'in yalnız bölge sayfası gün hücrelerine ve İRSALİYE satırlarına yazar; elle girilmiş hücreye
+  dokunmaz. `GET /movements` yanıtındaki `zone_name`, `product_name`, `brand_name`, `qty_base`, `input_unit`, `note`,
+  `waybill_no`, `move_date`, `type` alanları bu ajanın sözleşmesidir — değiştirmeden önce ajanı güncelle.
+- **İşlem anahtarı tekrar oynatılır:** `X-Idempotency-Key` 90 gün saklanır ve aynı anahtarla gelen istek ESKİ yanıtı
+  döndürür (yazmaz, `X-Idempotent-Replay: 1`). Silinen bir kaydı yeniden yazan istemci yeni anahtar üretmelidir
+  (Hermes geri alınan kaynağa kuşak eki `#n` ekler).
+
 ## Bilinçli Olarak Ertelenenler
 
 - mobil/QR saha girişi;
