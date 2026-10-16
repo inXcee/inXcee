@@ -20,6 +20,7 @@ import { buildStaffResolver, nameSimilarity } from './staffAliases.js'
 const fail = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode })
 export const ROSTER_STALE_DAYS = 14
 const KEEP_SNAPSHOTS = 30
+export const RUN_SUMMARY_MAX = 200000
 const MAX_PEOPLE = 3000
 
 const clean = (v, max = 160) => {
@@ -49,7 +50,9 @@ export function ingestRoster(body, userId) {
   let runSummary = null
   if (body.run && typeof body.run === 'object') {
     runSummary = JSON.stringify(body.run)
-    if (runSummary.length > 50000) runSummary = JSON.stringify({ truncated: true, counts: body.run.counts || null })
+    // Tur özeti ay sonu puantaj raporunun kaynağıdır (ajanın `month_stats`'ı: iki ay × ~185 kişi ≈ 35 KB). 50 KB sınırı
+    // aşılınca sessizce kırpılıyor, ay sayımı kayboluyordu → 200 KB (30 görüntü × 200 KB = en çok ~6 MB).
+    if (runSummary.length > RUN_SUMMARY_MAX) runSummary = JSON.stringify({ truncated: true, counts: body.run.counts || null })
   }
 
   const resolve = buildStaffResolver(db, { includeInactive: true })

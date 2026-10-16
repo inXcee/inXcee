@@ -6,7 +6,7 @@ import { seedDev } from '../../shared/db/seed.js'
 import { istanbulDate } from '../../shared/time.js'
 import { validTc } from '../../shared/names.js'
 import { buildStaffResolver, addStaffAlias, nameSimilarity } from './staffAliases.js'
-import { rosterLookupFactory } from './hrRoster.js'
+import { RUN_SUMMARY_MAX, rosterLookupFactory } from './hrRoster.js'
 
 // Geçerli kontrol haneli test TC'leri
 const TC = { a: '10000000146', b: '10000000214', c: '10000000382', d: '10000000450', e: '10000000528' }
@@ -113,6 +113,22 @@ describe('İK kadro senkronu', () => {
       diffs: [{ field: 'hire_date', yys: '2023-04-01', roster: '2024-12-20' }, { field: 'project_id', yys: 'FPU', roster: 'Kamp Alanı' }] })])
     const ali = rec.fillable.find(f => f.staff_id === ids.ali)
     expect(ali.fields).toEqual({ tc_no: TC.b, hire_date: '2025-05-05', position: 'Aşçı', project_id: fpuId })
+  })
+
+  it('ay puantaj sayımlı büyük tur özeti olduğu gibi saklanır; yalnız sınırı aşan kırpılır', async () => {
+    const people = Array.from({ length: 185 }, (_, i) => ({ name: `KİŞİ ${i} SOYADI UZUNCA`, position: 'TEMİZLİK PERSONELİ',
+      codes: { N: 20, H: 4, S: 2, R: 1 }, blank: [5, 6] }))
+    const projects = { 'Kamp Alanı': { people }, FPU: { people } }
+    const monthStats = { '2026-09': { complete: true, projects }, '2026-10': { complete: false, projects } }
+    const big = { ...roster(), run: { counts: { changes: 0 }, month_stats: monthStats } }
+    expect(JSON.stringify(big.run).length).toBeGreaterThan(50000)               // eski sınırı aşan gerçekçi boyut
+    expect((await request(app).post('/api/personnel/hr-roster').set(auth(sup)).send(big)).status).toBe(201)
+    const run = (await request(app).get('/api/personnel/hr-roster').set(auth(sup))).body.snapshot.run
+    expect(run.month_stats['2026-10'].projects['Kamp Alanı'].people).toHaveLength(185)
+    const huge = { ...roster(), run: { counts: { changes: 1 }, blob: 'x'.repeat(RUN_SUMMARY_MAX) } }
+    expect((await request(app).post('/api/personnel/hr-roster').set(auth(sup)).send(huge)).status).toBe(201)
+    expect((await request(app).get('/api/personnel/hr-roster').set(auth(sup))).body.snapshot.run)
+      .toEqual({ truncated: true, counts: { changes: 1 } })
   })
 
   it('farklar takip uyarısı olarak açılır; tek özet bildirim gider', async () => {
