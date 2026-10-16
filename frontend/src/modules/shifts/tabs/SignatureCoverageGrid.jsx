@@ -4,7 +4,9 @@ import { formatDate } from '../shared.jsx'
 
 // Föy dönüş takibi: bölüm × gün. Hangi günün hangi bölüm föyü kontrol edildi
 // (temiz / uyarılı), hangisi hiç gelmedi. "Gelmedi" hücresine tıklamak o gün ve
-// bölümü kontrol formuna taşır.
+// bölümü kontrol formuna taşır. Sade haftalık föy basılmış haftada föy hafta sonunda
+// gelir (o güne kadar "bekleniyor"); bölümün föyde birden fazla sayfası varsa ve
+// yalnız bir kısmı okunduysa "kısmen". Tablonun üstünde basılı föylerin sayfa durumu.
 
 export const COVERAGE_KEY = 'signature-coverage'
 
@@ -12,7 +14,8 @@ const CELL = {
   clean: { icon: '✓', color: 'var(--green)', label: 'kontrol edildi, fark yok' },
   warn: { icon: '⚠', color: 'var(--red)', label: 'kontrol edildi, uyarı var' },
   missing: { icon: '✗', color: 'var(--red)', label: 'föy kontrol edilmedi' },
-  pending: { icon: '…', color: 'var(--text3)', label: 'bugün — föy bekleniyor' },
+  pending: { icon: '…', color: 'var(--text3)', label: 'föy bekleniyor' },
+  partial: { icon: '◐', color: 'var(--orange)', label: 'kısmen okundu — bölümün föydeki diğer sayfası bekleniyor' },
   not_needed: { icon: '', color: 'var(--text3)', label: 'çalışan planlı değil' },
 }
 
@@ -22,6 +25,7 @@ export function cellTitle(dept, date, c) {
   const head = `${dept} · ${formatDate(date)} — ${CELL[c.status].label}`
   const lines = [head]
   if (c.planned) lines.push(`Planlı çalışan: ${c.planned}`)
+  if (c.sheet_pages) lines.push(`Föy sayfası: bu günü kapsayan ${c.sheet_pages_covering}/${c.sheet_pages}`)
   if (c.run_id) {
     lines.push(`Kontrol: ${String(c.checked_at || '').slice(0, 16)} (${c.source === 'telegram' ? 'Telegram' : 'web'})`)
     for (const f of (c.findings || []).slice(0, 12)) lines.push(`${KIND[f.kind] || '•'} ${f.name}: ${f.text}`)
@@ -51,7 +55,18 @@ export default function SignatureCoverageGrid({ weekDays = [], onPick }) {
         <b>Föy dönüş takibi</b> · kontrol {s.checked}/{s.expected}
         {s.missing > 0 && <> · <span style={{ color: 'var(--red)' }}>gelmedi {s.missing}</span></>}
         {s.warn > 0 && <> · <span style={{ color: 'var(--red)' }}>uyarılı {s.warn}</span></>}
+        {s.partial > 0 && <> · <span style={{ color: 'var(--orange)' }}>kısmen {s.partial}</span></>}
       </div>
+      {(data.prints || []).length > 0 && (
+        <div style={{ fontSize: 11, marginBottom: 4, display: 'flex', gap: 10, flexWrap: 'wrap' }} aria-label="Basılı föy sayfaları">
+          {data.prints.map(p => (
+            <span key={p.print_id} title={`Föy no ${p.print_id}`}
+              style={{ color: p.missing.length ? 'var(--orange)' : 'var(--green)' }}>
+              🖨 {p.title}: {p.read}/{p.total} sayfa okundu{p.missing.length ? ` (eksik ${p.missing.join(', ')})` : ' ✓'}
+            </span>
+          ))}
+        </div>
+      )}
       <div style={{ overflowX: 'auto' }}>
         <table style={{ borderCollapse: 'collapse', fontSize: 11 }}>
           <thead>

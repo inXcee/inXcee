@@ -62,6 +62,7 @@ import { renderSignaturePrint, getPrint, getPrintPdf } from './signaturePrints.j
 import { buildPlainWeeklyModel, mondayOf, NO_PROJECT, signatureSheetGroups, slugTr, weekDates, weekLabel } from './signatureSheet.js'
 import { checkSignatureSheet } from './signatureCheck.js'
 import { recordSignatureCheck, buildSignatureCoverage } from './signatureCheckRuns.js'
+import { checkWeek, correctRead, ReadError, recordPageRead, weekProgress } from './signatureReads.js'
 import {
   checkConflicts, listHolidays, createHoliday, updateHoliday, deleteHoliday,
   getPayrollExport, getCombinedAbsences,
@@ -75,7 +76,7 @@ import { computeAnnualBalance } from './leaveBalance.js'
 import { evaluatePersonnelAlerts } from '../personnel/tracking-alerts.js'
 import { puantajExport } from './puantajExport.js'
 import { createOpeningBalances, listOpeningBalances, decideOpeningBalance, decideOpeningBalancesBulk } from './leaveOpening.js'
-import { importScheduleSchema, signatureCheckSchema } from './schemas.js'
+import { importScheduleSchema, signatureCheckSchema, signatureReadSchema, signatureReadCorrectionSchema } from './schemas.js'
 import { validate } from '../../shared/middleware/validate.js'
 import { logAudit } from '../../shared/audit.js'
 import { documentUpload, verifyDocumentMagicBytes } from '../../shared/uploads/middleware.js'
@@ -884,6 +885,7 @@ shiftsRouter.post('/schedule/signature-sheet', ...managerOrSupervisor, async (re
     const label = weekLabel(built.model.dates)
     const { pdf, printId, pageCount } = await renderSignaturePrint({
       model: built.model, meta: { weekLabel: label, revision: '1' }, userId: req.user.id, weekStart: monday, size: 'A3',
+      groupKey: group, title: built.title,
     })
     res.setHeader('Content-Type', 'application/pdf')
     res.setHeader('Content-Disposition', `attachment; filename="imza-foyu-${slugTr(built.title)}-${monday}.pdf"`)
@@ -896,6 +898,54 @@ shiftsRouter.post('/schedule/signature-sheet', ...managerOrSupervisor, async (re
   } catch (e) {
     logger.error({ err: e.message }, '[signature-sheet]')
     if (!res.headersSent) res.status(500).json({ error: 'İmza föyü PDF oluşturulamadı' })
+  }
+})
+
+// Haftanın föy sayfaları: hangi baskının hangi sayfası okundu (Hermes /foy durum, hatırlatmalar).
+shiftsRouter.get('/schedule/signature-sheet/progress', ...managerOrSupervisor, (req, res) => {
+  const monday = sadeHafta(req, res)
+  if (!monday) return
+  res.json({ week_start: monday, week_label: weekLabel(weekDates(monday)), prints: weekProgress(monday) })
+})
+
+// FÖY SAYFA OKUMASI (Hermes foy_oku): sayfanın kesin okunan hücreleri kaydedilir, sonra haftanın TÜM okunan
+// sayfalarının birleşimiyle kontrol yapılıp föy takibine işlenir — sayfa sayfa gönderim bölümü ezmesin diye.
+// Puantaja hiçbir şey yazılmaz. Yanıt: haftanın kontrolü (Hermes yalnız bu sayfanın kişilerini gösterir) + sayfa takibi.
+function haftaSonucu(req, res, week, readId) {
+  const check = checkWeek(week)
+  if (check) recordSignatureCheck(check, { source: req.body?.source || 'telegram', userId: req.user.id })
+  res.json({ read_id: readId, week_start: week, check, progress: weekProgress(week) })
+}
+
+shiftsRouter.post('/schedule/signature-prints/:id/reads', ...managerOrSupervisor, validate(signatureReadSchema), (req, res) => {
+  const id = Number(req.params.id)
+  if (!Number.isInteger(id) || id <= 0) return res.status(404).json({ error: 'Föy baskısı bulunamadı' })
+  try {
+    const { readId, week } = recordPageRead({
+      printId: id, page: req.body.page, rows: req.body.rows, stats: req.body.stats || null,
+      photoDay: req.body.photo_day || null, source: req.body.source || 'telegram', userId: req.user.id,
+    })
+    logAudit(req.user.id, 'signature_sheet_read', 'shifts', id, `sayfa ${req.body.page + 1} · ${req.body.rows.length} hücre`)
+    haftaSonucu(req, res, week, readId)
+  } catch (e) {
+    if (e instanceof ReadError) return res.status(e.status).json({ error: e.message })
+    logger.error({ err: e.message }, '[signature-read]')
+    res.status(500).json({ error: 'Föy okuması kaydedilemedi' })
+  }
+})
+
+// Belirsiz hücrenin elle düzeltmesi (Telegram düğmesi: imzalı / boş) — haftanın kontrolü yeniden yapılır.
+shiftsRouter.patch('/schedule/signature-reads/:id', ...managerOrSupervisor, validate(signatureReadCorrectionSchema), (req, res) => {
+  const id = Number(req.params.id)
+  if (!Number.isInteger(id) || id <= 0) return res.status(404).json({ error: 'Föy okuması bulunamadı' })
+  try {
+    const { readId, week } = correctRead(id, req.body.corrections)
+    logAudit(req.user.id, 'signature_sheet_read_fix', 'shifts', id, `${req.body.corrections.length} hücre düzeltildi`)
+    haftaSonucu(req, res, week, readId)
+  } catch (e) {
+    if (e instanceof ReadError) return res.status(e.status).json({ error: e.message })
+    logger.error({ err: e.message }, '[signature-read-fix]')
+    res.status(500).json({ error: 'Düzeltme kaydedilemedi' })
   }
 })
 

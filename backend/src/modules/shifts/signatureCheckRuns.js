@@ -1,6 +1,8 @@
 import crypto from 'node:crypto'
 import { getDB } from '../../shared/db/index.js'
 import { classifyScheduleCell } from './signatureCheck.js'
+import { printedWeekDeptPages, weekProgress } from './signatureReads.js'
+import { mondayOf } from './signatureSheet.js'
 
 // İmzalı föy dönüş takibi.
 //
@@ -76,9 +78,21 @@ export function recordSignatureCheck(result, { department_id = null, source = 'w
   return { batch_id: batch, parts: rows.length }
 }
 
-// Bir hücrenin durumu. Föy ertesi gün döner: bugünün eksiği "bekleniyor", geçmişinki "gelmedi".
-export function cellStatus({ planned, run, date, today }) {
-  if (run) return run.warnings || run.unmatched || run.not_on_sheet ? 'warn' : 'clean'
+// Bir hücrenin durumu. Günlük föy ertesi gün döner: bugünün eksiği "bekleniyor", geçmişinki "gelmedi".
+// SADE HAFTALIK föy basılmış haftada (weekly) föy hafta sonunda gelir: gün, föyün son günü (due = hafta bitiminden
+// sonraki pazartesi) geçene kadar "bekleniyor"; bölüm birden fazla sayfadaysa ve sayfalardan yalnız bir kısmı o günü
+// kapsıyorsa "kısmen" (sayfa okuması, fotoğraf günü o günden SONRAYSA o günü kapsar — gün içi boşlar sayılmaz).
+export function cellStatus({ planned, run, date, today, weekly = null }) {
+  const runStatus = run ? (run.warnings || run.unmatched || run.not_on_sheet ? 'warn' : 'clean') : null
+  if (weekly) {
+    const pages = weekly.pages || []
+    const covered = pages.filter(p => p.read && (!p.photo_day || p.photo_day > date)).length
+    if (covered > 0 && covered < pages.length) return runStatus === 'warn' ? 'warn' : 'partial'
+    if (runStatus) return runStatus
+    if (!planned) return 'not_needed'
+    return today > weekly.due ? 'missing' : 'pending'
+  }
+  if (runStatus) return runStatus
   if (!planned) return 'not_needed'
   return date < today ? 'missing' : 'pending'
 }
@@ -115,7 +129,9 @@ export function buildSignatureCoverage({ from, to }, db = getDB()) {
 
   const deptIds = new Set([...planned.keys(), ...runs.keys()].map(k => Number(k.split('|')[1])))
   const names = new Map(db.prepare('SELECT id, name FROM departments').all().map(d => [d.id, d.name]))
-  const summary = { expected: 0, checked: 0, clean: 0, warn: 0, missing: 0, pending: 0 }
+  const summary = { expected: 0, checked: 0, clean: 0, warn: 0, missing: 0, pending: 0, partial: 0 }
+  const weeks = [...new Set(days.map(mondayOf))]
+  const printed = printedWeekDeptPages(weeks, db)
 
   const departments = [...deptIds]
     .map(id => {
@@ -123,10 +139,16 @@ export function buildSignatureCoverage({ from, to }, db = getDB()) {
       for (const date of days) {
         const k = keyOf(date, id)
         const run = runs.get(k) || null
-        const status = cellStatus({ planned: planned.get(k) || 0, run, date, today })
+        const pw = printed.get(mondayOf(date))
+        const weekly = pw ? { due: pw.due, pages: pw.depts.get(id) || [] } : null
+        const status = cellStatus({ planned: planned.get(k) || 0, run, date, today, weekly })
         cells[date] = {
           status,
           planned: planned.get(k) || 0,
+          ...(weekly && weekly.pages.length ? {
+            sheet_pages: weekly.pages.length,
+            sheet_pages_covering: weekly.pages.filter(p => p.read && (!p.photo_day || p.photo_day > date)).length,
+          } : {}),
           ...(run ? {
             run_id: run.id, source: run.source, checked_at: run.created_at,
             warnings: run.warnings, unmatched: run.unmatched, not_on_sheet: run.not_on_sheet,
@@ -142,5 +164,7 @@ export function buildSignatureCoverage({ from, to }, db = getDB()) {
     })
     .sort((a, b) => a.name.localeCompare(b.name, 'tr'))
 
-  return { days, today, departments, summary }
+  // Haftanın basılı föyleri: hangi sayfa okundu / bekleniyor (web'de tablonun üstünde, Hermes /foy durum'da)
+  const prints = weeks.flatMap(week => weekProgress(week, db).map(p => ({ ...p, week_start: week })))
+  return { days, today, departments, summary, prints }
 }
