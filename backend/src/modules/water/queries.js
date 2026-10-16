@@ -811,6 +811,21 @@ export function dailySeries({ from, to, product_id } = {}) {
 // ── Tüketim hızı / öngörü (V1) ──
 // Son `window` gün içindeki dağıtım (out) toplamı + kayıtlı gün sayısı — ürün bazında.
 // asOf: bugünün YYYY-MM-DD'si (istemci yerel günü); pencere (asOf-window, asOf] aralığı.
+// Pencerede en az bir dağıtım kaydı olan günler (tüm ürünler) — tahminin paydası buradan türer.
+export function recordedOutDays({ window = 30, asOf } = {}) {
+  return getDB().prepare(`
+    SELECT DISTINCT move_date FROM water_movements
+    WHERE type='out' AND move_date > date(?, '-' || ? || ' days') AND move_date <= ?
+    ORDER BY move_date
+  `).all(asOf, window, asOf).map(row => row.move_date)
+}
+
+// Pencereden bağımsız son dağıtım günü: 30+ gündür hiç girilmediyse de "veri bayat" denebilsin.
+export function lastOutDate({ asOf } = {}) {
+  return getDB().prepare(`SELECT MAX(move_date) AS d FROM water_movements WHERE type='out' AND move_date <= ?`)
+    .get(asOf)?.d || null
+}
+
 export function consumptionRates({ window = 30, asOf } = {}) {
   return getDB().prepare(`
     SELECT product_id,

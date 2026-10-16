@@ -889,7 +889,10 @@ export function waterDailyDigest({
   const forecast = forecastService({ today })
   const s = alerts.summary
   const f = forecast.totals
+  const cov = forecast.data_coverage
   const parts = []
+  // Veri bayatsa önce o söylenir: girilmemiş günler varken stok, eksi stok ve sipariş önerisi yanıltır.
+  if (cov?.stale) parts.push(`su dağıtımı ${cov.missing_since_last} iş günüdür YYS'ye girilmedi (son kayıt ${cov.last_date}) — stok ve sipariş tahmini güvenilmez`)
   if (s.pending) parts.push(`${s.pending} irsaliye bekleyen`)
   if (s.negative) parts.push(`${s.negative} eksi stok`)
   if (s.low) parts.push(`${s.low} düşük stok`)
@@ -904,7 +907,7 @@ export function waterDailyDigest({
   if (actionable) {
     const notifications = notifyWaterOperations({
       message: `Su takip günlük özet (${today}): ${parts.join(', ')}.`,
-      severity: (s.negative || s.lot_critical || f.order_count) ? 'warning' : 'info',
+      severity: (cov?.stale || s.negative || s.lot_critical || f.order_count) ? 'warning' : 'info',
       module: 'water',
       dedup_key: `water_digest_${today}`,
       link: '/water',
@@ -921,6 +924,7 @@ export function waterDailyDigest({
     overdue_order_count: f.overdue_order_count,
     due_soon_order_count: f.due_soon_order_count,
     soon_count: f.soon_count,
+    data_coverage: cov || null,
     details: {
       pending: alerts.pending_waybill.slice(0, 20),
       negative: alerts.negative_stock.slice(0, 20),

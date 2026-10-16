@@ -391,8 +391,9 @@ function ForecastPanel() {
   const rows = data?.rows || []
   const orders = data?.order_suggestions || []
   const t = data?.totals || { order_count: 0, overdue_order_count: 0, due_soon_order_count: 0, soon_count: 0 }
+  const cov = data?.data_coverage
   const withData = useMemo(() => [...rows].filter(r => r.days_of_cover != null).sort((a, b) => a.days_of_cover - b.days_of_cover), [rows])
-  if (!data || (withData.length === 0 && orders.length === 0)) return null
+  if (!data || (withData.length === 0 && orders.length === 0 && !cov?.stale)) return null
 
   const coverColor = (d) => d == null ? 'var(--text3)' : d <= 7 ? 'var(--red)' : d <= 14 ? 'var(--amber, #d97706)' : 'var(--green)'
   const urgencyColor = (urgency) => urgency === 'overdue' ? 'var(--red)' : urgency === 'due_soon' ? 'var(--amber, #d97706)' : urgency === 'insufficient_data' ? 'var(--text3)' : 'var(--green)'
@@ -409,9 +410,14 @@ function ForecastPanel() {
       open={open}
       onToggle={() => setOpen(value => !value)}
       title="📉 SİPARİŞ ÖNERİLERİ & GÜN-YETER"
-      subtitle={<>{t.order_count > 0 ? <span style={{ color: 'var(--red)', fontWeight: 600 }}>{t.order_count} ürün sipariş bekliyor</span> : 'sipariş gerekmiyor'}{t.overdue_order_count > 0 ? <> · <span style={{ color: 'var(--red)', fontWeight: 700 }}>{t.overdue_order_count} gecikmiş</span></> : null} · {t.soon_count} ürün 7 günden az · ürün bazlı tedarik süresine göre</>}
-      style={{ marginTop: '16px', borderTop: `3px solid ${t.order_count ? 'var(--red)' : 'var(--teal)'}` }}
+      subtitle={<>{cov?.stale ? <span style={{ color: 'var(--red)', fontWeight: 700 }}>veri eski ({cov.missing_since_last} iş günü girilmedi) · </span> : null}{t.order_count > 0 ? <span style={{ color: 'var(--red)', fontWeight: 600 }}>{t.order_count} ürün sipariş bekliyor</span> : 'sipariş gerekmiyor'}{t.overdue_order_count > 0 ? <> · <span style={{ color: 'var(--red)', fontWeight: 700 }}>{t.overdue_order_count} gecikmiş</span></> : null} · {t.soon_count} ürün 7 günden az · ürün bazlı tedarik süresine göre{cov?.covered_days ? ` · ort. ${cov.covered_days} kayıtlı güne göre` : ''}</>}
+      style={{ marginTop: '16px', borderTop: `3px solid ${t.order_count || cov?.stale ? 'var(--red)' : 'var(--teal)'}` }}
     >
+          {cov?.stale && (
+            <div role="alert" style={{ fontSize: '11px', border: '1px solid var(--red)', background: 'color-mix(in srgb, var(--red) 8%, transparent)', borderRadius: '8px', padding: '6px 10px', marginBottom: '10px' }}>
+              ⚠️ Son dağıtım kaydı <b>{cov.last_date}</b> — sonrasında <b>{cov.missing_since_last} iş günü</b> YYS'ye girilmedi. Bakiye, gün-yeter ve sipariş önerisi bu günler girilene kadar gerçeği yansıtmaz.
+            </div>
+          )}
           {orders.length > 0 && (
             <div style={{ padding: '0 0 10px' }}>
               <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--red)', marginBottom: '6px' }}>ÖNERİLEN SİPARİŞLER</div>
@@ -431,7 +437,7 @@ function ForecastPanel() {
               <tbody>
                 {withData.map(r => (
                   <tr key={r.product_id}>
-                    <td style={{ fontWeight: 600 }}>{r.product_name}{r.confidence === 'low' && <span style={{ fontSize: '9px', color: 'var(--text3)', marginLeft: '4px' }}>(az veri)</span>}</td>
+                    <td style={{ fontWeight: 600 }}>{r.product_name}{r.confidence === 'low' && <span style={{ fontSize: '9px', color: 'var(--text3)', marginLeft: '4px' }}>(az veri)</span>}{r.confidence === 'stale' && <span style={{ fontSize: '9px', color: 'var(--red)', marginLeft: '4px' }}>(veri eski)</span>}</td>
                     <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }} title={r.balance_human}>{nf(r.balance)}</td>
                     <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text3)' }}>{r.avg_daily}</td>
                     <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: coverColor(r.days_of_cover) }}>{r.days_of_cover}g</td>

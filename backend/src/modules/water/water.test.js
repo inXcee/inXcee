@@ -1434,20 +1434,33 @@ describe('Su takip — Tüketim öngörüsü & sipariş önerisi (V1)', () => {
     const r = await auth(request(app).get(`/api/water/forecast?today=${TODAY}`))
     expect(r.status).toBe(200)
     const row = r.body.rows.find(x => x.product_id === pOrder)
+    // Payda pencerenin 30 günü DEĞİL, kayıtlı günler + aralarındaki kaydı olmayan Pazarlar (16–20.03 girilmemiş → bilinmiyor)
+    const cov = r.body.data_coverage
+    expect(cov).toMatchObject({ last_date: '2027-03-30', missing_since_last: 0, stale: false })
+    expect(cov.covered_days).toBeLessThan(30)
+    const avg = 90 / cov.covered_days
+    const cover = Math.floor(10 / avg)
     expect(row.balance).toBe(10)
-    expect(row.avg_daily).toBe(3) // 90/30
-    expect(row.days_of_cover).toBe(3) // floor(10/3)
+    expect(row.avg_daily).toBe(Math.round(avg * 100) / 100)
+    expect(row.days_of_cover).toBe(cover)
     expect(row.lead_time_days).toBe(4)
     expect(row.safety_stock_days).toBe(2)
     expect(row.reorder_point_days).toBe(6)
-    expect(row.order_due_in_days).toBe(-3)
-    expect(row.order_by_date).toBe('2027-03-28')
+    expect(row.order_due_in_days).toBe(cover - 6)
+    expect(row.order_by_date < TODAY).toBe(true)
     expect(row.order_urgency).toBe('overdue')
     expect(row.needs_order).toBe(true)
-    expect(row.suggested_base).toBe(80) // ceil(3×30) − 10
+    expect(row.suggested_base).toBe(Math.ceil(avg * 30) - 10)
     expect(row.confidence).toBe('ok')
     expect(r.body.order_suggestions.some(x => x.product_id === pOrder)).toBe(true)
     expect(r.body.totals.order_count).toBeGreaterThanOrEqual(1)
+  })
+
+  it('son kayıttan sonra 2+ iş günü girilmediyse veri bayat: güven "stale", özet uyarır', async () => {
+    const r = await auth(request(app).get('/api/water/forecast?today=2027-04-10'))
+    expect(r.status).toBe(200)
+    expect(r.body.data_coverage).toMatchObject({ last_date: '2027-03-30', missing_since_last: 9, stale: true })
+    expect(r.body.rows.find(x => x.product_id === pOrder).confidence).toBe('stale')
   })
 
   it('bol stoklu ürün sipariş önermez', async () => {
@@ -1589,6 +1602,18 @@ describe('Su takip — Günlük operasyon özeti (V3)', () => {
     // aynı gün ikinci çağrı → dedup, yeni bildirim yok
     const r2 = waterDailyDigest({ queueEmail: false })
     expect(r2.notified).toBe(false)
+  })
+
+  it('dağıtım günlerce girilmediyse özet bunu İLK sırada söyler (tahmin güvenilmez)', () => {
+    // Testlerdeki son dağıtım kaydı 2027 baharında; 2029'da pencerede hiç kayıt yok → son kayıt pencereden önceki gün
+    const r = waterDailyDigest({ now: new Date('2029-01-15T09:00:00+03:00'), queueEmail: false })
+    const cov = r.data_coverage
+    expect(cov).toMatchObject({ recorded_days: 0, stale: true })
+    expect(cov.last_date < '2029-01-01').toBe(true)
+    expect(r.parts[0]).toBe(`su dağıtımı ${cov.missing_since_last} iş günüdür YYS'ye girilmedi (son kayıt ${cov.last_date}) — stok ve sipariş tahmini güvenilmez`)
+    const notif = getDB().prepare('SELECT * FROM notifications WHERE dedup_key=?').get('water_digest_2029-01-15')
+    expect(notif.severity).toBe('warning')
+    expect(notif.message).toMatch(/iş günüdür YYS'ye girilmedi/)
   })
 })
 
