@@ -5,10 +5,10 @@ import { getDB } from '../../shared/db/index.js'
 import { MAX_PRINT_ID } from './signatureMarkers.js'
 import { drawSignaturePdf } from './signaturePdf.js'
 
-export function createPrint({ weekStart = null, dates = [], userId = null }) {
+export function createPrint({ weekStart = null, dates = [], userId = null, groupKey = null, title = null }) {
   const r = getDB().prepare(`
-    INSERT INTO signature_sheet_prints(week_start, dates_json, created_by) VALUES(?, ?, ?)
-  `).run(weekStart, JSON.stringify(dates), userId)
+    INSERT INTO signature_sheet_prints(week_start, dates_json, created_by, group_key, title) VALUES(?, ?, ?, ?, ?)
+  `).run(weekStart, JSON.stringify(dates), userId, groupKey, title)
   const id = Number(r.lastInsertRowid)
   // Köşe işaretleri 62.499 baskıya kadar kimlik taşıyabilir (haftada birkaç baskıyla yüzyıllar). Aşılırsa
   // işaretsiz basılır — föy yine kullanılır, yalnız fotoğraftan okunmaz.
@@ -26,7 +26,8 @@ export function deletePrint(id) {
 
 export function getPrint(id) {
   const row = getDB().prepare(`
-    SELECT p.id, p.week_start, p.dates_json, p.layout_json, p.page_count, p.created_at, u.full_name AS created_by_name
+    SELECT p.id, p.week_start, p.dates_json, p.layout_json, p.page_count, p.group_key, p.title, p.created_at,
+           u.full_name AS created_by_name
     FROM signature_sheet_prints p LEFT JOIN users u ON u.id = p.created_by
     WHERE p.id=? AND p.layout_json IS NOT NULL
   `).get(id)
@@ -37,8 +38,9 @@ export function getPrint(id) {
 
 // Föy PDF'i + baskı kaydı tek yerde (web föyü ve sade föy aynı yolu kullanır). printId istemciden gelmez:
 // numarayı sunucu verir (başka basımın kimliğiyle basılamaz). Çizim düşerse yarım kayıt silinir.
-export async function renderSignaturePrint({ model, meta = {}, userId = null, weekStart = null, size = 'A4' }) {
-  const printId = createPrint({ weekStart, dates: model.dates || [], userId })
+export async function renderSignaturePrint({ model, meta = {}, userId = null, weekStart = null, size = 'A4',
+  groupKey = null, title = null }) {
+  const printId = createPrint({ weekStart, dates: model.dates || [], userId, groupKey, title })
   try {
     const doc = new PDFDocument({ size, layout: 'landscape', margin: 28 })
     const parcalar = []

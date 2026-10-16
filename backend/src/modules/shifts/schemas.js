@@ -54,6 +54,25 @@ const signatureSheetRow = z.object({
   note: z.string().trim().max(300).optional(),
 }).refine(r => r.staff_id != null || r.name, 'Satırda staff_id ya da name olmalı')
 
+// Fotoğraftan okunan föy sayfası (Hermes foy_oku): yalnız kesin hücreler; belirsizler gönderilmez.
+const signatureReadRow = z.object({
+  staff_id: z.coerce.number().int().positive(),
+  date: isoDate,
+  mark: z.enum(['signed', 'blank']),
+})
+
+export const signatureReadSchema = z.object({
+  page: z.coerce.number().int().min(0).max(500),
+  rows: z.array(signatureReadRow).max(3000),
+  stats: z.record(z.string(), z.union([z.number(), z.string(), z.boolean(), z.null()])).optional(),
+  photo_day: isoDate.optional(),
+  source: z.enum(['web', 'telegram']).optional(),
+})
+
+export const signatureReadCorrectionSchema = z.object({
+  corrections: z.array(signatureReadRow).min(1, 'Düzeltme yok').max(500),
+})
+
 export const signatureCheckSchema = z.object({
   rows: z.array(signatureSheetRow).min(1, 'Föyden okunan satır yok').max(3000),
   department_id: z.coerce.number().int().positive().optional(),
