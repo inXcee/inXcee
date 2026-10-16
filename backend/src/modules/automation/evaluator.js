@@ -52,12 +52,10 @@ const TRIGGERS = {
 
 const ACTIONS = {
   log(rule, evalResult) {
-    const db = getDB()
-    const msg = `[Automation] "${rule.name}" tetiklendi: ${evalResult.value}${evalResult.unit} (esik: ${rule.trigger_threshold})`
-    try {
-      db.prepare(`INSERT INTO error_log (level, message, context, created_at) VALUES (?,?,?,datetime('now'))`)
-        .run('info', msg, JSON.stringify({ rule_id: rule.id, ...evalResult }))
-    } catch { /* error_log yoksa konsola */ logger.info(msg) }
+    // Bilgi kaydı uygulama günlüğüne gider. Eskiden error_log'a (olmayan `level` kolonuyla) yazmayı deniyor, hep
+    // düşüp buraya geliyordu; error_log ayrıca Hermes'in hata bekçisine akar — bilgi kaydı orada hata sanılmamalı.
+    logger.info({ rule_id: rule.id, ...evalResult },
+      `[Automation] "${rule.name}" tetiklendi: ${evalResult.value}${evalResult.unit} (esik: ${rule.trigger_threshold})`)
     return 'log: ok'
   },
   notify_group(rule, evalResult) {
