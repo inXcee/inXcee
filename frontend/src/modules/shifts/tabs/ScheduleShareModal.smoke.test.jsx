@@ -27,6 +27,7 @@ describe('ScheduleShareModal smoke', () => {
     // gerçek PDF indirmesi ayrı bir eylem olduğu için ikisi ayrıldı.
     expect(screen.getByText('Yazdır')).toBeInTheDocument()
     expect(screen.getByText(/İmza PDF indir/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Sade föy \(proje bazlı\)/ })).toBeInTheDocument()
     expect(screen.getByText('Çizelge PNG')).toBeInTheDocument()
     expect(screen.getByText('İmza PNG')).toBeInTheDocument()
     expect(screen.getByText('Tek sayfa PNG, birden fazla bölüm veya sayfa tek ZIP paketi olur.')).toBeInTheDocument()

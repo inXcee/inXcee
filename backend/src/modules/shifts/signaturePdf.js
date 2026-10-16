@@ -31,6 +31,12 @@ const RENK = {
 
 const GUNLER = ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi']
 
+// Sade föy: "2026-10-19" yerine "19.10" (kâğıtta okunur, yıl başlıkta zaten var).
+function kisaTarih(tarih) {
+  const [, ay, gun] = String(tarih).split('-')
+  return ay && gun ? `${gun}.${ay}` : String(tarih)
+}
+
 function gunAdi(tarih) {
   const d = new Date(`${tarih}T00:00:00`)
   return Number.isNaN(d.getTime()) ? '' : (GUNLER[d.getDay()] || '')
@@ -65,8 +71,8 @@ function metin(doc, deger, fonts, { x, y, w, size = 8, bold = false, color = REN
 }
 
 function sayfaBasligi(doc, fonts, { page, weekLabel, revision, generated, printId }, x, y, w) {
-  metin(doc, 'HAFTALIK PERSONEL İMZA FÖYÜ', fonts, { x, y, w, size: 13, bold: true })
-  metin(doc, `${page.department} · ${weekLabel} · ${page.rows.length} personel`, fonts,
+  metin(doc, page.title || 'HAFTALIK PERSONEL İMZA FÖYÜ', fonts, { x, y, w: w * 0.66, size: 13, bold: true })
+  metin(doc, `${page.department} · ${weekLabel} · ${page.people_total ?? page.rows.length} personel`, fonts,
     { x, y: y + 17, w: w * 0.7, size: 8, color: RENK.soluk })
   const sag = [`Revizyon: ${revision}${printId ? ` · Föy no: ${printId}` : ''}`, `Sayfa: ${page.page}/${page.page_count}`]
   if (generated) sag.push(`Oluşturma: ${generated}`)
@@ -86,7 +92,8 @@ function tabloBasligi(doc, fonts, model, gen, x, y) {
   if (gen.gorev) { metin(doc, 'Görev', fonts, { x: cx + 4, y: y + 7, w: gen.gorev - 8, size: 7.5, bold: true }); cx += gen.gorev }
   model.dates.forEach(tarih => {
     metin(doc, gunAdi(tarih), fonts, { x: cx + 2, y: y + 3, w: gen.gun - 4, size: 7.5, bold: true, align: 'center' })
-    metin(doc, tarih, fonts, { x: cx + 2, y: y + 13, w: gen.gun - 4, size: 6.5, color: RENK.soluk, align: 'center' })
+    const yazi = model.opts?.shortDates ? kisaTarih(tarih) : tarih
+    metin(doc, yazi, fonts, { x: cx + 2, y: y + 13, w: gen.gun - 4, size: 6.5, color: RENK.soluk, align: 'center' })
     cx += gen.gun
   })
   return y + h
@@ -112,7 +119,7 @@ function satirCiz(doc, fonts, { row, sira, model, gen, x, y, h }) {
   // vardiya ve konum tek satırda; imza aranmayan gün zaten renkli zeminden anlaşılır, yazı kalkar.
   const alcak = h < 19
   row.days.forEach(gun => {
-    kutu(gen.gun, hucreZemini(gun.category))
+    kutu(gen.gun, gun.can_sign ? null : hucreZemini(gun.category))
     if (alcak) {
       const tek = gun.detail ? `${gun.label} · ${gun.detail}` : gun.label
       metin(doc, tek, fonts, { x: cx + 2, y: y + 2, w: gen.gun - 4, size: 6.5, bold: true, align: 'center' })
@@ -239,7 +246,9 @@ export function drawSignaturePdf(doc, model, meta = {}) {
 
   // Makine okuma: köşe işaretleri + yerleşim kaydı. Başlık ve alt bilgi işaretlerin yanından başlar.
   const printId = Number.isInteger(meta.printId) && meta.printId > 0 ? meta.printId : null
-  const kenar = printId ? MARKER_PT + MARKER_GAP : 0
+  // A3 fotoğrafı aynı piksele daha büyük kâğıt sığdırır: işaret A4'teki piksel boyunu korusun diye kısa kenarla büyür.
+  const isaretPt = Math.round(MARKER_PT * Math.max(1, Math.min(doc.page.width, doc.page.height) / 595.28))
+  const kenar = printId ? isaretPt + MARKER_GAP : 0
   const bx = x + kenar
   const bw = usableWidth - 2 * kenar
   const yerlesim = []   // fiziksel sayfa başına kayıt (yalnız makine kipinde doldurulur)
@@ -247,13 +256,13 @@ export function drawSignaturePdf(doc, model, meta = {}) {
     if (!printId) return
     const ids = markerIdsFor(printId, index)
     const { left, top, right, bottom } = doc.page.margins
-    const sag = doc.page.width - right - MARKER_PT
-    const alt = doc.page.height - bottom - MARKER_PT
+    const sag = doc.page.width - right - isaretPt
+    const alt = doc.page.height - bottom - isaretPt
     const konum = { tl: [left, top], tr: [sag, top], br: [sag, alt], bl: [left, alt] }
     const markers = {}
     for (const [rol, [mx, my]] of Object.entries(konum)) {
-      drawArucoMarker(doc, ids[rol], mx, my, MARKER_PT)
-      markers[rol] = { id: ids[rol], x: mx, y: my, size: MARKER_PT }
+      drawArucoMarker(doc, ids[rol], mx, my, isaretPt)
+      markers[rol] = { id: ids[rol], x: mx, y: my, size: isaretPt }
     }
     yerlesim.push({ index, kind: 'roster', department: null, markers, rows: [] })
   }
@@ -375,7 +384,7 @@ export function drawSignaturePdf(doc, model, meta = {}) {
     layout: {
       version: 1,
       page: { width: doc.page.width, height: doc.page.height },
-      marker_pt: MARKER_PT,
+      marker_pt: isaretPt,
       table: { x, no_w: gen.no, name_w: gen.ad, role_w: gen.gorev, day_w: gen.gun },
       columns: (model.dates || []).map((date, i) => ({ date, x: dayX + i * gen.gun, w: gen.gun })),
       double_signature: Boolean(model.opts?.doubleSignature),

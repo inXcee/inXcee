@@ -58,8 +58,8 @@ import {
   operationsDashboardService, puantajClosingPackageService
 } from './service.js'
 import PDFDocument from 'pdfkit'
-import { drawSignaturePdf } from './signaturePdf.js'
-import { createPrint, finalizePrint, deletePrint, getPrint, getPrintPdf } from './signaturePrints.js'
+import { renderSignaturePrint, getPrint, getPrintPdf } from './signaturePrints.js'
+import { buildPlainWeeklyModel, mondayOf, NO_PROJECT, signatureSheetGroups, slugTr, weekDates, weekLabel } from './signatureSheet.js'
 import { checkSignatureSheet } from './signatureCheck.js'
 import { recordSignatureCheck, buildSignatureCoverage } from './signatureCheckRuns.js'
 import {
@@ -825,7 +825,6 @@ const DEDUCTION_KIND_TR = {
 // Her basım bir baskı numarası alır (signature_sheet_prints): köşe işaretleri onu taşır, yerleşim ve PDF
 // saklanır → föyün fotoğrafı sonradan makinece okunabilir (Hermes foy_okur).
 shiftsRouter.post('/schedule/signature-pdf', ...managerOrSupervisor, async (req, res) => {
-  let printId = null
   try {
     const model = req.body?.model
     if (!model || !Array.isArray(model.pages)) {
@@ -838,17 +837,9 @@ shiftsRouter.post('/schedule/signature-pdf', ...managerOrSupervisor, async (req,
     }
 
     const hafta = String(req.body?.meta?.weekStart || '').replace(/[^0-9-]/g, '') || 'hafta'
-    printId = createPrint({ weekStart: hafta === 'hafta' ? null : hafta, dates: model.dates || [], userId: req.user.id })
-    const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 28 })
-    const parcalar = []
-    doc.on('data', p => parcalar.push(p))
-    const bitti = new Promise((resolve, reject) => { doc.on('end', resolve); doc.on('error', reject) })
-    // printId istemciden gelmez: numarayı sunucu verir (başka basımın kimliğiyle basılamaz).
-    const sonuc = drawSignaturePdf(doc, model, { ...(req.body?.meta || {}), printId })
-    doc.end()
-    await bitti
-    const pdf = Buffer.concat(parcalar)
-    if (printId) finalizePrint(printId, { layout: sonuc.layout, pdf, pageCount: sonuc.pageCount })
+    const { pdf, printId } = await renderSignaturePrint({
+      model, meta: req.body?.meta || {}, userId: req.user.id, weekStart: hafta === 'hafta' ? null : hafta,
+    })
 
     res.setHeader('Content-Type', 'application/pdf')
     res.setHeader('Content-Disposition', `attachment; filename="imza-foyu-${hafta}.pdf"`)
@@ -857,7 +848,53 @@ shiftsRouter.post('/schedule/signature-pdf', ...managerOrSupervisor, async (req,
     logAudit(req.user.id, 'signature_pdf', 'shifts', printId, `${model.pages.length} sayfa${printId ? ` · föy no ${printId}` : ''}`)
   } catch (e) {
     logger.error({ err: e.message }, '[signature-pdf]')
-    if (printId) { try { deletePrint(printId) } catch { /* yarım kayıt kalsa da okunmaz (layout yok) */ } }
+    if (!res.headersSent) res.status(500).json({ error: 'İmza föyü PDF oluşturulamadı' })
+  }
+})
+
+// SADE HAFTALIK FÖY — model sunucuda (signatureSheet.js): proje başına ayrı föy, bölüm bandı altında kişiler, görev
+// sütunu ve vardiya saati yok, A3 yatay. Hermes "/foy yazdır" önce grupları alır, sonra her grubu basar. Her basım
+// köşe işaretli bir baskı kaydıdır → imzalı föyün fotoğrafı Telegram'da yapay zekâsız okunur.
+function sadeHafta(req, res) {
+  const monday = mondayOf(String(req.query?.week_start ?? req.body?.week_start ?? ''))
+  if (!monday) {
+    res.status(400).json({ error: 'week_start YYYY-AA-GG biçiminde geçerli bir tarih olmalı' })
+    return null
+  }
+  return monday
+}
+
+shiftsRouter.get('/schedule/signature-sheet/groups', ...managerOrSupervisor, (req, res) => {
+  const monday = sadeHafta(req, res)
+  if (!monday) return
+  const dates = weekDates(monday)
+  res.json({ week_start: monday, week_label: weekLabel(dates), dates, groups: signatureSheetGroups(monday) })
+})
+
+shiftsRouter.post('/schedule/signature-sheet', ...managerOrSupervisor, async (req, res) => {
+  const monday = sadeHafta(req, res)
+  if (!monday) return
+  const group = String(req.body?.group ?? '')
+  if (group !== NO_PROJECT && !/^\d{1,9}$/.test(group)) {
+    return res.status(400).json({ error: "group bir proje numarası ya da 'none' olmalı" })
+  }
+  try {
+    const built = buildPlainWeeklyModel({ weekStart: monday, group })
+    if (!built) return res.status(404).json({ error: 'Bu grupta föye girecek personel yok' })
+    const label = weekLabel(built.model.dates)
+    const { pdf, printId, pageCount } = await renderSignaturePrint({
+      model: built.model, meta: { weekLabel: label, revision: '1' }, userId: req.user.id, weekStart: monday, size: 'A3',
+    })
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `attachment; filename="imza-foyu-${slugTr(built.title)}-${monday}.pdf"`)
+    if (printId) res.setHeader('X-Signature-Print-Id', String(printId))
+    res.setHeader('X-Signature-Sheet-People', String(built.model.people_count))
+    res.setHeader('X-Signature-Sheet-Pages', String(pageCount))
+    res.send(pdf)
+    logAudit(req.user.id, 'signature_sheet_pdf', 'shifts', printId,
+      `${built.groupName} · ${label} · ${built.model.people_count} kişi${printId ? ` · föy no ${printId}` : ''}`)
+  } catch (e) {
+    logger.error({ err: e.message }, '[signature-sheet]')
     if (!res.headersSent) res.status(500).json({ error: 'İmza föyü PDF oluşturulamadı' })
   }
 })
