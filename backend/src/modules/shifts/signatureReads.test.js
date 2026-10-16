@@ -98,7 +98,8 @@ describe('föy sayfa okuması — haftalık birleşim', () => {
     expect(res.body.week_start).toBe(PZT)
     expect(res.body.check.summary.missing_signature).toBe(1)
     const kampProgress = res.body.progress.find(p => p.print_id === print.id)
-    expect(kampProgress).toMatchObject({ title: 'KAMP ALANI', group_key: String(kamp), total: 2, read: 1, missing: [2] })
+    expect(kampProgress).toMatchObject({ title: 'KAMP ALANI', group_key: String(kamp), total: 2, read: 1, complete: 1,
+      missing: [2], incomplete: [] })
     // bölümün diğer sayfası okunmadı → o gün "kısmen"
     const cov = buildSignatureCoverage({ from: PZT, to: GUNLER[6] })
     const katRow = cov.departments.find(d => d.id === kat)
@@ -136,6 +137,18 @@ describe('föy sayfa okuması — haftalık birleşim', () => {
     expect(res.status).toBe(200)
     expect(latestRun(GUNLER[2], kat).missing_signature).toBe(1)
     expect(latestRun(GUNLER[2], kat).rows_count).toBe(30)
+  })
+
+  it('hafta ortası fotoğrafı sayfayı okunmuş ama TAMAMLANMAMIŞ yapar', async () => {
+    const ids = pageStaff(print.layout, 1)
+    const res = await request(app).post(`/api/shifts/schedule/signature-prints/${print.id}/reads`).set(auth())
+      .send({ page: 1, rows: pageRows(ids).filter(r => r.date < GUNLER[3]), photo_day: GUNLER[3] })
+    expect(res.status).toBe(200)
+    expect(res.body.progress.find(p => p.print_id === print.id)).toMatchObject({ read: 2, complete: 1, incomplete: [2], missing: [] })
+    // pazartesi fotoğrafı tamamlar
+    const done = await request(app).post(`/api/shifts/schedule/signature-prints/${print.id}/reads`).set(auth())
+      .send({ page: 1, rows: pageRows(ids), photo_day: '2027-03-08' })
+    expect(done.body.progress.find(p => p.print_id === print.id)).toMatchObject({ complete: 2, incomplete: [] })
   })
 
   it('geçersiz okuma reddedilir', async () => {

@@ -39,7 +39,8 @@ const KAPSAMA = {
       [GUNLER[1]]: { status: 'not_needed', planned: 0 },
     },
   }],
-  prints: [{ print_id: 2, title: 'KAMP ALANI', group_key: '2', total: 5, read: 3, missing: [4, 5], pages: [] }],
+  prints: [{ print_id: 2, title: 'KAMP ALANI', group_key: '2', total: 5, read: 3, complete: 2, missing: [4, 5],
+    incomplete: [3], pages: [] }],
 }
 
 beforeEach(() => {
@@ -138,7 +139,7 @@ describe('İmzalı föy kontrolü paneli', () => {
     ciz()
     await user.click(screen.getByRole('button', { name: 'İmzalı föy kontrolü' }))
     expect(await screen.findByText(/kontrol 1\/2/)).toBeInTheDocument()
-    expect(screen.getByLabelText('Basılı föy sayfaları')).toHaveTextContent('🖨 KAMP ALANI: 3/5 sayfa okundu (eksik 4, 5)')
+    expect(screen.getByLabelText('Basılı föy sayfaları')).toHaveTextContent('🖨 KAMP ALANI: 3/5 sayfa okundu (eksik 4, 5) · hafta bitmeden çekilen: 3')
     const kismen = screen.getByRole('button', { name: `İkram ${GUNLER[0]} kısmen okundu — bölümün föydeki diğer sayfası bekleniyor` })
     expect(kismen.title).toMatch(/bu günü kapsayan 1\/2/)
     expect(api.get).toHaveBeenCalledWith('/shifts/schedule/signature-check/coverage', { params: { from: GUNLER[0], to: GUNLER[1] } })

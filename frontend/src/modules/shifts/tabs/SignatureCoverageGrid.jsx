@@ -61,8 +61,11 @@ export default function SignatureCoverageGrid({ weekDays = [], onPick }) {
         <div style={{ fontSize: 11, marginBottom: 4, display: 'flex', gap: 10, flexWrap: 'wrap' }} aria-label="Basılı föy sayfaları">
           {data.prints.map(p => (
             <span key={p.print_id} title={`Föy no ${p.print_id}`}
-              style={{ color: p.missing.length ? 'var(--orange)' : 'var(--green)' }}>
-              🖨 {p.title}: {p.read}/{p.total} sayfa okundu{p.missing.length ? ` (eksik ${p.missing.join(', ')})` : ' ✓'}
+              style={{ color: p.missing.length || p.incomplete?.length ? 'var(--orange)' : 'var(--green)' }}>
+              🖨 {p.title}: {p.read}/{p.total} sayfa okundu
+              {p.missing.length ? ` (eksik ${p.missing.join(', ')})` : ''}
+              {p.incomplete?.length ? ` · hafta bitmeden çekilen: ${p.incomplete.join(', ')}` : ''}
+              {!p.missing.length && !p.incomplete?.length ? ' ✓' : ''}
             </span>
           ))}
         </div>
