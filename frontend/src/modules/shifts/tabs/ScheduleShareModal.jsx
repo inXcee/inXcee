@@ -229,8 +229,8 @@ export default function ScheduleShareModal({
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           {content !== 'schedule' && (options.sig_layout || 'weekly') === 'weekly' && (
             <button className="btn btn-primary btn-sm" onClick={runSignaturePdf} disabled={busy === 'sigpdf'}
-              title="İmza föyünü doğrudan PDF dosyası olarak indirir (yazdırma diyaloğu açılmaz)">
-              {busy === 'sigpdf' ? 'Hazırlanıyor…' : '⬇ İmza PDF indir'}
+              title="İmza föyünü PDF olarak indirir. Köşe işaretlidir: imzalı föyün fotoğrafını Telegram'dan Hermes'e gönderin, imzalar otomatik okunup çizelgeyle karşılaştırılır (Yazdır çıktısı okunmaz).">
+              {busy === 'sigpdf' ? 'Hazırlanıyor…' : '⬇ İmza PDF indir (fotoğraftan okunur)'}
             </button>
           )}
           <button className="btn btn-ghost btn-sm" onClick={runPrint}

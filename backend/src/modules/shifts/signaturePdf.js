@@ -1,4 +1,11 @@
 import { registerTurkishFonts, pdfText } from '../../shared/pdf/fonts.js'
+import { markerIdsFor, drawArucoMarker } from './signatureMarkers.js'
+
+// Makinece okuma (meta.printId verilince): her fiziksel sayfanın içerik kutusu köşelerine kimlik taşıyan ArUco
+// işaretleri basılır, başlık/alt bilgi işaretlere çarpmasın diye içe kayar (tablo tam genişlikte kalır, satır
+// bütçesi değişmez). Çizim sırasında her sayfanın yerleşimi kaydedilir: okuyucu fotoğraftaki hücreyi buradan bulur.
+export const MARKER_PT = 24
+const MARKER_GAP = 8
 
 // Haftalık imza föyü — GERÇEK PDF.
 //
@@ -57,11 +64,11 @@ function metin(doc, deger, fonts, { x, y, w, size = 8, bold = false, color = REN
   doc.text(pdfText(deger, fonts), x, Math.min(y, enAlt), { width: w, align, lineBreak: false, ellipsis: true })
 }
 
-function sayfaBasligi(doc, fonts, { page, weekLabel, revision, generated }, x, y, w) {
+function sayfaBasligi(doc, fonts, { page, weekLabel, revision, generated, printId }, x, y, w) {
   metin(doc, 'HAFTALIK PERSONEL İMZA FÖYÜ', fonts, { x, y, w, size: 13, bold: true })
   metin(doc, `${page.department} · ${weekLabel} · ${page.rows.length} personel`, fonts,
     { x, y: y + 17, w: w * 0.7, size: 8, color: RENK.soluk })
-  const sag = [`Revizyon: ${revision}`, `Sayfa: ${page.page}/${page.page_count}`]
+  const sag = [`Revizyon: ${revision}${printId ? ` · Föy no: ${printId}` : ''}`, `Sayfa: ${page.page}/${page.page_count}`]
   if (generated) sag.push(`Oluşturma: ${generated}`)
   sag.forEach((satir, i) => metin(doc, satir, fonts,
     { x: x + w * 0.68, y: y + i * 10, w: w * 0.32, size: 7.5, color: RENK.soluk, align: 'right' }))
@@ -100,10 +107,19 @@ function satirCiz(doc, fonts, { row, sira, model, gen, x, y, h }) {
     cx += gen.gorev
   }
 
+  // Alçak satırda (30 kişi tek sayfa → ~13–18 pt) iki satırlık hücre yazısı sığmıyordu: konum (detail) alt
+  // satıra taşıp onun yazısına, "İmza aranmaz" da "OFF" etiketine biniyordu ("İmzaOFFmaz"). Alçak satırda
+  // vardiya ve konum tek satırda; imza aranmayan gün zaten renkli zeminden anlaşılır, yazı kalkar.
+  const alcak = h < 19
   row.days.forEach(gun => {
     kutu(gen.gun, hucreZemini(gun.category))
-    metin(doc, gun.label, fonts, { x: cx + 2, y: y + 3, w: gen.gun - 4, size: 7, bold: true, align: 'center' })
-    if (gun.detail) metin(doc, gun.detail, fonts, { x: cx + 2, y: y + 12, w: gen.gun - 4, size: 6, color: RENK.soluk, align: 'center' })
+    if (alcak) {
+      const tek = gun.detail ? `${gun.label} · ${gun.detail}` : gun.label
+      metin(doc, tek, fonts, { x: cx + 2, y: y + 2, w: gen.gun - 4, size: 6.5, bold: true, align: 'center' })
+    } else {
+      metin(doc, gun.label, fonts, { x: cx + 2, y: y + 3, w: gen.gun - 4, size: 7, bold: true, align: 'center' })
+      if (gun.detail) metin(doc, gun.detail, fonts, { x: cx + 2, y: y + 12, w: gen.gun - 4, size: 6, color: RENK.soluk, align: 'center' })
+    }
     if (gun.can_sign) {
       // İmza için boş çizgi(ler) — çift imza seçilmişse giriş/çıkış ayrı.
       const adet = model.opts.doubleSignature ? 2 : 1
@@ -112,7 +128,7 @@ function satirCiz(doc, fonts, { row, sira, model, gen, x, y, h }) {
         const ly = altY - i * 9
         doc.moveTo(cx + 5, ly).lineTo(cx + gen.gun - 5, ly).lineWidth(0.5).strokeColor(RENK.cizgi).stroke()
       }
-    } else {
+    } else if (!alcak) {
       metin(doc, 'İmza aranmaz', fonts, { x: cx + 2, y: y + h - 11, w: gen.gun - 4, size: 5.5, color: RENK.soluk, align: 'center' })
     }
     cx += gen.gun
@@ -221,10 +237,41 @@ export function drawSignaturePdf(doc, model, meta = {}) {
   const bosSatir = Math.min(6, Math.max(0, Number(model.opts?.blankRows) || 0))
   const degisiklikSatiri = changeLogRowCount(model.opts || {})
 
+  // Makine okuma: köşe işaretleri + yerleşim kaydı. Başlık ve alt bilgi işaretlerin yanından başlar.
+  const printId = Number.isInteger(meta.printId) && meta.printId > 0 ? meta.printId : null
+  const kenar = printId ? MARKER_PT + MARKER_GAP : 0
+  const bx = x + kenar
+  const bw = usableWidth - 2 * kenar
+  const yerlesim = []   // fiziksel sayfa başına kayıt (yalnız makine kipinde doldurulur)
+  const sayfaIsaretle = (index) => {
+    if (!printId) return
+    const ids = markerIdsFor(printId, index)
+    const { left, top, right, bottom } = doc.page.margins
+    const sag = doc.page.width - right - MARKER_PT
+    const alt = doc.page.height - bottom - MARKER_PT
+    const konum = { tl: [left, top], tr: [sag, top], br: [sag, alt], bl: [left, alt] }
+    const markers = {}
+    for (const [rol, [mx, my]] of Object.entries(konum)) {
+      drawArucoMarker(doc, ids[rol], mx, my, MARKER_PT)
+      markers[rol] = { id: ids[rol], x: mx, y: my, size: MARKER_PT }
+    }
+    yerlesim.push({ index, kind: 'roster', department: null, markers, rows: [] })
+  }
+  const kayit = () => yerlesim[yerlesim.length - 1]
+  const satirKaydet = (row, sira, y, h, blank = false) => {
+    if (!printId) return
+    kayit().rows.push(blank ? { blank: true, y, h } : {
+      sira, staff_id: row.staff_id ?? null, full_name: row.full_name, department: row.department || null, y, h,
+      // Tarih sütundan gelir (hücre konumu tarihi belirler), satırdaki değer yalnız yedek.
+      days: (row.days || []).map((d, i) => ({ date: (model.dates || [])[i] || d.date, can_sign: Boolean(d.can_sign), category: d.category || null })),
+    })
+  }
+
   // Sayfa sayısı TAHMİN edilmez, sayılır. Tahmin edilince pdfkit'in kendi
   // eklediği sayfalar sayıma girmiyor ve uç, çağırana yanlış sayı bildiriyordu.
   let sayfaAdedi = pages.length > 0 ? 1 : 0
-  const sayfaEkle = () => { doc.addPage(); sayfaAdedi += 1 }
+  if (pages.length > 0) sayfaIsaretle(0)
+  const sayfaEkle = () => { doc.addPage(); sayfaAdedi += 1; sayfaIsaretle(sayfaAdedi - 1) }
 
   // Alt bilgi için ayrılan pay cömert tutulur: kenara dayanan çizim pdfkit'e
   // SESSİZCE yeni sayfa açtırıyor ve o sayfada ne başlık ne tablo başlığı
@@ -244,7 +291,8 @@ export function drawSignaturePdf(doc, model, meta = {}) {
 
   pages.forEach((page, index) => {
     if (index > 0) sayfaEkle()
-    let y = sayfaBasligi(doc, fonts, { page, weekLabel, revision, generated }, x, doc.page.margins.top, usableWidth)
+    let y = sayfaBasligi(doc, fonts, { page, weekLabel, revision, generated, printId }, bx, doc.page.margins.top, bw)
+    if (printId) kayit().department = page.department
     y = tabloBasligi(doc, fonts, model, gen, x, y)
 
     if (satirYuksekligi === null) {
@@ -272,7 +320,8 @@ export function drawSignaturePdf(doc, model, meta = {}) {
     const tabloGenislik = gen.no + gen.ad + gen.gorev + gen.gun * (model.dates || []).length
     const yeniSayfa = () => {
       sayfaEkle()
-      const ny = sayfaBasligi(doc, fonts, { page, weekLabel, revision, generated }, x, doc.page.margins.top, usableWidth)
+      const ny = sayfaBasligi(doc, fonts, { page, weekLabel, revision, generated, printId }, bx, doc.page.margins.top, bw)
+      if (printId) kayit().department = page.department
       oncekiBolum = ''
       return tabloBasligi(doc, fonts, model, gen, x, ny)
     }
@@ -284,7 +333,9 @@ export function drawSignaturePdf(doc, model, meta = {}) {
         y = bantCiz(doc, fonts, row.department, x, y, tabloGenislik)
         oncekiBolum = row.department
       }
-      satirCiz(doc, fonts, { row, sira: (page.row_offset || 0) + i + 1, model, gen, x, y, h: satirYuksekligi })
+      const sira = (page.row_offset || 0) + i + 1
+      satirCiz(doc, fonts, { row, sira, model, gen, x, y, h: satirYuksekligi })
+      satirKaydet(row, sira, y, satirYuksekligi)
       y += satirYuksekligi
     })
 
@@ -296,24 +347,39 @@ export function drawSignaturePdf(doc, model, meta = {}) {
           row: { full_name: '', role: '', days: (model.dates || []).map(d => ({ date: d, label: '', detail: '', can_sign: true, category: 'working' })) },
           sira: '', model, gen, x, y, h: satirYuksekligi,
         })
+        satirKaydet(null, '', y, satirYuksekligi, true)
         y += satirYuksekligi
       }
     }
 
-    altBilgi(doc, fonts, x, sayfaDibi + 8, usableWidth)
+    altBilgi(doc, fonts, bx, sayfaDibi + 8, bw)
   })
 
   // Değişiklik kaydı KENDİ sayfasında: kadro sayfasının altına sıkıştırılınca
   // "tek sayfaya 30 kişi" isteği bozuluyor, ayrıca elle yazmaya yer kalmıyor.
   if (degisiklikSatiri > 0 && pages.length > 0) {
     sayfaEkle()
+    if (printId) Object.assign(kayit(), { kind: 'changes', department: 'Hafta içi değişiklikler' })
     let y = sayfaBasligi(doc, fonts, {
       page: { department: 'Hafta içi değişiklikler', rows: [], page: sayfaAdedi, page_count: sayfaAdedi },
-      weekLabel, revision, generated,
-    }, x, doc.page.margins.top, usableWidth)
+      weekLabel, revision, generated, printId,
+    }, bx, doc.page.margins.top, bw)
     y = degisiklikBlogu(doc, fonts, x, y + 4, usableWidth, degisiklikSatiri)
-    altBilgi(doc, fonts, x, Math.max(y + 12, sayfaDibi + 8), usableWidth)
+    altBilgi(doc, fonts, bx, Math.max(y + 12, sayfaDibi + 8), bw)
   }
 
-  return { pageCount: sayfaAdedi }
+  if (!printId) return { pageCount: sayfaAdedi }
+  const dayX = x + gen.no + gen.ad + gen.gorev
+  return {
+    pageCount: sayfaAdedi,
+    layout: {
+      version: 1,
+      page: { width: doc.page.width, height: doc.page.height },
+      marker_pt: MARKER_PT,
+      table: { x, no_w: gen.no, name_w: gen.ad, role_w: gen.gorev, day_w: gen.gun },
+      columns: (model.dates || []).map((date, i) => ({ date, x: dayX + i * gen.gun, w: gen.gun })),
+      double_signature: Boolean(model.opts?.doubleSignature),
+      pages: yerlesim,
+    },
+  }
 }

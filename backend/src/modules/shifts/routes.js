@@ -59,6 +59,7 @@ import {
 } from './service.js'
 import PDFDocument from 'pdfkit'
 import { drawSignaturePdf } from './signaturePdf.js'
+import { createPrint, finalizePrint, deletePrint, getPrint, getPrintPdf } from './signaturePrints.js'
 import { checkSignatureSheet } from './signatureCheck.js'
 import { recordSignatureCheck, buildSignatureCoverage } from './signatureCheckRuns.js'
 import {
@@ -821,7 +822,10 @@ const DEDUCTION_KIND_TR = {
 // Yerleşim modeli istemcide kurulur (testli buildWeeklySignatureModel); burada
 // yalnız çizilir. Böylece HTML çıktısı ile PDF aynı kaynaktan beslenir ve
 // kullanıcı tarayıcının baskı diyaloğuyla uğraşmadan dosyayı indirir.
-shiftsRouter.post('/schedule/signature-pdf', ...managerOrSupervisor, (req, res) => {
+// Her basım bir baskı numarası alır (signature_sheet_prints): köşe işaretleri onu taşır, yerleşim ve PDF
+// saklanır → föyün fotoğrafı sonradan makinece okunabilir (Hermes foy_okur).
+shiftsRouter.post('/schedule/signature-pdf', ...managerOrSupervisor, async (req, res) => {
+  let printId = null
   try {
     const model = req.body?.model
     if (!model || !Array.isArray(model.pages)) {
@@ -833,18 +837,46 @@ shiftsRouter.post('/schedule/signature-pdf', ...managerOrSupervisor, (req, res) 
       return res.status(413).json({ error: 'İmza föyü çok büyük — gün veya personel sayısını daraltın' })
     }
 
-    const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 28 })
-    res.setHeader('Content-Type', 'application/pdf')
     const hafta = String(req.body?.meta?.weekStart || '').replace(/[^0-9-]/g, '') || 'hafta'
-    res.setHeader('Content-Disposition', `attachment; filename="imza-foyu-${hafta}.pdf"`)
-    doc.pipe(res)
-    drawSignaturePdf(doc, model, req.body?.meta || {})
+    printId = createPrint({ weekStart: hafta === 'hafta' ? null : hafta, dates: model.dates || [], userId: req.user.id })
+    const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 28 })
+    const parcalar = []
+    doc.on('data', p => parcalar.push(p))
+    const bitti = new Promise((resolve, reject) => { doc.on('end', resolve); doc.on('error', reject) })
+    // printId istemciden gelmez: numarayı sunucu verir (başka basımın kimliğiyle basılamaz).
+    const sonuc = drawSignaturePdf(doc, model, { ...(req.body?.meta || {}), printId })
     doc.end()
-    logAudit(req.user.id, 'signature_pdf', 'shifts', null, `${model.pages.length} sayfa`)
+    await bitti
+    const pdf = Buffer.concat(parcalar)
+    if (printId) finalizePrint(printId, { layout: sonuc.layout, pdf, pageCount: sonuc.pageCount })
+
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `attachment; filename="imza-foyu-${hafta}.pdf"`)
+    if (printId) res.setHeader('X-Signature-Print-Id', String(printId))
+    res.send(pdf)
+    logAudit(req.user.id, 'signature_pdf', 'shifts', printId, `${model.pages.length} sayfa${printId ? ` · föy no ${printId}` : ''}`)
   } catch (e) {
-    console.error('[signature-pdf]', e)
+    logger.error({ err: e.message }, '[signature-pdf]')
+    if (printId) { try { deletePrint(printId) } catch { /* yarım kayıt kalsa da okunmaz (layout yok) */ } }
     if (!res.headersSent) res.status(500).json({ error: 'İmza föyü PDF oluşturulamadı' })
   }
+})
+
+// Baskı kaydı — fotoğraf okuyucusu (Hermes) yerleşimi ve basılı şablonu buradan alır.
+shiftsRouter.get('/schedule/signature-prints/:id', ...managerOrSupervisor, (req, res) => {
+  const id = Number(req.params.id)
+  const print = Number.isInteger(id) && id > 0 ? getPrint(id) : null
+  if (!print) return res.status(404).json({ error: 'Föy baskısı bulunamadı' })
+  res.json(print)
+})
+
+shiftsRouter.get('/schedule/signature-prints/:id/pdf', ...managerOrSupervisor, (req, res) => {
+  const id = Number(req.params.id)
+  const pdf = Number.isInteger(id) && id > 0 ? getPrintPdf(id) : null
+  if (!pdf) return res.status(404).json({ error: 'Föy baskısı bulunamadı' })
+  res.setHeader('Content-Type', 'application/pdf')
+  res.setHeader('Content-Disposition', `inline; filename="imza-foyu-baski-${id}.pdf"`)
+  res.send(pdf)
 })
 
 // İmzalı föy kontrolü — föyden okunan satırları çizelgeyle karşılaştırır.
