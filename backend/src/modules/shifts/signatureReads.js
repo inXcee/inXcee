@@ -137,7 +137,10 @@ export function checkWeek(week, db = getDB()) {
  * Haftanın föy sayfaları: grup başına beklenen baskı + hangi sayfa okundu.
  * Grup (sade föy: proje) başına tek baskı beklenir; yeniden basılmışsa EN ÇOK okunan (eşitse en yeni) esas alınır.
  * Grupsuz baskı (web bölüm föyü) yalnız okunmuş sayfası varsa listelenir — denemelik baskı "eksik" uyarısı üretmez.
- * → [{ print_id, group_key, title, total, read, pages: [{ no, index, read_id, read_at, photo_day }], missing: [no] }]
+ * Sayfa TAMAM: son okumanın fotoğraf günü föyün son gününden sonra (hafta ortası fotoğrafı sonraki günleri kapsamaz →
+ * "incomplete": hafta bitince yeniden çekilmeli).
+ * → [{ print_id, group_key, title, total, read, complete, pages: [{ no, index, read_id, read_at, photo_day, complete }],
+ *      missing: [no], incomplete: [no] }]
  */
 export function weekProgress(week, db = getDB()) {
   const prints = weekPrints(week, db)
@@ -152,14 +155,21 @@ export function weekProgress(week, db = getDB()) {
   }
   return [...chosen.values()]
     .map(({ print }) => {
+      const cols = print.layout.columns || []
+      const lastDay = cols.length ? cols[cols.length - 1].date : null
       const pages = rosterPages(print).map(pg => {
         const r = reads.get(print.id)?.get(pg.index)
-        return { no: pg.no, index: pg.index, read_id: r?.id ?? null, read_at: r?.created_at ?? null, photo_day: r?.photo_day ?? null }
+        const complete = Boolean(r) && (!r.photo_day || !lastDay || r.photo_day > lastDay)
+        return {
+          no: pg.no, index: pg.index, read_id: r?.id ?? null, read_at: r?.created_at ?? null,
+          photo_day: r?.photo_day ?? null, complete,
+        }
       })
       return {
         print_id: print.id, group_key: print.groupKey, title: printTitle(print),
-        total: pages.length, read: pages.filter(p => p.read_id).length,
+        total: pages.length, read: pages.filter(p => p.read_id).length, complete: pages.filter(p => p.complete).length,
         pages, missing: pages.filter(p => !p.read_id).map(p => p.no),
+        incomplete: pages.filter(p => p.read_id && !p.complete).map(p => p.no),
       }
     })
     .sort((a, b) => a.title.localeCompare(b.title, 'tr'))
