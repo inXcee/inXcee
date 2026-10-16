@@ -4,6 +4,46 @@ import { isIsoDate } from '../../shared/validation/date.js'
 
 const DEFAULT_FORECAST_LEAD_DAYS = 7
 const DEFAULT_FORECAST_SAFETY_DAYS = 3
+// Son dağıtım kaydından sonra bu kadar iş günü (Pazar hariç) boşsa veri bayat: bakiye ve gün-yeter gerçeği yansıtmaz.
+const STALE_MISSING_WEEKDAYS = 2
+
+function isSunday(iso) {
+  return new Date(`${iso}T00:00:00Z`).getUTCDay() === 0
+}
+
+// Tüketim ortalamasının paydası: dağıtımın KAYITLI olduğu günler + kayıtlı günler arasındaki kaydı olmayan Pazarlar
+// (Pazar dağıtım yapılmıyor ya da çok az → sıfır sayılır). Kaydı olmayan iş günü BİLİNMİYOR sayılır, paydaya girmez.
+// Eskiden pencerenin tüm günlerine bölünüyordu: YYS'ye girilmemiş günler tüketimi düşük, gün-yeteri yüksek
+// gösteriyordu (16.10.2026: Eylül hiç girilmemişti → Avril günde 140 göründü, gerçek ~490; "4 gün yeter" = ~1 gün).
+export function dataCoverage(dates, asOf, lastEver = null) {
+  const recorded = [...new Set(dates || [])].sort()
+  // Son kayıt penceredeki en son gün; pencerede hiç yoksa pencereden önceki son gün (30+ gün girilmemiş olabilir).
+  const last = recorded.length ? recorded[recorded.length - 1] : lastEver
+  let covered = 0
+  let gaps = 0
+  if (recorded.length) {
+    const seen = new Set(recorded)
+    for (let d = recorded[0]; d <= last; d = addDays(d, 1)) {
+      if (seen.has(d) || isSunday(d)) covered += 1
+      else gaps += 1
+    }
+  }
+  let missing = 0
+  if (last) {
+    for (let d = addDays(last, 1); d < asOf; d = addDays(d, 1)) {
+      if (!isSunday(d)) missing += 1
+    }
+  }
+  return {
+    recorded_days: recorded.length,
+    covered_days: covered,
+    first_date: recorded[0] || null,
+    last_date: last || null,
+    gap_days: gaps,
+    missing_since_last: missing,
+    stale: missing >= STALE_MISSING_WEEKDAYS,
+  }
+}
 
 function localIsoDate() {
   return new Date().toLocaleDateString('sv-SE')
@@ -42,12 +82,15 @@ export function forecastService({ today, window = 30, targetDays = 30 } = {}) {
   const normalizedTarget = Math.max(1, parseInt(targetDays, 10) || 30)
   const rates = new Map(q.consumptionRates({ window: normalizedWindow, asOf: day })
     .map(rate => [rate.product_id, rate]))
+  const recorded = q.recordedOutDays({ window: normalizedWindow, asOf: day })
+  const coverage = dataCoverage(recorded, day, recorded.length ? null : q.lastOutDate({ asOf: day }))
+  const divisor = coverage.covered_days || normalizedWindow
   const rows = q.stockByProduct().map(product => {
     const balance = product.total_in - product.total_out + (product.adjust_net || 0)
     const rate = rates.get(product.id) || {}
     const outSum = rate.out_sum || 0
-    const averageDaily = outSum / normalizedWindow
-    const hasData = outSum > 0 && (rate.active_days || 0) >= 2
+    const averageDaily = outSum / divisor
+    const hasData = outSum > 0 && (rate.active_days || 0) >= 2 && (coverage.covered_days === 0 || coverage.covered_days >= 3)
     const daysOfCover = averageDaily > 0
       ? Math.floor(Math.max(0, balance) / averageDaily)
       : null
@@ -91,7 +134,7 @@ export function forecastService({ today, window = 30, targetDays = 30 } = {}) {
       needs_order: suggestedBase > 0,
       suggested_base: suggestedBase,
       suggested_human: suggestedBase ? humanize(product, suggestedBase) : null,
-      confidence: hasData ? 'ok' : 'low',
+      confidence: !hasData ? 'low' : coverage.stale ? 'stale' : 'ok',
     }
   })
   const orderSuggestions = rows
@@ -109,6 +152,7 @@ export function forecastService({ today, window = 30, targetDays = 30 } = {}) {
     date: day,
     window: normalizedWindow,
     target_days: normalizedTarget,
+    data_coverage: coverage,
     rows,
     order_suggestions: orderSuggestions,
     totals,

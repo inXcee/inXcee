@@ -89,8 +89,9 @@ vi.mock('../../shared/api/client.js', () => ({
       } })
       if (url === '/water/forecast') return Promise.resolve({ data: {
         date: '2026-07-09', window: 30, target_days: 30,
+        data_coverage: { recorded_days: 9, covered_days: 10, first_date: '2026-06-24', last_date: '2026-07-04', gap_days: 0, missing_since_last: 3, stale: true },
         rows: [
-          { product_id: 1, product_name: 'Damacana', brand_name: 'MİLA SU', unit_label: 'damacana', balance: 10, balance_human: '10 damacana', avg_daily: 3, avg_daily_human: '3 damacana', days_of_cover: 3, stockout_date: '2026-07-12', lead_time_days: 5, safety_stock_days: 2, reorder_point_days: 7, order_due_in_days: -4, order_by_date: '2026-07-05', order_urgency: 'overdue', needs_order: true, suggested_base: 80, suggested_human: '80 damacana', confidence: 'ok' },
+          { product_id: 1, product_name: 'Damacana', brand_name: 'MİLA SU', unit_label: 'damacana', balance: 10, balance_human: '10 damacana', avg_daily: 3, avg_daily_human: '3 damacana', days_of_cover: 3, stockout_date: '2026-07-12', lead_time_days: 5, safety_stock_days: 2, reorder_point_days: 7, order_due_in_days: -4, order_by_date: '2026-07-05', order_urgency: 'overdue', needs_order: true, suggested_base: 80, suggested_human: '80 damacana', confidence: 'stale' },
           { product_id: 2, product_name: '0.5 L', brand_name: 'MİLA SU', unit_label: 'koli', balance: 970, balance_human: '970 koli', avg_daily: 1, avg_daily_human: '1 koli', days_of_cover: 970, stockout_date: '2029-01-01', lead_time_days: 10, safety_stock_days: 4, reorder_point_days: 14, order_due_in_days: 956, order_by_date: '2029-02-19', order_urgency: 'planned', needs_order: false, suggested_base: 0, suggested_human: null, confidence: 'ok' },
         ],
         order_suggestions: [{ product_id: 1, product_name: 'Damacana', brand_name: 'MİLA SU', suggested_human: '80 damacana', days_of_cover: 3, lead_time_days: 5, safety_stock_days: 2, order_due_in_days: -4, order_by_date: '2026-07-05', order_urgency: 'overdue' }],
@@ -581,6 +582,10 @@ describe('WaterPage tek-ekran pano smoke', () => {
     expect(within(panel).getByText('3g')).toBeInTheDocument() // gün yeter (tablo)
     expect(within(panel).getByText('5g + 2g')).toBeInTheDocument()
     expect(within(panel).getAllByText(/4g gecikti/).length).toBeGreaterThan(0)
+    // 16.10.2026: girilmemiş günler tahmini yanıltıyordu → bayat veri açıkça söylenir
+    expect(within(panel).getByRole('alert')).toHaveTextContent('3 iş günü')
+    expect(within(panel).getByText('(veri eski)')).toBeInTheDocument()
+    expect(within(panel).getByText(/ort\. 10 kayıtlı güne göre/)).toBeInTheDocument()
   })
 
   it('irsaliye bekleyenler paneli bekleyen dağıtımı ve gecikmeyi listeler', async () => {

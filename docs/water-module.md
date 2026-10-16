@@ -108,6 +108,9 @@ Stok yetersizliği dağıtımı engellemez. Karşılanamayan miktar `needs_revie
 
 `GET /forecast`, son 30 günlük dağıtımı ürün bazında günlük ortalamaya çevirir. Her ürün için `lead_time_days + safety_stock_days` sipariş eşiği olarak kullanılır; ortak bir global teslim süresi kullanılmaz.
 
+- **Payda kayıtlı günlerdir, pencerenin 30 günü değil:** en az bir dağıtım kaydı olan günler + bunların arasındaki kaydı olmayan Pazarlar (Pazar dağıtım yapılmaz ya da çok azdır → sıfır sayılır). Kaydı olmayan iş günü *bilinmiyor* sayılır ve paydaya girmez. Eskiden 30'a bölünüyordu: YYS'ye girilmemiş günler tüketimi düşük, gün-yeteri yüksek gösteriyordu (Ekim 2026'da Eylül hiç girilmemişti → Avril günde 140 göründü, gerçek ~490).
+- `data_coverage`: `recorded_days`, `covered_days`, `first_date`, `last_date`, `gap_days`, `missing_since_last` (son kayıttan bugüne kadar girilmemiş iş günü; `last_date` pencerede kayıt yoksa daha eski son dağıtım günüdür) ve `stale` (≥2 iş günü). Bayat veride ürün satırlarının `confidence` değeri `stale` olur; panel uyarı bandı gösterir, günlük özet bunu ilk madde olarak söyler — girilmemiş günler varken bakiye, eksi stok ve sipariş önerisi yanıltır.
+
 - `order_by_date`: tahmini stok bitiş tarihinden tedarik ve emniyet günleri geri gidilerek hesaplanan sipariş son günüdür.
 - `order_due_in_days`: sipariş son gününe kalan gün; negatif değer gecikmeyi gösterir.
 - `order_urgency`: `overdue`, `due_soon`, `planned` veya `insufficient_data` durumudur.
