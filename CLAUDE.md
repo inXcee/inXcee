@@ -56,6 +56,12 @@ cd backend && node -e "import('./src/shared/db/index.js').then(m=>m.initDB()).th
 - Frontend mutation'ları merkezi `invalidateWaterQueries` kapsamlarını kullanır; yeni dağınık query-key listeleri eklenmez.
 - Gerçek tır maili `water.truck-mail` kalıcı kuyruğundan gider. `mark-mail-sent` yalnızca harici gönderim teyididir.
 
+### İmza Föyü (basım → fotoğraftan okuma → föy takibi)
+
+- Güncel akış, API, kurallar kaynağı: `docs/imza-foyu.md`. Okuyucu Hermes'tedir (`~/.hermes/avs-operations/foy_oku.py`), YYS'de değil.
+- Föy takibi bölüm × gün başına SON kontrolü gösterir: fotoğraftan okunan sayfa ASLA tek başına kontrol edilmez — `POST /schedule/signature-prints/:id/reads` ile kaydedilir, kontrol haftanın tüm okunan sayfalarının birleşimiyle yapılır (`signatureReads.js`).
+- Puantaja hiçbir şey yazılmaz; uyarılar insan kararına bırakılır.
+
 ### Oda QR Portalı Modülü
 
 - Güncel işletim, API, rol, etiket basımı ve saha kurulumu kaynağı: `docs/room-qr-portal.md`.
