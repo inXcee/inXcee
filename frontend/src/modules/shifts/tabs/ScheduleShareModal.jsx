@@ -172,6 +172,32 @@ export default function ScheduleShareModal({
     } finally { setBusy(null) }
   }
 
+  // SADE föy: proje başına ayrı (Kamp Alanı / FPU …), bölüm başlığı altında isimler, görev ve vardiya yazmaz, A3.
+  // Model sunucuda kurulur (signatureSheet.js) — Hermes "/foy yazdır" ile aynı çıktı; köşe işaretli, fotoğrafı
+  // Telegram'da otomatik okunur. Ekrandaki filtre/seçimden bağımsızdır: haftanın tüm aktif kadrosu.
+  const runPlainSheets = async () => {
+    try {
+      setBusy('sade')
+      const { data } = await api.get('/shifts/schedule/signature-sheet/groups', { params: { week_start: weekStart } })
+      if (!data.groups?.length) { toast('Bu hafta föye girecek personel yok', 'warning'); return }
+      for (const g of data.groups) {
+        const res = await api.post('/shifts/schedule/signature-sheet', { week_start: data.week_start, group: g.key },
+          { responseType: 'blob' })
+        const name = /filename="([^"]+)"/.exec(res.headers?.['content-disposition'] || '')?.[1]
+          || `imza-foyu-${g.key}-${data.week_start}.pdf`
+        const url = URL.createObjectURL(res.data)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = name
+        a.click()
+        URL.revokeObjectURL(url)
+      }
+      toast(`Sade föy indirildi: ${data.groups.map(g => `${g.name} (${g.people})`).join(' · ')}`, 'success')
+    } catch (err) {
+      toast(err?.response?.data?.error || 'Sade föy indirilemedi', 'error')
+    } finally { setBusy(null) }
+  }
+
   const runImage = async () => {
     const fmt = (options.imageFormat || 'png').toUpperCase()
     try {
@@ -233,6 +259,10 @@ export default function ScheduleShareModal({
               {busy === 'sigpdf' ? 'Hazırlanıyor…' : '⬇ İmza PDF indir (fotoğraftan okunur)'}
             </button>
           )}
+          <button className="btn btn-ghost btn-sm" onClick={runPlainSheets} disabled={busy === 'sade'}
+            title="Proje başına (Kamp Alanı / FPU) sade haftalık imza föyü: bölüm başlığı altında isimler, görev ve vardiya yazmaz, A3 yatay. Köşe işaretli — imzalı föyün fotoğrafı Hermes'e gönderilince otomatik okunur. Telegram'da: /foy yazdır">
+            {busy === 'sade' ? 'Hazırlanıyor…' : '🖨 Sade föy (proje bazlı)'}
+          </button>
           <button className="btn btn-ghost btn-sm" onClick={runPrint}
             title="Tarayıcının yazdırma önizlemesini açar">Yazdır</button>
           <button className="btn btn-ghost btn-sm" onClick={runExcel} disabled={busy === 'xls'}>{busy === 'xls' ? 'Hazırlanıyor...' : 'Excel'}</button>

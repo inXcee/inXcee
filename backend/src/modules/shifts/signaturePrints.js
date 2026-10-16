@@ -1,7 +1,9 @@
 // İmza föyü baskı kaydı — PDF her basıldığında bir numara alır; köşe işaretleri bu numarayı taşır.
 // Okuyucu (fotoğraftan imza okuma) yerleşimi ve basılı şablonu buradan çeker. Bkz. signatureMarkers.js.
+import PDFDocument from 'pdfkit'
 import { getDB } from '../../shared/db/index.js'
 import { MAX_PRINT_ID } from './signatureMarkers.js'
+import { drawSignaturePdf } from './signaturePdf.js'
 
 export function createPrint({ weekStart = null, dates = [], userId = null }) {
   const r = getDB().prepare(`
@@ -31,6 +33,27 @@ export function getPrint(id) {
   if (!row) return null
   const { dates_json: dates, layout_json: layout, ...rest } = row
   return { ...rest, dates: JSON.parse(dates), layout: JSON.parse(layout) }
+}
+
+// Föy PDF'i + baskı kaydı tek yerde (web föyü ve sade föy aynı yolu kullanır). printId istemciden gelmez:
+// numarayı sunucu verir (başka basımın kimliğiyle basılamaz). Çizim düşerse yarım kayıt silinir.
+export async function renderSignaturePrint({ model, meta = {}, userId = null, weekStart = null, size = 'A4' }) {
+  const printId = createPrint({ weekStart, dates: model.dates || [], userId })
+  try {
+    const doc = new PDFDocument({ size, layout: 'landscape', margin: 28 })
+    const parcalar = []
+    doc.on('data', p => parcalar.push(p))
+    const bitti = new Promise((resolve, reject) => { doc.on('end', resolve); doc.on('error', reject) })
+    const sonuc = drawSignaturePdf(doc, model, { ...meta, printId })
+    doc.end()
+    await bitti
+    const pdf = Buffer.concat(parcalar)
+    if (printId) finalizePrint(printId, { layout: sonuc.layout, pdf, pageCount: sonuc.pageCount })
+    return { pdf, printId, pageCount: sonuc.pageCount }
+  } catch (e) {
+    if (printId) { try { deletePrint(printId) } catch { /* yarım kayıt kalsa da okunmaz (layout yok) */ } }
+    throw e
+  }
 }
 
 export function getPrintPdf(id) {
