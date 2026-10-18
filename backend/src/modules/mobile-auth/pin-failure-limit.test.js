@@ -49,6 +49,11 @@ describe('mobil PIN — hatalı deneme sınırı', () => {
     expect(blocked.body.error).toMatch(/hatalı PIN/)
     expect((await login('4321')).status).toBe(429)
   })
+
+  it('kova rol başına: housekeeper kilidi müdür girişini etkilemez', async () => {
+    const r = await request(app).post('/api/mobile/auth/login').send({ pin: '0000', role: 'campus_manager' })
+    expect(r.status).toBe(401)
+  })
 })
 
 describe('kiosk PIN — kişi başına hatalı deneme sınırı', () => {
