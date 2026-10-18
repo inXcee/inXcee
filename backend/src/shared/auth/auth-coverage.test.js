@@ -58,6 +58,12 @@ const PUBLIC = [
   // Giriş öncesi güvenli toplu sayılar ve kamuya açık sayfalar
   /^GET \/api\/public\//,
   /^(GET|POST) \/public\//,
+  // KVKK aydınlatma metni — kanun gereği giriş öncesi okunabilmeli
+  /^GET \/api\/kvkk\/policy$/,
+  // Kampüs TV panosu — yalnız toplu sayılar (isim/TC yok); dış erişim Nginx'te kapatılır
+  /^GET \/api\/display\/(snapshot|kitchen)$/,
+  // Çamaşır kiosku giriş ekranı blok seçimi — yalnız blok adları
+  /^GET \/api\/self-service\/laundry-kiosk\/blocks$/,
 ]
 
 const isPublic = r => PUBLIC.some(re => re.test(`${r.method} ${r.path}`))
