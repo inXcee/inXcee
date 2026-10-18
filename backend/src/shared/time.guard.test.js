@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url'
 import { istanbulDate } from './time.js'
 
 const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const NOW_UTC_DAY = /new Date\(\)\.toISOString\(\)\.(?:slice\(0, ?10\)|split\('T'\)\[0\]|substring\(0, ?10\))/
+const NOW_UTC_DAY = /new Date\(\)\.toISOString\(\)\.(?:(?:slice|substring|substr)\(0, ?(?:10|7)\)|split\('T'\)\[0\])/
 
 function files(dir, out = []) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -27,7 +27,7 @@ function files(dir, out = []) {
 }
 
 describe('İstanbul günü koruması (backend)', () => {
-  it('src altında "bugün" new Date().toISOString() ile üretilmez', () => {
+  it('src altında "bugün" / "bu ay" new Date().toISOString() ile üretilmez', () => {
     const bad = []
     for (const f of files(SRC)) {
       fs.readFileSync(f, 'utf8').split('\n').forEach((line, i) => {

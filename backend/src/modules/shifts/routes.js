@@ -731,7 +731,7 @@ shiftsRouter.delete('/holidays/:id', ...managerOrSupervisor, (req, res) => {
 // ── H4 V7: Bordro export ──
 shiftsRouter.get('/payroll-export', ...managerOrSupervisor, (req, res) => {
   try {
-    const ym = req.query.month || new Date().toISOString().slice(0, 7)
+    const ym = req.query.month || istanbulDate().slice(0, 7)
     if (!isIsoMonth(ym)) return res.status(400).json({ error: 'month YYYY-MM formatında olmalı' })
     res.json({ month: ym, rows: getPayrollExport(ym) })
   } catch (e) { logger.error('[payroll]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
@@ -773,7 +773,7 @@ shiftsRouter.delete('/deductions/:id', ...managerOrSupervisor, (req, res) => {
 // ── H8 — Detaylı bordro (B1 vardiya→gün, B2 mesai+çarpan, B3 kesinti, B5 SGK gün) ──
 shiftsRouter.get('/payroll-detailed', ...managerOrSupervisor, (req, res) => {
   try {
-    const ym = req.query.month || new Date().toISOString().slice(0, 7)
+    const ym = req.query.month || istanbulDate().slice(0, 7)
     if (!isIsoMonth(ym)) return res.status(400).json({ error: 'month YYYY-MM formatında olmalı' })
     res.json({ month: ym, rows: getPayrollDetailed(ym) })
   } catch (e) { logger.error('[payroll-detailed]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
@@ -782,7 +782,7 @@ shiftsRouter.get('/payroll-detailed', ...managerOrSupervisor, (req, res) => {
 // ── L2: Banka toplu ödeme dosyası (CSV) ──
 shiftsRouter.get('/bank-transfer', ...managerOrSupervisor, (req, res) => {
   try {
-    const ym = req.query.month || new Date().toISOString().slice(0, 7)
+    const ym = req.query.month || istanbulDate().slice(0, 7)
     if (!isIsoMonth(ym)) return res.status(400).json({ error: 'month YYYY-MM formatında olmalı' })
     // Kesin dosya ancak kapı geçilince üretilir. Taslak her zaman alınabilir
     // ama dosyanın başında TASLAK yazar — yanlışlıkla bankaya gitmesin.
@@ -1005,7 +1005,7 @@ shiftsRouter.get('/schedule/signature-check/coverage', ...managerOrSupervisor, (
 
 shiftsRouter.get('/payslip/:staffId/pdf', ...managerOrSupervisor, (req, res) => {
   try {
-    const ym = req.query.month || new Date().toISOString().slice(0, 7)
+    const ym = req.query.month || istanbulDate().slice(0, 7)
     const p = payslipService(req.params.staffId, ym)
     const fmt = (n) => (n ?? 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
@@ -1252,7 +1252,7 @@ shiftsRouter.delete('/request-documents/:id', ...managerOrSupervisor, (req, res)
 
 // ── Overtime ──
 shiftsRouter.get('/overtime/summary', ...managerOrSupervisor, (req, res) => {
-  const month = req.query.month || new Date().toISOString().substring(0, 7)
+  const month = req.query.month || istanbulDate().slice(0, 7)
   res.json(overtimeSummaryService(month))
 })
 
