@@ -338,6 +338,7 @@ shiftsRouter.post('/schedule', ...managerOrSupervisor, (req, res) => {
     res.json({
       ok: true,
       warnings: result?.warnings || [],
+      compliance: result?.compliance || [],
       approvalsReset: result?.approvalsReset || 0,
       leaveOverride: result?.leaveOverride || null,
       rows: result?.rows || [],

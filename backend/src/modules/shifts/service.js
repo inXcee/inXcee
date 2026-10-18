@@ -843,6 +843,7 @@ export function bulkAssignService(entries, user, options = {}) {
     ok: true,
     rows,
     warnings,
+    compliance: safeScheduleCompliance(entries),
     approvalsReset,
     leaveOverride: warnings.length > 0 ? {
       approved_by: user?.id,
@@ -2785,7 +2786,7 @@ export function rotationWarnings(entries, shiftDefsById, staffNames = {}, { maxC
     const closeStreak = (endDate) => {
       if (streak > maxConsecutive) {
         warnings.push({
-          type: 'consecutive', staff_id: Number(sid), date: streakStart,
+          type: 'consecutive', staff_id: Number(sid), date: streakStart, end_date: endDate, days: streak,
           message: `${name}: ${streakStart} – ${endDate} arası ${streak} gün kesintisiz çalışma (limit ${maxConsecutive})`,
         })
       }
@@ -2823,6 +2824,58 @@ export function rotationWarnings(entries, shiftDefsById, staffNames = {}, { maxC
     closeStreak(prev?.work_date)
   })
   return warnings
+}
+
+// Elle yazımda (vardiya tablosu, hızlı kod, hafta doldurma) iş kuralı uyarıları.
+// Rotasyon önizlemesindeki rotationWarnings ile AYNI kural: >6 gün kesintisiz
+// çalışma ve iki vardiya arası <11 saat dinlenme. Yazımı ENGELLEMEZ — sadece
+// bilgi; karar insanda. Yazılan hücrelerin ±7 gün çevresi DB'den (yazım
+// SONRASI hâli) okunur, yalnız yazılan günlere dokunan uyarılar döner.
+const WORKING_STATUSES = new Set(['scheduled', 'worked', 'overtime'])
+const COMPLIANCE_WINDOW_DAYS = 7
+
+export function scheduleComplianceWarnings(entries) {
+  const written = new Map()
+  for (const e of entries || []) {
+    const sid = Number(e?.staff_id)
+    if (!sid || !isIsoDate(e?.work_date)) continue
+    if (!written.has(sid)) written.set(sid, new Set())
+    written.get(sid).add(e.work_date)
+  }
+  if (!written.size) return []
+  const allDates = [...written.values()].flatMap(set => [...set]).sort()
+  const from = addDaysIso(allDates[0], -COMPLIANCE_WINDOW_DAYS)
+  const to = addDaysIso(allDates[allDates.length - 1], COMPLIANCE_WINDOW_DAYS)
+  const staffIds = [...written.keys()]
+  const ph = staffIds.map(() => '?').join(',')
+  const rows = getDB().prepare(`
+    SELECT staff_id, work_date, shift_def_id, status
+    FROM shift_schedule
+    WHERE staff_id IN (${ph}) AND work_date >= ? AND work_date <= ?
+  `).all(...staffIds, from, to)
+  const normalized = rows.map(r => ({
+    staff_id: r.staff_id,
+    work_date: r.work_date,
+    shift_def_id: r.shift_def_id,
+    status: WORKING_STATUSES.has(r.status) ? 'scheduled' : 'off',
+  }))
+  const { staffNames, shiftDefsById } = rotationContext(staffIds)
+  return rotationWarnings(normalized, shiftDefsById, staffNames).filter(w => {
+    const dates = written.get(w.staff_id)
+    if (!dates) return false
+    if (w.type === 'rest') return dates.has(w.date) || dates.has(addDaysIso(w.date, -1))
+    if (w.type === 'consecutive') return [...dates].some(d => d >= w.date && d <= w.end_date)
+    return true
+  })
+}
+
+function safeScheduleCompliance(entries) {
+  try {
+    return scheduleComplianceWarnings(entries)
+  } catch (err) {
+    logger.warn('[shifts] uyum kontrolü atlandı', err)
+    return []
+  }
 }
 
 export function rotationTemplatesService() {
