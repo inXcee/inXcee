@@ -35,6 +35,10 @@ jobs:
         env:
           DB_PATH: ':memory:'
 
+      - name: Run frontend unit tests
+        # 240+ birim/smoke testi (localDate guard'ı dahil) — önceden CI'da hiç koşmuyordu.
+        run: cd frontend && npx vitest run
+
       - name: Build frontend
         run: cd frontend && npm run build
 
