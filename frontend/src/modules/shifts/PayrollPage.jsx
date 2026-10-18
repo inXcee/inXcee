@@ -5,12 +5,13 @@ import PayrollGateBar from './PayrollGateBar.jsx'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
+import { thisMonthStr } from '../../shared/logic/localDate.js'
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
 
 function thisMonth() {
-  return new Date().toISOString().slice(0, 7)
+  return thisMonthStr()
 }
 
 const KIND_LABELS = {

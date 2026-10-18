@@ -4,6 +4,16 @@ import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
+import { thisMonthStr } from '../../shared/logic/localDate.js'
+
+const DAY_OPTIONS = [7, 30, 90, 180]
+const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/
+
+// URL'den gelen ay geçersizse (elle bozulmuş link) bu aya düş.
+function useMonthParam(key) {
+  const [raw, setRaw] = useUrlParamState(key, thisMonthStr)
+  return [MONTH_RE.test(raw) ? raw : thisMonthStr(), setRaw]
+}
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 
@@ -46,7 +56,8 @@ export default function AdvancedReportsPage() {
 }
 
 function AbsenceTab() {
-  const [days, setDays] = useState(30)
+  const [daysRaw, setDays] = useUrlParamState('days', '30')
+  const days = DAY_OPTIONS.includes(Number(daysRaw)) ? Number(daysRaw) : 30
   const { data, isLoading, error } = useQuery({
     queryKey: ['absence-dash', days],
     queryFn: () => api.get(`/reports/absence-dashboard?days=${days}`).then(r => r.data),
@@ -64,7 +75,7 @@ function AbsenceTab() {
   return (
     <div>
       <div style={{ marginBottom: 12, display: 'flex', gap: 6 }}>
-        {[7, 30, 90, 180].map(d => (
+        {DAY_OPTIONS.map(d => (
           <button key={d} onClick={() => setDays(d)} className="btn btn-ghost btn-xs"
             style={{ borderRadius: 8, ...(days === d ? { background: 'var(--accent)', color: '#000' } : {}) }}>{d}G</button>
         ))}
@@ -128,8 +139,7 @@ function AbsenceTab() {
 }
 
 function CostTab() {
-  const thisMonth = new Date().toISOString().slice(0, 7)
-  const [month, setMonth] = useState(thisMonth)
+  const [month, setMonth] = useMonthParam('month')
   const { data, isLoading } = useQuery({
     queryKey: ['cost-per-person', month],
     queryFn: () => api.get(`/reports/cost-per-person?month=${month}`).then(r => r.data),
@@ -192,8 +202,7 @@ function CostTab() {
 }
 
 function ComparisonTab() {
-  const thisMonth = new Date().toISOString().slice(0, 7)
-  const [month, setMonth] = useState(thisMonth)
+  const [month, setMonth] = useMonthParam('month')
   const { data, isLoading } = useQuery({
     queryKey: ['comparison', month],
     queryFn: () => api.get(`/reports/comparison?month=${month}`).then(r => r.data),
