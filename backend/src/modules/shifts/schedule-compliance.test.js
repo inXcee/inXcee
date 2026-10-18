@@ -5,7 +5,7 @@ import request from 'supertest'
 import app from '../../app.js'
 import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
-import { scheduleComplianceWarnings } from './service.js'
+import { scheduleComplianceWarnings, shiftHourValue, shiftHourClock, rotationWarnings } from './service.js'
 
 // Seed vardiya tanımları: 1 Gündüz 8-17, 2 Akşam 15-24, 3 Gece 0-8
 const GUNDUZ = 1
@@ -92,5 +92,49 @@ describe('scheduleComplianceWarnings', () => {
     expect(scheduleComplianceWarnings([])).toEqual([])
     expect(scheduleComplianceWarnings(undefined)).toEqual([])
     expect(scheduleComplianceWarnings([{ staff_id: 'x', work_date: 'bozuk' }])).toEqual([])
+  })
+})
+
+describe('vardiya saati iki biçim (8 ve "08:00")', () => {
+  it('shiftHourValue tamsayı ve HH:MM okur', () => {
+    expect(shiftHourValue(8)).toBe(8)
+    expect(shiftHourValue('8')).toBe(8)
+    expect(shiftHourValue('08:00')).toBe(8)
+    expect(shiftHourValue('07:30')).toBe(7.5)
+    expect(shiftHourValue('24')).toBe(24)
+    expect(shiftHourValue('')).toBe(null)
+    expect(shiftHourValue('sabah')).toBe(null)
+    expect(shiftHourValue('25:00')).toBe(null)
+  })
+
+  it('shiftHourClock HH:MM üretir, 24 → 00:00', () => {
+    expect(shiftHourClock(8)).toBe('08:00')
+    expect(shiftHourClock('07:30')).toBe('07:30')
+    expect(shiftHourClock(24)).toBe('00:00')
+    expect(shiftHourClock(null)).toBe(null)
+  })
+
+  it('metin saatli tanımlarda da dinlenme ihlali yakalanır (önceden NaN → sessiz)', () => {
+    const defs = {
+      10: { id: 10, name: 'Akşam', start_hour: '15:00', end_hour: '23:00' },
+      11: { id: 11, name: 'Sabah', start_hour: '06:00', end_hour: '14:00' },
+    }
+    const w = rotationWarnings([
+      { staff_id: 1, work_date: '2027-05-01', shift_def_id: 10, status: 'scheduled' },
+      { staff_id: 1, work_date: '2027-05-02', shift_def_id: 11, status: 'scheduled' },
+    ], defs, { 1: 'Metin Saat' })
+    expect(w).toHaveLength(1)
+    expect(w[0].type).toBe('rest')
+    expect(w[0].message).toMatch(/7 saat/)
+  })
+})
+
+describe('vardiya parçası — saat verilmezse tanımdan alınır', () => {
+  it('tamsayı saatli tanım (Gündüz 8-17) ile saat göndermeden parça açılır', async () => {
+    const r = await request(app).post('/api/shifts/schedule/segments')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ staff_id: staffA, work_date: day(25), shift_def_id: GUNDUZ, start_time: '', end_time: '' })
+    expect(r.status).toBe(201)
+    expect(r.body.row).toMatchObject({ start_time: '08:00', end_time: '17:00' })
   })
 })
