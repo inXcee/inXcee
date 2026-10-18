@@ -14,7 +14,7 @@ function sha256(value) {
 
 function dailyAuditKey() {
   const secret = process.env.PORTAL_AUDIT_SECRET || process.env.JWT_SECRET
-  const day = new Date().toISOString().slice(0, 10)
+  const day = new Date().toISOString().slice(0, 10) // utc-bilinçli: günlük IP-hash anahtar rotasyonu, sınır önemli değil
   return createHmac('sha256', secret).update(`room-portal:${day}`).digest()
 }
 

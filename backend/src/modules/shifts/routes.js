@@ -81,6 +81,7 @@ import { validate } from '../../shared/middleware/validate.js'
 import { logAudit } from '../../shared/audit.js'
 import { documentUpload, verifyDocumentMagicBytes } from '../../shared/uploads/middleware.js'
 import { sanitizeDossierPerson } from '../personnel/access-policy.js'
+import { istanbulDate } from '../../shared/time.js'
 
 export const shiftsRouter = Router()
 
@@ -1138,7 +1139,7 @@ shiftsRouter.get('/combined-absences', ...managerOrSupervisor, (req, res) => {
 
 // ── Personnel status (now staff) ──
 shiftsRouter.get('/personnel', ...managerOrSupervisor, (req, res) => {
-  const date = req.query.date || new Date().toISOString().split('T')[0]
+  const date = req.query.date || istanbulDate()
   res.json(staffStatusService(date, req.query.dept_id || null))
 })
 
@@ -1581,7 +1582,7 @@ shiftsRouter.get('/puantaj/:staffId/days', ...managerOrSupervisor, (req, res) =>
 
 // ── Statistics ──
 shiftsRouter.get('/statistics', ...managerOrSupervisor, (req, res) => {
-  const date = req.query.date || new Date().toISOString().split('T')[0]
+  const date = req.query.date || istanbulDate()
   res.json(statisticsService(date))
 })
 

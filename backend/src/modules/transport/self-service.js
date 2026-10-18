@@ -1,6 +1,7 @@
 import { getDB } from '../../shared/db/index.js'
+import { istanbulDate } from '../../shared/time.js'
 
-export function getStaffTransport(staffId, date = new Date().toISOString().slice(0, 10)) {
+export function getStaffTransport(staffId, date = istanbulDate()) {
   const db = getDB()
   const staff = db.prepare('SELECT id, pickup_point_id FROM staff WHERE id=? AND is_active=1').get(staffId)
   if (!staff) return { today: null, schedule: null, pickup: null, date, upcoming: [], history: [] }

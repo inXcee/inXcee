@@ -137,7 +137,7 @@ export async function runBackupService() {
       message: `✅ Yedekleme tamamlandı: ${path.basename(dest)} (${sizeMb} MB)${offsite?.ok ? ' · offsite ✓' : offsite?.skipped ? '' : ' · offsite ✕'}`,
       event_kind: EVENT_KINDS.SYSTEM_BACKUP_SUCCESS,
       target_role: 'campus_manager',
-      dedup_key: `backup_success_${new Date().toISOString().slice(0, 10)}`,
+      dedup_key: `backup_success_${new Date().toISOString().slice(0, 10)}`, // utc-bilinçli: dedup kovası
     })
   } catch {}
   return {

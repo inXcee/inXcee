@@ -4,6 +4,7 @@ import * as svc from './service.js'
 import * as q from './queries.js'
 import { getDB } from '../../shared/db/index.js'
 import { logger } from '../../shared/logger.js'
+import { istanbulDate } from '../../shared/time.js'
 
 export const bulkActionsRouter = Router()
 const mgmt = requireRole('campus_manager', 'shift_supervisor')
@@ -96,7 +97,7 @@ bulkActionsRouter.get('/export', ...mgmt, (req, res) => {
     }
     const csv = '﻿' + lines.join('\r\n') // BOM for Excel
     res.setHeader('Content-Type', 'text/csv; charset=utf-8')
-    res.setHeader('Content-Disposition', `attachment; filename="sakinler-${new Date().toISOString().slice(0,10)}.csv"`)
+    res.setHeader('Content-Disposition', `attachment; filename="sakinler-${istanbulDate()}.csv"`)
     res.send(csv)
   } catch (e) { logger.error('[BulkActions export]', e); res.status(500).json({ error: 'Sunucu hatasi' }) }
 })
