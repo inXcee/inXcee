@@ -88,7 +88,7 @@
 - [x] "SORGULANIYIR" typo → "SORGULANIYOR"; CheckinPage alert → toast
 - [x] UsersPage delete onError eklendi + confirmDialog kullanıyor; MaintenancePage teknisyen silme confirmDialog kullanıyor
 - [ ] Filter URL state (Reports, Discipline) — ERTELENDİ (ayrı küçük faz)
-- [ ] Kalan ~20 browser confirm() çağrısı (DisciplinePage cards, vs) — kademeli olarak ConfirmDialog'a geçirilecek
+- [x] Kalan browser confirm() çağrıları ConfirmDialog'a geçirildi (son 4: transport harita/duraklar, QR kodları) — dialog'a Esc=İptal ve çok satırlı metin desteği eklendi
 
 ---
 

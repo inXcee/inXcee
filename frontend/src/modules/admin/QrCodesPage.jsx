@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { BLOCKS } from '../../shared/blocks.js'
+import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 
 // Oda QR kodları — yönetim ekranı.
 //
@@ -129,7 +130,13 @@ export default function QrCodesPage() {
     const soru = islem === 'rotate'
       ? `${item.display_name} için yeni QR üretilsin mi? Kapıdaki etiket çalışmaz hâle gelir ve yeniden basılması gerekir.`
       : `${item.display_name} QR'ı iptal edilsin mi? Kapıdaki etiket çalışmaz hâle gelir ve yerine yenisi ÜRETİLMEZ.`
-    if (!window.confirm(soru)) return
+    const onay = await confirmDialog({
+      title: islem === 'rotate' ? 'Yeni QR üret' : 'QR iptal et',
+      body: soru,
+      confirmLabel: islem === 'rotate' ? 'Yeni QR üret' : 'İptal et',
+      danger: true,
+    })
+    if (!onay) return
     setHata('')
     try {
       await api.post(`/location-portal/locations/${item.id}/${islem}`, { reason: 'admin' })

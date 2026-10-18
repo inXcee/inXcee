@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { create } from 'zustand'
 
 // Tasarima uyumlu, mobil-uyumlu, ekran-okuyucu-dostu confirm dialog.
@@ -35,6 +36,19 @@ export function confirmDialog(opts) {
 
 export default function ConfirmDialog() {
   const { open, title, body, confirmLabel, cancelLabel, danger, resolver, close } = useConfirmStore()
+
+  // Esc = Iptal (tarayici confirm()'u ile ayni beklenti)
+  useEffect(() => {
+    if (!open) return undefined
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        resolver?.(false)
+        close()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open, resolver, close])
 
   if (!open) return null
 
@@ -82,7 +96,7 @@ export default function ConfirmDialog() {
           {title}
         </div>
         {body && (
-          <div style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.5, marginBottom: 20 }}>
+          <div style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.5, marginBottom: 20, whiteSpace: 'pre-line' }}>
             {body}
           </div>
         )}
