@@ -5,6 +5,7 @@ import { useToastStore } from '../../shared/store/toastStore.js'
 import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
 import { thisMonthStr } from '../../shared/logic/localDate.js'
+import { exportRowsToCsv } from '../../shared/utils/exportData.js'
 
 const DAY_OPTIONS = [7, 30, 90, 180]
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/
@@ -147,13 +148,15 @@ function CostTab() {
 
   function exportCsv() {
     if (!data?.rows?.length) { toast('Veri yok', 'error'); return }
-    const headers = ['ID', 'Ad Soyad', 'Departman', 'Yemek Sayısı', 'Yemek Maliyeti', 'Servis Kullanımı', 'KKD Sayısı', 'Kesinti', 'Maaş']
-    const rows = data.rows.map(r => [r.id, r.full_name, r.dept_name, r.meal_count, r.meal_cost, r.transport_count, r.kkd_count, r.deductions, r.salary || ''])
-    const csv = [headers.join(';'), ...rows.map(row => row.join(';'))].join('\n')
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a'); a.href = url; a.download = `maliyet-${month}.csv`; a.click()
-    URL.revokeObjectURL(url)
+    const columns = [
+      { key: 'id', label: 'ID' }, { key: 'full_name', label: 'Ad Soyad' }, { key: 'dept_name', label: 'Departman' },
+      { key: 'meal_count', label: 'Yemek Sayısı' }, { key: 'meal_cost', label: 'Yemek Maliyeti' },
+      { key: 'transport_count', label: 'Servis Kullanımı' }, { key: 'kkd_count', label: 'KKD Sayısı' },
+      { key: 'deductions', label: 'Kesinti' },
+    ]
+    // Maaş yalnız sunucu gönderdiyse (kampüs müdürü) kolon olur
+    if (data.rows.some(r => 'salary' in r)) columns.push({ key: 'salary', label: 'Maaş', format: r => r.salary || '' })
+    exportRowsToCsv(columns, data.rows, `maliyet-${month}.csv`)
   }
 
   return (
@@ -274,12 +277,8 @@ function BuilderTab() {
 
   function exportCsv() {
     if (!data?.rows?.length) { toast('Veri yok', 'error'); return }
-    const headers = selected.map(c => ALL_COLS[c] || c)
-    const csv = [headers.join(';'), ...data.rows.map(r => selected.map(c => r[c] ?? '').join(';'))].join('\n')
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a'); a.href = url; a.download = 'personel-ozel.csv'; a.click()
-    URL.revokeObjectURL(url)
+    const cols = data.selected?.length ? data.selected : selected
+    exportRowsToCsv(cols.map(c => ({ key: c, label: ALL_COLS[c] || c })), data.rows, 'personel-ozel.csv')
   }
 
   return (
@@ -289,7 +288,7 @@ function BuilderTab() {
           KOLON SEÇ ({selected.length} seçili)
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-          {Object.entries(ALL_COLS).map(([k, v]) => {
+          {Object.entries(ALL_COLS).filter(([k]) => !data?.available_columns || data.available_columns.includes(k)).map(([k, v]) => {
             const on = selected.includes(k)
             return (
               <button key={k} onClick={() => toggleCol(k)} style={{

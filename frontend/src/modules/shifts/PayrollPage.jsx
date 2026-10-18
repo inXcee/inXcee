@@ -6,6 +6,7 @@ import { useToastStore } from '../../shared/store/toastStore.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 import { thisMonthStr } from '../../shared/logic/localDate.js'
+import { exportRowsToCsv } from '../../shared/utils/exportData.js'
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 const toastErr = (e) => toast(e?.response?.data?.error || 'Hata', 'error')
@@ -120,18 +121,7 @@ export default function PayrollPage() {
       ['holiday_days', 'Tatilde Çalışma'], ['weighted_days', 'Ağırlıklı Gün'],
       ['sgk_days', 'SGK Gün'], ['total_deductions', 'Kesinti (₺)'], ['salary', 'Maaş (₺)'],
     ]
-    const csv = [headers.map(h => h[1]).join(';')]
-      .concat(data.rows.map(r => headers.map(h => {
-        const v = r[h[0]] ?? ''
-        return typeof v === 'string' && (v.includes(';') || v.includes('"')) ? `"${v.replace(/"/g, '""')}"` : v
-      }).join(';')))
-      .join('\n')
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = `bordro-${month}.csv`
-    a.click()
-    URL.revokeObjectURL(a.href)
+    exportRowsToCsv(headers.map(([key, label]) => ({ key, label })), data.rows, `bordro-${month}.csv`)
     toast('CSV indirildi')
   }
 
