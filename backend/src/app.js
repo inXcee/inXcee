@@ -350,6 +350,25 @@ const mobileAuthLimiter = rateLimit({
   skip: () => process.env.NODE_ENV === 'test',
 })
 
+// Mobil PIN girişi kullanıcı adı istemez (rol + 4 hane): 10.000 olasılık, rolde
+// birden çok kullanıcı varsa daha az. Genel tavan (120/5dk) tek IP'den ~3,5 saatte
+// müdür PIN'i taramaya izin veriyordu. Bu sınır YALNIZ HATALI denemeyi sayar
+// (başarılı giriş sayılmaz), IP + rol başına: parmağı kayan kimse etkilenmez,
+// tarama ~15 kat yavaşlar.
+const mobilePinFailureLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  skipSuccessfulRequests: true,
+  requestWasSuccessful: (_req, res) => res.statusCode < 400,
+  // Kampüs WiFi'si tek dış IP olabilir: rol başına ayrı kova — temizlik ekibinin
+  // yanlış girişleri müdür/amir girişini kilitlemez.
+  keyGenerator: (req) => `ip:${ipKeyGenerator(req.ip)}:${String(req.body?.role || '-').slice(0, 32)}`,
+  message: { error: 'Çok fazla hatalı PIN denemesi. 15 dakika sonra tekrar deneyin.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+})
+
 // Write endpoint limiter — per-user 300/dk (5/sn). Modern SPA tek sayfa
 // açılışında rahat 15+ istek atar; 60/dk çok sıkıydı.
 const writeLimiter = rateLimit({
@@ -405,6 +424,7 @@ app.use('/api/auth', authLimiter, authRouter)
 app.use('/public/transport/trips', driverLinkLimiter, transportPublicRouter)
 app.use('/api/public', readLimiter, publicRouter)  // login öncesi güvenli toplu sayılar (auth yok)
 app.use('/api/room-portal', roomPortalRouter)
+app.use('/api/mobile/auth/login', mobilePinFailureLimiter)
 app.use('/api/mobile/auth', mobileAuthLimiter, mobileAuthRouter)
 app.use('/api/checkin', writeLimiter, checkinRouter)
 app.use('/api/capacity', writeLimiter, capacityRouter)
