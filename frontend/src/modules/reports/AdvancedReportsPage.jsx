@@ -4,6 +4,17 @@ import api from '../../shared/api/client.js'
 import { useToastStore } from '../../shared/store/toastStore.js'
 import { SkeletonTable } from '../../shared/components/Skeleton.jsx'
 import { useUrlParamState } from '../../shared/hooks/useUrlParamState.js'
+import { thisMonthStr } from '../../shared/logic/localDate.js'
+import { exportRowsToCsv } from '../../shared/utils/exportData.js'
+
+const DAY_OPTIONS = [7, 30, 90, 180]
+const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/
+
+// URL'den gelen ay geçersizse (elle bozulmuş link) bu aya düş.
+function useMonthParam(key) {
+  const [raw, setRaw] = useUrlParamState(key, thisMonthStr)
+  return [MONTH_RE.test(raw) ? raw : thisMonthStr(), setRaw]
+}
 
 const toast = (m, t = 'success') => useToastStore.getState().addToast(m, t)
 
@@ -46,7 +57,8 @@ export default function AdvancedReportsPage() {
 }
 
 function AbsenceTab() {
-  const [days, setDays] = useState(30)
+  const [daysRaw, setDays] = useUrlParamState('days', '30')
+  const days = DAY_OPTIONS.includes(Number(daysRaw)) ? Number(daysRaw) : 30
   const { data, isLoading, error } = useQuery({
     queryKey: ['absence-dash', days],
     queryFn: () => api.get(`/reports/absence-dashboard?days=${days}`).then(r => r.data),
@@ -64,7 +76,7 @@ function AbsenceTab() {
   return (
     <div>
       <div style={{ marginBottom: 12, display: 'flex', gap: 6 }}>
-        {[7, 30, 90, 180].map(d => (
+        {DAY_OPTIONS.map(d => (
           <button key={d} onClick={() => setDays(d)} className="btn btn-ghost btn-xs"
             style={{ borderRadius: 8, ...(days === d ? { background: 'var(--accent)', color: '#000' } : {}) }}>{d}G</button>
         ))}
@@ -128,8 +140,7 @@ function AbsenceTab() {
 }
 
 function CostTab() {
-  const thisMonth = new Date().toISOString().slice(0, 7)
-  const [month, setMonth] = useState(thisMonth)
+  const [month, setMonth] = useMonthParam('month')
   const { data, isLoading } = useQuery({
     queryKey: ['cost-per-person', month],
     queryFn: () => api.get(`/reports/cost-per-person?month=${month}`).then(r => r.data),
@@ -137,13 +148,15 @@ function CostTab() {
 
   function exportCsv() {
     if (!data?.rows?.length) { toast('Veri yok', 'error'); return }
-    const headers = ['ID', 'Ad Soyad', 'Departman', 'Yemek Sayısı', 'Yemek Maliyeti', 'Servis Kullanımı', 'KKD Sayısı', 'Kesinti', 'Maaş']
-    const rows = data.rows.map(r => [r.id, r.full_name, r.dept_name, r.meal_count, r.meal_cost, r.transport_count, r.kkd_count, r.deductions, r.salary || ''])
-    const csv = [headers.join(';'), ...rows.map(row => row.join(';'))].join('\n')
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a'); a.href = url; a.download = `maliyet-${month}.csv`; a.click()
-    URL.revokeObjectURL(url)
+    const columns = [
+      { key: 'id', label: 'ID' }, { key: 'full_name', label: 'Ad Soyad' }, { key: 'dept_name', label: 'Departman' },
+      { key: 'meal_count', label: 'Yemek Sayısı' }, { key: 'meal_cost', label: 'Yemek Maliyeti' },
+      { key: 'transport_count', label: 'Servis Kullanımı' }, { key: 'kkd_count', label: 'KKD Sayısı' },
+      { key: 'deductions', label: 'Kesinti' },
+    ]
+    // Maaş yalnız sunucu gönderdiyse (kampüs müdürü) kolon olur
+    if (data.rows.some(r => 'salary' in r)) columns.push({ key: 'salary', label: 'Maaş', format: r => r.salary || '' })
+    exportRowsToCsv(columns, data.rows, `maliyet-${month}.csv`)
   }
 
   return (
@@ -192,8 +205,7 @@ function CostTab() {
 }
 
 function ComparisonTab() {
-  const thisMonth = new Date().toISOString().slice(0, 7)
-  const [month, setMonth] = useState(thisMonth)
+  const [month, setMonth] = useMonthParam('month')
   const { data, isLoading } = useQuery({
     queryKey: ['comparison', month],
     queryFn: () => api.get(`/reports/comparison?month=${month}`).then(r => r.data),
@@ -265,12 +277,8 @@ function BuilderTab() {
 
   function exportCsv() {
     if (!data?.rows?.length) { toast('Veri yok', 'error'); return }
-    const headers = selected.map(c => ALL_COLS[c] || c)
-    const csv = [headers.join(';'), ...data.rows.map(r => selected.map(c => r[c] ?? '').join(';'))].join('\n')
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a'); a.href = url; a.download = 'personel-ozel.csv'; a.click()
-    URL.revokeObjectURL(url)
+    const cols = data.selected?.length ? data.selected : selected
+    exportRowsToCsv(cols.map(c => ({ key: c, label: ALL_COLS[c] || c })), data.rows, 'personel-ozel.csv')
   }
 
   return (
@@ -280,7 +288,7 @@ function BuilderTab() {
           KOLON SEÇ ({selected.length} seçili)
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-          {Object.entries(ALL_COLS).map(([k, v]) => {
+          {Object.entries(ALL_COLS).filter(([k]) => !data?.available_columns || data.available_columns.includes(k)).map(([k, v]) => {
             const on = selected.includes(k)
             return (
               <button key={k} onClick={() => toggleCol(k)} style={{

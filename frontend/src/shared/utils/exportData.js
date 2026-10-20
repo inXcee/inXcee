@@ -13,12 +13,15 @@ function triggerDownload(blob, filename) {
 }
 
 // Excel'de "=cmd" gibi formül olarak yorumlanacak değerleri prefix ile zararsızla.
-// (CSV injection — bkz. OWASP Top 10)
-function safeValue(v) {
+// (CSV injection — bkz. OWASP Top 10). Sayılar (-150) ve telefonlar (+90 555 ...)
+// fonksiyon/hücre referansı taşıyamaz; olduğu gibi kalır (backend toCsv ile aynı kural).
+export function safeValue(v) {
   if (v == null) return ''
+  if (typeof v === 'number') return String(v)
   const s = String(v)
-  if (/^[=+\-@\t\r]/.test(s)) return `'${s}`
-  return s
+  if (s.length < 2 || !/^[=+\-@\t\r]/.test(s)) return s
+  if (/^[+-]?[\d\s().,-]+$/.test(s)) return s
+  return `'${s}`
 }
 
 function escapeCsvCell(v) {
