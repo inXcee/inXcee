@@ -2,7 +2,19 @@
 import { Router } from 'express'
 import { getDB } from '../../../shared/db/index.js'
 import { logger } from '../../../shared/logger.js'
-import { mgrAccess } from './shared.js'
+import { istanbulDate } from '../../../shared/time.js'
+import { maskTcNo } from '../../personnel/access-policy.js'
+import { mgrAccess, parseMonth } from './shared.js'
+
+// Personel dosyasıyla aynı kural (personnel/access-policy.js): yalnız kampüs
+// müdürü ham TC ve maaşı görür; vardiya amirine TC maskeli, maaş hiç gitmez.
+const MANAGER_ONLY_COLUMNS = new Set(['salary'])
+const isManager = (req) => req.user?.role === 'campus_manager'
+function withoutSalary(row) {
+  const copy = { ...row }
+  delete copy.salary
+  return copy
+}
 
 export const analyticsReportsRouter = Router()
 
@@ -13,9 +25,8 @@ analyticsReportsRouter.get('/absence-dashboard', ...mgrAccess, (req, res) => {
     // 1-365 gün arası, parametre validation
     const days = Math.max(1, Math.min(365, +req.query.days || 30))
     // since'i parameterized olarak SQL'e geç
-    const sinceDate = new Date()
-    sinceDate.setDate(sinceDate.getDate() - days)
-    const since = sinceDate.toISOString().slice(0, 10)
+    // İstanbul takvim günü — sunucu UTC'de koşsa da gece 00:00-03:00 kayması olmasın
+    const since = istanbulDate(new Date(Date.now() - days * 86400000))
 
     const summary = db.prepare(`
       SELECT
@@ -65,7 +76,8 @@ analyticsReportsRouter.get('/absence-dashboard', ...mgrAccess, (req, res) => {
 analyticsReportsRouter.get('/cost-per-person', ...mgrAccess, (req, res) => {
   try {
     const db = getDB()
-    const month = req.query.month || db.prepare("SELECT strftime('%Y-%m','now','localtime') m").get().m
+    const month = parseMonth(req.query.month, istanbulDate().slice(0, 7))
+    if (!month) return res.status(400).json({ error: 'Geçersiz ay (YYYY-AA bekleniyor)' })
     const start = `${month}-01`
     const end = db.prepare("SELECT date(?, '+1 month') AS d").get(start).d
 
@@ -82,7 +94,7 @@ analyticsReportsRouter.get('/cost-per-person', ...mgrAccess, (req, res) => {
       ORDER BY meal_cost DESC, s.full_name
     `).all(start, end, start, end, start, end, month, start, end)
 
-    res.json({ month, rows })
+    res.json({ month, rows: isManager(req) ? rows : rows.map(withoutSalary) })
   } catch (e) { logger.error('[cost-per-person]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
@@ -90,7 +102,8 @@ analyticsReportsRouter.get('/cost-per-person', ...mgrAccess, (req, res) => {
 analyticsReportsRouter.get('/comparison', ...mgrAccess, (req, res) => {
   try {
     const db = getDB()
-    const month = req.query.month || db.prepare("SELECT strftime('%Y-%m','now','localtime') m").get().m
+    const month = parseMonth(req.query.month, istanbulDate().slice(0, 7))
+    if (!month) return res.status(400).json({ error: 'Geçersiz ay (YYYY-AA bekleniyor)' })
     function range(ym) {
       const start = `${ym}-01`
       return [start, db.prepare("SELECT date(?, '+1 month') AS d").get(start).d]
@@ -148,7 +161,10 @@ analyticsReportsRouter.get('/staff-builder', ...mgrAccess, (req, res) => {
       pickup_name: 'pp.name as pickup_name',
       company_name: 'c.name as company_name',
     }
-    const selects = cols.filter(c => ALLOWED[c]).map(c => ALLOWED[c])
+    const manager = isManager(req)
+    const allowedKeys = Object.keys(ALLOWED).filter(c => manager || !MANAGER_ONLY_COLUMNS.has(c))
+    const selected = cols.filter(c => allowedKeys.includes(c))
+    const selects = selected.map(c => ALLOWED[c])
     if (!selects.length) selects.push('s.full_name')
 
     const rows = db.prepare(`
@@ -163,6 +179,7 @@ analyticsReportsRouter.get('/staff-builder', ...mgrAccess, (req, res) => {
       LIMIT 1000
     `).all()
 
-    res.json({ available_columns: Object.keys(ALLOWED), selected: cols, rows })
+    const safeRows = manager ? rows : rows.map(r => ('tc_no' in r ? { ...r, tc_no: maskTcNo(r.tc_no) } : r))
+    res.json({ available_columns: allowedKeys, selected, rows: safeRows })
   } catch (e) { logger.error('[staff-builder]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })

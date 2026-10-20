@@ -3,7 +3,15 @@ import { Router } from 'express'
 import { getDB } from '../../../shared/db/index.js'
 import * as service from '../service.js'
 import { logger } from '../../../shared/logger.js'
+import { maskTcNo } from '../../personnel/access-policy.js'
 import { mgrAccess, toCsv } from './shared.js'
+
+// Vardiya amiri: TC ve pasaport maskeli (personel dosyasıyla aynı kural).
+function personnelRowsFor(req) {
+  const rows = service.getAllActivePersonnelSvc()
+  if (req.user?.role === 'campus_manager') return rows
+  return rows.map(r => ({ ...r, tc_no: maskTcNo(r.tc_no), passport_no: maskTcNo(r.passport_no) }))
+}
 
 export const personnelReportsRouter = Router()
 
@@ -40,7 +48,7 @@ personnelReportsRouter.get('/access-events.csv', ...mgrAccess, (req, res) => {
 
 personnelReportsRouter.get('/personnel', ...mgrAccess, (req, res) => {
   try {
-    const rows = service.getAllActivePersonnelSvc()
+    const rows = personnelRowsFor(req)
     const headers = ['ID', 'Ad Soyad', 'TC', 'Pasaport', 'Firma', 'Meslek', 'Memleket', 'Telefon',
       'Cinsiyet', 'Blok', 'Kat', 'Oda', 'Yatak', 'Vardiya', 'Giris', 'Zimmet', 'Disiplin',
       'Karaliste', 'Acil Kisi', 'Acil Tel']
@@ -62,7 +70,7 @@ personnelReportsRouter.get('/personnel', ...mgrAccess, (req, res) => {
 
 personnelReportsRouter.get('/personnel/data', ...mgrAccess, (req, res) => {
   try {
-    const rows = service.getAllActivePersonnelSvc()
+    const rows = personnelRowsFor(req)
     res.json({
       total: rows.length,
       with_room: rows.filter(r => r.block).length,
