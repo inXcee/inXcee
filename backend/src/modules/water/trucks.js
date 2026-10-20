@@ -389,6 +389,17 @@ export function buildTruckGateEntryPDF(truck, doc) {
   return truck
 }
 
+// SQLite CURRENT_TIMESTAMP UTC'dir ve ek taşımaz; kullanıcıya İstanbul saatiyle gösterilir.
+function sqliteUtcToTr(value) {
+  const text = String(value || '').trim()
+  if (!text) return ''
+  const iso = text.replace(' ', 'T')
+  const date = new Date(/(Z|[+-]\d\d:?\d\d)$/i.test(iso) ? iso : `${iso}Z`)
+  if (Number.isNaN(date.getTime())) return text
+  const clock = trClock(date)
+  return `${clock.date} ${clock.time}`
+}
+
 function decorateTruck(row, now = new Date()) {
   const clock = trClock(now)
   const current = minutesOf(clock.time)
@@ -414,7 +425,7 @@ function decorateTruck(row, now = new Date()) {
     mailPhase = 'sent'
     mailPhaseLabel = 'Mail atıldı'
     mailSeverity = 'success'
-    mailNotice = `Mail ${row.mail_sent_at} tarihinde işaretlenmiş`
+    mailNotice = `Mail ${sqliteUtcToTr(row.mail_sent_at)} tarihinde işaretlenmiş`
   } else if (row.status === 'cancelled') {
     mailPhase = 'cancelled'
     mailPhaseLabel = 'İptal'

@@ -31,11 +31,28 @@ export const dayShort = iso => new Date(`${iso}T00:00:00`)
 export const dayLong = iso => new Date(`${iso}T00:00:00`)
   .toLocaleDateString('tr-TR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })
 
+// SQLite CURRENT_TIMESTAMP UTC'dir ve bölge eki taşımaz ("2026-07-15 06:05:00"). Ek yoksa UTC say;
+// aksi hâlde tarayıcı yerel saat sanar ve İstanbul'da kayıt saati 3 saat geride görünür.
+export function parseServerTimestamp(value) {
+  const text = String(value).trim()
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return new Date(`${text}T00:00:00`)
+  const iso = text.replace(' ', 'T')
+  return new Date(/(Z|[+-]\d\d:?\d\d)$/i.test(iso) ? iso : `${iso}Z`)
+}
+
 export function movementTime(value) {
   if (!value) return ''
-  const date = new Date(String(value).replace(' ', 'T'))
+  const date = parseServerTimestamp(value)
   if (Number.isNaN(date.getTime())) return ''
   return date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
+}
+
+// Sunucu zaman damgasını (UTC) kullanıcının yerel gün+saatine çevirir; bozuksa ham değeri döndürür.
+export function serverDateTime(value) {
+  if (!value) return ''
+  const date = parseServerTimestamp(value)
+  if (Number.isNaN(date.getTime())) return String(value)
+  return date.toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
 export function shiftIsoDay(iso, delta) {

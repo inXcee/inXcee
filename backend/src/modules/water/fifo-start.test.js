@@ -108,3 +108,19 @@ describe('Su FIFO başlangıç (geçiş) tarihi', () => {
     expect(allocated(sepOut)).toBe(110)                    // 6.10 girişinin kalan 10'u en eski açığa
   })
 })
+
+describe('Su FIFO geçiş tarihi — dağıtımı geçiş öncesine taşıma', () => {
+  it('incelemedeki dağıtım geçiş öncesine düzeltilince inceleme kuyruğundan düşer', async () => {
+    expect((await request(app).put('/api/water/fifo-start').set(auth(manager)).send({ date: '2026-10-01' })).status).toBe(200)
+    const out = await distribute('2026-10-12', 5000)       // stok yetmez → karşılıksız → inceleme
+    expect(reviewFlag(out)).toBe(1)
+    const r = await request(app).put(`/api/water/movements/${out}`).set(auth(manager))
+      .send({ product_id: product, zone_id: zone, input_qty: 5000, input_unit: 'adet', move_date: '2026-09-28' })
+    expect(r.status).toBe(200)
+    expect(allocated(out)).toBe(0)
+    expect(reviewFlag(out)).toBe(0)                        // devirle kapanmış geçmiş: karar bekleyen iş değil
+    const queue = await request(app).get('/api/water/review').set(auth(manager))
+    expect(queue.status).toBe(200)
+    expect(queue.body.rows.some(row => row.movement_id === out)).toBe(false)
+  })
+})

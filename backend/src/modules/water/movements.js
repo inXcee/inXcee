@@ -263,6 +263,10 @@ export function updateDistributionService(id, data, userId) {
     }
     reconcileUnallocatedOut([existing.product_id, product.id])
     q.flagReviewForUnallocated([id])
+    // Geçiş öncesine taşınan dağıtım devirle kapanmış geçmiştir: eski inceleme işareti kalırsa
+    // (flag yalnız işaretler, eşleşme de olmayacağı için clearResolvedReviews de kaldırmaz) kuyrukta takılı kalır.
+    const start = q.getFifoStartDate()
+    if (start && movement.move_date < start) q.clearReviewsBefore(start, [id])
   })
   checkLowStock([existing.product_id, product.id])
 }
