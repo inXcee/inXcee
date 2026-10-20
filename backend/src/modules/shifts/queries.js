@@ -1143,12 +1143,40 @@ export function approveLeaveRequest(id, approvedBy, status, { note = null, expec
   }
   const wasApproved = req.status === 'approved'
 
+  if (status === 'approved' && !wasApproved) {
+    // Reddedilmiş/iptal edilmiş bir talep yeniden onaylanırken aynı günlere bu arada başka bir talep
+    // açılmış olabilir (oluşturmadaki çakışma kontrolü reddedilenleri saymaz) → aynı günler iki kez
+    // izin sayılır, bakiyeden iki kez düşerdi.
+    const overlap = db.prepare(`
+      SELECT id FROM leave_requests
+      WHERE staff_id=? AND id<>? AND status!='rejected' AND start_date<=? AND end_date>=?
+      LIMIT 1
+    `).get(req.staff_id, req.id, req.end_date, req.start_date)
+    if (overlap) {
+      throw Object.assign(new Error('Bu tarih aralığında başka bir bekleyen/onaylı izin talebi var'), {
+        statusCode: 409,
+        details: { conflicting_leave_request_id: overlap.id },
+      })
+    }
+  }
+
   // E1 — yıllık izinde bakiye kontrolü (pending → approved geçişinde)
   if (status === 'approved' && !wasApproved && req.leave_type === 'annual') {
-    const year = Number(req.start_date.slice(0, 4))
-    const bal = getLeaveBalance(req.staff_id, year)
-    if (bal.annual_used + req.total_days > bal.annual_total) {
-      throw new Error(`Yıllık izin bakiyesi yetersiz (kalan: ${bal.annual_total - bal.annual_used} gün, talep: ${req.total_days} gün)`)
+    // İK onaylı açılış bakiyesi varsa kalan TEK KAYNAKTAN (leaveBalance.js) gelir — ekranın gösterdiği
+    // sayı. Eskiden burada her zaman leave_balance sayacı (varsayılan 15 gün) kullanılıyordu: açılışı
+    // 30 gün olan kişinin 20 günlük izni "kalan 15" diye reddediliyordu. Yasal dayanakta devir
+    // bilinmediğinden kesin engel konmaz; o durumda eski sayaç kontrolü sürer.
+    const unified = computeAnnualBalance(req.staff_id, { db })
+    if (unified?.basis === 'opening' && unified.remaining != null) {
+      if (req.total_days > unified.remaining) {
+        throw new Error(`Yıllık izin bakiyesi yetersiz (kalan: ${unified.remaining} gün, talep: ${req.total_days} gün)`)
+      }
+    } else {
+      const year = Number(req.start_date.slice(0, 4))
+      const bal = getLeaveBalance(req.staff_id, year)
+      if (bal.annual_used + req.total_days > bal.annual_total) {
+        throw new Error(`Yıllık izin bakiyesi yetersiz (kalan: ${bal.annual_total - bal.annual_used} gün, talep: ${req.total_days} gün)`)
+      }
     }
   }
 
@@ -3068,9 +3096,13 @@ export function cancelLeaveRequest(id, actorUserId = null) {
   if (!req) throw new Error('İzin talebi bulunamadı')
   const tx = db.transaction(() => {
     db.prepare("UPDATE leave_requests SET status='rejected', version=version+1, updated_at=CURRENT_TIMESTAMP WHERE id=?").run(id)
-    clearLeaveFromSchedule(db, req, actorUserId)
-    // E1 — onaylı izin iptalinde bakiye iadesi
-    if (req.status === 'approved') adjustLeaveBalance(db, req, -1)
+    // Çizelgeye yalnız ONAYLI izin işlenir; bekleyen/reddedilmiş talebin iptali o günlerdeki
+    // (elle girilmiş ya da başka kaynaktan gelen) izin hücrelerini silmemeli.
+    if (req.status === 'approved') {
+      clearLeaveFromSchedule(db, req, actorUserId)
+      // E1 — onaylı izin iptalinde bakiye iadesi
+      adjustLeaveBalance(db, req, -1)
+    }
   })
   tx()
 }

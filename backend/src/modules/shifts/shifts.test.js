@@ -956,6 +956,9 @@ describe('Staff CRUD', () => {
     db.prepare("UPDATE staff SET hire_date=date('now','-3 years') WHERE id=?").run(createdStaffId)
     db.prepare('INSERT OR REPLACE INTO leave_balance(staff_id, year, annual_total, annual_used) VALUES(?,?,?,?)')
       .run(createdStaffId, year, 14, 4)
+    // Kullanılan gün tek kaynaktan (onaylı leave_requests defteri) — sayaç yalnız önbellek.
+    db.prepare(`INSERT INTO leave_requests(staff_id, leave_type, start_date, end_date, total_days, status)
+      VALUES(?, 'annual', ?, ?, 4, 'approved')`).run(createdStaffId, `${year}-01-05`, `${year}-01-08`)
     db.prepare("INSERT INTO staff_uniform_issues(staff_id, item_key, quantity) VALUES(?, 'work_pants', 1)")
       .run(createdStaffId)
 

@@ -44,6 +44,12 @@ function shiftDefName(start, end) {
   return known[`${start}-${end}`] || `${pad(start)}:00-${pad(end)}:00`
 }
 
+function addDaysIso(iso, n) {
+  const d = new Date(`${iso}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + n)
+  return d.toISOString().slice(0, 10)
+}
+
 // Ardışık tarihleri (ISO) gruplara ayır: [{ start, end, days }].
 export function groupConsecutive(dates) {
   const sorted = [...new Set(dates)].sort()
@@ -598,29 +604,43 @@ export function importSchedule(payload, userId, {
     const bumpAnnual = db.prepare(`UPDATE leave_balance SET annual_used = annual_used + ? WHERE staff_id = ? AND year = ?`)
     const bumpSick = db.prepare(`UPDATE leave_balance SET sick_used = sick_used + ? WHERE staff_id = ? AND year = ?`)
 
+    // Koşunun günlerinden biri zaten bekleyen/onaylı bir izin talebinin içindeyse o gün yeniden
+    // talep açılmaz. Eskiden yalnız birebir aynı (tür, başlangıç, bitiş) aranıyordu: elle onaylanmış
+    // 3–9 Ekim izni varken Excel'den gelen 5–9 Ekim koşusu ya da düzeltilmiş çizelgenin yeniden
+    // aktarımı (5–9 → 5–8) aynı günler için İKİNCİ onaylı izin açıp bakiyeden iki kez düşüyordu.
+    const coveringLeaves = db.prepare(`SELECT start_date, end_date FROM leave_requests
+      WHERE staff_id = ? AND status != 'rejected' AND start_date <= ? AND end_date >= ?`)
+
     let leavesCreated = 0
-    for (const run of leaveRuns) {
-      const { staff } = resolveStaff(run.name)
+    for (const fullRun of leaveRuns) {
+      const { staff } = resolveStaff(fullRun.name)
       if (!staff) continue
-      if (findLeave.get(staff.id, run.leaveType, run.start, run.end)) continue // idempotent
-      const lid = insLeave.run(staff.id, run.leaveType, run.start, run.end, run.days, 'Excel içe aktarımı', userId || null).lastInsertRowid
-      const year = +run.start.slice(0, 4)
-      ensureBal.run(staff.id, year)
-      if (run.leaveType === 'annual') bumpAnnual.run(run.days, staff.id, year)
-      else if (run.leaveType === 'sick') bumpSick.run(run.days, staff.id, year)
-      undo.createdLeaves.push({ id: lid, staffId: staff.id, leaveType: run.leaveType, days: run.days, year })
-      recordPersonnelEvent({
-        staffId: staff.id,
-        eventType: 'leave_changed',
-        effectiveAt: run.start,
-        sourceType: 'leave_request',
-        sourceId: lid,
-        after: db.prepare('SELECT * FROM leave_requests WHERE id=?').get(lid),
-        reason: 'Izin Excel vardiya aktarimi ile olusturuldu',
-        actorUserId: userId || null,
-        metadata: { source: 'schedule_import' },
-      })
-      leavesCreated++
+      if (findLeave.get(staff.id, fullRun.leaveType, fullRun.start, fullRun.end)) continue // idempotent
+      const covering = coveringLeaves.all(staff.id, fullRun.end, fullRun.start)
+      const uncovered = []
+      for (let d = fullRun.start; d <= fullRun.end; d = addDaysIso(d, 1)) {
+        if (!covering.some(l => l.start_date <= d && l.end_date >= d)) uncovered.push(d)
+      }
+      for (const run of groupConsecutive(uncovered)) {
+        const lid = insLeave.run(staff.id, fullRun.leaveType, run.start, run.end, run.days, 'Excel içe aktarımı', userId || null).lastInsertRowid
+        const year = +run.start.slice(0, 4)
+        ensureBal.run(staff.id, year)
+        if (fullRun.leaveType === 'annual') bumpAnnual.run(run.days, staff.id, year)
+        else if (fullRun.leaveType === 'sick') bumpSick.run(run.days, staff.id, year)
+        undo.createdLeaves.push({ id: lid, staffId: staff.id, leaveType: fullRun.leaveType, days: run.days, year })
+        recordPersonnelEvent({
+          staffId: staff.id,
+          eventType: 'leave_changed',
+          effectiveAt: run.start,
+          sourceType: 'leave_request',
+          sourceId: lid,
+          after: db.prepare('SELECT * FROM leave_requests WHERE id=?').get(lid),
+          reason: 'Izin Excel vardiya aktarimi ile olusturuldu',
+          actorUserId: userId || null,
+          metadata: { source: 'schedule_import' },
+        })
+        leavesCreated++
+      }
     }
     report.leaves.created = leavesCreated
 
