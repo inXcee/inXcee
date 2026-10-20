@@ -49,8 +49,8 @@ qrRouter.post('/bulk-generate', ...mgr, (req, res) => {
   } catch (e) { logger.error('[qr/bulk]', e); res.status(400).json({ error: e.message }) }
 })
 
-// ── Q1: Mevcut staff'ın QR'ı (kendisi için) ──
-qrRouter.get('/staff/:id', ...view, (req, res) => {
+// ── Q1: Personelin QR'ı — qr_token kart kimliğidir ve TC döner: yalnız yönetim ──
+qrRouter.get('/staff/:id', ...mgr, (req, res) => {
   try {
     const db = getDB()
     const staff = db.prepare(`
@@ -66,7 +66,7 @@ qrRouter.get('/staff/:id', ...view, (req, res) => {
 })
 
 // ── Q2: Personel kart PDF ──
-qrRouter.get('/staff/:id/card/pdf', ...view, async (req, res) => {
+qrRouter.get('/staff/:id/card/pdf', ...mgr, async (req, res) => {
   try {
     const db = getDB()
     const staff = db.prepare(`

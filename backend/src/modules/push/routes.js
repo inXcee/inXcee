@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { requireAuth } from '../../shared/auth/middleware.js'
+import { requireStaff } from '../../shared/auth/middleware.js'
 import {
   getVapidPublicKey,
   isPushConfigured,
@@ -16,7 +16,7 @@ pushRouter.get('/vapid-public-key', (req, res) => {
 })
 
 // PushSubscription'i kaydet
-pushRouter.post('/subscribe', requireAuth, (req, res) => {
+pushRouter.post('/subscribe', ...requireStaff, (req, res) => {
   try {
     const { endpoint, keys } = req.body
     if (!endpoint || !keys?.p256dh || !keys?.auth) {
@@ -36,7 +36,7 @@ pushRouter.post('/subscribe', requireAuth, (req, res) => {
 })
 
 // Subscription'i sil (logout / izin iptal)
-pushRouter.post('/unsubscribe', requireAuth, (req, res) => {
+pushRouter.post('/unsubscribe', ...requireStaff, (req, res) => {
   try {
     const { endpoint } = req.body
     if (!endpoint) return res.status(400).json({ error: 'endpoint gerekli' })

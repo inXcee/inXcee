@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { requireAuth, requireRole } from '../../shared/auth/middleware.js'
+import { requireStaff, requireRole } from '../../shared/auth/middleware.js'
 import { logAudit } from '../../shared/audit.js'
 import { logger } from '../../shared/logger.js'
 import * as svc from './service.js'
@@ -7,7 +7,7 @@ import * as svc from './service.js'
 export const projectsRouter = Router()
 const mgmt = requireRole('campus_manager')
 
-projectsRouter.get('/', requireAuth, (req, res) => {
+projectsRouter.get('/', ...requireStaff, (req, res) => {
   try {
     res.json(svc.listService({ includeInactive: req.query.all === '1' }))
   } catch (e) { logger.error('[Projects]', e); res.status(500).json({ error: 'Sunucu hatası' }) }

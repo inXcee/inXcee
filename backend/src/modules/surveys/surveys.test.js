@@ -15,7 +15,7 @@ beforeAll(async () => {
 
 describe('Surveys — Zod sweep', () => {
   it('cok uzun yorum 400 doner', async () => {
-    const res = await request(app).post('/api/surveys/submit')
+    const res = await request(app).post('/api/surveys/submit').set('Authorization', `Bearer ${token}`)
       .send({ overall_score: 4, comment: 'c'.repeat(2001) })
     expect(res.status).toBe(400)
   })
@@ -23,29 +23,48 @@ describe('Surveys — Zod sweep', () => {
 
 describe('Surveys', () => {
   it('skor 1-5 disinda reddedilir', async () => {
-    const res = await request(app).post('/api/surveys/submit').send({ room_score: 7 })
+    const res = await request(app).post('/api/surveys/submit').set('Authorization', `Bearer ${token}`).send({ room_score: 7 })
     expect(res.status).toBe(400)
   })
 
   it('hicbir alan yoksa reddedilir', async () => {
-    const res = await request(app).post('/api/surveys/submit').send({})
+    const res = await request(app).post('/api/surveys/submit').set('Authorization', `Bearer ${token}`).send({})
     expect(res.status).toBe(400)
   })
 
   it('anonim gonderim kabul edilir', async () => {
-    const res = await request(app).post('/api/surveys/submit')
+    const res = await request(app).post('/api/surveys/submit').set('Authorization', `Bearer ${token}`)
       .send({ room_score: 5, cleaning_score: 4, overall_score: 5, comment: 'Cok iyi' })
     expect(res.status).toBe(201)
   })
 
   it('stats ortalama doner', async () => {
-    await request(app).post('/api/surveys/submit').send({ overall_score: 3 })
-    await request(app).post('/api/surveys/submit').send({ overall_score: 5 })
+    await request(app).post('/api/surveys/submit').set('Authorization', `Bearer ${token}`).send({ overall_score: 3 })
+    await request(app).post('/api/surveys/submit').set('Authorization', `Bearer ${token}`).send({ overall_score: 5 })
     const res = await request(app)
       .get('/api/surveys/stats?days=30')
       .set('Authorization', `Bearer ${token}`)
     expect(res.status).toBe(200)
     expect(res.body.summary.total).toBeGreaterThanOrEqual(2)
     expect(res.body.summary.avg_overall).toBeGreaterThan(0)
+  })
+})
+
+describe('Surveys — başkası adına gönderim', () => {
+  it('saha rolü başka personel adına gönderemez, anonim gönderebilir', async () => {
+    const login = await request(app).post('/api/auth/login').send({ username: 'meydanci', password: 'admin123' })
+    const hk = login.body.token
+    const other = await request(app).post('/api/surveys/submit').set('Authorization', `Bearer ${hk}`)
+      .send({ personnel_id: 1, overall_score: 1 })
+    expect(other.status).toBe(403)
+    const anon = await request(app).post('/api/surveys/submit').set('Authorization', `Bearer ${hk}`)
+      .send({ overall_score: 4 })
+    expect(anon.status).toBe(201)
+  })
+
+  it('müdür personel adına gönderebilir', async () => {
+    const res = await request(app).post('/api/surveys/submit').set('Authorization', `Bearer ${token}`)
+      .send({ personnel_id: 1, overall_score: 4 })
+    expect(res.status).toBe(201)
   })
 })

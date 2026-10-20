@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { requireRole, requireAuth } from '../../shared/auth/middleware.js'
+import { requireRole, requireStaff } from '../../shared/auth/middleware.js'
 import { validate } from '../../shared/middleware/validate.js'
 import { companySchema } from './schemas.js'
 import * as svc from './service.js'
@@ -7,20 +7,20 @@ import * as svc from './service.js'
 export const companiesRouter = Router()
 const mgmt = requireRole('campus_manager', 'shift_supervisor')
 
-companiesRouter.get('/', requireAuth, (req, res) => {
+companiesRouter.get('/', ...requireStaff, (req, res) => {
   res.json(svc.listService({ activeOnly: req.query.active === '1' }))
 })
 
-companiesRouter.get('/stats', requireAuth, (req, res) => {
+companiesRouter.get('/stats', ...requireStaff, (req, res) => {
   res.json(svc.statsService())
 })
 
-companiesRouter.get('/expiring', requireAuth, (req, res) => {
+companiesRouter.get('/expiring', ...requireStaff, (req, res) => {
   const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 365)
   res.json(svc.expiringService(days))
 })
 
-companiesRouter.get('/:id', requireAuth, (req, res) => {
+companiesRouter.get('/:id', ...requireStaff, (req, res) => {
   const c = svc.getService(+req.params.id)
   if (!c) return res.status(404).json({ error: 'Firma bulunamadı' })
   res.json(c)

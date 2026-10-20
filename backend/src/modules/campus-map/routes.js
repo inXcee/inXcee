@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { requireAuth, requireRole } from '../../shared/auth/middleware.js'
+import { requireStaff, requireRole } from '../../shared/auth/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import {
   getCampusSummary, getCampusTimeseries,
@@ -18,7 +18,7 @@ export const campusMapRouter = Router()
 const SETTING_KEY = 'campus_map_pins'
 
 // Tum bloklar icin ozet — tum gorunum modlari icin gerekli veri tek seferde
-campusMapRouter.get('/summary', requireAuth, (req, res) => {
+campusMapRouter.get('/summary', ...requireStaff, (req, res) => {
   try {
     res.json({ blocks: getCampusSummary() })
   } catch (e) {
@@ -28,7 +28,7 @@ campusMapRouter.get('/summary', requireAuth, (req, res) => {
 })
 
 // Per-blok son N gun doluluk zaman serisi (sparkline + zaman slider icin)
-campusMapRouter.get('/timeseries', requireAuth, (req, res) => {
+campusMapRouter.get('/timeseries', ...requireStaff, (req, res) => {
   try {
     const days = Math.max(2, Math.min(30, parseInt(req.query.days) || 7))
     res.json({ days, blocks: getCampusTimeseries(days) })
@@ -39,7 +39,7 @@ campusMapRouter.get('/timeseries', requireAuth, (req, res) => {
 })
 
 // Blok detayi — harita panelinde inline gosterim (arıza / temizlik / oda+kisi).
-// Harita gibi requireAuth ile acik, ama BOLUMLER rol-duyarli: kaynak modullerin
+// Harita gibi tum personel rollerine acik, ama BOLUMLER rol-duyarli: kaynak modullerin
 // yetki kurallari birebir korunur, yetkisi olmayan bolum yanita hic konmaz.
 const FAULT_ROLES = ['campus_manager', 'shift_supervisor', 'technical']
 const CLEANING_ROLES = ['campus_manager', 'housekeeper']
@@ -82,7 +82,7 @@ function campusKpis(blocks, health) {
 }
 
 // Yeni operasyon sozlesmesi: rol-duyarli kuyruklar ve veri kalitesi tek cagriyla gelir.
-campusMapRouter.get('/operations', requireAuth, (req, res) => {
+campusMapRouter.get('/operations', ...requireStaff, (req, res) => {
   try {
     const date = requestedDate(req, res)
     if (!date) return
@@ -127,7 +127,7 @@ campusMapRouter.get('/operations', requireAuth, (req, res) => {
   }
 })
 
-campusMapRouter.get('/block/:block/workspace', requireAuth, (req, res) => {
+campusMapRouter.get('/block/:block/workspace', ...requireStaff, (req, res) => {
   try {
     const date = requestedDate(req, res)
     if (!date) return
@@ -199,7 +199,7 @@ campusMapRouter.get('/report-data', ...requireRole('campus_manager', 'shift_supe
   }
 })
 
-campusMapRouter.get('/block/:block/detail', requireAuth, (req, res) => {
+campusMapRouter.get('/block/:block/detail', ...requireStaff, (req, res) => {
   try {
     const block = String(req.params.block || '').trim()
     if (!block || block.length > 8) return res.status(400).json({ error: 'Gecersiz blok' })
@@ -216,7 +216,7 @@ campusMapRouter.get('/block/:block/detail', requireAuth, (req, res) => {
 })
 
 // Tum giris yapmis kullanicilar haritayi okuyabilir
-campusMapRouter.get('/pins', requireAuth, (req, res) => {
+campusMapRouter.get('/pins', ...requireStaff, (req, res) => {
   try {
     const db = getDB()
     const row = db.prepare('SELECT value FROM system_settings WHERE key=?').get(SETTING_KEY)

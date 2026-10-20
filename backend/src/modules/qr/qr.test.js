@@ -198,9 +198,10 @@ describe('H5 Yetki', () => {
     expect(res.status).toBe(403)
   })
 
-  it('view rolu scan ve card görür', async () => {
+  // qr_token kart kimliğidir ve yanıt TC içerir: saha rolü başkasınınkini göremez.
+  it('saha rolu baskasinin QR/TC bilgisini goremez', async () => {
     const t = (await request(app).post('/api/auth/login').send({ username: 'camasir', password: 'admin123' })).body.token
     const r = await request(app).get(`/api/qr/staff/${staffId}`).set('Authorization', `Bearer ${t}`)
-    expect(r.status).toBe(200)
+    expect(r.status).toBe(403)
   })
 })

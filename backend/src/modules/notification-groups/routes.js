@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { requireRole, requireAuth } from '../../shared/auth/middleware.js'
+import { requireRole } from '../../shared/auth/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import { logAudit } from '../../shared/audit.js'
 import { validate } from '../../shared/middleware/validate.js'
@@ -7,6 +7,8 @@ import { groupSchema, memberSchema } from './schemas.js'
 
 export const notifGroupsRouter = Router()
 const mgmt = requireRole('campus_manager')
+// Üye listesi e-posta/telefon içerir: yalnız yönetim (İletişim Kayıtları sayfası amir de görür)
+const readAccess = requireRole('campus_manager', 'shift_supervisor')
 
 const VALID_CHANNELS = ['app', 'email', 'whatsapp', 'push']
 
@@ -17,7 +19,7 @@ function normalizeChannels(input) {
   return valid.length ? valid.join(',') : 'app'
 }
 
-notifGroupsRouter.get('/', requireAuth, (req, res) => {
+notifGroupsRouter.get('/', ...readAccess, (req, res) => {
   const db = getDB()
   const rows = db.prepare(`
     SELECT g.*, COUNT(m.user_id) AS member_count
@@ -28,7 +30,7 @@ notifGroupsRouter.get('/', requireAuth, (req, res) => {
   res.json(rows.map(r => ({ ...r, channels: r.channels.split(',') })))
 })
 
-notifGroupsRouter.get('/:id', requireAuth, (req, res) => {
+notifGroupsRouter.get('/:id', ...readAccess, (req, res) => {
   const db = getDB()
   const g = db.prepare('SELECT * FROM notification_groups WHERE id=?').get(+req.params.id)
   if (!g) return res.status(404).json({ error: 'Bulunamadi' })
