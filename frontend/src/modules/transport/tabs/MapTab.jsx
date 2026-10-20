@@ -6,6 +6,7 @@ import { useAuthStore } from '../../../shared/store/authStore.js'
 import { pointsWithoutCoords, moveStopInOrder, nextAutoStopName } from '../logic/routeMap.js'
 import { useWorkSite, WORK_SITE_QUERY_KEY } from '../useWorkSite.js'
 import { ModalShell, Label, ModalActions, toast, toastErr } from '../shared.jsx'
+import { confirmDialog } from '../../../shared/components/ConfirmDialog.jsx'
 
 const RouteMap = lazy(() => import('../RouteMap.jsx'))
 const FALLBACK_COLOR = '#3b82f6'
@@ -50,9 +51,11 @@ export default function MapTab() {
   // Is yeri tasima TUM rotalari etkiler — kazara surukleme kalici olmasin diye onay istenir.
   // false donerse RouteMap pini eski konumuna geri koyar.
   async function handleMoveWorkSite(lat, lng) {
-    const ok = window.confirm(
-      'İş yeri (varış noktası) buraya taşınsın mı?\n\nTüm rotaların yolu yeniden hesaplanacak.'
-    )
+    const ok = await confirmDialog({
+      title: 'İş yerini taşı',
+      body: 'İş yeri (varış noktası) buraya taşınsın mı?\n\nTüm rotaların yolu yeniden hesaplanacak.',
+      confirmLabel: 'Taşı',
+    })
     if (!ok) return false
     try {
       await moveWorkSiteMut.mutateAsync({ lat, lng })

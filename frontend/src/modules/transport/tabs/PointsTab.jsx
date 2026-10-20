@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
 import { REGIONS } from '../zonguldakBartin.js'
 import { ModalShell, Label, ModalActions, EmptyState, toast, toastErr } from '../shared.jsx'
+import { confirmDialog } from '../../../shared/components/ConfirmDialog.jsx'
 
 const MapPicker = lazy(() => import('../MapPicker.jsx'))
 const DISTRICTS = [...new Set(REGIONS.map(r => r.name))]
@@ -48,12 +49,17 @@ export default function PointsTab() {
   // Yalnizca pasif VE hicbir rotada/personelde gecmeyenler — sunucudaki kuralla ayni.
   const purgeableCount = points.filter(p => !p.is_active && p.staff_count === 0 && p.route_count === 0).length
 
-  function confirmPurge(p) {
+  async function confirmPurge(p) {
     const inUse = p.route_count > 0 || p.staff_count > 0
     const detail = inUse
       ? `\n\n${p.route_count} rotada ve ${p.staff_count} personelde kullanılıyor — rotalardan çıkarılacak, personelin durağı boşaltılacak.`
       : ''
-    if (window.confirm(`"${p.name}" kalıcı olarak silinsin mi?${detail}\n\nBu işlem geri alınamaz.`)) {
+    if (await confirmDialog({
+      title: 'Durağı kalıcı sil',
+      body: `"${p.name}" kalıcı olarak silinsin mi?${detail}\n\nBu işlem geri alınamaz.`,
+      confirmLabel: 'Sil',
+      danger: true,
+    })) {
       purgeMut.mutate(p.id)
     }
   }
@@ -65,8 +71,13 @@ export default function PointsTab() {
         <div style={{ display: 'flex', gap: 6 }}>
           {purgeableCount > 0 && (
             <button
-              onClick={() => {
-                if (window.confirm(`${purgeableCount} kullanılmayan pasif durak kalıcı olarak silinecek.\n\nAktif duraklara ve kullanımdakilere dokunulmaz. Devam edilsin mi?`)) {
+              onClick={async () => {
+                if (await confirmDialog({
+                  title: 'Pasif durakları temizle',
+                  body: `${purgeableCount} kullanılmayan pasif durak kalıcı olarak silinecek.\n\nAktif duraklara ve kullanımdakilere dokunulmaz. Devam edilsin mi?`,
+                  confirmLabel: 'Temizle',
+                  danger: true,
+                })) {
                   cleanupMut.mutate()
                 }
               }}
