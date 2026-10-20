@@ -1,4 +1,5 @@
 import { getDB } from '../../shared/db/index.js'
+import { nextFreeBedNo } from '../../shared/beds.js'
 
 export function lookupPerson(tc_no, passport_no) {
   const db = getDB()
@@ -279,6 +280,15 @@ export function assignRoom(personnelId, roomId, assignedBy) {
   const tx = db.transaction(() => {
     const room = db.prepare('SELECT * FROM rooms WHERE id=?').get(roomId)
     if (!room) throw new Error('Oda bulunamadı')
+    // Karantina trigger'la bloke; bakımdaki oda da (kapasite yer değiştirme/toplu atama gibi) kabul edilmez.
+    if (room.status !== 'active') throw new Error('Yalnız aktif odalara yerleştirme yapılabilir')
+    const person = db.prepare('SELECT id, check_out_date FROM personnel WHERE id=?').get(personnelId)
+    if (!person) throw new Error('Personel bulunamadı')
+    const current = db.prepare(`
+      SELECT r.block, r.room_no FROM room_assignments ra JOIN rooms r ON r.id=ra.room_id
+      WHERE ra.personnel_id=? AND ra.check_out_at IS NULL
+    `).get(personnelId)
+    if (current) throw new Error(`Kişi zaten ${current.block}-${current.room_no} odasında — oda değişikliği için Kapasite > yer değiştir kullanın`)
     const count = db.prepare('SELECT COUNT(*) as c FROM room_assignments WHERE room_id=? AND check_out_at IS NULL').get(roomId)
     if (count.c >= room.active_beds) throw new Error('Oda dolu')
 
@@ -295,11 +305,16 @@ export function assignRoom(personnelId, roomId, assignedBy) {
       if (conflict.c > 0) throw new Error(`Bu odada ${myShift === 'day' ? 'gece' : 'gündüz'} vardiyası var — aynı odaya farklı vardiya atanamaz`)
     }
 
-    bedNo = count.c + 1
+    bedNo = nextFreeBedNo(db, roomId)
     db.prepare(`
       INSERT INTO room_assignments(personnel_id,room_id,bed_no,assigned_by)
       VALUES(?,?,?,?)
     `).run(personnelId, roomId, bedNo, assignedBy)
+    // Daha önce çıkış yapmış (TC ile bulunan, geri dönen) kişi yeniden sakin olur. Yoksa yatağı
+    // dolu görünür ama check_out_date dolu olduğu için tüm aktif sakin listelerinden düşerdi.
+    if (person.check_out_date) {
+      db.prepare("UPDATE personnel SET check_out_date=NULL, check_in_date=datetime('now') WHERE id=?").run(personnelId)
+    }
   })
   tx.immediate()
   return bedNo
@@ -377,7 +392,7 @@ export function insertPlaceholderBatch(roomId, count, assignedBy) {
     const ids = []
     for (let i = 0; i < count; i++) {
       const r = insertPerson.run()
-      const bedNo = current.c + i + 1
+      const bedNo = nextFreeBedNo(db, roomId)
       insertAssign.run(r.lastInsertRowid, roomId, bedNo, assignedBy || null)
       ids.push(r.lastInsertRowid)
     }

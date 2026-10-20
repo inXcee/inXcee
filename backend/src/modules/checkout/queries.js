@@ -31,6 +31,17 @@ export function getCheckoutPreview(personnelId) {
   return { person, zimmet, unreturned, discipline }
 }
 
+// Fiziksel çamaşır kartı oda değişiminde korunur; kampüsten çıkışta artık geçerli bir sakin
+// kimliği olmadığı için çıkışla aynı transaction'da iptal edilir. TÜM çıkış yolları (tekli çıkış,
+// kapasite toplu çıkış, toplu işlemler çıkışı) bunu çağırır — eskiden yalnız tekli çıkış iptal ediyordu.
+export function revokeLaundryCards(db, personnelId) {
+  db.prepare(`
+    UPDATE cards SET status='revoked', revoked_at=datetime('now')
+    WHERE holder_type='personnel' AND holder_id=?
+      AND card_type='laundry' AND status='active'
+  `).run(personnelId)
+}
+
 export function processCheckout(personnelId, zimmetActions, userId) {
   const db = getDB()
   const tx = db.transaction(() => {
@@ -59,13 +70,7 @@ export function processCheckout(personnelId, zimmetActions, userId) {
     }
     // Remove from room
     db.prepare("UPDATE room_assignments SET check_out_at=datetime('now') WHERE personnel_id=? AND check_out_at IS NULL").run(personnelId)
-    // Fiziksel çamaşır kartı oda değişiminde korunur; kampüsten çıkışta artık
-    // geçerli bir sakin kimliği olmadığı için aynı transaction'da iptal edilir.
-    db.prepare(`
-      UPDATE cards SET status='revoked', revoked_at=datetime('now')
-      WHERE holder_type='personnel' AND holder_id=?
-        AND card_type='laundry' AND status='active'
-    `).run(personnelId)
+    revokeLaundryCards(db, personnelId)
     // Set checkout date
     db.prepare("UPDATE personnel SET check_out_date=datetime('now') WHERE id=?").run(personnelId)
   })
@@ -78,7 +83,11 @@ export function getRecentCheckouts(limit = 20) {
     SELECT p.id, p.full_name, p.company, p.check_out_date,
       r.block, r.room_no
     FROM personnel p
-    LEFT JOIN room_assignments ra ON ra.personnel_id=p.id
+    -- Yalnız SON oda: tüm geçmiş atamalarla join kişiyi oda sayısı kadar tekrarlıyordu
+    LEFT JOIN room_assignments ra ON ra.id = (
+      SELECT ra2.id FROM room_assignments ra2 WHERE ra2.personnel_id=p.id
+      ORDER BY ra2.assigned_at DESC, ra2.id DESC LIMIT 1
+    )
     LEFT JOIN rooms r ON r.id=ra.room_id
     WHERE p.check_out_date IS NOT NULL
     ORDER BY p.check_out_date DESC

@@ -55,3 +55,15 @@ export function canonicalMaintenanceRow(db, row) {
     canonical_room_id: row.room_id || resolved.roomId,
   }
 }
+
+// Arıza satırlarını (id, location, block, room_id) tam odaya bağlayıp oda id'si → adet döner.
+// Oda listeleri bunu kullanır: eski "location LIKE '%blok%no%'" eşleşmesi A-101'e A1-101'i,
+// "Oda 101"e başka blokların 101'ini sayıyor, "M1-203" kısa biçimini hiç görmüyordu.
+export function faultCountsByRoom(db, rows) {
+  const counts = new Map()
+  for (const row of rows) {
+    const roomId = canonicalMaintenanceRow(db, row).canonical_room_id
+    if (roomId) counts.set(roomId, (counts.get(roomId) || 0) + 1)
+  }
+  return counts
+}
