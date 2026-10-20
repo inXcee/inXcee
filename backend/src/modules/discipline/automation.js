@@ -36,7 +36,7 @@ export function runDisciplineAutomation() {
     createNotification({
       message: `🟥 Otomatik kırmızı kart: ${c.full_name} — son 30 günde 3 sarı`,
       type: 'critical', module: 'discipline', target_role: 'campus_manager',
-      dedup_key: `auto_red_${c.id}_${new Date().toISOString().slice(0, 10)}`,
+      dedup_key: `auto_red_${c.id}_${new Date().toISOString().slice(0, 10)}`, // utc-bilinçli: dedup kovası; sınırı kaydırmak o gece mükerrer kart üretebilir
     })
     autoRed += 1
   })
@@ -62,7 +62,7 @@ export function runDisciplineAutomation() {
     createNotification({
       message: `🕊 Disiplin affı: ${c.full_name} — ${AMNESTY_DETAIL}`,
       type: 'info', module: 'discipline', target_role: 'campus_manager',
-      dedup_key: `amnesty_${c.id}_${new Date().toISOString().slice(0, 10)}`,
+      dedup_key: `amnesty_${c.id}_${new Date().toISOString().slice(0, 10)}`, // utc-bilinçli: dedup kovası
     })
     amnesty += 1
   })

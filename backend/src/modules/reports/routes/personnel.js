@@ -5,6 +5,7 @@ import * as service from '../service.js'
 import { logger } from '../../../shared/logger.js'
 import { maskTcNo } from '../../personnel/access-policy.js'
 import { mgrAccess, toCsv } from './shared.js'
+import { istanbulDate } from '../../../shared/time.js'
 
 // Vardiya amiri: TC ve pasaport maskeli (personel dosyasıyla aynı kural).
 function personnelRowsFor(req) {
@@ -41,7 +42,7 @@ personnelReportsRouter.get('/access-events.csv', ...mgrAccess, (req, res) => {
       r.event_type, r.meal_type || '', r.result, r.station_name || '', r.raw_uid || '',
     ]))
     res.setHeader('Content-Type', 'text/csv; charset=utf-8')
-    res.setHeader('Content-Disposition', `attachment; filename="erisim-hareketleri-${new Date().toISOString().slice(0, 10)}.csv"`)
+    res.setHeader('Content-Disposition', `attachment; filename="erisim-hareketleri-${istanbulDate()}.csv"`)
     res.send(csv)
   } catch (e) { logger.error('[reports/access-events]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
@@ -63,7 +64,7 @@ personnelReportsRouter.get('/personnel', ...mgrAccess, (req, res) => {
       r.emergency_name, r.emergency_phone,
     ]))
     res.setHeader('Content-Type', 'text/csv; charset=utf-8')
-    res.setHeader('Content-Disposition', `attachment; filename="personel-listesi-${new Date().toISOString().slice(0,10)}.csv"`)
+    res.setHeader('Content-Disposition', `attachment; filename="personel-listesi-${istanbulDate()}.csv"`)
     res.send(csv)
   } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })

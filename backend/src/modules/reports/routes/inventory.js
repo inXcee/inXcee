@@ -3,6 +3,7 @@ import { createPDF, addTable, addSectionTitle, addKpiRow } from '../../../shared
 import * as service from '../service.js'
 import { logger } from '../../../shared/logger.js'
 import { mgrAccess, toCsv } from './shared.js'
+import { istanbulDate } from '../../../shared/time.js'
 
 export const inventoryReportsRouter = Router()
 
@@ -19,7 +20,7 @@ inventoryReportsRouter.get('/inventory.csv', ...mgrAccess, (req, res) => {
       i.last_updated ? i.last_updated.slice(0, 10) : '',
     ]))
     res.setHeader('Content-Type', 'text/csv; charset=utf-8')
-    res.setHeader('Content-Disposition', `attachment; filename="envanter-${new Date().toISOString().slice(0,10)}.csv"`)
+    res.setHeader('Content-Disposition', `attachment; filename="envanter-${istanbulDate()}.csv"`)
     res.send(csv)
   } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
@@ -37,7 +38,7 @@ inventoryReportsRouter.get('/inventory/movements.csv', ...mgrAccess, (req, res) 
       m.user_name || '',
     ]))
     res.setHeader('Content-Type', 'text/csv; charset=utf-8')
-    res.setHeader('Content-Disposition', `attachment; filename="envanter-hareketler-${new Date().toISOString().slice(0,10)}.csv"`)
+    res.setHeader('Content-Disposition', `attachment; filename="envanter-hareketler-${istanbulDate()}.csv"`)
     res.send(csv)
   } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })

@@ -1,5 +1,6 @@
 import { getDB } from '../../shared/db/index.js'
 import { recordScan } from './cardScan.js'
+import { istanbulDate } from '../../shared/time.js'
 
 const SLA_HOURS = { low: 48, normal: 24, high: 12, critical: 4 }
 const INCIDENT_KINDS = new Set(['lost_bag', 'lost_garment', 'damaged_garment', 'other'])
@@ -51,7 +52,7 @@ export function createIncident(input, actor = {}) {
       description, input.photo_url || null, `+${SLA_HOURS[severity]} hours`, userId, workerId,
     )
     const id = Number(result.lastInsertRowid)
-    const caseNo = `CAM-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${String(id).padStart(5, '0')}`
+    const caseNo = `CAM-${istanbulDate().replaceAll('-', '')}-${String(id).padStart(5, '0')}`
     db.prepare('UPDATE laundry_incidents SET case_no=? WHERE id=?').run(caseNo, id)
     const insertChecklist = db.prepare(`
       INSERT INTO laundry_incident_checklist(incident_id,item_key,label) VALUES(?,?,?)

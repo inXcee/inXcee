@@ -1,5 +1,6 @@
 import { getDB } from '../../shared/db/index.js'
 import { computeAnnualBalance } from './leaveBalance.js'
+import { istanbulDate } from '../../shared/time.js'
 
 // Türk İş Kanunu m.53 — yıllık ücretli izin hak edişi.
 // Hizmet süresi 1 yıldan az → hak doğmamış. Kıdeme göre:
@@ -43,7 +44,7 @@ function tierDays(serviceYears) {
 
 export function computeAnnualEntitlement({ hireDate, birthDate, asOf } = {}) {
   const hire = parseDate(hireDate)
-  const today = parseDate(asOf) || new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`)
+  const today = parseDate(asOf) || new Date(`${istanbulDate()}T00:00:00Z`)
   if (!hire) {
     return {
       has_hire_date: false, has_started: false, entitled_days: 0,
