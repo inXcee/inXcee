@@ -192,9 +192,12 @@ describe('cards — yetki', () => {
     const r = await request(app).post(`/api/cards/staff/${staffId}/issue`).set(auth(viewToken)).send({ card_type: 'access' })
     expect(r.status).toBe(403)
   })
-  it('view rolü kartları görebilir (200)', async () => {
+  // Kart kodu + NFC UID kimlik bilgisidir: saha rolü başkasının kartını çoğaltamasın.
+  it('saha rolü kart kodlarını göremez (403), yönetim görür', async () => {
     const r = await request(app).get(`/api/cards/staff/${staffId}`).set(auth(viewToken))
-    expect(r.status).toBe(200)
+    expect(r.status).toBe(403)
+    const ok = await request(app).get(`/api/cards/staff/${staffId}`).set(auth(token))
+    expect(ok.status).toBe(200)
   })
 })
 

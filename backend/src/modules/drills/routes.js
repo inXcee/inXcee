@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import PDFDocument from 'pdfkit'
-import { requireRole, requireAuth } from '../../shared/auth/middleware.js'
+import { requireRole, requireStaff } from '../../shared/auth/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import { logAudit } from '../../shared/audit.js'
 import { validate } from '../../shared/middleware/validate.js'
@@ -28,7 +28,7 @@ function fetchRoster(block) {
   `).all(...params)
 }
 
-drillsRouter.get('/', requireAuth, (req, res) => {
+drillsRouter.get('/', ...requireStaff, (req, res) => {
   const db = getDB()
   const rows = db.prepare(`
     SELECT d.*, u.full_name AS created_by_name
@@ -38,7 +38,7 @@ drillsRouter.get('/', requireAuth, (req, res) => {
   res.json(rows)
 })
 
-drillsRouter.get('/stats', requireAuth, (req, res) => {
+drillsRouter.get('/stats', ...requireStaff, (req, res) => {
   const db = getDB()
   const stats = db.prepare(`
     SELECT
@@ -78,7 +78,7 @@ drillsRouter.delete('/:id', ...mgmt, (req, res) => {
 
 // ── Tahliye / yoklama listesi ───────────────────────────────────────────────
 // Yangın tatbikatı veya gerçek tahliye anında "kim içeride" sorusunu yanıtlar.
-drillsRouter.get('/roster', requireAuth, (req, res) => {
+drillsRouter.get('/roster', ...requireStaff, (req, res) => {
   const block = (req.query.block || '').toString().trim() || null
   const rows = fetchRoster(block)
   // Bloğa göre gruplama — frontend'e kolay render etsin diye
@@ -99,7 +99,7 @@ drillsRouter.get('/roster', requireAuth, (req, res) => {
   })
 })
 
-drillsRouter.get('/roster.pdf', requireAuth, (req, res) => {
+drillsRouter.get('/roster.pdf', ...requireStaff, (req, res) => {
   const block = (req.query.block || '').toString().trim() || null
   const rows = fetchRoster(block)
 

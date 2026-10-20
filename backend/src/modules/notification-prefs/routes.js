@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { requireAuth } from '../../shared/auth/middleware.js'
+import { requireStaff } from '../../shared/auth/middleware.js'
 import { logger } from '../../shared/logger.js'
 import {
   getUserPreferencesService, setUserPreferencesService, NOTIFICATION_MODULES,
@@ -11,43 +11,43 @@ import { createNotification } from '../../shared/notifications/service.js'
 
 export const notificationPrefsRouter = Router()
 
-notificationPrefsRouter.get('/modules', requireAuth, (req, res) => {
+notificationPrefsRouter.get('/modules', ...requireStaff, (req, res) => {
   res.json(NOTIFICATION_MODULES)
 })
 
-notificationPrefsRouter.get('/channels', requireAuth, (req, res) => {
+notificationPrefsRouter.get('/channels', ...requireStaff, (req, res) => {
   res.json(NOTIFICATION_CHANNELS)
 })
 
-notificationPrefsRouter.get('/', requireAuth, (req, res) => {
+notificationPrefsRouter.get('/', ...requireStaff, (req, res) => {
   try { res.json(getUserPreferencesService(req.user.id)) }
   catch (e) { logger.error('[NotifPrefs]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-notificationPrefsRouter.put('/', requireAuth, (req, res) => {
+notificationPrefsRouter.put('/', ...requireStaff, (req, res) => {
   const result = setUserPreferencesService(req.user.id, req.body?.preferences)
   if (result.error) return res.status(result.status).json({ error: result.error })
   res.json(result)
 })
 
 // A→Z Faz 5: v2 matrix
-notificationPrefsRouter.get('/v2', requireAuth, (req, res) => {
+notificationPrefsRouter.get('/v2', ...requireStaff, (req, res) => {
   try { res.json(getPreferencesV2Service(req.user.id)) }
   catch (e) { logger.error('[NotifPrefs v2]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-notificationPrefsRouter.put('/v2', requireAuth, (req, res) => {
+notificationPrefsRouter.put('/v2', ...requireStaff, (req, res) => {
   const result = setPreferencesV2Service(req.user.id, req.body?.preferences)
   if (result.error) return res.status(result.status).json({ error: result.error })
   res.json(result)
 })
 
-notificationPrefsRouter.get('/quiet-hours', requireAuth, (req, res) => {
+notificationPrefsRouter.get('/quiet-hours', ...requireStaff, (req, res) => {
   try { res.json(getQuietHoursService(req.user.id)) }
   catch (e) { logger.error('[NotifPrefs quiet]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-notificationPrefsRouter.put('/quiet-hours', requireAuth, (req, res) => {
+notificationPrefsRouter.put('/quiet-hours', ...requireStaff, (req, res) => {
   try {
     setQuietHoursService(req.user.id, req.body || {})
     res.json({ ok: true })
@@ -55,7 +55,7 @@ notificationPrefsRouter.put('/quiet-hours', requireAuth, (req, res) => {
 })
 
 // Test bildirimi — sadece kendine gönderir
-notificationPrefsRouter.post('/test', requireAuth, (req, res) => {
+notificationPrefsRouter.post('/test', ...requireStaff, (req, res) => {
   try {
     createNotification({
       message: '🧪 Bu bir test bildirimidir — tercih ayarlarınızı doğrulamak için',

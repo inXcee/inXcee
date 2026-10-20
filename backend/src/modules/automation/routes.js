@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { requireRole, requireAuth } from '../../shared/auth/middleware.js'
+import { requireRole, requireStaff } from '../../shared/auth/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import { logAudit } from '../../shared/audit.js'
 import { evaluateRule, evaluateAllActive } from './evaluator.js'
@@ -9,7 +9,7 @@ import { ruleSchema } from './schemas.js'
 export const automationRouter = Router()
 const mgmt = requireRole('campus_manager')
 
-automationRouter.get('/', requireAuth, (req, res) => {
+automationRouter.get('/', ...requireStaff, (req, res) => {
   const db = getDB()
   const rows = db.prepare(`
     SELECT r.*, g.name AS action_target_name

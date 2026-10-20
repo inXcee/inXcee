@@ -7,14 +7,20 @@ import * as q from './queries.js'
 export const surveysRouter = Router()
 const mgmt = requireRole('campus_manager', 'shift_supervisor')
 
-// Kiosk veya admin kullanicilari icin gonderim (personnel_id istege bagli — anonim olabilir)
-surveysRouter.post('/submit', validate(submitSurveySchema), (req, res) => {
+// Kiosk veya admin kullanicilari icin gonderim (personnel_id istege bagli — anonim olabilir).
+// Oturum zorunlu; kiosk/AVS token'i yalniz kendi adina (veya anonim) gonderebilir —
+// aksi halde baskasi adina anket doldurulup istatistik carpitilabiliyordu.
+surveysRouter.post('/submit', requireAuth, validate(submitSurveySchema), (req, res) => {
   const body = req.validated
+  const isKioskToken = req.user.role === 'kiosk' || req.user.role === 'avs_kiosk'
+  if (isKioskToken && body.personnel_id && body.personnel_id !== req.user.personnelId) {
+    return res.status(403).json({ error: 'Yalnız kendi adınıza anket gönderebilirsiniz' })
+  }
   const id = q.insertSurvey(body.personnel_id, body)
   res.status(201).json({ id })
 })
 
-surveysRouter.get('/', requireAuth, (req, res) => {
+surveysRouter.get('/', ...mgmt, (req, res) => {
   res.json(q.listSurveys({ limit: Math.min(+req.query.limit || 200, 1000) }))
 })
 

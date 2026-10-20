@@ -251,7 +251,7 @@ cardsRouter.post('/:id/photo', ...mgr, upload.single('photo'), verifyMagicBytes,
 })
 
 // ── Karta özel PDF (giriş = mavi, yemek = turuncu) ──
-cardsRouter.get('/:id/pdf', ...view, async (req, res) => {
+cardsRouter.get('/:id/pdf', ...mgr, async (req, res) => {
   try {
     const db = getDB()
     const card = db.prepare('SELECT * FROM cards WHERE id=?').get(+req.params.id)
@@ -345,7 +345,7 @@ cardsRouter.get('/analytics', ...view, (req, res) => {
 // ── Roster: aktif staff + her birinin aktif giriş/yemek kart durumu (admin liste) ──
 // Tek sorgu: holder başına amaç başına en fazla 1 aktif kart (idx_cards_one_active),
 // bu yüzden LEFT JOIN'ler fan-out yapmaz. Frontend bunu N+1 isteğe gerek kalmadan listeler.
-cardsRouter.get('/roster', ...view, (req, res) => {
+cardsRouter.get('/roster', ...mgr, (req, res) => {
   try {
     const holderType = String(req.query.holder_type || 'staff')
     if (!['staff', 'personnel'].includes(holderType)) {
@@ -388,7 +388,7 @@ cardsRouter.get('/roster', ...view, (req, res) => {
 })
 
 // ── Kişinin kartlarını listele (en sona: 2-segment GET fallback) ──
-cardsRouter.get('/:holderType/:holderId', ...view, (req, res) => {
+cardsRouter.get('/:holderType/:holderId', ...mgr, (req, res) => {
   try {
     const { holderType, holderId } = req.params
     if (!HOLDER_TYPES.includes(holderType)) return res.status(400).json({ error: 'Geçersiz holderType' })

@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import path from 'path'
 import fs from 'fs'
-import { requireRole, requireAuth } from '../../shared/auth/middleware.js'
+import { requireRole } from '../../shared/auth/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import { documentUpload, verifyDocumentBytes } from '../../shared/uploads/document-middleware.js'
 import { logAudit } from '../../shared/audit.js'
@@ -12,7 +12,7 @@ const mgmt = requireRole('campus_manager', 'shift_supervisor')
 const VALID_CATEGORIES = ['contract', 'invoice', 'insurance', 'id_doc', 'report', 'other']
 const VALID_RELATED = ['company', 'personnel', 'room', 'none']
 
-documentsRouter.get('/', requireAuth, (req, res) => {
+documentsRouter.get('/', ...mgmt, (req, res) => {
   const db = getDB()
   const where = []
   const params = []
@@ -69,7 +69,7 @@ documentsRouter.post('/', ...mgmt, documentUpload.single('file'), verifyDocument
   }
 })
 
-documentsRouter.get('/:id/download', requireAuth, (req, res) => {
+documentsRouter.get('/:id/download', ...mgmt, (req, res) => {
   const db = getDB()
   const doc = db.prepare('SELECT file_path, file_name, mime_type FROM documents WHERE id=?').get(+req.params.id)
   if (!doc) return res.status(404).json({ error: 'Bulunamadı' })

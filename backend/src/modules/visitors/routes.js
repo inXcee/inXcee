@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import QRCode from 'qrcode'
 import PDFDocument from 'pdfkit'
-import { requireRole, requireAuth } from '../../shared/auth/middleware.js'
+import { requireRole, requireStaff } from '../../shared/auth/middleware.js'
 import * as q from './queries.js'
 import { logAudit } from '../../shared/audit.js'
 import { logger } from '../../shared/logger.js'
@@ -12,11 +12,11 @@ import { createVisitorSchema, preRegisterSchema, checkinSchema } from './schemas
 export const visitorsRouter = Router()
 const mgmt = requireRole('campus_manager', 'shift_supervisor')
 
-visitorsRouter.get('/', requireAuth, (req, res) => {
+visitorsRouter.get('/', ...mgmt, (req, res) => {
   res.json(q.listVisitors({ active: req.query.active, status: req.query.status }))
 })
 
-visitorsRouter.get('/stats', requireAuth, (req, res) => {
+visitorsRouter.get('/stats', ...requireStaff, (req, res) => {
   res.json(q.getVisitorStats())
 })
 

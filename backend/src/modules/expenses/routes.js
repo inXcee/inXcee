@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { requireRole, requireAuth } from '../../shared/auth/middleware.js'
+import { requireRole } from '../../shared/auth/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import { logAudit } from '../../shared/audit.js'
 import { validate } from '../../shared/middleware/validate.js'
@@ -8,7 +8,7 @@ import { createExpenseSchema } from './schemas.js'
 export const expensesRouter = Router()
 const mgmt = requireRole('campus_manager', 'shift_supervisor')
 
-expensesRouter.get('/', requireAuth, (req, res) => {
+expensesRouter.get('/', ...mgmt, (req, res) => {
   const db = getDB()
   const where = []
   const params = []
@@ -27,7 +27,7 @@ expensesRouter.get('/', requireAuth, (req, res) => {
   res.json(db.prepare(sql).all(...params))
 })
 
-expensesRouter.get('/summary', requireAuth, (req, res) => {
+expensesRouter.get('/summary', ...mgmt, (req, res) => {
   const db = getDB()
   const months = Math.min(Math.max(+req.query.months || 6, 1), 24)
   // Aylik toplam

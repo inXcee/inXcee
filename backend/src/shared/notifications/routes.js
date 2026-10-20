@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { requireAuth, requireSSEAuth } from '../auth/middleware.js'
+import { requireStaff, requireSSEAuth, staffOnly } from '../auth/middleware.js'
 import { getDB } from '../db/index.js'
 import { logger } from '../logger.js'
 import {
@@ -11,7 +11,7 @@ import { requireRole } from '../auth/middleware.js'
 
 export const notificationsRouter = Router()
 
-notificationsRouter.get('/stream', requireSSEAuth, (req, res) => {
+notificationsRouter.get('/stream', requireSSEAuth, staffOnly, (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream')
   res.setHeader('Cache-Control', 'no-cache')
   res.setHeader('Connection', 'keep-alive')
@@ -21,7 +21,7 @@ notificationsRouter.get('/stream', requireSSEAuth, (req, res) => {
 })
 
 // Eski sözleşme: parametre yoksa düz array (geriye uyumlu)
-notificationsRouter.get('/', requireAuth, (req, res) => {
+notificationsRouter.get('/', ...requireStaff, (req, res) => {
   const { module, severity, from, to, unread_only, q, page, limit } = req.query
   const hasFilter = module || severity || from || to || unread_only || q || page || limit
   if (!hasFilter) {
@@ -34,10 +34,15 @@ notificationsRouter.get('/', requireAuth, (req, res) => {
   }))
 })
 
-notificationsRouter.patch('/:id/read', requireAuth, (req, res) => {
+notificationsRouter.patch('/:id/read', ...requireStaff, (req, res) => {
   const notif = getDB().prepare('SELECT target_user_id, target_role FROM notifications WHERE id=?').get(+req.params.id)
   if (!notif) return res.status(404).json({ error: 'Bildirim bulunamadı' })
   if (notif.target_user_id && notif.target_user_id !== req.user.id) {
+    return res.status(403).json({ error: 'Yetkisiz' })
+  }
+  // is_read paylaşımlı bir alandır: başka role giden bildirimi okundu yapmak
+  // o rolün listesinden uyarıyı sessizce düşürür (liste de aynı kuralla süzülür).
+  if (!notif.target_user_id && notif.target_role && notif.target_role !== req.user.role) {
     return res.status(403).json({ error: 'Yetkisiz' })
   }
   markRead(+req.params.id)
@@ -45,18 +50,18 @@ notificationsRouter.patch('/:id/read', requireAuth, (req, res) => {
 })
 
 // A→Z Faz 7
-notificationsRouter.post('/mark-all-read', requireAuth, (req, res) => {
+notificationsRouter.post('/mark-all-read', ...requireStaff, (req, res) => {
   const changes = markAllRead(req.user.id, req.user.role)
   res.json({ ok: true, updated: changes })
 })
 
-notificationsRouter.delete('/:id', requireAuth, (req, res) => {
+notificationsRouter.delete('/:id', ...requireStaff, (req, res) => {
   const r = deleteNotification(+req.params.id, req.user.id, req.user.role)
   if (r.error) return res.status(r.status).json({ error: r.error })
   res.json(r)
 })
 
-notificationsRouter.post('/clear-read', requireAuth, (req, res) => {
+notificationsRouter.post('/clear-read', ...requireStaff, (req, res) => {
   const changes = clearRead(req.user.id, req.user.role)
   res.json({ ok: true, deleted: changes })
 })

@@ -64,6 +64,16 @@ export function requireRole(...roles) {
   }]
 }
 
+// requireAuth kiosk (sakin, role='kiosk') ve AVS kiosk (çalışan, role='avs_kiosk')
+// token'larını da kabul eder. Panel/mobil uçları yalnız users tablosundaki personel
+// rollerine açık olmalı: kiosk PIN'i alan herkes yönetim verisini okuyamasın.
+export function staffOnly(req, res, next) {
+  if (!STAFF_ROLES.has(req.user?.role)) return res.status(403).json({ error: 'Yetkisiz' })
+  next()
+}
+
+export const requireStaff = [requireAuth, staffOnly]
+
 export function requireAvsKiosk(req, res, next) {
   const h = req.headers.authorization
   if (!h?.startsWith('Bearer ')) return res.status(401).json({ error: 'Token gerekli' })

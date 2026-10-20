@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { requireAuth, requireRole } from '../../../shared/auth/middleware.js'
+import { requireStaff, requireRole } from '../../../shared/auth/middleware.js'
 import * as service from './service.js'
 import { logger } from '../../../shared/logger.js'
 
@@ -7,7 +7,7 @@ export const requestsRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
 
 // listele — yetkililer hepsini, diger personel sadece kendi taleplerini
-requestsRouter.get('/', requireAuth, (req, res) => {
+requestsRouter.get('/', ...requireStaff, (req, res) => {
   try {
     const isMgr = req.user.role === 'campus_manager' || req.user.role === 'shift_supervisor'
     const opts = {}
@@ -18,7 +18,7 @@ requestsRouter.get('/', requireAuth, (req, res) => {
 })
 
 // olustur — login olan herkes (kendi talebi)
-requestsRouter.post('/', requireAuth, (req, res) => {
+requestsRouter.post('/', ...requireStaff, (req, res) => {
   try { res.status(201).json({ id: service.create(req.body, req.user.id) }) }
   catch (e) { res.status(400).json({ error: e.message }) }
 })
@@ -38,7 +38,7 @@ requestsRouter.post('/:id/fulfill', ...mgr, (req, res) => {
   catch (e) { res.status(400).json({ error: e.message }) }
 })
 
-requestsRouter.post('/:id/cancel', requireAuth, (req, res) => {
+requestsRouter.post('/:id/cancel', ...requireStaff, (req, res) => {
   try { service.cancel(+req.params.id, req.user.id); res.json({ ok: true }) }
   catch (e) { res.status(400).json({ error: e.message }) }
 })
