@@ -991,9 +991,12 @@ export function staffListService(filters) {
       !row.primary_work_location_id ? 1 : 0,
     ].reduce((total, value) => total + (Number(value || 0) > 0 ? 1 : 0), 0)
     const entitlement = computeAnnualEntitlement({ hireDate: summary.hire_date, birthDate: summary.birth_date })
-    const annualRemaining = entitlement.has_started
-      ? Math.max(0, entitlement.entitled_days - Number(summary.annual_used || 0))
-      : 0
+    // Kalan izin tek kaynaktan (leaveBalance.js) — izin ekranı ve personel dosyasıyla aynı sayı.
+    // Eskiden yasal hak − sayaç hesaplanıyordu: onaylı açılış bakiyesi (devir) yok sayılıyordu.
+    const unified = computeAnnualBalance(Number(row.id))
+    const annualRemaining = unified?.remaining != null
+      ? unified.remaining
+      : (entitlement.has_started ? Math.max(0, entitlement.entitled_days - Number(summary.annual_used || 0)) : 0)
     return {
       ...row,
       ...summary,
@@ -1259,6 +1262,11 @@ function puantajCodeForLeaveType(leaveType) {
 export function createLeaveService(data, userId) {
   if (!data.staff_id || !data.leave_type || !data.start_date || !data.end_date)
     throw new Error('Zorunlu alanlar eksik')
+  // Tarihler metin olarak karşılaştırılıyor (çakışma, çizelge, bakiye yılı): '2026-10-5' gibi
+  // dolgusuz ya da '2026-02-30' gibi takvimde olmayan değer kabul edilirse sıralama bozulur.
+  if (!isIsoDate(data.start_date) || !isIsoDate(data.end_date)) {
+    throw Object.assign(new Error('Tarihler YYYY-AA-GG biçiminde geçerli bir gün olmalı'), { statusCode: 400 })
+  }
   const start = new Date(data.start_date)
   const end = new Date(data.end_date)
   if (end < start) throw new Error('Bitiş tarihi başlangıçtan önce olamaz')
