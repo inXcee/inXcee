@@ -24,6 +24,8 @@ export function saatSayisi(deger) {
   if (!eslesme) return null
   const saat = Number(eslesme[1])
   const dakika = Number(eslesme[2] || 0)
+  // 24:00 = gece yarısı biten vardiyanın bitişi (çizelge aktarımı 15:00-00:00'ı 15-24 kaydeder).
+  if (saat === 24 && dakika === 0) return 24
   if (saat > 23 || dakika > 59) return null
   return saat + dakika / 60
 }

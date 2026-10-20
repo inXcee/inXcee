@@ -55,7 +55,7 @@ import {
   puantajCsvService, puantajDaysService, staffDayBreakdownService, payslipService, bankTransferCsvService,
   attendanceEventService, attendanceEventsService, reconcileAttendanceService, projectMismatchService,
   attendanceExceptionsService, updateAttendanceExceptionService,
-  operationsDashboardService, puantajClosingPackageService
+  operationsDashboardService, puantajClosingPackageService, assertPeriodsUnlocked,
 } from './service.js'
 import PDFDocument from 'pdfkit'
 import { renderSignaturePrint, getPrint, getPrintPdf } from './signaturePrints.js'
@@ -676,6 +676,7 @@ shiftsRouter.post('/import', ...managerOrSupervisor, validate(importScheduleSche
     if (e.statusCode === 409 && e.report) {
       return res.status(409).json({ error: e.message, blockers: e.report.blockers, report: e.report })
     }
+    if (e.statusCode === 423) return res.status(423).json({ error: e.message })
     logger.error('[shifts/import]', e)
     res.status(400).json({ error: e.message })
   }
@@ -693,7 +694,7 @@ shiftsRouter.post('/import/batches/:id/undo', ...managerOrSupervisor, (req, res)
     logAudit(req.user.id, 'schedule_import_undo', 'shifts', +req.params.id,
       `${result.scheduleDeleted} silindi · ${result.scheduleRestored} geri yüklendi · ${result.staffDeleted} personel silindi`)
     res.json(result)
-  } catch (e) { res.status(400).json({ error: e.message }) }
+  } catch (e) { res.status(e.statusCode === 423 ? 423 : 400).json({ error: e.message }) }
 })
 
 // ── H4 V1: Çakışma kontrol ──
@@ -1287,7 +1288,7 @@ shiftsRouter.post('/overtime', ...managerOrSupervisor, (req, res) => {
     const id = createOvertimeService(req.body, req.user.id)
     res.status(201).json({ id })
   } catch (e) {
-    res.status(400).json({ error: e.message })
+    res.status(e.statusCode === 423 ? 423 : 400).json({ error: e.message })
   }
 })
 
@@ -1306,14 +1307,14 @@ shiftsRouter.put('/overtime/:id', ...managerOrSupervisor, (req, res) => {
   try {
     updateOvertimeService(req.params.id, req.body, req.user.id)
     res.json({ ok: true })
-  } catch (e) { res.status(400).json({ error: e.message }) }
+  } catch (e) { res.status(e.statusCode === 423 ? 423 : 400).json({ error: e.message }) }
 })
 
 shiftsRouter.delete('/overtime/:id', ...managerOrSupervisor, (req, res) => {
   try {
     deleteOvertimeService(req.params.id, req.user.id, req.body?.reason)
     res.json({ ok: true })
-  } catch (e) { res.status(400).json({ error: e.message }) }
+  } catch (e) { res.status(e.statusCode === 423 ? 423 : 400).json({ error: e.message }) }
 })
 
 // ── Attendance ──
@@ -1548,6 +1549,7 @@ shiftsRouter.post('/puantaj/day-detail', ...managerOrSupervisor, documentUpload.
       attachment_name: req.file.originalname,
       attachment_mime: req.file.mimetype,
     } : {}
+    assertPeriodsUnlocked([req.body?.work_date])
     const row = upsertPuantajDayDetail({ ...req.body, ...fileData }, req.user.id)
     resetDailyApprovalsForDates([row.work_date], req.user.id)
     logAudit(req.user.id, 'puantaj_day_detail', 'shifts', row.id, `${row.staff_id}:${row.work_date}`)
@@ -1705,7 +1707,7 @@ shiftsRouter.patch('/swaps/:id/approve', ...managerOrSupervisor, (req, res) => {
   try {
     const row = approveSwapService(req.params.id, req.user.id)
     res.json({ ok: true, row })
-  } catch (e) { res.status(400).json({ error: e.message }) }
+  } catch (e) { res.status(e.statusCode === 423 ? 423 : 400).json({ error: e.message }) }
 })
 
 shiftsRouter.patch('/swaps/:id/reject', ...managerOrSupervisor, (req, res) => {
@@ -1720,7 +1722,7 @@ shiftsRouter.post('/schedule/copy-week', ...managerOrSupervisor, (req, res) => {
   try {
     const count = copyWeekService(req.body.source_week, req.body.target_week, req.user.id)
     res.json({ ok: true, copied: count })
-  } catch (e) { res.status(400).json({ error: e.message }) }
+  } catch (e) { res.status(e.statusCode === 423 ? 423 : 400).json({ error: e.message }) }
 })
 
 // ── Rotation template ──
@@ -1728,7 +1730,7 @@ shiftsRouter.post('/schedule/rotation', ...managerOrSupervisor, (req, res) => {
   try {
     const count = rotationService(req.body, req.user.id)
     res.json({ ok: true, assigned: count })
-  } catch (e) { res.status(400).json({ error: e.message }) }
+  } catch (e) { res.status(e.statusCode === 423 ? 423 : 400).json({ error: e.message }) }
 })
 
 // ── Faz 30: İsimli rotasyon şablonları ──
