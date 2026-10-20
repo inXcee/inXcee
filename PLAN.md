@@ -479,7 +479,7 @@ Excel-öncelikli: renk tutarlılığı + yazdırma/düzen + bölüm sayfaları +
 - [x] Frontend: ScheduleTab yazım mutation'ları (assignCell + quickApply) yanıttaki warnings'i toast ile gösterir (onaylı izin ezme uyarısı)
 - [x] Migration 038: `shift_swap_requests` versiyonlu şemaya alındı (ad-hoc `ensureSwapTable` drift'i giderildi)
 - [x] +3 backend test (shifts 116/116, 1430/1430 tüm suite), frontend shifts 89/89, build temiz
-- [ ] Not: rest<11h/ardışık>6 kontrolü rotasyon önizlemesinde zaten mevcut; grid yazımına genişletme ayrı iş
+- [x] rest<11h/ardışık>6 kontrolü grid yazımına genişletildi — `POST /shifts/schedule` yanıtında `compliance` (engellemez, uyarı toast'ı)
 
 ## Vardiya X-SERİSİ ÖZETİ (X1-X5 tamamlandı, 2026-07-12)
 5 faz · 2 migration (037-038) · Excel renk tutarlılığı + paylaşılan kit, föyü bölüm/özet sayfaları + yazdırma, çizelge Excel + ölü kod temizliği, kadro hedefi/kapsama panosu, onaylı-izin ezme uyarısı. backend shifts 116/116 (1430/1430), frontend shifts 89/89. Excel çıktıları artık ekranla aynı renk + yazdırılabilir + bölüm bazlı.

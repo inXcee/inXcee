@@ -132,9 +132,13 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
   const staffGrid = useMemo(() => buildStaffGrid(rows, allStaff, ''), [rows, allStaff])
 
   // X5 — onaylı izin ezme gibi yazım uyarılarını toast ile göster (yanıttaki warnings)
+  // + iş kuralı uyarıları (yanıttaki compliance): >6 gün kesintisiz çalışma, <11 saat dinlenme.
+  // Yazım yapılmıştır; bu yalnız bilgilendirme.
   const showAssignWarnings = (res) => {
     const w = res?.data?.warnings || []
     if (w.length) useToastStore.getState().addToast(`⚠ ${w[0].message}${w.length > 1 ? ` (+${w.length - 1} uyarı)` : ''}`, 'error')
+    const c = res?.data?.compliance || []
+    if (c.length) useToastStore.getState().addToast(`⚠ İş kuralı: ${c[0].message}${c.length > 1 ? ` (+${c.length - 1} uyarı)` : ''}`, 'warning')
   }
 
   const assignCell = useMutation({
@@ -181,14 +185,14 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
         return { count: deletions.length }
       }
       const res = await api.post('/shifts/schedule', { entries })
-      return { count: entries.length, warnings: res?.data?.warnings || [] }
+      return { count: entries.length, warnings: res?.data?.warnings || [], compliance: res?.data?.compliance || [] }
     },
     onSuccess: (data, vars) => {
       qc.invalidateQueries({ queryKey: ['schedule'] })
       qc.invalidateQueries({ queryKey: ['shift-breakdown'] })
       qc.invalidateQueries({ queryKey: ['shift-coverage'] })
       setQuickCode('')
-      showAssignWarnings({ data: { warnings: data?.warnings } })
+      showAssignWarnings({ data: { warnings: data?.warnings, compliance: data?.compliance } })
       const count = vars.action === 'delete' ? vars.deletions.length : vars.entries.length
       if (vars.undo) setActionHistory(prev => [{ ...vars.undo, id: Date.now(), count }, ...prev].slice(0, 8))
       setRecentActions(prev => [
@@ -248,10 +252,11 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
       })
       return api.post('/shifts/schedule', { entries })
     },
-    onSuccess: () => {
+    onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['schedule'] })
       qc.invalidateQueries({ queryKey: ['shift-breakdown'] })
       qc.invalidateQueries({ queryKey: ['shift-coverage'] })
+      showAssignWarnings(res)
       setAllFillModal(false)
       setAllFillDef('')
     }
@@ -268,10 +273,11 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
       }))
       return api.post('/shifts/schedule', { entries })
     },
-    onSuccess: () => {
+    onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['schedule'] })
       qc.invalidateQueries({ queryKey: ['shift-breakdown'] })
       qc.invalidateQueries({ queryKey: ['shift-coverage'] })
+      showAssignWarnings(res)
       setWeekFillPopover(null)
     }
   })
@@ -292,10 +298,11 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
       })
       return api.post('/shifts/schedule', { entries })
     },
-    onSuccess: () => {
+    onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['schedule'] })
       qc.invalidateQueries({ queryKey: ['shift-breakdown'] })
       qc.invalidateQueries({ queryKey: ['shift-coverage'] })
+      showAssignWarnings(res)
       setBulkFillModal(false)
     }
   })

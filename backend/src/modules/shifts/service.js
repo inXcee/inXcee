@@ -843,6 +843,7 @@ export function bulkAssignService(entries, user, options = {}) {
     ok: true,
     rows,
     warnings,
+    compliance: safeScheduleCompliance(entries),
     approvalsReset,
     leaveOverride: warnings.length > 0 ? {
       approved_by: user?.id,
@@ -879,8 +880,10 @@ function clocksOverlap(leftStart, leftEnd, rightStart, rightEnd) {
 function normalizeSegmentInput(data, existing = null) {
   const shiftDefId = data.shift_def_id === undefined ? existing?.shift_def_id : (Number(data.shift_def_id) || null)
   const shiftDef = shiftDefId ? getShiftDefinitions().find(item => Number(item.id) === Number(shiftDefId)) : null
-  const startTime = normalizeClock(data.start_time ?? existing?.start_time ?? shiftDef?.start_hour, 'Baslangic saati')
-  const endTime = normalizeClock(data.end_time ?? existing?.end_time ?? shiftDef?.end_hour, 'Bitis saati')
+  // Boş metin "verilmedi" sayılır; vardiya tanımının saati tamsayı da olabilir (8 → '08:00').
+  const given = value => (value === '' ? null : value)
+  const startTime = normalizeClock(given(data.start_time) ?? given(existing?.start_time) ?? shiftHourClock(shiftDef?.start_hour), 'Baslangic saati')
+  const endTime = normalizeClock(given(data.end_time) ?? given(existing?.end_time) ?? shiftHourClock(shiftDef?.end_hour), 'Bitis saati')
   if (startTime === endTime) throw Object.assign(new Error('Vardiya parcasi baslangic ve bitis saati ayni olamaz'), { statusCode: 400 })
   const breakMinutes = Number(data.break_minutes ?? existing?.break_minutes ?? 0)
   if (!Number.isInteger(breakMinutes) || breakMinutes < 0 || breakMinutes > 480) {
@@ -2766,6 +2769,27 @@ export function buildRotationEntries(pattern, staffIds, startDate, days, stagger
   return entries
 }
 
+// shift_definitions.start_hour/end_hour iki biçimde kayıtlı olabiliyor: ekran ve
+// seed tamsayı (8) yazar, içe aktarma/eski kayıtlar 'HH:MM' metni ('08:00').
+// Saat aritmetiği ve saat alanı doğrulaması ikisini de kabul etmeli.
+export function shiftHourValue(value) {
+  if (value == null || value === '') return null
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  const match = /^(\d{1,2})(?::(\d{2}))?$/.exec(String(value).trim())
+  if (!match) return null
+  const hour = Number(match[1])
+  const minute = Number(match[2] || 0)
+  if (hour > 24 || minute > 59) return null
+  return hour + minute / 60
+}
+
+export function shiftHourClock(value) {
+  const hours = shiftHourValue(value)
+  if (hours == null) return null
+  const total = Math.round(hours * 60) % 1440
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
+}
+
 // İş kuralı uyarıları: art arda çalışma limiti (İK m.63 pratik: 6 gün) ve
 // iki vardiya arası minimum dinlenme (11 saat).
 export function rotationWarnings(entries, shiftDefsById, staffNames = {}, { maxConsecutive = 6, minRestHours = 11 } = {}) {
@@ -2785,7 +2809,7 @@ export function rotationWarnings(entries, shiftDefsById, staffNames = {}, { maxC
     const closeStreak = (endDate) => {
       if (streak > maxConsecutive) {
         warnings.push({
-          type: 'consecutive', staff_id: Number(sid), date: streakStart,
+          type: 'consecutive', staff_id: Number(sid), date: streakStart, end_date: endDate, days: streak,
           message: `${name}: ${streakStart} – ${endDate} arası ${streak} gün kesintisiz çalışma (limit ${maxConsecutive})`,
         })
       }
@@ -2807,9 +2831,12 @@ export function rotationWarnings(entries, shiftDefsById, staffNames = {}, { maxC
       if (adjacent && prev.status === 'scheduled' && working && prev.shift_def_id && e.shift_def_id) {
         const prevDef = shiftDefsById[prev.shift_def_id]
         const nextDef = shiftDefsById[e.shift_def_id]
-        if (prevDef?.end_hour != null && nextDef?.start_hour != null) {
-          const prevEndAbs = prevDef.end_hour > prevDef.start_hour ? prevDef.end_hour : prevDef.end_hour + 24
-          const rest = (24 + nextDef.start_hour) - prevEndAbs
+        const prevStart = shiftHourValue(prevDef?.start_hour)
+        const prevEnd = shiftHourValue(prevDef?.end_hour)
+        const nextStart = shiftHourValue(nextDef?.start_hour)
+        if (prevStart != null && prevEnd != null && nextStart != null) {
+          const prevEndAbs = prevEnd > prevStart ? prevEnd : prevEnd + 24
+          const rest = Math.round(((24 + nextStart) - prevEndAbs) * 10) / 10
           if (rest < minRestHours) {
             warnings.push({
               type: 'rest', staff_id: Number(sid), date: e.work_date,
@@ -2823,6 +2850,58 @@ export function rotationWarnings(entries, shiftDefsById, staffNames = {}, { maxC
     closeStreak(prev?.work_date)
   })
   return warnings
+}
+
+// Elle yazımda (vardiya tablosu, hızlı kod, hafta doldurma) iş kuralı uyarıları.
+// Rotasyon önizlemesindeki rotationWarnings ile AYNI kural: >6 gün kesintisiz
+// çalışma ve iki vardiya arası <11 saat dinlenme. Yazımı ENGELLEMEZ — sadece
+// bilgi; karar insanda. Yazılan hücrelerin ±7 gün çevresi DB'den (yazım
+// SONRASI hâli) okunur, yalnız yazılan günlere dokunan uyarılar döner.
+const WORKING_STATUSES = new Set(['scheduled', 'worked', 'overtime'])
+const COMPLIANCE_WINDOW_DAYS = 7
+
+export function scheduleComplianceWarnings(entries) {
+  const written = new Map()
+  for (const e of entries || []) {
+    const sid = Number(e?.staff_id)
+    if (!sid || !isIsoDate(e?.work_date)) continue
+    if (!written.has(sid)) written.set(sid, new Set())
+    written.get(sid).add(e.work_date)
+  }
+  if (!written.size) return []
+  const allDates = [...written.values()].flatMap(set => [...set]).sort()
+  const from = addDaysIso(allDates[0], -COMPLIANCE_WINDOW_DAYS)
+  const to = addDaysIso(allDates[allDates.length - 1], COMPLIANCE_WINDOW_DAYS)
+  const staffIds = [...written.keys()]
+  const ph = staffIds.map(() => '?').join(',')
+  const rows = getDB().prepare(`
+    SELECT staff_id, work_date, shift_def_id, status
+    FROM shift_schedule
+    WHERE staff_id IN (${ph}) AND work_date >= ? AND work_date <= ?
+  `).all(...staffIds, from, to)
+  const normalized = rows.map(r => ({
+    staff_id: r.staff_id,
+    work_date: r.work_date,
+    shift_def_id: r.shift_def_id,
+    status: WORKING_STATUSES.has(r.status) ? 'scheduled' : 'off',
+  }))
+  const { staffNames, shiftDefsById } = rotationContext(staffIds)
+  return rotationWarnings(normalized, shiftDefsById, staffNames).filter(w => {
+    const dates = written.get(w.staff_id)
+    if (!dates) return false
+    if (w.type === 'rest') return dates.has(w.date) || dates.has(addDaysIso(w.date, -1))
+    if (w.type === 'consecutive') return [...dates].some(d => d >= w.date && d <= w.end_date)
+    return true
+  })
+}
+
+function safeScheduleCompliance(entries) {
+  try {
+    return scheduleComplianceWarnings(entries)
+  } catch (err) {
+    logger.warn('[shifts] uyum kontrolü atlandı', err)
+    return []
+  }
 }
 
 export function rotationTemplatesService() {
