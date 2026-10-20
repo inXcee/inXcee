@@ -4,6 +4,7 @@ import api from '../../../shared/api/client.js'
 import { SkeletonTable } from '../../../shared/components/Skeleton.jsx'
 import { Section, KPI, Empty, Stat, BarList, todayStr, toast } from '../shared.jsx'
 import { ymd } from '../../../shared/logic/localDate.js'
+import { exportRowsToCsv } from '../../../shared/utils/exportData.js'
 
 export default function ReportsTab() {
   const today = todayStr()
@@ -18,19 +19,7 @@ export default function ReportsTab() {
 
   function exportCsv(rows, filename, headers) {
     if (!rows?.length) { toast('Veri yok', 'error'); return }
-    const csv = [headers.map(h => h.label).join(';')]
-      .concat(rows.map(r => headers.map(h => {
-        const v = r[h.key] ?? ''
-        return typeof v === 'string' && v.includes(';') ? `"${v}"` : v
-      }).join(';')))
-      .join('\n')
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filename
-    a.click()
-    URL.revokeObjectURL(url)
+    exportRowsToCsv(headers, rows, filename)
   }
 
   if (isLoading) return <SkeletonTable rows={5} cols={5} />

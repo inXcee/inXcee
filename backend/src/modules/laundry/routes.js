@@ -19,6 +19,7 @@ import {
   approvePartialDelivery, createIncident, getCostReport, listIncidents, updateIncident,
 } from './phase5.js'
 import { listOpenPickupRequests, closePickupRequest } from '../location-portal/laundry-request-action.js'
+import { istanbulDate } from '../../shared/time.js'
 
 export const laundryRouter = Router()
 
@@ -631,7 +632,7 @@ laundryRouter.get('/reports/export-premium', ...laundryRead, (req, res) => {
       r.delivered_at?.slice(0, 10) || '', r.total_hours ?? '',
     ].join(','))].join('\n')
     res.setHeader('Content-Type', 'text/csv; charset=utf-8')
-    res.setHeader('Content-Disposition', `attachment; filename="laundry-garments-${new Date().toISOString().slice(0,10)}.csv"`)
+    res.setHeader('Content-Disposition', `attachment; filename="laundry-garments-${istanbulDate()}.csv"`)
     res.send('\uFEFF' + csv)
   } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
@@ -661,7 +662,7 @@ laundryRouter.get('/reports/export', ...laundryRead, (req, res) => {
 
     const csv = [header, ...rows].join('\n')
     res.setHeader('Content-Type', 'text/csv; charset=utf-8')
-    res.setHeader('Content-Disposition', `attachment; filename="camasir-${new Date().toISOString().slice(0,10)}.csv"`)
+    res.setHeader('Content-Disposition', `attachment; filename="camasir-${istanbulDate()}.csv"`)
     res.send('\uFEFF' + csv)
   } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })

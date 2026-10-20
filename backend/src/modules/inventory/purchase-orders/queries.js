@@ -1,8 +1,9 @@
 import { getDB } from '../../../shared/db/index.js'
+import { istanbulDate } from '../../../shared/time.js'
 
 export function generatePoNo() {
   const db = getDB()
-  const today = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+  const today = istanbulDate().replace(/-/g, '')
   const seq = db.prepare(`SELECT COUNT(*)+1 as n FROM purchase_orders WHERE po_no LIKE ?`).get(`PO-${today}-%`).n
   return `PO-${today}-${String(seq).padStart(3, '0')}`
 }

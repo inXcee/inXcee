@@ -28,6 +28,12 @@ export function todayStr() {
   return ymd(new Date())
 }
 
+// 'YYYY-MM' — yerel takvim ayı. `toISOString().slice(0, 7)` ayın 1'inde
+// 00:00–03:00 arası BİR ÖNCEKİ ayı veriyordu (bordro, maliyet raporu).
+export function thisMonthStr(date = new Date()) {
+  return ymd(date).slice(0, 7)
+}
+
 // Hafta pazartesi başlar (takvim haftası).
 export function startOfWeek(date) {
   const d = toLocalDate(date)

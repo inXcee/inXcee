@@ -93,7 +93,7 @@ export function getStats() {
   const db = getDB()
   const total = db.prepare('SELECT COUNT(*) as c FROM whatsapp_messages').get().c
   const faults = db.prepare('SELECT COUNT(*) as c FROM whatsapp_messages WHERE is_fault=1').get().c
-  const today = new Date().toISOString().split('T')[0]
+  const today = new Date().toISOString().split('T')[0] // utc-bilinçli: created_at (SQLite CURRENT_TIMESTAMP) UTC ile karşılaştırılıyor
   const todayFaults = db.prepare(`
     SELECT COUNT(*) as c FROM whatsapp_messages WHERE is_fault=1 AND created_at >= ?
   `).get(today).c

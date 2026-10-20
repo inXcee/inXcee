@@ -10,6 +10,7 @@ import { statfs } from 'node:fs/promises'
 import v8 from 'node:v8'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
+import path from 'node:path'
 import { sanitizeBody } from './shared/middleware/sanitize.js'
 import { kioskIdempotencyMiddleware } from './shared/middleware/kiosk-idempotency.js'
 import { getDB } from './shared/db/index.js'
@@ -193,7 +194,26 @@ app.use(cookieParser())
 app.use((req, res, next) => (req.path.startsWith('/api/pf/') ? next() : sanitizeBody(req, res, next)))
 app.use('/api', kioskIdempotencyMiddleware)
 // Multer dosya isimleri unique (Date.now()-rand) — immutable cache güvenli.
+// Hassas personel belgeleri (kimlik, sağlık raporu, sözleşme, banka) varsayılan
+// olarak UPLOADS_DIR/documents altına yazılır (DOCUMENTS_DIR boşsa). /uploads
+// herkese açık statik servis olduğu için bu klasör DIŞARIDA bırakılır: belgeler
+// yalnız rol kontrollü API uçlarından (documentPath) indirilir.
+const UPLOADS_ROOT = path.resolve(process.env.UPLOADS_DIR || 'uploads')
+const DOCUMENTS_ROOT = path.resolve(process.env.DOCUMENTS_DIR || path.join(UPLOADS_ROOT, 'documents'))
+const DOCUMENTS_UNDER_UPLOADS = DOCUMENTS_ROOT.startsWith(UPLOADS_ROOT + path.sep)
+  ? '/' + path.relative(UPLOADS_ROOT, DOCUMENTS_ROOT).split(path.sep).join('/')
+  : null
+export function isPrivateUploadPath(urlPath) {
+  if (!DOCUMENTS_UNDER_UPLOADS) return false
+  let decoded
+  try { decoded = decodeURIComponent(urlPath) } catch { return true }
+  const normalized = path.posix.normalize('/' + decoded.replace(/\\/g, '/')).toLowerCase()
+  const prefix = DOCUMENTS_UNDER_UPLOADS.toLowerCase()
+  return normalized === prefix || normalized.startsWith(prefix + '/')
+}
+
 app.use('/uploads', (req, res, next) => {
+  if (isPrivateUploadPath(req.path)) return res.status(404).end()
   res.setHeader('X-Content-Type-Options', 'nosniff')
   // inline: <img> tag'leri normal render edebilsin (magic byte ile zaten dogrulandi)
   res.setHeader('Content-Disposition', 'inline')
@@ -330,6 +350,25 @@ const mobileAuthLimiter = rateLimit({
   skip: () => process.env.NODE_ENV === 'test',
 })
 
+// Mobil PIN girişi kullanıcı adı istemez (rol + 4 hane): 10.000 olasılık, rolde
+// birden çok kullanıcı varsa daha az. Genel tavan (120/5dk) tek IP'den ~3,5 saatte
+// müdür PIN'i taramaya izin veriyordu. Bu sınır YALNIZ HATALI denemeyi sayar
+// (başarılı giriş sayılmaz), IP + rol başına: parmağı kayan kimse etkilenmez,
+// tarama ~15 kat yavaşlar.
+const mobilePinFailureLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  skipSuccessfulRequests: true,
+  requestWasSuccessful: (_req, res) => res.statusCode < 400,
+  // Kampüs WiFi'si tek dış IP olabilir: rol başına ayrı kova — temizlik ekibinin
+  // yanlış girişleri müdür/amir girişini kilitlemez.
+  keyGenerator: (req) => `ip:${ipKeyGenerator(req.ip)}:${String(req.body?.role || '-').slice(0, 32)}`,
+  message: { error: 'Çok fazla hatalı PIN denemesi. 15 dakika sonra tekrar deneyin.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+})
+
 // Write endpoint limiter — per-user 300/dk (5/sn). Modern SPA tek sayfa
 // açılışında rahat 15+ istek atar; 60/dk çok sıkıydı.
 const writeLimiter = rateLimit({
@@ -385,6 +424,7 @@ app.use('/api/auth', authLimiter, authRouter)
 app.use('/public/transport/trips', driverLinkLimiter, transportPublicRouter)
 app.use('/api/public', readLimiter, publicRouter)  // login öncesi güvenli toplu sayılar (auth yok)
 app.use('/api/room-portal', roomPortalRouter)
+app.use('/api/mobile/auth/login', mobilePinFailureLimiter)
 app.use('/api/mobile/auth', mobileAuthLimiter, mobileAuthRouter)
 app.use('/api/checkin', writeLimiter, checkinRouter)
 app.use('/api/capacity', writeLimiter, capacityRouter)

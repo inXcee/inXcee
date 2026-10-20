@@ -1,4 +1,5 @@
 import { getDB } from '../../shared/db/index.js'
+import { istanbulDate } from '../../shared/time.js'
 
 const ITEM_SELECT_WITH_SUPPLIER = `
   SELECT i.*, s.name AS supplier_name
@@ -458,7 +459,7 @@ export function getCheckoutReport() {
 
 export function generateReceiptNo() {
   const db = getDB()
-  const today = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+  const today = istanbulDate().replace(/-/g, '')
   const last = db.prepare(
     "SELECT receipt_no FROM goods_receipts WHERE receipt_no LIKE ? ORDER BY id DESC LIMIT 1"
   ).get(`MG-${today}-%`)

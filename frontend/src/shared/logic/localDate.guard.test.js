@@ -3,13 +3,13 @@ import { describe, expect, it } from 'vitest'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { ymd } from './localDate.js'
+import { ymd, thisMonthStr } from './localDate.js'
 
 // toISOString() UTC'dir: TR'de (UTC+3) 00:00–03:00 arası "bugün" DÜNÜ verir. Gececi personel ekranları
 // (vardiya, ulaşım, temizlik, self-servis) gece yarısından sonra dünün verisini açıyordu (9 Eki 2026: 46 yer).
 // Tarih metni her zaman localDate.js (ymd / todayStr / addDays) ile üretilir.
 const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
-const UTC_DAY = /toISOString\(\)\.(?:slice\(0, ?10\)|split\('T'\)\[0\]|substring\(0, ?10\))/
+const UTC_DAY = /toISOString\(\)\.(?:slice\(0, ?(?:10|7)\)|split\('T'\)\[0\]|substring\(0, ?(?:10|7)\))/
 
 function files(dir, out = []) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -29,5 +29,10 @@ describe('yerel gün koruması', () => {
   it('ymd yerel gece yarısını kendi gününde tutar (eski kalıp dünü verirdi)', () => {
     const geceYarisi = new Date(2026, 9, 10, 0, 30) // 10 Ekim 00:30 yerel
     expect(ymd(geceYarisi)).toBe('2026-10-10')
+  })
+
+  it('thisMonthStr ayın 1i gece yarısından sonra yeni ayı verir', () => {
+    expect(thisMonthStr(new Date(2026, 10, 1, 0, 30))).toBe('2026-11') // 1 Kasım 00:30 yerel
+    expect(thisMonthStr(new Date(2027, 0, 1, 2, 59))).toBe('2027-01')
   })
 })

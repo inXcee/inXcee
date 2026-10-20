@@ -1,6 +1,7 @@
 import { getDB } from '../../shared/db/index.js'
 import { getSetting, setSetting } from '../email/queries.js'
 import { logger } from '../../shared/logger.js'
+import { istanbulDate } from '../../shared/time.js'
 
 const DEFAULT_POLICY = `KİŞİSEL VERİLERİN İŞLENMESİ AYDINLATMA METNİ
 
@@ -32,7 +33,7 @@ const DEFAULT_POLICY = `KİŞİSEL VERİLERİN İŞLENMESİ AYDINLATMA METNİ
    - Verilerinizin yurt dışına aktarımı hakkında bilgi alma
    - Bu hakları kullanmak için yöneticinize yazılı talepte bulunabilirsiniz.
 
-Son güncelleme: ${new Date().toISOString().split('T')[0]}`
+Son güncelleme: ${istanbulDate()}`
 
 export function getKvkkPolicyService() {
   const text = getSetting('kvkk_policy_text')

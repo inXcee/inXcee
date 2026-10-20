@@ -1,4 +1,5 @@
 import { unitLabel } from './waterUnits.js'
+import { safeValue } from '../../../shared/utils/exportData.js'
 
 export const todayStr = (date = new Date()) => date.toLocaleDateString('sv-SE')
 
@@ -43,7 +44,7 @@ export function shiftIsoDay(iso, delta) {
   return isoDate(date)
 }
 
-export const csvCell = value => `"${String(value ?? '').replace(/"/g, '""')}"`
+export const csvCell = value => `"${safeValue(value).replace(/"/g, '""')}"`
 
 export function buildCsvText(headers, rows) {
   return [headers, ...rows].map(row => row.map(csvCell).join(';')).join('\n')

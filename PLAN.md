@@ -87,7 +87,7 @@
 - [x] CheckinPage StepBar — done adımlar tıklanabilir, geri dönüş için `onStepClick` prop
 - [x] "SORGULANIYIR" typo → "SORGULANIYOR"; CheckinPage alert → toast
 - [x] UsersPage delete onError eklendi + confirmDialog kullanıyor; MaintenancePage teknisyen silme confirmDialog kullanıyor
-- [ ] Filter URL state (Reports, Discipline) — ERTELENDİ (ayrı küçük faz)
+- [x] Filter URL state — Disiplin (tab/from/to) zaten URL'deydi; İleri Raporlar'da gün aralığı ve ay filtreleri URL'ye taşındı (`?days=`, `?month=`)
 - [x] Kalan browser confirm() çağrıları ConfirmDialog'a geçirildi (son 4: transport harita/duraklar, QR kodları) — dialog'a Esc=İptal ve çok satırlı metin desteği eklendi
 
 ---

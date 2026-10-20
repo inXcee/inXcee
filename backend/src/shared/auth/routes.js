@@ -49,6 +49,30 @@ const pinLimiter = rateLimit({
   keyGenerator: (req) => `ip:${ipKeyGenerator(req.ip)}`,
 })
 
+// Kiosk PIN'i 4 hane ve kişi başına kilit yok: tek kişinin PIN'i genel tavanla
+// (200/5dk) ~4 saatte taranabiliyordu. Bu sınır yalnız HATALI denemeyi ve HEDEF
+// KİŞİ başına sayar — ortak kiosk cihazında başkasının yanlış girişi kimseyi
+// etkilemez, doğru PIN hiç sayılmaz.
+export function kioskPinTargetKey(req) {
+  const b = req.body || {}
+  if (b.worker_id) return `w:${Number(b.worker_id)}`
+  if (b.personnel_id) return `p:${Number(b.personnel_id)}`
+  if (b.tc_no) return `t:${String(b.tc_no).trim()}`
+  return `ip:${ipKeyGenerator(req.ip)}`
+}
+
+const kioskPinFailureLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  skipSuccessfulRequests: true,
+  requestWasSuccessful: (_req, res) => res.statusCode < 400,
+  message: { error: 'Bu kişi için çok fazla hatalı PIN denemesi. 15 dakika sonra tekrar deneyin.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  keyGenerator: kioskPinTargetKey,
+})
+
 function loginDevice(req) {
   const rawKey = req.headers['x-kiosk-device-key']
   if (rawKey) {
@@ -135,7 +159,7 @@ authRouter.post('/passkey/login', async (req, res) => {
   } catch (e) { logger.error('[passkey/login]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
-authRouter.post('/kiosk-login', pinLimiter, (req, res) => {
+authRouter.post('/kiosk-login', pinLimiter, kioskPinFailureLimiter, (req, res) => {
   const { tc_no, pin, personnel_id } = req.body
   const deviceResult = loginDevice(req)
   if (deviceResult.error) return res.status(deviceResult.status).json({ error: deviceResult.error })
@@ -169,7 +193,7 @@ authRouter.get('/avs-search', pinLimiter, (req, res) => {
   res.json(searchAvsWorkers(q))
 })
 
-authRouter.post('/avs-login', pinLimiter, (req, res) => {
+authRouter.post('/avs-login', pinLimiter, kioskPinFailureLimiter, (req, res) => {
   const { worker_id, pin } = req.body
   if (!worker_id || !pin) return res.status(400).json({ error: 'worker_id ve pin gerekli' })
   const deviceResult = loginDevice(req)
