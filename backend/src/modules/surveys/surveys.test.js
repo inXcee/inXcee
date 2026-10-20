@@ -49,3 +49,22 @@ describe('Surveys', () => {
     expect(res.body.summary.avg_overall).toBeGreaterThan(0)
   })
 })
+
+describe('Surveys — başkası adına gönderim', () => {
+  it('saha rolü başka personel adına gönderemez, anonim gönderebilir', async () => {
+    const login = await request(app).post('/api/auth/login').send({ username: 'meydanci', password: 'admin123' })
+    const hk = login.body.token
+    const other = await request(app).post('/api/surveys/submit').set('Authorization', `Bearer ${hk}`)
+      .send({ personnel_id: 1, overall_score: 1 })
+    expect(other.status).toBe(403)
+    const anon = await request(app).post('/api/surveys/submit').set('Authorization', `Bearer ${hk}`)
+      .send({ overall_score: 4 })
+    expect(anon.status).toBe(201)
+  })
+
+  it('müdür personel adına gönderebilir', async () => {
+    const res = await request(app).post('/api/surveys/submit').set('Authorization', `Bearer ${token}`)
+      .send({ personnel_id: 1, overall_score: 4 })
+    expect(res.status).toBe(201)
+  })
+})

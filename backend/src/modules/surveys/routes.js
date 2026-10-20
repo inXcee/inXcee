@@ -8,12 +8,14 @@ export const surveysRouter = Router()
 const mgmt = requireRole('campus_manager', 'shift_supervisor')
 
 // Kiosk veya admin kullanicilari icin gonderim (personnel_id istege bagli — anonim olabilir).
-// Oturum zorunlu; kiosk/AVS token'i yalniz kendi adina (veya anonim) gonderebilir —
-// aksi halde baskasi adina anket doldurulup istatistik carpitilabiliyordu.
+// Oturum zorunlu; baskasi adina yalniz yonetim (mudur/amir) girebilir, diger herkes
+// (kiosk, AVS, saha rolleri) yalniz kendi adina veya anonim — aksi halde baskasi adina
+// anket doldurulup istatistik carpitilabiliyordu.
+const SURVEY_PROXY_ROLES = new Set(['campus_manager', 'shift_supervisor'])
 surveysRouter.post('/submit', requireAuth, validate(submitSurveySchema), (req, res) => {
   const body = req.validated
-  const isKioskToken = req.user.role === 'kiosk' || req.user.role === 'avs_kiosk'
-  if (isKioskToken && body.personnel_id && body.personnel_id !== req.user.personnelId) {
+  const canProxy = SURVEY_PROXY_ROLES.has(req.user.role)
+  if (!canProxy && body.personnel_id && body.personnel_id !== req.user.personnelId) {
     return res.status(403).json({ error: 'Yalnız kendi adınıza anket gönderebilirsiniz' })
   }
   const id = q.insertSurvey(body.personnel_id, body)
