@@ -286,6 +286,8 @@ describe('water truck operations', () => {
       mail_delivery_snapshot: { version: 1, to: 'merkez@example.com' },
       mail_record_changed: false,
     })
+    // mail_sent_at SQLite UTC: bildirim İstanbul saatini (UTC+3) gösterir
+    expect(marked.mail_notice).toBe('Mail 2027-03-16 13:00 tarihinde işaretlenmiş')
 
     queryMocks.listTruckArrivals.mockReturnValue([{ ...row, plate: '34 DEG 217' }])
     const [changed] = truckArrivalsService()

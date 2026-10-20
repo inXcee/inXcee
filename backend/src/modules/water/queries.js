@@ -335,10 +335,14 @@ export function releaseCrossingAllocations(start) {
 }
 
 // Geçiş öncesi dağıtımların inceleme işareti kalkar: devirle kapanmış geçmiş, karar bekleyen iş değil.
-export function clearReviewsBefore(start) {
+// ids verilirse yalnız o dağıtımlar (ör. tarihi geçiş öncesine düzeltilen kayıt) temizlenir.
+export function clearReviewsBefore(start, ids = null) {
+  const list = Array.isArray(ids) ? ids.map(Number).filter(Boolean) : null
+  if (list && !list.length) return 0
+  const idClause = list ? ` AND id IN (${list.map(() => '?').join(',')})` : ''
   return getDB().prepare(`
-    UPDATE water_movements SET needs_review=0 WHERE type='out' AND needs_review=1 AND move_date < ?
-  `).run(start).changes
+    UPDATE water_movements SET needs_review=0 WHERE type='out' AND needs_review=1 AND move_date < ?${idClause}
+  `).run(start, ...(list || [])).changes
 }
 
 export function movementProductIds() {

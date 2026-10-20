@@ -14,7 +14,7 @@ import {
 } from '../logic/truckOperations.js'
 import { invalidateWaterQueries } from '../logic/waterQueryInvalidation.js'
 import WaterCollapsiblePanel from './WaterCollapsiblePanel.jsx'
-import { nf, todayStr } from '../logic/waterUi.js'
+import { nf, serverDateTime, todayStr } from '../logic/waterUi.js'
 import { buildIntakeIndex, filterPhotos, photoIntakes } from '../logic/intakeFilter.js'
 import { baseEquivalent, humanQty } from '../logic/waterUnits.js'
 
@@ -799,7 +799,7 @@ function TruckArrivalPanel({ from, to, label, focusRequest }) {
                         </div>
                         <div style={{ color: 'var(--text3)', marginTop: '5px' }}>
                           Snapshot alıcısı: <strong style={{ color: 'var(--text2)' }}>{selectedTruck.mail_delivery_snapshot.to || '—'}</strong>
-                          {selectedTruck.mail_delivery_snapshot.snapshot_at ? ` · ${selectedTruck.mail_delivery_snapshot.snapshot_at}` : ''}
+                          {selectedTruck.mail_delivery_snapshot.snapshot_at ? ` · ${serverDateTime(selectedTruck.mail_delivery_snapshot.snapshot_at)}` : ''}
                         </div>
                         {selectedTruck.mail_record_changed && (
                           <div style={{ color: 'var(--red)', fontWeight: 800, marginTop: '5px' }}>
@@ -853,7 +853,7 @@ function TruckArrivalPanel({ from, to, label, focusRequest }) {
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', color: 'var(--text3)', fontSize: '11px' }}>
                     <div>Kontrol planı: <strong style={{ color: 'var(--text2)' }}>{selectedTruck.check_plan_label}</strong></div>
-                    <div>Son kontrol: <strong style={{ color: 'var(--text2)' }}>{selectedTruck.last_checked_at || '—'}</strong></div>
+                    <div>Son kontrol: <strong style={{ color: 'var(--text2)' }}>{serverDateTime(selectedTruck.last_checked_at) || '—'}</strong></div>
                     <div>Sonraki kontrol: <strong style={{ color: 'var(--text2)' }}>{selectedTruck.next_check_time || '—'}</strong></div>
                     <div>Fotoğraf: <strong style={{ color: 'var(--text2)' }}>{nf(selectedTruck.photo_count || 0)}</strong></div>
                   </div>

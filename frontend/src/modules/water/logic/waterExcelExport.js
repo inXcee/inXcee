@@ -12,6 +12,7 @@ import {
   saveWorkbook,
   setupSheet,
 } from '../../../shared/logic/excelKit.js'
+import { parseServerTimestamp } from './waterUi.js'
 
 const NUMBER_FORMAT = '#,##0.##'
 const FILLS = {
@@ -76,7 +77,7 @@ const longDay = iso => new Date(`${iso}T00:00:00`).toLocaleDateString('tr-TR', {
 
 const movementTime = value => {
   if (!value) return ''
-  const date = new Date(String(value).replace(' ', 'T'))
+  const date = parseServerTimestamp(value)
   if (Number.isNaN(date.getTime())) return ''
   return date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
 }
