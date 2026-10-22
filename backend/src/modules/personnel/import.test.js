@@ -92,6 +92,28 @@ describe('personnel import — importPersonnel', () => {
     expect(ra.bed_no).toBe(1)
   })
 
+  // Ekim 2026: yatak no 'dolu sayı + 1' idi → 1 numara boşalmış odada yeni gelen mevcut "Yatak 2"yi alıyordu.
+  it('boşalan yatağı verir, aynı yatak numarası iki kişiye düşmez', () => {
+    const db = getDB()
+    const roomId = Number(db.prepare(`INSERT INTO rooms(block, floor, room_no, capacity, active_beds, status)
+      VALUES('M1', 9, '977', 3, 3, 'active')`).run().lastInsertRowid)
+    const seat = (name, bed) => {
+      const pid = db.prepare("INSERT INTO personnel(full_name, check_in_date) VALUES(?, datetime('now'))").run(name).lastInsertRowid
+      db.prepare('INSERT INTO room_assignments(personnel_id, room_id, bed_no, assigned_by) VALUES(?,?,?,1)').run(pid, roomId, bed)
+      return pid
+    }
+    const gone = seat('Ayrılan Yatak Bir', 1)
+    seat('Kalan Yatak İki', 2)
+    db.prepare("UPDATE room_assignments SET check_out_at=datetime('now') WHERE personnel_id=?").run(gone)
+
+    importPersonnel({ rows: [
+      { fullName: 'Yeni Gelen Yatak', tcNo: '56565656560', block: 'M1', roomNo: '977' },
+    ] }, 1, { dryRun: false })
+    const beds = db.prepare('SELECT bed_no FROM room_assignments WHERE room_id=? AND check_out_at IS NULL ORDER BY bed_no')
+      .all(roomId).map(r => r.bed_no)
+    expect(beds).toEqual([1, 2])
+  })
+
   it('oda kapasitesi dolunca uyarı verir, kişi yine oluşturulur (atama yapılmaz)', () => {
     // freeRoom'un kalan yataklarını doldur
     const remaining = freeRoom.active_beds - 1

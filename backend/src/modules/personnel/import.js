@@ -14,6 +14,7 @@
 // sakinlerin henüz vardiya kaydı yok); kapasite + aktif-oda kontrolü yapılır.
 
 import { getDB } from '../../shared/db/index.js'
+import { nextFreeBedNo } from '../../shared/beds.js'
 import { normalizeName, foldName } from '../shifts/import.js'
 import { guessGender } from '../shifts/nameGender.js'
 
@@ -118,7 +119,9 @@ export function importPersonnel(payload, userId, { dryRun = false } = {}) {
           report.rooms.warnings.push({ name, message: `Oda dolu: ${found.block}-${found.room_no} (${found.active_beds} yatak)` })
         } else {
           plannedOccupancy.set(found.id, planned + 1)
-          room = { id: found.id, bedNo: planned + 1, label: `${found.block}-${found.room_no}` }
+          // Yatak no yazımda nextFreeBedNo ile verilir (aşağıda): 'dolu sayı + 1' boşalmış yatak varken
+          // mevcut bir sakinin numarasını tekrar veriyordu (iki "Yatak 2").
+          room = { id: found.id, label: `${found.block}-${found.room_no}` }
         }
       }
     }
@@ -158,7 +161,8 @@ export function importPersonnel(payload, userId, { dryRun = false } = {}) {
         p.jobTitle, p.gender, p.checkInDate, userId || null).lastInsertRowid
       undo.createdPersonnelIds.push(pid)
       if (p.room) {
-        const aid = insAssign.run(pid, p.room.id, p.room.bedNo, userId || null).lastInsertRowid
+        // Transaction içinde: aynı odaya bu aktarımda az önce yazılan atamaları da görür
+        const aid = insAssign.run(pid, p.room.id, nextFreeBedNo(db, p.room.id), userId || null).lastInsertRowid
         undo.createdAssignmentIds.push(aid)
       }
     }
