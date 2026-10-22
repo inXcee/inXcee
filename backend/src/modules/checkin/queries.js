@@ -352,7 +352,9 @@ export function getPersonnelZimmet(personnelId) {
 
 export function returnZimmet(zimmetId, condition) {
   const db = getDB()
-  db.prepare("UPDATE zimmet SET returned_at=datetime('now'), return_condition=? WHERE id=?").run(condition || 'normal', zimmetId)
+  // Zaten iade edilmiş kayıt yeniden iade edilmez: eskiden ikinci çağrı iade tarihini ve
+  // durumunu ezerdi (ör. 'lost' kaydı 'normal' görünürdü).
+  db.prepare("UPDATE zimmet SET returned_at=datetime('now'), return_condition=? WHERE id=? AND returned_at IS NULL").run(condition || 'normal', zimmetId)
 }
 
 export function returnAllZimmet(personnelId, condition) {

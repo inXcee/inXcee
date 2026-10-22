@@ -1,4 +1,5 @@
 import { getDB } from '../../../shared/db/index.js'
+import { istanbulDayBoundsUtc } from '../../../shared/time.js'
 import { OCCUPANT_NAME_SQL, OCCUPANT_PHONE_SQL } from './items.js'
 export function getPersonHistoryQuery(name) {
   const db = getDB()
@@ -144,13 +145,14 @@ export function getAllRoomsLaundryOverviewQuery() {
         ELSE NULL END), 1) AS avg_hours,
       SUM(CASE WHEN li.created_at >= datetime('now','-7 days') THEN 1 ELSE 0 END) AS last_7d_count,
       SUM(CASE WHEN li.created_at >= datetime('now','-30 days') THEN 1 ELSE 0 END) AS last_30d_count,
-      SUM(CASE WHEN li.created_at >= datetime('now','start of day') THEN 1 ELSE 0 END) AS today_count
+      -- İstanbul günü başlangıcı (UTC) — eskiden 'start of day' UTC gece yarısıydı.
+      SUM(CASE WHEN li.created_at >= ? THEN 1 ELSE 0 END) AS today_count
     FROM rooms r
     LEFT JOIN laundry_items li ON li.room_id = r.id
     LEFT JOIN laundry_deliveries ld ON ld.item_id = li.id
     GROUP BY r.id, r.block, r.room_no
     ORDER BY r.block, CAST(r.room_no AS INTEGER), r.room_no
-  `).all()
+  `).all(istanbulDayBoundsUtc().from)
 }
 
 // Bir odanın son 14 günlük günlük dağılımı (sparkline için)

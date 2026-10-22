@@ -20,6 +20,7 @@ import {
 } from './phase5.js'
 import { listOpenPickupRequests, closePickupRequest } from '../location-portal/laundry-request-action.js'
 import { istanbulDate } from '../../shared/time.js'
+import { toCsv } from '../reports/routes/shared.js'
 
 export const laundryRouter = Router()
 
@@ -622,18 +623,23 @@ laundryRouter.get('/reports/export-premium', ...laundryRead, (req, res) => {
   try {
     const { from, to } = req.query
     const rows = svc.exportPremiumGarmentsService({ from_date: from, to_date: to })
-    const header = 'Kod,Blok,Oda,Tip,Marka,Model,Beden,Renk,Durum,Ütü Gerekli,Ütüleyen,Ütü Zamanı,İstisna,Giriş,Teslim,Toplam Saat'
-    const csv = [header, ...rows.map(r => [
-      r.garment_code, r.block, r.room_no, r.garment_type,
-      r.brand || '', r.model || '', r.size || '', r.color || '',
-      r.status, r.requires_ironing ? 'Evet' : 'Hayır',
-      r.ironed_by_name || '', r.ironed_at || '', r.exception_reason || '',
-      r.intake_date?.slice(0, 10) || '',
-      r.delivered_at?.slice(0, 10) || '', r.total_hours ?? '',
-    ].join(','))].join('\n')
+    // Ortak güvenli yardımcı: marka/model/istisna metnindeki virgül kolonları
+    // kaydırıyor, "=..." ile başlayan değer Excel'de formül olarak çalışıyordu.
+    const csv = toCsv(
+      ['Kod', 'Blok', 'Oda', 'Tip', 'Marka', 'Model', 'Beden', 'Renk', 'Durum', 'Ütü Gerekli',
+        'Ütüleyen', 'Ütü Zamanı', 'İstisna', 'Giriş', 'Teslim', 'Toplam Saat'],
+      rows.map(r => [
+        r.garment_code, r.block, r.room_no, r.garment_type,
+        r.brand || '', r.model || '', r.size || '', r.color || '',
+        r.status, r.requires_ironing ? 'Evet' : 'Hayır',
+        r.ironed_by_name || '', r.ironed_at || '', r.exception_reason || '',
+        r.intake_date?.slice(0, 10) || '',
+        r.delivered_at?.slice(0, 10) || '', r.total_hours ?? '',
+      ]),
+    )
     res.setHeader('Content-Type', 'text/csv; charset=utf-8')
     res.setHeader('Content-Disposition', `attachment; filename="laundry-garments-${istanbulDate()}.csv"`)
-    res.send('\uFEFF' + csv)
+    res.send(csv)
   } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 
@@ -641,29 +647,30 @@ laundryRouter.get('/reports/export', ...laundryRead, (req, res) => {
   try {
     const { from, to, status, include_verifications } = req.query
     const items = svc.listAllItemsService({ from, to, status })
-    const baseHeader = 'ID,Blok,Oda,Durum,Parça,Acil,Notlar,Oluşturulma,Ütü'
-    const verifHeader = include_verifications === '1' ? ',Doğrulandı,Eksik Not' : ''
-    const header = baseHeader + verifHeader
+    const headers = ['ID', 'Blok', 'Oda', 'Durum', 'Parça', 'Acil', 'Notlar', 'Oluşturulma', 'Ütü']
+    if (include_verifications === '1') headers.push('Doğrulandı', 'Eksik Not')
 
     const rows = items.map(i => {
       const base = [
         i.id, i.block || '', i.room_no || '', i.status, i.item_count,
         i.urgent ? 'Evet' : 'Hayır',
-        (i.notes || '').replace(/,/g, ';').replace(/\n/g, ' '),
+        (i.notes || '').replace(/\r?\n/g, ' '),
         i.created_at,
         i.needs_ironing ? 'Evet' : 'Hayır',
       ]
       if (include_verifications === '1') {
         base.push(i.all_present === 1 ? 'Evet' : i.all_present === 0 ? 'Hayır' : '')
-        base.push((i.verification_notes || '').replace(/,/g, ';'))
+        base.push(i.verification_notes || '')
       }
-      return base.join(',')
+      return base
     })
 
-    const csv = [header, ...rows].join('\n')
+    // Ortak güvenli yardımcı: elle birleştirme tırnağı kaçırmıyor, "=..." ile
+    // başlayan not Excel'de formül olarak çalışıyordu.
+    const csv = toCsv(headers, rows)
     res.setHeader('Content-Type', 'text/csv; charset=utf-8')
     res.setHeader('Content-Disposition', `attachment; filename="camasir-${istanbulDate()}.csv"`)
-    res.send('\uFEFF' + csv)
+    res.send(csv)
   } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 

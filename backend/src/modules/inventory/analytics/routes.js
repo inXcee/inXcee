@@ -3,6 +3,7 @@ import PDFDocument from 'pdfkit'
 import { requireRole } from '../../../shared/auth/middleware.js'
 import { getDB } from '../../../shared/db/index.js'
 import { logger } from '../../../shared/logger.js'
+import { istanbulDayStartUtc } from '../../../shared/time.js'
 
 export const analyticsRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
@@ -13,7 +14,15 @@ export function buildMonthlyReport(monthStr) {
   // monthStr: 'YYYY-MM'
   const [yearStr, mStr] = monthStr.split('-')
   const start = `${yearStr}-${mStr}-01`
-  const next = new Date(+yearStr, +mStr, 1).toISOString().slice(0, 10)
+  // Sonraki ayın 1'i saf takvim aritmetiğiyle: eskiden new Date(y, m, 1) YEREL gece
+  // yarısı toISOString ile UTC'ye çevriliyordu (TR'de bir önceki gün 21:00) →
+  // 'next' ayın son günü oluyor ve son günün hareketleri rapordan düşüyordu.
+  const nextY = +mStr === 12 ? +yearStr + 1 : +yearStr
+  const nextM = +mStr === 12 ? 1 : +mStr + 1
+  const next = `${nextY}-${String(nextM).padStart(2, '0')}-01`
+  // created_at UTC tutulur; ay sınırı İstanbul gece yarısıdır (TR 1 Mart 01:30 = UTC 28 Şub 22:30).
+  const fromUtc = istanbulDayStartUtc(start)
+  const toUtc = istanbulDayStartUtc(next)
 
   const movements = db.prepare(`
     SELECT
@@ -21,8 +30,8 @@ export function buildMonthlyReport(monthStr) {
       SUM(CASE WHEN type IN ('out','request_fulfill','damage','loss') THEN ABS(delta) ELSE 0 END) as total_out,
       COUNT(*) as movement_count
     FROM stock_movements
-    WHERE date(created_at) >= ? AND date(created_at) < ?
-  `).get(start, next)
+    WHERE created_at >= ? AND created_at < ?
+  `).get(fromUtc, toUtc)
 
   const abc = db.prepare(`
     SELECT i.id, i.item_name, i.unit, i.unit_price,
@@ -31,12 +40,12 @@ export function buildMonthlyReport(monthStr) {
     FROM inventory i
     LEFT JOIN stock_movements sm ON sm.item_id = i.id
       AND sm.type IN ('out', 'request_fulfill', 'damage', 'loss')
-      AND date(sm.created_at) >= ? AND date(sm.created_at) < ?
+      AND sm.created_at >= ? AND sm.created_at < ?
     GROUP BY i.id
     HAVING consumption_value > 0
     ORDER BY consumption_value DESC
     LIMIT 20
-  `).all(start, next)
+  `).all(fromUtc, toUtc)
 
   const dept = db.prepare(`
     SELECT
@@ -45,12 +54,13 @@ export function buildMonthlyReport(monthStr) {
       SUM(ic.quantity * COALESCE(i.unit_price, 0)) as total_value
     FROM inventory_checkouts ic
     JOIN inventory i ON i.id = ic.item_id
-    JOIN personnel p ON p.id = ic.personnel_id
-    LEFT JOIN departments d ON d.id = p.department_id
-    WHERE date(ic.checked_out_at) >= ? AND date(ic.checked_out_at) < ?
+    LEFT JOIN staff s ON s.id = ic.staff_id
+    LEFT JOIN personnel p ON p.id = ic.personnel_id
+    LEFT JOIN departments d ON d.id = COALESCE(s.department_id, p.department_id)
+    WHERE ic.checked_out_at >= ? AND ic.checked_out_at < ?
     GROUP BY department
     ORDER BY total_value DESC
-  `).all(start, next)
+  `).all(fromUtc, toUtc)
 
   return { month: monthStr, start, next, movements, abc, dept }
 }
@@ -160,8 +170,11 @@ analyticsRouter.get('/department-consumption', ...mgr, (req, res) => {
         SUM(ic.quantity * COALESCE(i.unit_price, 0)) as total_value
       FROM inventory_checkouts ic
       JOIN inventory i ON i.id = ic.item_id
-      JOIN personnel p ON p.id = ic.personnel_id
-      LEFT JOIN departments d ON d.id = p.department_id
+      -- Teslimler AVS personeline (staff_id) yapılıyor; personnel_id eski kayıtlar
+      -- için. Eskiden yalnız personnel'e JOIN vardı → tüm staff teslimleri düşüyordu.
+      LEFT JOIN staff s ON s.id = ic.staff_id
+      LEFT JOIN personnel p ON p.id = ic.personnel_id
+      LEFT JOIN departments d ON d.id = COALESCE(s.department_id, p.department_id)
       WHERE ic.checked_out_at > datetime('now', '-' || ? || ' days')
       GROUP BY department, i.category
       ORDER BY total_value DESC

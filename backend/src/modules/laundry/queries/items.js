@@ -1,4 +1,5 @@
 import { getDB } from '../../../shared/db/index.js'
+import { istanbulDayBoundsUtc } from '../../../shared/time.js'
 
 // Odanın sakini — TEK satır döndüren alt sorgu. Eskiden LEFT JOIN ile
 // alınıyordu; oda kapasitesi 6 olduğu için aynı torba 6 kez tekrarlanıp
@@ -57,7 +58,9 @@ export function getLaundrySummaryQuery() {
   }
   const active = db.prepare(`SELECT COUNT(*) c FROM laundry_items WHERE status NOT IN ('delivered','lost')`).get().c
   const urgent = db.prepare(`SELECT COUNT(*) c FROM laundry_items WHERE urgent=1 AND status NOT IN ('delivered','lost')`).get().c
-  const delivered_today = db.prepare(`SELECT COUNT(*) c FROM laundry_items WHERE status='delivered' AND date(updated_at)=date('now')`).get().c
+  // İstanbul günü (updated_at UTC) — eskiden UTC günüyle karşılaştırılıyordu.
+  const today = istanbulDayBoundsUtc()
+  const delivered_today = db.prepare(`SELECT COUNT(*) c FROM laundry_items WHERE status='delivered' AND updated_at >= ? AND updated_at < ?`).get(today.from, today.to).c
   return { counts, active, urgent, delivered_today }
 }
 

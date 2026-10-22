@@ -51,3 +51,42 @@ describe('Expenses', () => {
     expect(del.status).toBe(200)
   })
 })
+
+describe('Gider özeti ay sınırları', () => {
+  it('months=1 yalnız bu ayı listeler (geçen ayın kuyruğu yarım ay olarak girmez)', async () => {
+    const { istanbulDate, addDays } = await import('../../shared/time.js')
+    const firstOfMonth = istanbulDate().slice(0, 7) + '-01'
+    const lastOfPrev = addDays(firstOfMonth, -1)
+    const c = await request(app).post('/api/expenses').set('Authorization', `Bearer ${token}`)
+      .send({ category: 'other', description: 'Gecen ay son gun', amount: 10, expense_date: lastOfPrev })
+    expect(c.status).toBe(201)
+    const res = await request(app).get('/api/expenses/summary?months=1').set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.body.monthly.map(m => m.month)).not.toContain(lastOfPrev.slice(0, 7))
+  })
+
+  it('"bu ay" İstanbul ayıdır (TR ayın 1i 00:30 = UTC önceki ay)', async () => {
+    const { vi } = await import('vitest')
+    const { istanbulDate, istanbulDayStartUtc } = await import('../../shared/time.js')
+    // Gerçek bugünden sonraki ayın 1'i, İstanbul 00:30
+    const [y, m] = istanbulDate().slice(0, 7).split('-').map(Number)
+    const nextFirst = `${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, '0')}-01`
+    const fake = new Date(istanbulDayStartUtc(nextFirst).replace(' ', 'T') + 'Z')
+    fake.setUTCMinutes(30)
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(fake)
+    try {
+      const login = await request(app).post('/api/auth/login').send({ username: 'mudur', password: 'admin123' })
+      const t = login.body.token
+      const c = await request(app).post('/api/expenses').set('Authorization', `Bearer ${t}`)
+        .send({ category: 'utilities', description: 'Ay basi fatura', amount: 777, expense_date: nextFirst })
+      expect(c.status).toBe(201)
+      const res = await request(app).get('/api/expenses/summary').set('Authorization', `Bearer ${t}`)
+      expect(res.status).toBe(200)
+      expect(res.body.this_month_total).toBe(777)
+      expect(res.body.by_category).toEqual([{ category: 'utilities', total: 777, count: 1 }])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})

@@ -23,7 +23,7 @@ export function addItem(data, userId) {
 }
 
 export function editItem(id, data, userId) {
-  queries.updateItem(id, data)
+  queries.updateItem(id, data, userId)
   logAudit(userId, 'inventory_update', 'inventory', id, `${data.item_name}: ${data.quantity} ${data.unit}`)
 }
 
