@@ -174,24 +174,35 @@ export function createNotification({
   return notif
 }
 
+// Kullanıcının gördüğü bildirimler: kişisel + rolüne + herkese (hedefsiz).
+const VISIBLE_SQL = '(n.target_user_id=? OR n.target_role=? OR (n.target_user_id IS NULL AND n.target_role IS NULL))'
+// Kişiye özel "okundu" (migration 124): kişisel bildirimde notifications.is_read; rol/yayın bildiriminde kullanıcının
+// notification_reads satırı. Eskiden is_read paylaşımlıydı — bir müdür okuyunca diğerlerinde de okunmuş görünüyordu.
+// Migration öncesi paylaşımlı is_read=1 olmuş rol bildirimleri herkes için okunmuş sayılır (geriye uyum).
+const EFFECTIVE_READ_SQL = `(CASE WHEN n.target_user_id IS NOT NULL THEN n.is_read
+  WHEN n.is_read = 1 OR nr.user_id IS NOT NULL THEN 1 ELSE 0 END)`
+
 export function getNotifications(userId, role, opts = {}) {
   const db = getDB()
   const {
     module = null, severity = null, from = null, to = null,
     unread_only = false, q = null, page = 1, limit = 50,
   } = opts
-  const params = [userId, role]
+  const params = [userId, userId, role]
   let sql = `
-    SELECT * FROM notifications
-    WHERE (target_user_id=? OR target_role=? OR (target_user_id IS NULL AND target_role IS NULL))
+    SELECT n.*, ${EFFECTIVE_READ_SQL} AS effective_read
+    FROM notifications n
+    LEFT JOIN notification_reads nr ON nr.notification_id = n.id AND nr.user_id = ?
+    WHERE ${VISIBLE_SQL}
+      AND nr.cleared_at IS NULL
   `
-  if (module)   { sql += ' AND module = ?'; params.push(module) }
-  if (severity) { sql += ' AND severity = ?'; params.push(severity) }
-  if (from)     { sql += " AND created_at >= ?"; params.push(from) }
-  if (to)       { sql += " AND created_at <= ?"; params.push(to) }
-  if (unread_only) { sql += ' AND is_read = 0' }
+  if (module)   { sql += ' AND n.module = ?'; params.push(module) }
+  if (severity) { sql += ' AND n.severity = ?'; params.push(severity) }
+  if (from)     { sql += ' AND n.created_at >= ?'; params.push(from) }
+  if (to)       { sql += ' AND n.created_at <= ?'; params.push(to) }
+  if (unread_only) { sql += ` AND ${EFFECTIVE_READ_SQL} = 0` }
   if (q) {
-    sql += ' AND (message LIKE ? OR event_kind LIKE ?)'
+    sql += ' AND (n.message LIKE ? OR n.event_kind LIKE ?)'
     const like = `%${q}%`
     params.push(like, like)
   }
@@ -202,9 +213,9 @@ export function getNotifications(userId, role, opts = {}) {
   const safeLimit = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 200)
   const safePage  = Math.max(parseInt(page, 10) || 1, 1)
   const offset    = (safePage - 1) * safeLimit
-  sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?'
+  sql += ' ORDER BY n.created_at DESC LIMIT ? OFFSET ?'
   params.push(safeLimit, offset)
-  const rows = db.prepare(sql).all(...params)
+  const rows = db.prepare(sql).all(...params).map(({ effective_read, ...n }) => ({ ...n, is_read: effective_read }))
   // Kanal=in_app tercih filtresi (eşik dahil)
   const filtered = rows.filter(n => !n.module || isChannelEnabledForUser(userId, n.module, 'in_app', n.severity || 'info'))
   return { items: filtered, total, page: safePage, limit: safeLimit }
@@ -215,12 +226,18 @@ export function getNotificationsLegacy(userId, role) {
   return getNotifications(userId, role).items
 }
 
+// Yalnız BU kullanıcı için okundu: rol/yayın bildirimleri aynı roldeki diğer kişilerde okunmamış kalır.
 export function markAllRead(userId, role) {
   const db = getDB()
-  return db.prepare(`
-    UPDATE notifications SET is_read=1
-    WHERE is_read=0 AND (target_user_id=? OR target_role=? OR (target_user_id IS NULL AND target_role IS NULL))
-  `).run(userId, role).changes
+  return db.transaction(() => {
+    const own = db.prepare('UPDATE notifications SET is_read=1 WHERE is_read=0 AND target_user_id=?').run(userId).changes
+    const shared = db.prepare(`
+      INSERT OR IGNORE INTO notification_reads(notification_id, user_id)
+      SELECT n.id, ? FROM notifications n
+      WHERE n.target_user_id IS NULL AND (n.target_role = ? OR n.target_role IS NULL) AND n.is_read = 0
+    `).run(userId, role).changes
+    return own + shared
+  })()
 }
 
 export function deleteNotification(id, userId, role) {
@@ -237,17 +254,31 @@ export function deleteNotification(id, userId, role) {
   return { ok: true }
 }
 
+// Okunanları temizle: kişisel bildirim silinir; rol/yayın bildirimi yalnız bu kullanıcının listesinden gizlenir.
+// Eskiden rol bildirimi DELETE ediliyordu — bir kişinin "temizle"si o roldeki herkesin bildirimini siliyordu.
 export function clearRead(userId, role) {
   const db = getDB()
-  return db.prepare(`
-    DELETE FROM notifications
-    WHERE is_read=1 AND (target_user_id=? OR target_role=? OR (target_user_id IS NULL AND target_role IS NULL))
-  `).run(userId, role).changes
+  return db.transaction(() => {
+    const own = db.prepare('DELETE FROM notifications WHERE is_read=1 AND target_user_id=?').run(userId).changes
+    const shared = db.prepare(`
+      INSERT INTO notification_reads(notification_id, user_id, cleared_at)
+      SELECT n.id, ?, datetime('now') FROM notifications n
+      LEFT JOIN notification_reads nr ON nr.notification_id = n.id AND nr.user_id = ?
+      WHERE n.target_user_id IS NULL AND (n.target_role = ? OR n.target_role IS NULL)
+        AND (n.is_read = 1 OR nr.user_id IS NOT NULL) AND nr.cleared_at IS NULL
+      ON CONFLICT(notification_id, user_id) DO UPDATE SET cleared_at = excluded.cleared_at
+    `).run(userId, userId, role).changes
+    return own + shared
+  })()
 }
 
-export function markRead(id) {
+export function markRead(id, userId) {
   const db = getDB()
-  db.prepare('UPDATE notifications SET is_read=1 WHERE id=?').run(id)
+  const n = db.prepare('SELECT target_user_id FROM notifications WHERE id=?').get(id)
+  if (!n) return
+  // Kişisel bildirim ya da kullanıcısız (sistem) çağrı → tek sahipli/genel is_read
+  if (n.target_user_id || !userId) db.prepare('UPDATE notifications SET is_read=1 WHERE id=?').run(id)
+  else db.prepare('INSERT OR IGNORE INTO notification_reads(notification_id, user_id) VALUES(?, ?)').run(id, userId)
 }
 
 // A→Z Faz 10 — Yönetici istatistikleri
@@ -275,7 +306,11 @@ export function getNotificationStats({ days = 7 } = {}) {
   `).all()
 
   const total = db.prepare(`SELECT COUNT(*) AS c FROM notifications WHERE created_at >= datetime('now', ?)`).get(`-${d} days`).c
-  const unread = db.prepare(`SELECT COUNT(*) AS c FROM notifications WHERE is_read=0`).get().c
+  // Hiç kimsenin okumadığı (rol bildirimlerinde okuma kişiye özel notification_reads'te)
+  const unread = db.prepare(`
+    SELECT COUNT(*) AS c FROM notifications n
+    WHERE n.is_read = 0 AND NOT EXISTS (SELECT 1 FROM notification_reads r WHERE r.notification_id = n.id)
+  `).get().c
 
   return { days: d, total, unread, matrix, last24h }
 }

@@ -40,12 +40,11 @@ notificationsRouter.patch('/:id/read', ...requireStaff, (req, res) => {
   if (notif.target_user_id && notif.target_user_id !== req.user.id) {
     return res.status(403).json({ error: 'Yetkisiz' })
   }
-  // is_read paylaşımlı bir alandır: başka role giden bildirimi okundu yapmak
-  // o rolün listesinden uyarıyı sessizce düşürür (liste de aynı kuralla süzülür).
+  // Yalnız görebildiği bildirimi okundu yapabilir (okuma kişiye özel: notification_reads, migration 124).
   if (!notif.target_user_id && notif.target_role && notif.target_role !== req.user.role) {
     return res.status(403).json({ error: 'Yetkisiz' })
   }
-  markRead(+req.params.id)
+  markRead(+req.params.id, req.user.id)
   res.json({ ok: true })
 })
 
