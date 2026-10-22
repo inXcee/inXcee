@@ -1,3 +1,5 @@
+import { istanbulDate } from '../../shared/time.js'
+
 // Vardiya Hazırlık (Sistem Sağlığı) katmanı.
 //
 // Neden: modülde özellik eksik değil, ama ana veriler eksikken çizelge, puantaj
@@ -150,7 +152,7 @@ export function buildReadiness(db) {
     SELECT COUNT(DISTINCT d.staff_id) c
     FROM documents d JOIN staff s ON s.id = d.staff_id
     WHERE s.is_active = 1 AND d.archived_at IS NULL
-      AND d.expires_on IS NOT NULL AND d.expires_on < date('now')`)
+      AND d.expires_on IS NOT NULL AND d.expires_on < ?`, [istanbulDate()])
   items.push(kontrol('expired_documents', 'Süresi dolmuş belge', {
     status: suresiDolan === null ? 'unknown' : suresiDolan === 0 ? 'ok' : 'warning',
     count: suresiDolan, total: aktif,

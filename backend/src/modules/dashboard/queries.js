@@ -1,4 +1,5 @@
 import { getDB } from '../../shared/db/index.js'
+import { istanbulDate, istanbulDayBoundsUtc, istanbulDayStartUtc, addDays, istanbulNowNaive, istanbulSqliteModifier } from '../../shared/time.js'
 import { memoize } from '../../shared/middleware/memo.js'
 import { getOverdueInside } from '../access/service.js'
 
@@ -186,8 +187,9 @@ function _getHealthScore() {
       COUNT(*) as total,
       COUNT(CASE WHEN completed_at IS NOT NULL THEN 1 END) as done
     FROM cleaning_tasks
-    WHERE DATE(scheduled_at) >= date('now', '-7 days') AND DATE(scheduled_at) <= date('now')
-  `).get()
+    -- scheduled_at yerel saatle yazılır (generateDailyTasks); 'bugün' İstanbul günü
+    WHERE DATE(scheduled_at) >= date(?, '-7 days') AND DATE(scheduled_at) <= ?
+  `).get(istanbulDate(), istanbulDate())
   const housekeepingScore = hkRow.total === 0 ? 100 : Math.round(hkRow.done * 100 / hkRow.total)
 
   // Arıza skoru: 0 açık = 100, 10+ = 0, doğrusal
@@ -226,6 +228,10 @@ export const getHealthScore = memoize(_getHealthScore, 60_000)
 function _getAnomalies() {
   const db = getDB()
   const anomalies = []
+  // Zaman damgaları (opened_at, check_out_date, scanned_at) UTC metin; 'bugün' İstanbul günüdür.
+  // Eskiden DATE(col) = DATE('now') UTC günüydü: TR 00:00–03:00 arası 'bugün' dünün kayıtlarını sayıyordu.
+  const today = istanbulDayBoundsUtc()
+  const weekStartUtc = istanbulDayStartUtc(addDays(today.day, -7))
 
   // R1: Blok arıza yoğunluğu — bir blokta bugünkü açık arıza sayısı
   // son 7 günün ortalamasının ≥2 katı VE bugün ≥3 yeni arıza
@@ -235,7 +241,7 @@ function _getAnomalies() {
         SUBSTR(location, 1, INSTR(location || ' ', ' ') - 1) AS block,
         COUNT(*) AS today_count
       FROM maintenance_requests
-      WHERE DATE(opened_at) = DATE('now')
+      WHERE opened_at >= ? AND opened_at < ?
       GROUP BY block
     ),
     week_avg AS (
@@ -243,14 +249,14 @@ function _getAnomalies() {
         SUBSTR(location, 1, INSTR(location || ' ', ' ') - 1) AS block,
         COUNT(*) * 1.0 / 7.0 AS avg_per_day
       FROM maintenance_requests
-      WHERE DATE(opened_at) >= DATE('now', '-7 days') AND DATE(opened_at) < DATE('now')
+      WHERE opened_at >= ? AND opened_at < ?
       GROUP BY block
     )
     SELECT t.block, t.today_count, COALESCE(w.avg_per_day, 0) AS avg_7d
     FROM today_counts t
     LEFT JOIN week_avg w ON w.block = t.block
     WHERE t.today_count >= 3 AND t.today_count >= COALESCE(w.avg_per_day, 0) * 2
-  `).all()
+  `).all(today.from, today.to, weekStartUtc, today.from)
 
   for (const row of maintByBlock) {
     if (!row.block) continue
@@ -269,9 +275,10 @@ function _getAnomalies() {
     FROM cleaning_tasks
     WHERE completed_at IS NULL
       AND skipped = 0
-      AND scheduled_at <= datetime('now', '-3 hours')
-      AND DATE(scheduled_at) = DATE('now')
-  `).get()
+      -- scheduled_at YEREL saat: eskiden UTC datetime('now') ile kıyaslanıp görev 3 değil 6 saat sonra 'gecikmiş' sayılıyordu
+      AND scheduled_at <= ?
+      AND DATE(scheduled_at) = ?
+  `).get(istanbulNowNaive(new Date(Date.now() - 3 * 3600 * 1000)), today.day)
   if (lateHk.c > 0) {
     anomalies.push({
       id: 'hk-late',
@@ -311,15 +318,15 @@ function _getAnomalies() {
   const occRow = db.prepare(`
     WITH today_out AS (
       SELECT COUNT(*) AS c FROM personnel
-      WHERE DATE(check_out_date) = DATE('now')
+      WHERE check_out_date >= ? AND check_out_date < ?
     ),
     week_avg AS (
       SELECT COUNT(*) * 1.0 / 7.0 AS avg_out FROM personnel
-      WHERE DATE(check_out_date) >= DATE('now', '-7 days') AND DATE(check_out_date) < DATE('now')
+      WHERE check_out_date >= ? AND check_out_date < ?
     )
     SELECT t.c AS today_out, COALESCE(w.avg_out, 0) AS avg_out
     FROM today_out t, week_avg w
-  `).get()
+  `).get(today.from, today.to, weekStartUtc, today.from)
   if (occRow.today_out >= 5 && occRow.today_out >= occRow.avg_out * 3) {
     anomalies.push({
       id: 'occ-drop',
@@ -333,8 +340,8 @@ function _getAnomalies() {
   // R5 (Faz 6.2): Bugün kara liste alarmı — istasyonda kara listeli kart okutuldu
   const alarmRow = db.prepare(`
     SELECT COUNT(*) AS c FROM access_events
-    WHERE result='alarm' AND DATE(scanned_at) = DATE('now')
-  `).get()
+    WHERE result='alarm' AND scanned_at >= ? AND scanned_at < ?
+  `).get(today.from, today.to)
   if (alarmRow.c > 0) {
     anomalies.push({
       id: 'access-blacklist-today',
@@ -367,14 +374,17 @@ export function getTrends(metrics, days = 30) {
   const db = getDB()
   const n = Math.max(1, Math.min(90, Number(days) || 30))
 
+  // Seri İstanbul günleridir; UTC zaman damgası kolonları tzMod ile İstanbul gününe çevrilir.
+  const todayLocal = istanbulDate()
+  const tzMod = istanbulSqliteModifier(todayLocal)
   const dateSeries = db.prepare(`
     WITH RECURSIVE dates(d) AS (
-      SELECT date('now', '-' || (? - 1) || ' days')
+      SELECT date(?, '-' || (? - 1) || ' days')
       UNION ALL
-      SELECT date(d, '+1 day') FROM dates WHERE d < date('now')
+      SELECT date(d, '+1 day') FROM dates WHERE d < ?
     )
     SELECT d FROM dates
-  `).all(n).map(r => r.d)
+  `).all(todayLocal, n, todayLocal).map(r => r.d)
 
   const result = {}
   const allowed = ['occupancy', 'sla', 'housekeeping', 'checkins']
@@ -387,13 +397,14 @@ export function getTrends(metrics, days = 30) {
         `SELECT COALESCE(SUM(active_beds), 1) as t FROM rooms WHERE status='active'`
       ).get().t
       // NOTE: denominator is current active bed count — historical room changes not tracked
+      // assigned_at / check_out_at UTC metin → İstanbul gününe çevrilip seri günüyle kıyaslanır
       const occupancyStmt = db.prepare(
         `SELECT COUNT(*) as c FROM room_assignments
-         WHERE date(assigned_at) <= ? AND (check_out_at IS NULL OR date(check_out_at) > ?)`
+         WHERE date(assigned_at, ?) <= ? AND (check_out_at IS NULL OR date(check_out_at, ?) > ?)`
       )
       result.occupancy = dateSeries.map(d => ({
         date: d,
-        value: Math.round(occupancyStmt.get(d, d).c * 100 / totalBeds),
+        value: Math.round(occupancyStmt.get(tzMod, d, tzMod, d).c * 100 / totalBeds),
       }))
     }
 
@@ -406,10 +417,10 @@ export function getTrends(metrics, days = 30) {
           COUNT(*) as total,
           COUNT(CASE WHEN sla_deadline >= closed_at THEN 1 END) as ontime
         FROM maintenance_requests
-        WHERE status='done' AND date(closed_at) = ? AND sla_deadline IS NOT NULL
+        WHERE status='done' AND date(closed_at, ?) = ? AND sla_deadline IS NOT NULL
       `)
       result.sla = dateSeries.map(d => {
-        const row = slaStmt.get(d)
+        const row = slaStmt.get(tzMod, d)
         return {
           date: d,
           value: row.total === 0 ? 100 : Math.round(row.ontime * 100 / row.total),
@@ -437,19 +448,19 @@ export function getTrends(metrics, days = 30) {
     if (metric === 'checkins') {
       const rows = db.prepare(`
         WITH RECURSIVE dates(d) AS (
-          SELECT date('now', '-' || (? - 1) || ' days')
+          SELECT date(?, '-' || (? - 1) || ' days')
           UNION ALL
-          SELECT date(d, '+1 day') FROM dates WHERE d < date('now')
+          SELECT date(d, '+1 day') FROM dates WHERE d < ?
         )
         SELECT d.d AS date,
-          COALESCE(SUM(CASE WHEN date(p.check_in_date)  = d.d THEN 1 ELSE 0 END), 0) AS "in",
-          COALESCE(SUM(CASE WHEN date(p.check_out_date) = d.d THEN 1 ELSE 0 END), 0) AS "out"
+          COALESCE(SUM(CASE WHEN date(p.check_in_date, ?)  = d.d THEN 1 ELSE 0 END), 0) AS "in",
+          COALESCE(SUM(CASE WHEN date(p.check_out_date, ?) = d.d THEN 1 ELSE 0 END), 0) AS "out"
         FROM dates d
         LEFT JOIN personnel p
-          ON date(p.check_in_date) = d.d OR date(p.check_out_date) = d.d
+          ON date(p.check_in_date, ?) = d.d OR date(p.check_out_date, ?) = d.d
         GROUP BY d.d
         ORDER BY d.d
-      `).all(n)
+      `).all(todayLocal, n, todayLocal, tzMod, tzMod, tzMod, tzMod)
       result.checkins = rows
     }
   }

@@ -8,7 +8,7 @@ import { getDB } from '../../shared/db/index.js'
 import { checkInService, checkOutService } from '../shifts/service.js'
 import { setBoarded } from '../transport/queries.js'
 import { logger } from '../../shared/logger.js'
-import { istanbulDate } from '../../shared/time.js'
+import { istanbulDate, istanbulDayBoundsUtc } from '../../shared/time.js'
 
 export const qrRouter = Router()
 const mgr = requireRole('campus_manager', 'shift_supervisor')
@@ -179,9 +179,9 @@ qrRouter.post('/scan/clock', ...view, (req, res) => {
       SELECT id, check_in_at,
         (julianday('now') - julianday(check_in_at)) * 1440 as age_min
       FROM attendance_logs
-      WHERE staff_id = ? AND check_out_at IS NULL AND date(check_in_at) = date('now')
+      WHERE staff_id = ? AND check_out_at IS NULL AND check_in_at >= ? AND check_in_at < ?
       ORDER BY id DESC LIMIT 1
-    `).get(staff.id)
+    `).get(staff.id, istanbulDayBoundsUtc().from, istanbulDayBoundsUtc().to)
 
     if (open) {
       if (open.age_min < 2) {
@@ -201,8 +201,8 @@ qrRouter.post('/scan/clock', ...view, (req, res) => {
     }
 
     const sched = db.prepare(`
-      SELECT id FROM shift_schedule WHERE staff_id = ? AND work_date = date('now')
-    `).get(staff.id)
+      SELECT id FROM shift_schedule WHERE staff_id = ? AND work_date = ?
+    `).get(staff.id, istanbulDate())
     const { id: logId } = checkInService({
       staff_id: staff.id,
       shift_schedule_id: sched?.id || null,

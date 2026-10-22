@@ -154,8 +154,8 @@ export function getExpensesReport(months = 1) {
   try {
     const summary = db.prepare(`
       SELECT ROUND(SUM(amount), 2) AS total, COUNT(*) AS count
-      FROM expenses WHERE strftime('%Y-%m', expense_date) = strftime('%Y-%m', 'now')
-    `).get()
+      FROM expenses WHERE strftime('%Y-%m', expense_date) = ?
+    `).get(istanbulDate().slice(0, 7))
     const byCategory = db.prepare(`
       SELECT category, ROUND(SUM(amount), 2) AS total, COUNT(*) AS count
       FROM expenses

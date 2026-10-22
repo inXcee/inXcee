@@ -45,8 +45,7 @@ describe('H12 S2 — KVKK V2', () => {
     const list = await request(app).get('/api/integrity/kvkk').set('Authorization', `Bearer ${token}`)
     const item = list.body.find(x => x.id === c.body.id)
     expect(typeof item.days_left).toBe('number')
-    expect(item.days_left).toBeGreaterThanOrEqual(29) // yeni talep: ~30 gün
-    expect(item.days_left).toBeLessThanOrEqual(30)
+    expect(item.days_left).toBe(30) // yeni talep: tam 30 takvim günü (eskiden saat farkı yuvarlanıp 29 çıkıyordu)
   })
 
   it('geçersiz kind 400', async () => {

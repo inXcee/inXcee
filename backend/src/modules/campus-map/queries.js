@@ -469,13 +469,15 @@ export function getCampusReportRooms(block = null) {
 export function getCampusTimeseries(days = 7) {
   const db = getDB()
   const n = Math.max(2, Math.min(30, Number(days) || 7))
+  // Seri İstanbul günleri: date('now') UTC'dir, TR 00:00–03:00 arası seri dünde biterdi
+  const today = istanbulDate()
   const dateSeries = db.prepare(`
     WITH RECURSIVE dates(d) AS (
-      SELECT date('now', '-' || (? - 1) || ' days')
-      UNION ALL SELECT date(d, '+1 day') FROM dates WHERE d < date('now')
+      SELECT date(?, '-' || (? - 1) || ' days')
+      UNION ALL SELECT date(d, '+1 day') FROM dates WHERE d < ?
     )
     SELECT d FROM dates
-  `).all(n).map(r => r.d)
+  `).all(today, n, today).map(r => r.d)
 
   // Tum bloklarin guncel total_beds'leri
   const totals = db.prepare(`

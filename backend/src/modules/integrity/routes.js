@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { logAudit } from '../../shared/audit.js'
 import { getDB } from '../../shared/db/index.js'
+import { istanbulDate, istanbulSqliteModifier } from '../../shared/time.js'
 import { logger } from '../../shared/logger.js'
 
 export const integrityRouter = Router()
@@ -33,10 +34,10 @@ integrityRouter.get('/scan', ...view, (req, res) => {
     const archivedFutureShift = db.prepare(`
       SELECT s.id, s.full_name, COUNT(*) as future_count
       FROM staff s
-      JOIN shift_schedule ss ON ss.staff_id = s.id AND ss.work_date >= date('now')
+      JOIN shift_schedule ss ON ss.staff_id = s.id AND ss.work_date >= ?
       WHERE s.is_active = 0
       GROUP BY s.id
-    `).all()
+    `).all(istanbulDate())
     archivedFutureShift.forEach(r => issues.push({
       severity: 'warning', kind: 'archived_has_future_shift',
       staff_id: r.id, full_name: r.full_name,
@@ -76,9 +77,9 @@ integrityRouter.get('/scan', ...view, (req, res) => {
     const noShifts = db.prepare(`
       SELECT s.id, s.full_name FROM staff s
       WHERE s.is_active = 1
-        AND NOT EXISTS (SELECT 1 FROM shift_schedule WHERE staff_id = s.id AND work_date >= date('now','-60 days'))
+        AND NOT EXISTS (SELECT 1 FROM shift_schedule WHERE staff_id = s.id AND work_date >= date(?, '-60 days'))
       LIMIT 100
-    `).all()
+    `).all(istanbulDate())
     noShifts.forEach(r => issues.push({
       severity: 'info', kind: 'no_recent_shift',
       staff_id: r.id, full_name: r.full_name,
@@ -92,10 +93,10 @@ integrityRouter.get('/scan', ...view, (req, res) => {
       JOIN training_sessions t ON t.id = a.session_id
       JOIN staff s ON s.id = a.staff_id
       WHERE a.cert_expires_at IS NOT NULL
-        AND a.cert_expires_at < date('now')
+        AND a.cert_expires_at < ?
         AND a.attended = 1
         AND s.is_active = 1
-    `).all()
+    `).all(istanbulDate())
     expiredCerts.forEach(r => issues.push({
       severity: 'warning', kind: 'expired_cert',
       staff_id: r.id, full_name: r.full_name,
@@ -129,12 +130,14 @@ integrityRouter.get('/kvkk', ...mgr, (req, res) => {
     const db = getDB()
     // days_left: KVKK m.13 — başvuruya 30 gün içinde yanıt zorunlu.
     // Bekleyen taleplerde kalan gün (negatif = yasal süre AŞILDI), karara bağlananlarda null.
+    // Takvim günü: son gün = başvurunun İstanbul tarihi + 30. Eskiden saat farkı aşağı yuvarlanıyordu
+    // (aynı gün açılan başvuru '29 gün' görünüyordu).
     let q = `SELECT *,
       CASE WHEN status = 'pending'
-        THEN CAST(julianday(created_at, '+30 day') - julianday('now') AS INTEGER)
+        THEN CAST(julianday(date(created_at, ?), '+30 day') - julianday(?) AS INTEGER)
         ELSE NULL END AS days_left
       FROM kvkk_requests WHERE 1=1`
-    const params = []
+    const params = [istanbulSqliteModifier(), istanbulDate()]
     if (req.query.status) { q += ' AND status = ?'; params.push(req.query.status) }
     q += ' ORDER BY created_at DESC LIMIT 200'
     res.json(db.prepare(q).all(...params))

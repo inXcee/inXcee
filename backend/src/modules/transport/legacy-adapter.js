@@ -1,4 +1,5 @@
 import { getDB } from '../../shared/db/index.js'
+import { istanbulDate } from '../../shared/time.js'
 import { bumpTransportRevision } from './v2-core.js'
 
 function assignmentStatus(row) {
@@ -90,9 +91,9 @@ function ensureLegacyTrip(db, routeId, workDate) {
     )
     VALUES(
       ?, ?, 'outbound', ?,
-      CASE WHEN ? < date('now') THEN 'completed' ELSE 'published' END,
+      CASE WHEN ? < ? THEN 'completed' ELSE 'published' END,
       ?, ?, ?, 'legacy', ?, ?,
-      CASE WHEN ? < date('now') THEN ? ELSE NULL END,
+      CASE WHEN ? < ? THEN ? ELSE NULL END,
       ?, datetime('now')
     )
     ON CONFLICT(legacy_key) DO UPDATE SET
@@ -106,13 +107,13 @@ function ensureLegacyTrip(db, routeId, workDate) {
     routeId,
     workDate,
     `${workDate}T${route.departure_time}`,
-    workDate,
+    workDate, istanbulDate(),
     route.default_vehicle_id,
     route.default_driver_id,
     route.capacity,
     legacyKey(routeId, workDate),
     firstAssignment.created_at,
-    workDate,
+    workDate, istanbulDate(),
     firstAssignment.created_at,
     firstAssignment.created_at,
   )

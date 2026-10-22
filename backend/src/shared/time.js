@@ -56,3 +56,10 @@ export function istanbulSqliteModifier(day = istanbulDate()) {
   const minutes = Math.round((Date.parse(`${day}T00:00:00Z`) - startUtc) / 60000)
   return `${minutes >= 0 ? '+' : ''}${minutes} minutes`
 }
+
+// İstanbul yerel saatinin SQLite metni ('YYYY-MM-DD HH:MM:SS'). Yerel saatle yazılmış kolonlarla
+// (datetime-local form alanı, cleaning_tasks.scheduled_at) karşılaştırmak için; datetime('now') UTC'dir.
+export function istanbulNowNaive(value = new Date()) {
+  const p = Object.fromEntries(ISTANBUL_PARTS.formatToParts(value).map(x => [x.type, x.value]))
+  return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}:${p.second}`
+}

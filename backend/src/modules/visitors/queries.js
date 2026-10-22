@@ -1,5 +1,6 @@
 import { randomBytes } from 'crypto'
 import { getDB } from '../../shared/db/index.js'
+import { istanbulDayBoundsUtc } from '../../shared/time.js'
 
 // qr modülüyle aynı token üretimi — 20 hex char, çakışma ~0.
 function genVisitorToken() {
@@ -103,8 +104,9 @@ export function getVisitorStats() {
     SELECT
       SUM(CASE WHEN status='checked_in' THEN 1 ELSE 0 END) AS active,
       SUM(CASE WHEN status='pre_registered' THEN 1 ELSE 0 END) AS upcoming,
-      SUM(CASE WHEN date(check_in_at) = date('now') THEN 1 ELSE 0 END) AS today,
+      -- check_in_at UTC metin; 'bugün' İstanbul günü
+      SUM(CASE WHEN check_in_at >= ? AND check_in_at < ? THEN 1 ELSE 0 END) AS today,
       COUNT(*) AS total
     FROM visitors
-  `).get()
+  `).get(istanbulDayBoundsUtc().from, istanbulDayBoundsUtc().to)
 }

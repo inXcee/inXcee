@@ -57,9 +57,9 @@ export function get360(staffId) {
     SELECT ss.work_date, ss.status, sd.name as shift_name, sd.start_hour, sd.end_hour, sd.color_class
     FROM shift_schedule ss
     LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id
-    WHERE ss.staff_id = ? AND ss.work_date BETWEEN date('now','-14 days') AND date('now','+7 days')
+    WHERE ss.staff_id = ? AND ss.work_date BETWEEN date(?, '-14 days') AND date(?, '+7 days')
     ORDER BY ss.work_date DESC
-  `).all(staffId)
+  `).all(staffId, istanbulDate(), istanbulDate())
 
   // Vardiya devamsızlık özeti son 30g
   const shiftSummary = db.prepare(`
