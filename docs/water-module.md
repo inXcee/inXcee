@@ -136,6 +136,7 @@ Her gün 06:15'te stok/irsaliye uyarıları, kritik lot/SKT kayıtları ve sipar
 4. Dağıtım güncellenince eski ve yeni ürünün tahsisleri birlikte yeniden uzlaştırılır.
 5. Dağıtım silinince serbest kalan lotlar diğer bekleyen çıkışlara yeniden dağıtılır ve çözülen inceleme bayrakları temizlenir.
 6. Başka dağıtımlara tahsis edilmiş giriş doğrudan silinemez; API HTTP 409 ve bağlı kullanım açıklaması döndürür.
+7. İade edilebilir üründe boş kap dolaşımı (girişler − iadeler) eksiye düşmez: iadesi yapılmış bir giriş silinemez, iadenin altına küçültülemez ya da başka ürüne taşınamaz (HTTP 409 — önce ilgili iadeler silinir/düzeltilir). Yalnız durumu kötüleştiren değişiklik engellenir; Hermes Excel geri alması iade → dağıtım → giriş sırasıyla sildiği için takılmaz.
 
 Tekli giriş, toplu giriş ve FEFO/FIFO uzlaştırması transaction içindedir. API hataları route içinde yutulmaz; Express merkezi hata katmanına aktarılır. Beklenmeyen 5xx hataları `error_log` ve yapılandırılmışsa Sentry'ye gider.
 
