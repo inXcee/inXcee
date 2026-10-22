@@ -21,6 +21,8 @@ import { addStaffAlias } from '../personnel/staffAliases.js'
 import { rosterLookupFactory } from '../personnel/hrRoster.js'
 import { validTc } from '../../shared/names.js'
 import { isIsoDate } from '../../shared/validation/date.js'
+import { assertPeriodsUnlocked } from './service.js'
+import { resetDailyApprovalsForDates } from './queries.js'
 
 const IMPORT_SCHEDULE_FIELDS = ['dept_id', 'shift_def_id', 'work_location_id', 'status', 'leave_type']
 
@@ -403,6 +405,26 @@ export function importSchedule(payload, userId, {
       }
     }
   }
+  // Aynı kişi çizelgede iki ayrı satırda (iki bölüm bandı, farklı yazım) aynı güne düşüyorsa sonraki satır
+  // öncekini sessizce ezer — önizlemede görünsün.
+  const cellOwner = new Map()
+  for (const r of rows) {
+    if (!r.name) continue
+    const { staff } = resolveStaff(r.name)
+    const who = staff ? `s:${staff.id}` : `n:${normalizeName(r.name)}`
+    for (const c of r.cells || []) {
+      if (!c.date) continue
+      const key = `${who}|${c.date}`
+      const owner = cellOwner.get(key)
+      if (owner && owner !== r) {
+        anomalies.warnings.push({ staff: r.name, kind: 'duplicate',
+          message: `${r.name}: ${c.date} çizelgede iki ayrı satırda (${owner.deptName || '—'} / ${r.deptName || '—'}) — sonraki satır öncekini ezer` })
+        anomalies.counts.duplicate = (anomalies.counts.duplicate || 0) + 1
+      } else if (!owner) {
+        cellOwner.set(key, r)
+      }
+    }
+  }
   report.anomalies = anomalies
 
   // Üzerine-yazma farkındalığı: mevcut çizelgede aynı (personel, tarih) var mı?
@@ -439,6 +461,9 @@ export function importSchedule(payload, userId, {
     report.scheduleUpdated = up
     return report
   }
+
+  // Kilitli (kapanmış) aya aktarım yazılamaz — elle yazımla aynı kural (423).
+  assertPeriodsUnlocked(rows.flatMap(r => (r.cells || []).map(c => c.date)))
 
   if (!createMissing && distinctDepts.some(n => !deptByName.has(normalizeName(n)))) {
     // createMissing kapalıysa eksik departmanlı personeli departmansız bırakırız.
@@ -530,6 +555,11 @@ export function importSchedule(payload, userId, {
 
     // Çizelge upsert — yeni-oluşturulanlar staffByName'e zaten eklendi, resolveStaff onları görür.
     let count = 0, nu = 0, up = 0
+    // Geri alma görüntüsü (kişi, gün) başına YALNIZ ilk dokunuşta alınır: aynı kişi iki satırda gelirse ikinci
+    // görüntü bu aktarımın kendi yazdığıdır; geri alma onu en son uygulayıp aktarım öncesini kaybediyordu.
+    const touched = new Set()
+    // Kaydı gerçekten değişen günler — onaylı puantaj günü beklemeye düşer (elle yazımla aynı kural).
+    const changedDates = new Set()
     for (const r of rows) {
       const { staff } = resolveStaff(r.name)
       if (!staff) continue
@@ -542,7 +572,9 @@ export function importSchedule(payload, userId, {
           shiftDefId = shiftByHours.get(`${c.startHour}-${c.endHour}`)?.id || null
         }
         const prev = getPrevStmt.get(staff.id, c.date)
-        if (prev) { up++; undo.schedulePrev.push({ staff_id: staff.id, work_date: c.date, ...prev }) }
+        const firstTouch = !touched.has(`${staff.id}|${c.date}`)
+        touched.add(`${staff.id}|${c.date}`)
+        if (prev) { up++; if (firstTouch) undo.schedulePrev.push({ staff_id: staff.id, work_date: c.date, ...prev }) }
         else { nu++; undo.scheduleInserted.push({ staff_id: staff.id, work_date: c.date }) }
         const status = normalizeScheduleStatus(c)
         const explicitLocation = c.locationName || r.locationName
@@ -561,6 +593,7 @@ export function importSchedule(payload, userId, {
           created_by: userId || null,
         })
         const after = getScheduleStmt.get(staff.id, c.date)
+        if (!prev || importedScheduleChanged(prev, after)) changedDates.add(c.date)
         if (prev && importedScheduleChanged(prev, after)) {
           recordPersonnelEvent({
             staffId: staff.id,
@@ -593,6 +626,7 @@ export function importSchedule(payload, userId, {
     report.scheduleEntries = count
     report.scheduleNew = nu
     report.scheduleUpdated = up
+    resetDailyApprovalsForDates([...changedDates], userId || null)
 
     // ── İzin talepleri (sick/annual) — onaylı kayıt + bakiye düşümü ──
     const findLeave = db.prepare(`SELECT id FROM leave_requests
@@ -702,6 +736,27 @@ export function undoImportBatch(batchId, userId = null) {
 
   const result = { scheduleRestored: 0, scheduleDeleted: 0, leavesDeleted: 0, staffDeleted: 0, deptsDeleted: 0, shiftDefsDeleted: 0 }
 
+  // Geri almanın değiştireceği günler: kilitli aya dokunuyorsa hiç başlamaz (423); değişen günlerin onayı düşer.
+  const touchedDates = new Set()
+  for (const s of [...(undo.scheduleInserted || []), ...(undo.schedulePrev || [])]) touchedDates.add(s.work_date)
+  const leaveRange = db.prepare('SELECT start_date, end_date FROM leave_requests WHERE id = ?')
+  for (const lv of undo.createdLeaves || []) {
+    const row = leaveRange.get(lv.id)
+    if (row) for (let d = row.start_date; d <= row.end_date; d = addDaysIso(d, 1)) touchedDates.add(d)
+  }
+  const staffDates = db.prepare('SELECT work_date FROM shift_schedule WHERE staff_id = ?')
+  for (const sid of undo.createdStaffIds || []) for (const r of staffDates.all(sid)) touchedDates.add(r.work_date)
+  assertPeriodsUnlocked([...touchedDates])
+
+  // Oluşturulan tanım sonradan başka kayıtta (sonraki haftanın aktarımı, açık vardiya, föy kontrolü…) kullanıldıysa
+  // silinmez. Eskiden yalnız tek tablo yoklanıyordu; başka tablodaki referans tüm geri almayı FK hatasıyla düşürüyordu.
+  const deleteIfUnused = (stmt, id) => {
+    try { return stmt.run(id).changes > 0 } catch (error) {
+      if (error?.code === 'SQLITE_CONSTRAINT_FOREIGNKEY') return false
+      throw error
+    }
+  }
+
   db.transaction(() => {
     // 0) Bu aktarımda kaydedilen ad eşleştirmelerini sil
     for (const aliasId of undo.createdAliasIds || []) {
@@ -793,12 +848,13 @@ export function undoImportBatch(batchId, userId = null) {
     }
     // 5) Artık kullanılmayan oluşturulmuş departmanları sil
     for (const did of undo.createdDeptIds || []) {
-      if (!staffRefByDept.get(did)) { delDept.run(did); result.deptsDeleted++ }
+      if (!staffRefByDept.get(did) && deleteIfUnused(delDept, did)) result.deptsDeleted++
     }
     // 6) Artık kullanılmayan oluşturulmuş vardiya tanımlarını sil
     for (const sdid of undo.createdShiftDefIds || []) {
-      if (!schedRefByDef.get(sdid)) { delDef.run(sdid); result.shiftDefsDeleted++ }
+      if (!schedRefByDef.get(sdid) && deleteIfUnused(delDef, sdid)) result.shiftDefsDeleted++
     }
+    resetDailyApprovalsForDates([...touchedDates], userId)
     db.prepare("UPDATE schedule_import_batches SET undone_at = datetime('now') WHERE id = ?").run(batchId)
   })()
 

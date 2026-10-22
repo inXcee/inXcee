@@ -15,7 +15,7 @@ import {
   createShiftDefinition, updateShiftDefinition, deleteShiftDefinition, getShiftCoverage,
   getCoverageRules, createCoverageRule, updateCoverageRule, deleteCoverageRule, getScheduleCandidates,
   cancelLeaveRequest, createSwapRequest, getSwapRequests, acceptSwapRequest, approveSwapRequest, rejectSwapRequest,
-  copyWeekSchedule, applyRotationTemplate, searchStaff, deleteScheduleEntry,
+  copyWeekSchedule, applyRotationTemplate, ensureSwapTable, searchStaff, deleteScheduleEntry,
   listRotationTemplates, getRotationTemplate, createRotationTemplate, deleteRotationTemplate,
   listPeriodLocks, lockedPeriodsFor, lockPeriod, unlockPeriod,
   getPuantajPeriodApproval, upsertPuantajPeriodApproval,
@@ -1409,6 +1409,7 @@ export function createOvertimeService(data, userId) {
   if (!data.staff_id || !data.work_date || !data.hours)
     throw new Error('Zorunlu alanlar eksik')
   if (data.hours <= 0 || data.hours > 12) throw new Error('Mesai saati 0-12 arasında olmalı')
+  assertPeriodsUnlocked([data.work_date])
   const id = createOvertime({ ...data, approved_by: userId })
   const row = getDB().prepare('SELECT * FROM overtime_records WHERE id=?').get(id)
   recordPersonnelEvent({
@@ -1421,6 +1422,7 @@ export function createOvertimeService(data, userId) {
     reason: row.reason || 'Fazla mesai kaydi olusturuldu',
     actorUserId: userId,
   })
+  resetDailyApprovalsForDates([row.work_date], userId)
   return id
 }
 
@@ -1605,6 +1607,7 @@ export function updateOvertimeService(id, data, userId) {
     throw new Error('Mesai saati 0-12 arasında olmalı')
   const before = getDB().prepare('SELECT * FROM overtime_records WHERE id=?').get(id)
   if (!before) throw Object.assign(new Error('Fazla mesai kaydi bulunamadi'), { statusCode: 404 })
+  assertPeriodsUnlocked([before.work_date, data.work_date])
   updateOvertime(id, data)
   const after = getDB().prepare('SELECT * FROM overtime_records WHERE id=?').get(id)
   recordPersonnelEvent({
@@ -1618,11 +1621,13 @@ export function updateOvertimeService(id, data, userId) {
     reason: String(data.change_reason || data.reason || '').trim() || 'Fazla mesai kaydi guncellendi',
     actorUserId: userId,
   })
+  resetDailyApprovalsForDates([before.work_date, after.work_date], userId)
 }
 
 export function deleteOvertimeService(id, userId, reason = null) {
   const before = getDB().prepare('SELECT * FROM overtime_records WHERE id=?').get(id)
   if (!before) throw Object.assign(new Error('Fazla mesai kaydi bulunamadi'), { statusCode: 404 })
+  assertPeriodsUnlocked([before.work_date])
   deleteOvertime(id)
   recordPersonnelEvent({
     staffId: before.staff_id,
@@ -1635,6 +1640,7 @@ export function deleteOvertimeService(id, userId, reason = null) {
     reason: String(reason || '').trim() || 'Fazla mesai kaydi silindi',
     actorUserId: userId,
   })
+  resetDailyApprovalsForDates([before.work_date], userId)
 }
 
 export function overtimeSummaryService(month) {
@@ -2730,6 +2736,9 @@ export function acceptSwapService(id, targetId) {
 }
 
 export function approveSwapService(id, userId) {
+  ensureSwapTable()
+  const pending = getDB().prepare('SELECT swap_date FROM shift_swap_requests WHERE id=?').get(id)
+  if (pending) assertPeriodsUnlocked([pending.swap_date])
   const row = approveSwapRequest(id, userId)
   resetDailyApprovalsForDates([row.swap_date], userId)
   return row
@@ -2741,13 +2750,26 @@ export function rejectSwapService(id, userId) {
 
 export function copyWeekService(sourceWeek, targetWeek, userId) {
   if (!sourceWeek || !targetWeek) throw new Error('Kaynak ve hedef hafta gerekli')
-  return copyWeekSchedule(sourceWeek, targetWeek, userId)
+  if (!isIsoDate(sourceWeek) || !isIsoDate(targetWeek)) throw new Error('Haftalar YYYY-AA-GG biçiminde olmalı')
+  // Kopyanın yazacağı günler: kaynak haftada kaydı olan günlerin hedefteki karşılığı.
+  const dayDiff = Math.round((Date.parse(`${targetWeek}T12:00:00Z`) - Date.parse(`${sourceWeek}T12:00:00Z`)) / 86400000)
+  const targetDates = getDB().prepare('SELECT DISTINCT work_date FROM shift_schedule WHERE work_date BETWEEN ? AND ?')
+    .all(sourceWeek, addIsoDays(sourceWeek, 6)).map(r => addIsoDays(r.work_date, dayDiff))
+  assertPeriodsUnlocked(targetDates)
+  const count = copyWeekSchedule(sourceWeek, targetWeek, userId)
+  resetDailyApprovalsForDates(targetDates, userId)
+  return count
 }
 
 export function rotationService(data, userId) {
   if (!data.staff_ids?.length || !data.shift_def_ids?.length || !data.start_date || !data.weeks)
     throw new Error('Zorunlu alanlar eksik')
-  return applyRotationTemplate(data.staff_ids, data.dept_id, data.shift_def_ids, data.start_date, data.weeks, userId)
+  if (!isIsoDate(data.start_date)) throw new Error('start_date YYYY-AA-GG biçiminde olmalı')
+  const dates = Array.from({ length: Math.max(0, Number(data.weeks) || 0) * 7 }, (_, i) => addIsoDays(data.start_date, i))
+  assertPeriodsUnlocked(dates)
+  const count = applyRotationTemplate(data.staff_ids, data.dept_id, data.shift_def_ids, data.start_date, data.weeks, userId)
+  resetDailyApprovalsForDates(dates, userId)
+  return count
 }
 
 // ── Faz 30: İsimli rotasyon şablonları + kural uyarıları ──

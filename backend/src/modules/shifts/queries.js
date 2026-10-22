@@ -930,9 +930,11 @@ export function getPayrollDetailed(yearMonth) {
     LEFT JOIN (
       ${puantajUnitsSubquery()}
     ) u ON u.staff_id = s.id
-    WHERE s.is_active = 1
+    -- Ay içinde ayrılan (pasif) personel de çalıştığı günler için bordroda yer alır (puantajla aynı kural).
+    WHERE (s.is_active = 1 OR COALESCE(u.total_days, 0) > 0
+      OR EXISTS (SELECT 1 FROM overtime_records pot WHERE pot.staff_id = s.id AND pot.work_date >= ? AND pot.work_date < ?))
     ORDER BY d.name, s.full_name
-  `).all(start, end, start, end, start, end, yearMonth, start, endInclusive)
+  `).all(start, end, start, end, start, end, yearMonth, start, endInclusive, start, end)
 }
 
 // H4 V7 — Bordro export (kişi başı aylık özet) — puantaj kod etkileriyle
@@ -963,9 +965,11 @@ export function getPayrollExport(yearMonth) {
     LEFT JOIN (
       ${puantajUnitsSubquery()}
     ) u ON u.staff_id = s.id
-    WHERE s.is_active = 1
+    -- Ay içinde ayrılan (pasif) personel de çalıştığı günler için bordroda yer alır (puantajla aynı kural).
+    WHERE (s.is_active = 1 OR COALESCE(u.total_days, 0) > 0
+      OR EXISTS (SELECT 1 FROM overtime_records pot WHERE pot.staff_id = s.id AND pot.work_date >= ? AND pot.work_date < ?))
     ORDER BY d.name, s.full_name
-  `).all(start, end, start, end, start, endInclusive)
+  `).all(start, end, start, end, start, endInclusive, start, end)
 }
 
 // H4 V8 — Birleşik devamsızlık (vardiya absent + transport no-show)
@@ -4075,7 +4079,9 @@ export function getStaffDayBreakdown(staffId, monthStart, monthEnd) {
       ss.attachment_name,
       ss.attachment_mime,
       (SELECT COUNT(*) FROM leave_documents ld WHERE ld.schedule_id=ss.id) as document_count,
-      ot.hours as overtime_hours,
+      -- Aynı güne birden çok FM kaydı olabilir (puantaj girişi + onaylı talep): toplanır, gün satırı çoğalmaz.
+      (SELECT SUM(ot.hours) FROM overtime_records ot
+        WHERE ot.staff_id = ss.staff_id AND ot.work_date = ss.work_date) as overtime_hours,
       CASE WHEN adr.id IS NOT NULL THEN 'card_kiosk' ELSE 'manual' END as attendance_source,
       adr.result_status as reconciliation_status,
       adr.reason_code as reconciliation_reason,
@@ -4092,8 +4098,6 @@ export function getStaffDayBreakdown(staffId, monthStart, monthEnd) {
     LEFT JOIN leave_requests lr ON lr.staff_id = ss.staff_id
       AND lr.status = 'approved'
       AND ss.work_date BETWEEN lr.start_date AND lr.end_date
-    LEFT JOIN overtime_records ot ON ot.staff_id = ss.staff_id
-      AND ot.work_date = ss.work_date
     LEFT JOIN attendance_daily_reconciliations adr ON adr.id = (
       SELECT latest_adr.id
       FROM attendance_daily_reconciliations latest_adr
@@ -4139,7 +4143,9 @@ export function getPuantajDayRows(monthStart, monthEnd, deptId, projectId = null
       ss.attachment_name,
       ss.attachment_mime,
       (SELECT COUNT(*) FROM leave_documents ld WHERE ld.schedule_id=ss.id) as document_count,
-      ot.hours as overtime_hours,
+      -- Aynı güne birden çok FM kaydı olabilir (puantaj girişi + onaylı talep): toplanır, gün satırı çoğalmaz.
+      (SELECT SUM(ot.hours) FROM overtime_records ot
+        WHERE ot.staff_id = ss.staff_id AND ot.work_date = ss.work_date) as overtime_hours,
       CASE WHEN adr.id IS NOT NULL THEN 'card_kiosk' ELSE 'manual' END as attendance_source,
       adr.result_status as reconciliation_status,
       adr.reason_code as reconciliation_reason,
@@ -4167,8 +4173,6 @@ export function getPuantajDayRows(monthStart, monthEnd, deptId, projectId = null
     LEFT JOIN leave_requests lr ON lr.staff_id = ss.staff_id
       AND lr.status = 'approved'
       AND ss.work_date BETWEEN lr.start_date AND lr.end_date
-    LEFT JOIN overtime_records ot ON ot.staff_id = ss.staff_id
-      AND ot.work_date = ss.work_date
     LEFT JOIN attendance_daily_reconciliations adr ON adr.id = (
       SELECT latest_adr.id
       FROM attendance_daily_reconciliations latest_adr
