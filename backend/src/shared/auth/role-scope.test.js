@@ -145,10 +145,13 @@ describe('PATCH /api/notifications/:id/read', () => {
     `).run().lastInsertRowid
     const res = await request(app).patch(`/api/notifications/${id}/read`).set(auth(housekeeper))
     expect(res.status).toBe(403)
-    expect(db.prepare('SELECT is_read FROM notifications WHERE id=?').get(id).is_read).toBe(0)
+    expect(db.prepare('SELECT COUNT(*) c FROM notification_reads WHERE notification_id=?').get(id).c).toBe(0)
 
     const ok = await request(app).patch(`/api/notifications/${id}/read`).set(auth(manager))
     expect(ok.status).toBe(200)
-    expect(db.prepare('SELECT is_read FROM notifications WHERE id=?').get(id).is_read).toBe(1)
+    // Okuma kişiye özel (migration 124): müdürün listesinde okundu, paylaşımlı kolon değişmez
+    const list = await request(app).get('/api/notifications').set(auth(manager))
+    expect(list.body.find(n => n.id === id).is_read).toBe(1)
+    expect(db.prepare('SELECT is_read FROM notifications WHERE id=?').get(id).is_read).toBe(0)
   })
 })
