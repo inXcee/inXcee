@@ -3,6 +3,8 @@ import { randomBytes } from 'crypto'
 import { unlinkSync } from 'node:fs'
 import { requireAvsKiosk } from '../../shared/auth/middleware.js'
 import { getDB } from '../../shared/db/index.js'
+import { istanbulNowNaive } from '../../shared/time.js'
+import { ACTIVE_ANNOUNCEMENT_SQL } from '../announcements/queries.js'
 import { createRequest } from '../maintenance/queries.js'
 import { changeStaffKioskPin, issueAvsKioskSession } from '../../shared/auth/service.js'
 import { logger } from '../../shared/logger.js'
@@ -269,9 +271,9 @@ avsSelfServiceRouter.get('/overview', requireAvsKiosk, (req, res) => {
     const announcements = db.prepare(`
       SELECT id, title, body, created_at
       FROM announcements
-      WHERE expires_at IS NULL OR expires_at>datetime('now')
+      WHERE ${ACTIVE_ANNOUNCEMENT_SQL}
       ORDER BY created_at DESC LIMIT 2
-    `).all()
+    `).all(istanbulNowNaive())
 
     res.json({
       role_group: group,
@@ -752,10 +754,10 @@ avsSelfServiceRouter.get('/announcements', requireAvsKiosk, (req, res) => {
     const rows = db.prepare(`
       SELECT id, title, body, created_at
       FROM announcements
-      WHERE expires_at IS NULL OR expires_at > datetime('now')
+      WHERE ${ACTIVE_ANNOUNCEMENT_SQL}
       ORDER BY created_at DESC
       LIMIT 30
-    `).all()
+    `).all(istanbulNowNaive())
     res.json(rows)
   } catch (e) { logger.error('[avs announcements]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
@@ -786,9 +788,9 @@ function buildWorkerFeed(db, workerId, limit = 30) {
   const ann = db.prepare(`
     SELECT id, title, body, created_at AS ts
     FROM announcements
-    WHERE expires_at IS NULL OR expires_at > datetime('now')
+    WHERE ${ACTIVE_ANNOUNCEMENT_SQL}
     ORDER BY created_at DESC LIMIT ?
-  `).all(limit).map(r => ({ kind: 'announcement', ...r }))
+  `).all(istanbulNowNaive(), limit).map(r => ({ kind: 'announcement', ...r }))
 
   return [...leave, ...maint, ...ann]
     .filter(x => x.ts)

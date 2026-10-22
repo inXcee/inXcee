@@ -1,4 +1,5 @@
 import { getDB } from '../../shared/db/index.js'
+import { istanbulDate } from '../../shared/time.js'
 
 // Değerlendirme boyutları — total_score bunların ortalamasıdır.
 const REVIEW_DIMENSIONS = ['productivity', 'teamwork', 'attendance', 'attitude', 'skills', 'initiative', 'reliability', 'communication']
@@ -103,8 +104,8 @@ export function goalAchievement(db = getDB()) {
     SELECT COUNT(*) AS c FROM performance_goals
     WHERE status IN ('open','in_progress')
       AND target_date IS NOT NULL
-      AND date(target_date) < date('now')
-  `).get().c
+      AND date(target_date) < ?
+  `).get(istanbulDate()).c
 
   return {
     open: counts.open,

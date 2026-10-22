@@ -47,11 +47,11 @@ export function listVehicles({ includeInactive = true } = {}) {
     SELECT v.*,
       (SELECT COUNT(*) FROM routes r WHERE r.default_vehicle_id=v.id) AS route_count,
       (SELECT COUNT(*) FROM transport_trips t
-        WHERE t.vehicle_id=v.id AND t.work_date>=date('now') AND t.status<>'cancelled') AS upcoming_trip_count
+        WHERE t.vehicle_id=v.id AND t.work_date>=? AND t.status<>'cancelled') AS upcoming_trip_count
     FROM transport_vehicles v
     ${where}
     ORDER BY CASE v.status WHEN 'active' THEN 0 ELSE 1 END, v.plate
-  `).all()
+  `).all(istanbulDate())
 }
 
 export function createVehicle(data) {
@@ -93,11 +93,11 @@ export function listDrivers({ includeInactive = true } = {}) {
     SELECT d.*,
       (SELECT COUNT(*) FROM routes r WHERE r.default_driver_id=d.id) AS route_count,
       (SELECT COUNT(*) FROM transport_trips t
-        WHERE t.driver_id=d.id AND t.work_date>=date('now') AND t.status<>'cancelled') AS upcoming_trip_count
+        WHERE t.driver_id=d.id AND t.work_date>=? AND t.status<>'cancelled') AS upcoming_trip_count
     FROM transport_drivers d
     ${where}
     ORDER BY CASE d.status WHEN 'active' THEN 0 ELSE 1 END, d.full_name
-  `).all()
+  `).all(istanbulDate())
 }
 
 export function createDriver(data) {

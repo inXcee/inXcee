@@ -7,7 +7,7 @@ import fs from 'fs'
 import { getOccupancyReport, getMaintenanceReport, getHousekeepingReport } from '../reports/service.js'
 import { getDB } from '../../shared/db/index.js'
 import { logger } from '../../shared/logger.js'
-import { istanbulDate } from '../../shared/time.js'
+import { istanbulDate, istanbulDayBoundsUtc } from '../../shared/time.js'
 
 function getSmtpConfig() {
   return {
@@ -249,10 +249,12 @@ export function buildReportHtml(sections) {
   const housekeeping = has('housekeeping') ? getHousekeepingReport(today)  : null
 
   const db = getDB()
-  const checkinsToday = has('checkinout') ? (db.prepare(`SELECT COUNT(*) as c FROM room_assignments WHERE DATE(assigned_at)=DATE('now')`).get()?.c ?? 0) : 0
-  const checkoutsToday = has('checkinout') ? (db.prepare(`SELECT COUNT(*) as c FROM room_assignments WHERE DATE(check_out_at)=DATE('now')`).get()?.c ?? 0) : 0
+  // Zaman damgaları UTC metin; 'bugün' İstanbul günü (DATE('now') UTC'dir)
+  const day = istanbulDayBoundsUtc()
+  const checkinsToday = has('checkinout') ? (db.prepare(`SELECT COUNT(*) as c FROM room_assignments WHERE assigned_at >= ? AND assigned_at < ?`).get(day.from, day.to)?.c ?? 0) : 0
+  const checkoutsToday = has('checkinout') ? (db.prepare(`SELECT COUNT(*) as c FROM room_assignments WHERE check_out_at >= ? AND check_out_at < ?`).get(day.from, day.to)?.c ?? 0) : 0
   const laundryPending = has('laundry') ? (db.prepare(`SELECT COUNT(*) as c FROM laundry_items WHERE status NOT IN ('delivered','lost')`).get()?.c ?? 0) : 0
-  const laundryDeliveredToday = has('laundry') ? (db.prepare(`SELECT COUNT(*) as c FROM laundry_items WHERE status='delivered' AND DATE(updated_at)=DATE('now')`).get()?.c ?? 0) : 0
+  const laundryDeliveredToday = has('laundry') ? (db.prepare(`SELECT COUNT(*) as c FROM laundry_items WHERE status='delivered' AND updated_at >= ? AND updated_at < ?`).get(day.from, day.to)?.c ?? 0) : 0
 
   const dolulukOrani = occupancy
     ? (occupancy.totals.yatak > 0 ? Math.round((occupancy.totals.dolu / occupancy.totals.yatak) * 100) : 0)

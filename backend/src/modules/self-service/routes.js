@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { unlinkSync } from 'node:fs'
 import { requireAuth, requireKioskOrStaff, requireLaundryKioskOperator } from '../../shared/auth/middleware.js'
 import { getDB } from '../../shared/db/index.js'
+import { ACTIVE_ANNOUNCEMENT_SQL } from '../announcements/queries.js'
 import { createRequest } from '../maintenance/queries.js'
 import { changeKioskPin, issuePersonnelKioskSession } from '../../shared/auth/service.js'
 import { createLeaveService } from '../shifts/service.js'
@@ -26,7 +27,7 @@ import { sendFoundMessage } from '../laundry/whatsapp.js'
 import { createImageUpload, verifyMagicBytes } from '../../shared/uploads/middleware.js'
 import { logger } from '../../shared/logger.js'
 import { getStaffTransport } from '../transport/self-service.js'
-import { istanbulDate } from '../../shared/time.js'
+import { istanbulDate, istanbulNowNaive } from '../../shared/time.js'
 import {
   finalizeHandover, getCurrentHandover, getLoadSuggestions, listHandoverWorkers,
   markLoadProgress, startHandover, startMachineLoad,
@@ -326,9 +327,9 @@ selfServiceRouter.get('/my-shifts', requireKioskOrStaff, (req, res) => {
         )) END as leave_type
       FROM shift_schedule ss
       LEFT JOIN shift_definitions sd ON sd.id = ss.shift_def_id
-      WHERE ss.staff_id = ? AND ss.work_date BETWEEN date('now','-7 days') AND date('now','+14 days')
+      WHERE ss.staff_id = ? AND ss.work_date BETWEEN date(?, '-7 days') AND date(?, '+14 days')
       ORDER BY ss.work_date
-    `).all(staff.id)
+    `).all(staff.id, istanbulDate(), istanbulDate())
 
     const summary = db.prepare(`
       SELECT
@@ -337,8 +338,8 @@ selfServiceRouter.get('/my-shifts', requireKioskOrStaff, (req, res) => {
         SUM(CASE WHEN status='on_leave' THEN 1 ELSE 0 END) as on_leave,
         SUM(CASE WHEN status='off' THEN 1 ELSE 0 END) as off,
         COUNT(*) as total
-      FROM shift_schedule WHERE staff_id = ? AND work_date BETWEEN date('now','-30 days') AND date('now')
-    `).get(staff.id)
+      FROM shift_schedule WHERE staff_id = ? AND work_date BETWEEN date(?, '-30 days') AND ?
+    `).get(staff.id, istanbulDate(), istanbulDate())
 
     res.json({ shifts, summary })
   } catch (e) { logger.error('[my-shifts]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
@@ -515,9 +516,9 @@ selfServiceRouter.get('/announcements', requireKioskOrStaff, (req, res) => {
     const rows = db.prepare(`
       SELECT id, title, body, created_at
       FROM announcements
-      WHERE expires_at IS NULL OR expires_at > datetime('now')
+      WHERE ${ACTIVE_ANNOUNCEMENT_SQL}
       ORDER BY created_at DESC
-    `).all()
+    `).all(istanbulNowNaive())
     res.json(rows)
   } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })

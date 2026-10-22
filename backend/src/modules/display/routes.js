@@ -1,5 +1,7 @@
 import { Router } from 'express'
 import { getDB } from '../../shared/db/index.js'
+import { istanbulDayBoundsUtc, istanbulNowNaive } from '../../shared/time.js'
+import { ACTIVE_ANNOUNCEMENT_SQL } from '../announcements/queries.js'
 import { logger } from '../../shared/logger.js'
 import { localDay } from '../meals/service.js'
 
@@ -39,21 +41,24 @@ displayRouter.get('/snapshot', (_req, res) => {
       SELECT COUNT(*) AS c FROM maintenance_requests WHERE status NOT IN ('done')
     `).get().c
 
+    // created/check_in_date UTC metin; 'bugün' İstanbul günüdür
+    const today = istanbulDayBoundsUtc()
     const todayCheckIn = db.prepare(`
-      SELECT COUNT(*) AS c FROM personnel WHERE date(check_in_date)=date('now')
-    `).get().c
+      SELECT COUNT(*) AS c FROM personnel WHERE check_in_date >= ? AND check_in_date < ?
+    `).get(today.from, today.to).c
 
     const todayCheckOut = db.prepare(`
-      SELECT COUNT(*) AS c FROM personnel WHERE date(check_out_date)=date('now')
-    `).get().c
+      SELECT COUNT(*) AS c FROM personnel WHERE check_out_date >= ? AND check_out_date < ?
+    `).get(today.from, today.to).c
 
     let announcements = []
     try {
       announcements = db.prepare(`
         SELECT title, body, created_at FROM announcements
-        WHERE (active_until IS NULL OR active_until >= date('now'))
+        -- Eskiden olmayan 'active_until' kolonu soruluyordu: sorgu hep hata verip ekranda duyuru hiç çıkmıyordu.
+        WHERE ${ACTIVE_ANNOUNCEMENT_SQL}
         ORDER BY created_at DESC LIMIT 5
-      `).all()
+      `).all(istanbulNowNaive())
     } catch { /* announcements tablosu eski semadan yoksa atla */ }
 
     let activeVisitors = 0
@@ -63,7 +68,7 @@ displayRouter.get('/snapshot', (_req, res) => {
 
     let upcomingDrill = null
     try {
-      const ud = db.prepare("SELECT drill_type, next_drill_date FROM drills WHERE next_drill_date >= date('now') ORDER BY next_drill_date LIMIT 1").get()
+      const ud = db.prepare("SELECT drill_type, next_drill_date FROM drills WHERE next_drill_date >= ? ORDER BY next_drill_date LIMIT 1").get(today.day)
       if (ud) upcomingDrill = ud
     } catch {}
 
