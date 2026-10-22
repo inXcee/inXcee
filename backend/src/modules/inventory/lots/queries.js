@@ -1,5 +1,6 @@
 import { getDB } from '../../../shared/db/index.js'
 import { logger } from '../../../shared/logger.js'
+import { istanbulDate } from '../../../shared/time.js'
 
 export function listLotsForItem(itemId) {
   return getDB().prepare(`
@@ -38,13 +39,13 @@ export function setLotStatus(lotId, status) {
   return { ok: true }
 }
 
-// SKT gecmis active lotlari otomatik expired isaretle
-export function expirePastLots() {
+// SKT gecmis active lotlari otomatik expired isaretle. 'Bugün' İstanbul günüdür (date('now') UTC'dir).
+export function expirePastLots(today = istanbulDate()) {
   const db = getDB()
   const due = db.prepare(`
     SELECT id FROM inventory_lots
-    WHERE status = 'active' AND expiry_date IS NOT NULL AND expiry_date < date('now')
-  `).all()
+    WHERE status = 'active' AND expiry_date IS NOT NULL AND expiry_date < ?
+  `).all(today)
   for (const { id } of due) {
     try { setLotStatus(id, 'expired') } catch (e) { logger.error('[expirePastLots]', id, e.message) }
   }
@@ -59,18 +60,20 @@ export function createLot(data) {
   return r.lastInsertRowid
 }
 
-export function listExpiring(daysAhead = 30) {
+// days_left takvim günüdür (SKT − bugün). Eskiden julianday('now') saatiyle çıkarılıp aşağı yuvarlanıyordu:
+// 06:00 kontrolünde yarın bitecek lot "0 gün → SKT geçti" (kritik), 2 gün kalan "1 gün" görünüyordu.
+export function listExpiring(daysAhead = 30, today = istanbulDate()) {
   return getDB().prepare(`
     SELECT l.*, i.item_name, i.unit, s.name as supplier_name,
-      CAST(julianday(l.expiry_date) - julianday('now') AS INTEGER) as days_left
+      CAST(julianday(l.expiry_date) - julianday(?) AS INTEGER) as days_left
     FROM inventory_lots l
     JOIN inventory i ON i.id = l.item_id
     LEFT JOIN suppliers s ON s.id = l.supplier_id
     WHERE l.status = 'active'
       AND l.expiry_date IS NOT NULL
-      AND l.expiry_date <= date('now', '+' || ? || ' days')
+      AND l.expiry_date <= date(?, '+' || ? || ' days')
     ORDER BY l.expiry_date
-  `).all(daysAhead)
+  `).all(today, today, daysAhead)
 }
 
 // FIFO: track_lots=1 urunlerde stok cikisinda en eski active lot'tan tuket.

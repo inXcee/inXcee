@@ -12,7 +12,7 @@ import { checkExpiringContracts } from '../../modules/hr/contractAlerts.js'
 import { getEmailSettings } from '../../modules/email/queries.js'
 import { sendMorningReport } from '../../modules/email/service.js'
 import { buildMonthlyReport, generateMonthlyPDF } from '../../modules/inventory/analytics/routes.js'
-import { expirePastLots } from '../../modules/inventory/lots/service.js'
+import { expirePastLots, expiring as listExpiringLots } from '../../modules/inventory/lots/service.js'
 import { checkCertExpiries } from '../../modules/safety/service.js'
 import { runDisciplineAutomation } from '../../modules/discipline/automation.js'
 import { logAudit } from '../audit.js'
@@ -70,6 +70,46 @@ function withLock(name, fn) {
   }
 }
 
+// Eşiğin altına inen ürün → müdüre günde bir uyarı. Eşiği tanımlanmamış (0) ürün uyarı üretmez:
+// eskiden "quantity <= reorder_threshold" 0 ≤ 0 yüzünden stoğu biten her eşiksiz ürünü her gün
+// "kritik seviyede" diye bildiriyordu (stok hareketindeki uyarı zaten reorder_threshold > 0 ister).
+export function checkInventoryLowStock() {
+  const low = getDB().prepare('SELECT * FROM inventory WHERE reorder_threshold > 0 AND quantity <= reorder_threshold').all()
+  for (const item of low) {
+    createNotification({
+      message: `Stok uyarısı: ${item.item_name} kritik seviyede (${item.quantity} ${item.unit})`,
+      type: 'warning', module: 'inventory', target_role: 'campus_manager',
+      dedup_key: `stock_low_${item.id}_${istanbulDate()}`,
+    })
+  }
+  return low.length
+}
+
+// Son kullanma tarihi 30 gün içinde olan lotlar → müdüre günlük uyarı. Önce SKT'si geçmiş lotlar
+// otomatik 'expired' olur (stoktan düşülür). Gün hesabı listExpiring'in takvim günü (SKT − bugün).
+export function checkLotExpiryAlerts() {
+  try {
+    const expired = expirePastLots()
+    if (expired > 0) logger.info('[Cron] auto-expired', expired, 'lots')
+  } catch (e) { logger.error('[Cron] expirePastLots:', e.message) }
+
+  const today = istanbulDate()
+  const lots = listExpiringLots(30)
+  for (const lot of lots) {
+    const what = `${lot.item_name} (lot ${lot.lot_no || lot.id}) — ${lot.quantity} ${lot.unit}`
+    const msg = lot.days_left < 0 ? `Son kullanma gecti: ${what}`
+      : lot.days_left === 0 ? `Son kullanma bugün: ${what}`
+        : `Son kullanmaya ${lot.days_left} gun: ${what}`
+    createNotification({
+      message: msg,
+      type: lot.days_left <= 7 ? 'critical' : 'warning',
+      module: 'inventory', target_role: 'campus_manager',
+      dedup_key: `expiry_${lot.id}_${today}`,
+    })
+  }
+  return lots.length
+}
+
 export function startCronJobs() {
   cron.schedule('*/5 * * * *', withLock('transport-upcoming', () => {
     notifyUpcomingTrips()
@@ -86,17 +126,7 @@ export function startCronJobs() {
 
   // Her saat stok kontrolü
   cron.schedule('0 * * * *', () => {
-    try {
-      const db = getDB()
-      const low = db.prepare('SELECT * FROM inventory WHERE quantity <= reorder_threshold').all()
-      low.forEach(item => {
-        createNotification({
-          message: `Stok uyarısı: ${item.item_name} kritik seviyede (${item.quantity} ${item.unit})`,
-          type: 'warning', module: 'inventory', target_role: 'campus_manager',
-          dedup_key: `stock_low_${item.id}_${istanbulDate()}`,
-        })
-      })
-    } catch (e) { logger.error('[Cron] Stok cron hatası:', e) }
+    try { checkInventoryLowStock() } catch (e) { logger.error('[Cron] Stok cron hatası:', e) }
   }, TZ)
 
   // Tır hatırlatma aralıkları 15 dakikaya kadar düşebildiği için her dakika tara.
@@ -227,35 +257,7 @@ export function startCronJobs() {
 
   // Her gün 06:00 — son kullanma 30 gün altı lot uyarısı (campus_manager)
   cron.schedule('0 6 * * *', withLock('lot-expiry', () => {
-    try {
-      // Once SKT gecmis lotlari otomatik expired isaretle (stoktan dusulur, hareket kaydi atilir)
-      try {
-        const expired = expirePastLots()
-        if (expired > 0) logger.info('[Cron] auto-expired', expired, 'lots')
-      } catch (e) { logger.error('[Cron] expirePastLots:', e.message) }
-
-      const db = getDB()
-      const today = istanbulDate()
-      const lots = db.prepare(`
-        SELECT l.id, l.lot_no, l.expiry_date, i.item_name, i.unit, l.quantity,
-          CAST(julianday(l.expiry_date) - julianday('now') AS INTEGER) as days_left
-        FROM inventory_lots l JOIN inventory i ON i.id = l.item_id
-        WHERE l.status = 'active'
-          AND l.expiry_date IS NOT NULL
-          AND l.expiry_date <= date('now', '+30 days')
-      `).all()
-      lots.forEach(lot => {
-        const msg = lot.days_left <= 0
-          ? `Son kullanma gecti: ${lot.item_name} (lot ${lot.lot_no || lot.id}) — ${lot.quantity} ${lot.unit}`
-          : `Son kullanmaya ${lot.days_left} gun: ${lot.item_name} (lot ${lot.lot_no || lot.id}) — ${lot.quantity} ${lot.unit}`
-        createNotification({
-          message: msg,
-          type: lot.days_left <= 7 ? 'critical' : 'warning',
-          module: 'inventory', target_role: 'campus_manager',
-          dedup_key: `expiry_${lot.id}_${today}`,
-        })
-      })
-    } catch (e) { logger.error('[Cron] Lot expiry hatasi:', e.message) }
+    try { checkLotExpiryAlerts() } catch (e) { logger.error('[Cron] Lot expiry hatasi:', e.message) }
   }), TZ)
 
   // Her gün 06:10 — sertifika vade uyarısı (60/30/14/7/1/0 gün eşikleri)

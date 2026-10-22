@@ -607,14 +607,41 @@ describe('SLA engine', () => {
     const db = getDB()
     const id = db.prepare(`INSERT INTO laundry_items(room_id, status, item_count, created_at, updated_at)
       VALUES(?, 'ready', 2, datetime('now','-100 hours'), datetime('now','-100 hours'))`).run(roomId).lastInsertRowid
+    // Rol başına bir satır (vardiya amiri + çamaşırcı + müdür)
     const sent = () => db.prepare("SELECT COUNT(*) c FROM notifications WHERE dedup_key LIKE ?").get(`sla_${id}_crit_w%`).c
 
     await checkSlaViolations()
-    expect(sent()).toBe(1)
+    expect(sent()).toBe(3)
     db.prepare("UPDATE notifications SET created_at=datetime('now','-1 day') WHERE dedup_key LIKE ?").run(`sla_${id}_crit_w%`)
     _resetDedupWindowForTests()
     await checkSlaViolations()
-    expect(sent()).toBe(1)
+    expect(sent()).toBe(3)
+    db.prepare("UPDATE laundry_items SET status='delivered' WHERE id=?").run(id)
+  })
+
+  // Canlı Eki 2026: kritik SLA hedefsiz (herkese) gidiyordu — kat görevlisi / teknisyen de rafta unutulan
+  // torbaların uyarısını her hafta görüyordu; SLA uyarısı ise çamaşırcıya hiç gitmiyordu.
+  it('kritik SLA yalnız çamaşır/yönetim rollerine gider, herkese yayınlanmaz', async () => {
+    const { checkSlaViolations } = await import('./sla.js')
+    const db = getDB()
+    const id = db.prepare(`INSERT INTO laundry_items(room_id, status, item_count, created_at, updated_at)
+      VALUES(?, 'dirty', 1, datetime('now','-60 hours'), datetime('now','-60 hours'))`).run(roomId).lastInsertRowid
+    await checkSlaViolations()
+    const roles = db.prepare("SELECT target_role FROM notifications WHERE dedup_key LIKE ? ORDER BY target_role")
+      .all(`sla_${id}_crit_%`).map(r => r.target_role)
+    expect(roles).toEqual(['campus_manager', 'laundry', 'shift_supervisor'])
+    db.prepare("UPDATE laundry_items SET status='delivered' WHERE id=?").run(id)
+  })
+
+  it('SLA uyarısı çamaşırcıya da gider (eskiden yalnız vardiya amirine)', async () => {
+    const { checkSlaViolations } = await import('./sla.js')
+    const db = getDB()
+    const id = db.prepare(`INSERT INTO laundry_items(room_id, status, item_count, created_at, updated_at)
+      VALUES(?, 'ready', 1, datetime('now','-30 hours'), datetime('now','-30 hours'))`).run(roomId).lastInsertRowid
+    await checkSlaViolations()
+    const roles = db.prepare("SELECT target_role FROM notifications WHERE dedup_key LIKE ? ORDER BY target_role")
+      .all(`sla_${id}_warn_%`).map(r => r.target_role)
+    expect(roles).toEqual(['laundry', 'shift_supervisor'])
     db.prepare("UPDATE laundry_items SET status='delivered' WHERE id=?").run(id)
   })
 

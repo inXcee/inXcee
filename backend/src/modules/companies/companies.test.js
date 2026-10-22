@@ -101,3 +101,26 @@ describe('Companies — CRUD', () => {
     expect(res.status).toBe(200)
   })
 })
+
+// Ekim 2026 taraması: gün farkı julianday('now') saatiyle hesaplanınca bugün biten sözleşme "süresi dolmuş",
+// yarın biten "0 gün" görünüyordu. today parametresiyle saatten bağımsız sınanır.
+describe('Firma sözleşme bitişi — takvim günü', () => {
+  it('bugün biten 0 gün, yarın biten 1 gün; bugün biten süresi dolmuş sayılmaz', async () => {
+    const { getDB } = await import('../../shared/db/index.js')
+    const { expiringContracts, companyStats } = await import('./queries.js')
+    const db = getDB()
+    const ins = db.prepare("INSERT INTO companies(name, contract_end, is_active) VALUES(?, ?, 1)")
+    const bugun = Number(ins.run('Bugün Biten Firma', '2031-03-10').lastInsertRowid)
+    const yarin = Number(ins.run('Yarın Biten Firma', '2031-03-11').lastInsertRowid)
+    const dun = Number(ins.run('Dün Biten Firma', '2031-03-09').lastInsertRowid)
+
+    const rows = Object.fromEntries(expiringContracts(30, '2031-03-10').map(r => [r.id, r.days_left]))
+    expect(rows[bugun]).toBe(0)
+    expect(rows[yarin]).toBe(1)
+    expect(rows[dun]).toBe(-1)
+
+    const before = companyStats('2031-03-10').expired
+    db.prepare('UPDATE companies SET contract_end=? WHERE id=?').run('2031-03-10', dun)
+    expect(companyStats('2031-03-10').expired).toBe(before - 1)
+  })
+})

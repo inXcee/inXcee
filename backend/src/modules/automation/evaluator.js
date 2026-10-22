@@ -1,5 +1,6 @@
 import { getDB } from '../../shared/db/index.js'
 import { logger } from '../../shared/logger.js'
+import { istanbulDate } from '../../shared/time.js'
 import { getOverdueInside } from '../access/service.js'
 
 // Trigger evaluators — her biri true/false + measured value doner.
@@ -21,8 +22,8 @@ const TRIGGERS = {
     const r = db.prepare(`
       SELECT COUNT(*) AS c FROM companies
       WHERE is_active=1 AND contract_end IS NOT NULL
-        AND julianday(contract_end) - julianday('now') BETWEEN 0 AND ?
-    `).get(daysAhead)
+        AND julianday(contract_end) - julianday(?) BETWEEN 0 AND ?
+    `).get(istanbulDate(), daysAhead)
     return { firing: r.c > 0, value: r.c, unit: ' firma' }
   },
   maintenance_backlog(threshold) {
@@ -33,7 +34,7 @@ const TRIGGERS = {
   drill_overdue(maxDaysAgo) {
     const db = getDB()
     try {
-      const last = db.prepare(`SELECT julianday('now') - julianday(MAX(drill_date)) AS days FROM drills`).get()
+      const last = db.prepare(`SELECT julianday(?) - julianday(MAX(drill_date)) AS days FROM drills`).get(istanbulDate())
       const days = last?.days != null ? Math.floor(last.days) : 999
       return { firing: days > maxDaysAgo, value: days, unit: ' gun' }
     } catch { return { firing: false, value: 0, unit: '' } }
