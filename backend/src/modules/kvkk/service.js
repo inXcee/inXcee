@@ -48,9 +48,10 @@ export function setKvkkPolicyService(text) {
   return { ok: true }
 }
 
-// KVKK m.11 — silme/anonimleştirme: TC, pasaport, telefon ve fotoğraf
-// kalıcı olarak NULL yapılır. Kayıt silinmez (audit/raporlama bütünlüğü için);
-// ama kişi artık tanımlanabilir değildir.
+// KVKK m.11 — silme/anonimleştirme: TC, pasaport, telefon, fotoğraf, acil durum kişisi ve kişiyi
+// tanımlanabilir kılan diğer alanlar kalıcı olarak NULL yapılır. Kayıt silinmez (audit/raporlama
+// bütünlüğü için); ama kişi artık tanımlanabilir değildir. Küçük bir kampta memleket ve zimmet imzası
+// (canvas görüntüsü) kişiyi yeniden tanımlatabildiği için onlar da temizlenir; push aboneliği silinir.
 // Yalnızca check-out yapılmış personel anonimleştirilebilir.
 export function anonymizePersonnelDataService(personnelId, userId) {
   const db = getDB()
@@ -71,11 +72,16 @@ export function anonymizePersonnelDataService(personnelId, userId) {
           photo_url = NULL,
           emergency_name = NULL,
           emergency_phone = NULL,
-          kiosk_pin = NULL
+          kiosk_pin = NULL,
+          hometown = NULL,
+          blacklist_reason = NULL
       WHERE id = ?
     `).run(id)
-    // Kisisel notlar tablosu varsa metni temizle
-    try { db.prepare('UPDATE personnel_notes SET note = ? WHERE personnel_id = ?').run('[anonim]', id) } catch { /* tablo/kolon yoksa atla */ }
+    // Zimmet kaydı (ne verildi / iade) raporlama için kalır, imza görüntüsü kişisel veridir.
+    // (Eskiden olmayan bir 'personnel_notes' tablosu temizlenmeye çalışılıyordu — hiçbir şey yapmıyordu.)
+    db.prepare('UPDATE zimmet SET digital_signature = NULL WHERE personnel_id = ?').run(id)
+    db.prepare("UPDATE cards SET photo_url = NULL WHERE holder_type = 'personnel' AND holder_id = ?").run(id)
+    db.prepare('DELETE FROM push_subscriptions WHERE personnel_id = ?').run(id)
   })
   tx()
   return { ok: true, personnel_id: id, anonymized_at: new Date().toISOString(), by_user_id: userId }
@@ -107,14 +113,14 @@ export function enforceKvkkRetentionService() {
   if (!policy.enabled) return { processed: 0, skipped: true, reason: 'disabled' }
 
   const db = getDB()
-  const cutoff = new Date(Date.now() - policy.days * 86400000).toISOString()
-  // Adaylar: çıkış yapmış + cutoff'tan eski + henüz anonimleştirilmemiş
+  // Adaylar: çıkış yapmış + saklama süresi dolmuş + henüz anonimleştirilmemiş. check_out_date SQLite
+  // metni ('YYYY-MM-DD HH:MM:SS'); eskiden ISO ('…T…Z') ile kıyaslanıp sınır günü bütünüyle erken düşüyordu.
   const candidates = db.prepare(`
     SELECT id FROM personnel
     WHERE check_out_date IS NOT NULL
-      AND check_out_date < ?
+      AND check_out_date < datetime('now', ?)
       AND (full_name IS NULL OR full_name NOT LIKE 'Anonim #%')
-  `).all(cutoff)
+  `).all(`-${policy.days} days`)
 
   let processed = 0, errors = 0
   for (const { id } of candidates) {
@@ -143,37 +149,65 @@ export function exportPersonnelDataService(personnelId) {
   `).get(id)
   if (!personnel) return { error: 'Personel bulunamadı', status: 404 }
 
-  // Tüm ilişkili veriler — try/catch yetmediğinde tablonun yokluğuna karşı dirençli
-  const safe = (sql, params = []) => {
-    try { return db.prepare(sql).all(...params) } catch { return [] }
+  // Her bölüm ayrı okunur. Okunamayan bölüm artık sessizce boş liste değil: 'eksik_bolumler'de görünür
+  // ve loglanır. Eskiden hatalar yutuluyordu; yanlış kolon/tablo adları yüzünden oda atamaları
+  // (check_in_at yok → assigned_at), disiplin (discipline_cards yok → discipline_records) ve notlar
+  // (personnel_notes tablosu hiç yok) her talepte boş dönüyor, dışa aktarım eksik kalıyordu.
+  const eksik = []
+  const section = (name, sql) => {
+    try { return db.prepare(sql).all(id) } catch (e) {
+      eksik.push(name)
+      logger.error({ err: e.message, section: name }, '[KVKK export] bölüm okunamadı')
+      return []
+    }
   }
 
   return {
     exported_at: new Date().toISOString(),
     personnel,
-    room_assignments: safe(`
-      SELECT ra.*, r.block, r.room_no
+    room_assignments: section('room_assignments', `
+      SELECT ra.id, ra.room_id, r.block, r.room_no, ra.bed_no, ra.assigned_at, ra.check_out_at
       FROM room_assignments ra
       LEFT JOIN rooms r ON r.id = ra.room_id
       WHERE ra.personnel_id = ?
-      ORDER BY ra.check_in_at DESC
-    `, [id]),
-    maintenance_requests: safe(`
-      SELECT * FROM maintenance_requests WHERE reporter_personnel_id = ? ORDER BY opened_at DESC
-    `, [id]),
-    discipline_records: safe(`
-      SELECT * FROM discipline_cards WHERE personnel_id = ? ORDER BY issued_at DESC
-    `, [id]),
-    laundry_items: safe(`
-      SELECT li.* FROM laundry_items li
-      LEFT JOIN room_assignments ra ON ra.room_id = li.room_id
+      ORDER BY ra.assigned_at DESC
+    `),
+    zimmet: section('zimmet', 'SELECT * FROM zimmet WHERE personnel_id = ? ORDER BY created_at DESC'),
+    cards: section('cards', `
+      SELECT id, card_type, code, status, issued_at, revoked_at, valid_until
+      FROM cards WHERE holder_type = 'personnel' AND holder_id = ? ORDER BY issued_at DESC
+    `),
+    maintenance_requests: section('maintenance_requests',
+      'SELECT * FROM maintenance_requests WHERE reporter_personnel_id = ? ORDER BY opened_at DESC'),
+    discipline_records: section('discipline_records',
+      'SELECT * FROM discipline_records WHERE personnel_id = ? ORDER BY created_at DESC'),
+    feedback: section('feedback', 'SELECT * FROM feedback WHERE personnel_id = ? ORDER BY created_at DESC'),
+    satisfaction_surveys: section('satisfaction_surveys',
+      'SELECT * FROM satisfaction_surveys WHERE personnel_id = ? ORDER BY created_at DESC'),
+    inventory_checkouts: section('inventory_checkouts', `
+      SELECT ic.*, i.item_name FROM inventory_checkouts ic LEFT JOIN inventory i ON i.id = ic.item_id
+      WHERE ic.personnel_id = ? ORDER BY ic.checked_out_at DESC
+    `),
+    laundry_pickup_requests: section('laundry_pickup_requests',
+      'SELECT * FROM laundry_pickup_requests WHERE personnel_id = ? ORDER BY created_at DESC'),
+    laundry_card_scans: section('laundry_card_scans',
+      'SELECT * FROM laundry_card_scans WHERE personnel_id = ? ORDER BY created_at DESC'),
+    // Çamaşır torbası oda bazlıdır: yalnız kişinin O ODADA KALDIĞI süredeki kayıtlar ve başka sakinlere ait
+    // olabilecek kişisel alanlar (teslim eden/alan adı, imza, telefon, fotoğraf, not) olmadan. Eskiden
+    // kaldığı her odanın TÜM zamanlardaki torbaları, oda arkadaşlarının adı ve imzasıyla dışa aktarılıyordu.
+    laundry_items: section('laundry_items', `
+      SELECT DISTINCT li.id, r.block, r.room_no, li.status, li.item_count, li.bag_no,
+        li.created_at, li.collected_at, li.updated_at
+      FROM room_assignments ra
+      JOIN laundry_items li ON li.room_id = ra.room_id
+        AND li.created_at >= ra.assigned_at
+        AND (ra.check_out_at IS NULL OR li.created_at <= ra.check_out_at)
+      LEFT JOIN rooms r ON r.id = li.room_id
       WHERE ra.personnel_id = ?
-    `, [id]),
-    notes: safe(`
-      SELECT * FROM personnel_notes WHERE personnel_id = ? ORDER BY created_at DESC
-    `, [id]),
-    audit_log: safe(`
-      SELECT * FROM audit_log WHERE module='personnel' AND target_id = ? ORDER BY created_at DESC
-    `, [id]),
+      ORDER BY li.created_at DESC
+    `),
+    audit_log: section('audit_log',
+      "SELECT * FROM audit_log WHERE module='personnel' AND target_id = ? ORDER BY created_at DESC"),
+    eksik_bolumler: eksik,
   }
 }

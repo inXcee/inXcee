@@ -68,6 +68,29 @@ describe('KVKK — personnel export', () => {
     expect(res.headers['content-disposition']).toMatch(/attachment/)
   })
 
+  // Ekim 2026: yanlış kolon/tablo adları (check_in_at, discipline_cards, personnel_notes) yüzünden oda atamaları
+  // ve disiplin kayıtları her talepte sessizce BOŞ dönüyordu.
+  it('oda ataması, disiplin, zimmet bölümleri dolu gelir; okunamayan bölüm yok', async () => {
+    const db = getDB()
+    const pid = Number(db.prepare("INSERT INTO personnel(full_name, check_in_date) VALUES('KVKK Dolu', datetime('now','-10 days'))").run().lastInsertRowid)
+    const roomId = db.prepare("SELECT id FROM rooms WHERE status='active' LIMIT 1").get().id
+    db.prepare("INSERT INTO room_assignments(personnel_id, room_id, bed_no, assigned_by, assigned_at) VALUES(?, ?, 1, 1, datetime('now','-10 days'))").run(pid, roomId)
+    db.prepare("INSERT INTO discipline_records(personnel_id, card_type, reason, created_by) VALUES(?, 'yellow', 'gürültü', 1)").run(pid)
+    db.prepare("INSERT INTO zimmet(personnel_id, item_name, quantity, digital_signature, created_by) VALUES(?, 'Battaniye', 1, 'data:image/png;base64,AAA', 1)").run(pid)
+    // Oda arkadaşının kalıştan ÖNCEKİ torbası dışa aktarılmaz; kalış içindeki torbada başkasının adı yok
+    db.prepare("INSERT INTO laundry_items(room_id, status, item_count, intake_name, created_at) VALUES(?, 'delivered', 2, 'Eski Sakin', datetime('now','-40 days'))").run(roomId)
+    db.prepare("INSERT INTO laundry_items(room_id, status, item_count, intake_name, created_at) VALUES(?, 'dirty', 3, 'Oda Arkadaşı', datetime('now','-2 days'))").run(roomId)
+
+    const res = await request(app).get(`/api/kvkk/personnel/${pid}/export`).set('Authorization', `Bearer ${adminToken}`)
+    expect(res.status).toBe(200)
+    expect(res.body.eksik_bolumler).toEqual([])
+    expect(res.body.room_assignments).toHaveLength(1)
+    expect(res.body.discipline_records.map(d => d.reason)).toEqual(['gürültü'])
+    expect(res.body.zimmet.map(z => z.item_name)).toEqual(['Battaniye'])
+    expect(res.body.laundry_items.map(l => l.item_count)).toEqual([3])
+    expect(res.body.laundry_items[0]).not.toHaveProperty('intake_name')
+  })
+
   it('var olmayan personel 404 döner', async () => {
     const res = await request(app).get('/api/kvkk/personnel/99999/export')
       .set('Authorization', `Bearer ${adminToken}`)
@@ -108,6 +131,21 @@ describe('KVKK — anonymize (m.11)', () => {
     expect(after.tc_no).toBeNull()
     expect(after.phone_number).toBeNull()
     expect(after.full_name).toMatch(/^Anonim #/)
+  })
+
+  it('anonimleştirme memleket, zimmet imzası ve push aboneliğini de temizler; zimmet kaydı kalır', async () => {
+    const db = getDB()
+    const pid = Number(db.prepare(`INSERT INTO personnel(full_name, hometown, check_out_date)
+      VALUES('İmzalı Kişi', 'Çaycuma', datetime('now'))`).run().lastInsertRowid)
+    db.prepare("INSERT INTO zimmet(personnel_id, item_name, quantity, digital_signature, created_by) VALUES(?, 'Kask', 1, 'data:image/png;base64,BBB', 1)").run(pid)
+    db.prepare("INSERT INTO push_subscriptions(personnel_id, endpoint, auth_key, p256dh_key) VALUES(?, 'https://push.example/x', 'a', 'p')").run(pid)
+
+    const res = await request(app).post(`/api/kvkk/personnel/${pid}/anonymize`).set('Authorization', `Bearer ${adminToken}`)
+    expect(res.status).toBe(200)
+    expect(db.prepare('SELECT hometown FROM personnel WHERE id=?').get(pid).hometown).toBeNull()
+    expect(db.prepare('SELECT item_name, digital_signature FROM zimmet WHERE personnel_id=?').get(pid))
+      .toEqual({ item_name: 'Kask', digital_signature: null })
+    expect(db.prepare('SELECT COUNT(*) c FROM push_subscriptions WHERE personnel_id=?').get(pid).c).toBe(0)
   })
 
   it('non-admin reddedilir', async () => {
