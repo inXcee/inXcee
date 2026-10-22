@@ -4,6 +4,7 @@ import { createNotification } from '../../shared/notifications/service.js'
 import { EVENT_KINDS } from '../../shared/notifications/events.js'
 import { logAudit } from '../../shared/audit.js'
 import { notifyItemReady } from './whatsapp.js'
+import { notifyLaundryRoles, LAUNDRY_CRITICAL_ROLES } from './notifications.js'
 import { removeLaundryPhotoFile } from './photo-retention.js'
 import { recordScan } from './cardScan.js'
 
@@ -148,13 +149,13 @@ export function advanceItemService(id, { machine_id, shelf_location, timer_minut
       })
     }
     for (const s of q.getAlertSuppliesQuery()) {
-      createNotification({
+      // Kritik stok herkese değil, siparişi verecek/takip edecek rollere (bkz. notifications.js).
+      notifyLaundryRoles(s.alert_level === 'critical' ? LAUNDRY_CRITICAL_ROLES : ['laundry'], {
         message: s.alert_level === 'critical'
           ? `🧴 KRİTİK STOK: ${s.name} ${s.current_stock}${s.unit} kaldı (eşik ${s.critical_threshold}${s.unit}) — acil sipariş gerekli`
           : `🧴 Stok azalıyor: ${s.name} ${s.current_stock}${s.unit} (uyarı eşiği ${s.warning_threshold}${s.unit})`,
         type: s.alert_level === 'critical' ? 'critical' : 'warning',
         module: 'laundry',
-        target_role: s.alert_level === 'critical' ? null : 'laundry',
         dedup_key: `supply_low_${s.id}_${s.alert_level}`,
       })
     }

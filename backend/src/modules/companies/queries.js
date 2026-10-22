@@ -1,4 +1,5 @@
 import { getDB } from '../../shared/db/index.js'
+import { istanbulDate } from '../../shared/time.js'
 
 export function listCompanies({ activeOnly } = {}) {
   const db = getDB()
@@ -54,26 +55,28 @@ export function deleteCompany(id) {
   db.prepare('DELETE FROM companies WHERE id=?').run(id)
 }
 
-export function expiringContracts(daysAhead = 30) {
+// Gün farkı takvim günüdür (bitiş − bugün): julianday('now') saatiyle çıkarılınca bugün biten sözleşme
+// -0.x gün çıkıp "süresi dolmuş", yarın biten "0 gün" görünüyordu.
+export function expiringContracts(daysAhead = 30, today = istanbulDate()) {
   const db = getDB()
   return db.prepare(`
     SELECT id, name, contract_end,
-      CAST(julianday(contract_end) - julianday('now') AS INTEGER) AS days_left
+      CAST(julianday(contract_end) - julianday(?) AS INTEGER) AS days_left
     FROM companies
     WHERE is_active=1 AND contract_end IS NOT NULL
-      AND julianday(contract_end) - julianday('now') BETWEEN -7 AND ?
+      AND julianday(contract_end) - julianday(?) BETWEEN -7 AND ?
     ORDER BY contract_end ASC
-  `).all(daysAhead)
+  `).all(today, today, daysAhead)
 }
 
-export function companyStats() {
+export function companyStats(today = istanbulDate()) {
   const db = getDB()
   return db.prepare(`
     SELECT
       COUNT(*) AS total,
       SUM(CASE WHEN is_active=1 THEN 1 ELSE 0 END) AS active,
-      SUM(CASE WHEN contract_end IS NOT NULL AND julianday(contract_end) < julianday('now') THEN 1 ELSE 0 END) AS expired,
+      SUM(CASE WHEN contract_end IS NOT NULL AND date(contract_end) < ? THEN 1 ELSE 0 END) AS expired,
       SUM(bed_quota) AS total_quota
     FROM companies
-  `).get()
+  `).get(today)
 }

@@ -1,5 +1,6 @@
 import { getDB } from '../../shared/db/index.js'
 import { createNotification } from '../../shared/notifications/service.js'
+import { istanbulDate } from '../../shared/time.js'
 
 // Sözleşme bitişine bu kadar gün kala uyarı; bu kadar kala kritik.
 export const CONTRACT_WARN_DAYS = 30
@@ -7,20 +8,21 @@ export const CONTRACT_CRITICAL_DAYS = 7
 
 /**
  * Sözleşmesi uyarı penceresi içinde olan (veya süresi geçmiş) aktif personeli döner.
- * days_left = contract_end − bugün (gün, negatif = süresi geçmiş).
+ * days_left = contract_end − bugün (gün, negatif = süresi geçmiş). 'Bugün' İstanbul günüdür:
+ * date('now') UTC'dir, TR 00:00–03:00 arası bir gün geriden sayardı.
  */
-export function findExpiringContracts(db = getDB()) {
+export function findExpiringContracts(db = getDB(), today = istanbulDate()) {
   return db.prepare(`
     SELECT s.id, s.full_name, s.contract_end,
            d.name AS dept_name,
-           CAST(julianday(date(s.contract_end)) - julianday(date('now')) AS INTEGER) AS days_left
+           CAST(julianday(date(s.contract_end)) - julianday(?) AS INTEGER) AS days_left
     FROM staff s
     LEFT JOIN departments d ON d.id = s.department_id
     WHERE s.is_active = 1
       AND s.contract_end IS NOT NULL
-      AND date(s.contract_end) <= date('now', ?)
+      AND date(s.contract_end) <= date(?, ?)
     ORDER BY s.contract_end
-  `).all(`+${CONTRACT_WARN_DAYS} days`)
+  `).all(today, today, `+${CONTRACT_WARN_DAYS} days`)
 }
 
 /**

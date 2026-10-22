@@ -2,6 +2,7 @@ import { getDB } from '../../shared/db/index.js'
 import { createNotification } from '../../shared/notifications/service.js'
 import { alertBucket, ALERT_BUCKET_LOOKBACK_DAYS } from '../../shared/notifications/cadence.js'
 import { sendSlaAlert, shouldSendSlaNotification } from './whatsapp.js'
+import { notifyLaundryRoles, LAUNDRY_ALERT_ROLES, LAUNDRY_CRITICAL_ROLES } from './notifications.js'
 
 /**
  * SLA ihlallerini kontrol eder ve SSE bildirimi gönderir.
@@ -26,11 +27,10 @@ export async function checkSlaViolations() {
     const isCritical = v.hours >= v.critical_hours
     const label = { dirty: 'Kirli sepette', washing: 'Makinede', ready: 'Rafta hazır' }[v.status]
 
-    createNotification({
+    notifyLaundryRoles(isCritical ? LAUNDRY_CRITICAL_ROLES : LAUNDRY_ALERT_ROLES, {
       message: `SLA ${isCritical ? 'KRİTİK' : 'UYARI'}: ${v.block || '?'} ${v.room_no || '?'} — ${label} ${v.hours} saattir`,
       type: isCritical ? 'critical' : 'warning',
       module: 'laundry',
-      target_role: isCritical ? null : 'shift_supervisor',
       // Kova yaşla birlikte genişler: taze sorun günde bir, kronikleşen haftada bir.
       dedup_key: `sla_${v.id}_${isCritical ? 'crit' : 'warn'}_${alertBucket(v.hours)}`,
       dedup_lookback_days: ALERT_BUCKET_LOOKBACK_DAYS,

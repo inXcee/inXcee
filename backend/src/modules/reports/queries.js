@@ -1,4 +1,5 @@
 import { getDB } from '../../shared/db/index.js'
+import { istanbulDate } from '../../shared/time.js'
 
 export function getCleaningTasks(date) {
   const db = getDB()
@@ -88,10 +89,10 @@ export function getCompaniesReport() {
       SELECT c.id, c.name, c.contact_name, c.contact_phone, c.bed_quota, c.price_per_bed,
         c.contract_start, c.contract_end, c.is_active,
         (SELECT COUNT(*) FROM personnel p WHERE (p.company_id=c.id OR p.company=c.name) AND p.check_out_date IS NULL) AS active_personnel,
-        CAST(julianday(c.contract_end) - julianday('now') AS INTEGER) AS days_left
+        CAST(julianday(c.contract_end) - julianday(?) AS INTEGER) AS days_left
       FROM companies c
       ORDER BY c.is_active DESC, c.contract_end ASC
-    `).all()
+    `).all(istanbulDate())
   } catch { return [] }
 }
 
@@ -787,15 +788,16 @@ export function getExecutiveData() {
     data.satisfaction = s
   } catch { data.satisfaction = { avg: null, n: 0 } }
   try {
-    const exp = db.prepare(`SELECT ROUND(SUM(amount),2) AS total FROM expenses WHERE strftime('%Y-%m', expense_date)=strftime('%Y-%m','now')`).get()
+    // 'Bu ay' İstanbul ayıdır (strftime('now') UTC'dir; TR'de ayın 1'i 00:00–03:00 önceki ayı verirdi)
+    const exp = db.prepare(`SELECT ROUND(SUM(amount),2) AS total FROM expenses WHERE strftime('%Y-%m', expense_date)=?`).get(istanbulDate().slice(0, 7))
     data.expense_this_month = exp.total || 0
   } catch { data.expense_this_month = 0 }
   try {
     data.expiring_contracts = db.prepare(`
       SELECT COUNT(*) AS c FROM companies
       WHERE is_active=1 AND contract_end IS NOT NULL
-        AND julianday(contract_end) - julianday('now') BETWEEN 0 AND 30
-    `).get().c
+        AND julianday(contract_end) - julianday(?) BETWEEN 0 AND 30
+    `).get(istanbulDate()).c
   } catch { data.expiring_contracts = 0 }
   try {
     const last = db.prepare('SELECT MAX(drill_date) AS d FROM drills').get()

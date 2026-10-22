@@ -2,11 +2,15 @@ import { describe, it, expect, beforeAll, beforeEach } from 'vitest'
 import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
 import { findExpiringContracts, checkExpiringContracts } from './contractAlerts.js'
+import { istanbulDate } from '../../shared/time.js'
 
 let db, dept, sCrit, sWarn, sExpired
 
+// 'Bugün' İstanbul günü (kod da öyle sayar) + saf takvim aritmetiği
 function dateOffset(days) {
-  return new Date(Date.now() + days * 86400000).toISOString().slice(0, 10)
+  const d = new Date(`${istanbulDate()}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + days)
+  return d.toISOString().slice(0, 10) // utc-bilinçli
 }
 
 beforeAll(() => {
@@ -77,5 +81,17 @@ describe('checkExpiringContracts', () => {
     checkExpiringContracts()
     const c = db.prepare('SELECT COUNT(*) AS c FROM notifications WHERE dedup_key = ?').get(`hr_contract_expiry_${sCrit}`).c
     expect(c).toBe(1)
+  })
+})
+
+describe('findExpiringContracts — takvim günü (today parametresi)', () => {
+  it('bugün biten sözleşme 0 gün, yarın biten 1 gün', () => {
+    const ins = db.prepare("INSERT INTO staff(full_name, department_id, is_active, contract_end) VALUES (?,?,1,?)")
+    const bugun = ins.run('Bugün Biten', dept, '2031-05-20').lastInsertRowid
+    const yarin = ins.run('Yarın Biten', dept, '2031-05-21').lastInsertRowid
+    const rows = Object.fromEntries(findExpiringContracts(db, '2031-05-20').map(r => [r.id, r.days_left]))
+    expect(rows[bugun]).toBe(0)
+    expect(rows[yarin]).toBe(1)
+    db.prepare('UPDATE staff SET is_active=0 WHERE id IN (?, ?)').run(bugun, yarin)
   })
 })
