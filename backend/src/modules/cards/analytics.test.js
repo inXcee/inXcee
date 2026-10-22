@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest'
 import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
 import { summary, usageByDay, usageByResult, topStations } from './analytics.js'
+import { istanbulDate } from '../../shared/time.js'
 
 let db, s1, s2, stA, stB
 
@@ -59,7 +60,7 @@ describe('cards/analytics usageByDay', () => {
   it('returns a continuous day series of the requested length', () => {
     const rows = usageByDay(db, 14)
     expect(rows).toHaveLength(14)
-    const today = new Date().toISOString().slice(0, 10)
+    const today = istanbulDate() // seri İstanbul günleridir
     const t = rows.find(r => r.day === today)
     expect(t.total).toBe(3) // bugün 3 olay
     expect(t.ok).toBe(3)
@@ -82,5 +83,18 @@ describe('cards/analytics topStations', () => {
     expect(rows[0].station_id).toBe(stA) // 3 okutma
     expect(rows[0].count).toBe(3)
     expect(rows.find(r => r.station_id === stB).count).toBe(1)
+  })
+})
+
+// Ekim 2026: İstanbul 00:30 okutması (UTC'de dün 21:30) eskiden önceki güne yazılıyordu.
+describe('cards/analytics usageByDay — İstanbul günü', () => {
+  it('İstanbul gece yarısından sonraki okutma bugüne sayılır', async () => {
+    const { istanbulDayBoundsUtc } = await import('../../shared/time.js')
+    const start = new Date(istanbulDayBoundsUtc().from.replace(' ', 'T') + 'Z')
+    start.setUTCMinutes(30)
+    const before = usageByDay(db, 3).find(r => r.day === istanbulDate()).total
+    db.prepare("INSERT INTO access_events(holder_type, holder_id, station_id, event_type, result, scanned_at) VALUES('staff', ?, ?, 'entry', 'ok', ?)")
+      .run(s1, stA, start.toISOString().slice(0, 19).replace('T', ' ')) // utc-bilinçli: UTC metin kolonu
+    expect(usageByDay(db, 3).find(r => r.day === istanbulDate()).total).toBe(before + 1)
   })
 })

@@ -1,4 +1,5 @@
 import { getDB } from '../../shared/db/index.js'
+import { istanbulDate, addDays, istanbulDayStartUtc, istanbulSqliteModifier } from '../../shared/time.js'
 
 const CARD_TYPES = ['access', 'meal', 'laundry']
 
@@ -56,19 +57,23 @@ export function summary(db = getDB()) {
  * Son `days` günün her biri için okutma sayısı (toplam + ok). Boş günler 0 ile dolu.
  */
 export function usageByDay(db = getDB(), days = 14) {
+  // Günler İstanbul günüdür (scanned_at UTC metin). Eskiden UTC günüyle gruplanıyor ve seri UTC'den
+  // kuruluyordu: TR 00:00–03:00 okutmaları önceki güne yazılıyordu.
+  const today = istanbulDate()
+  const first = addDays(today, -(days - 1))
   const rows = db.prepare(`
-    SELECT date(scanned_at) AS day,
+    SELECT date(scanned_at, ?) AS day,
       COUNT(*) AS total,
       SUM(CASE WHEN result='ok' THEN 1 ELSE 0 END) AS ok
     FROM access_events
-    WHERE scanned_at >= date('now', ?)
-    GROUP BY date(scanned_at)
-  `).all(`-${days - 1} days`)
+    WHERE scanned_at >= ?
+    GROUP BY day
+  `).all(istanbulSqliteModifier(today), istanbulDayStartUtc(first))
   const byDay = new Map(rows.map(r => [r.day, r]))
 
   const out = []
-  for (let i = days - 1; i >= 0; i--) {
-    const day = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10)
+  for (let i = 0; i < days; i++) {
+    const day = addDays(first, i)
     const r = byDay.get(day)
     out.push({ day, total: r ? r.total : 0, ok: r ? (r.ok || 0) : 0 })
   }
