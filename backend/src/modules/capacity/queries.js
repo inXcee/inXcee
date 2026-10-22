@@ -1,4 +1,7 @@
 import { getDB } from '../../shared/db/index.js'
+import { nextFreeBedNo } from '../../shared/beds.js'
+import { revokeLaundryCards } from '../checkout/queries.js'
+import { faultCountsByRoom } from '../maintenance/location.js'
 
 export function getRooms({ block, floor, status, empty_only, company } = {}) {
   const db = getDB()
@@ -9,10 +12,6 @@ export function getRooms({ block, floor, status, empty_only, company } = {}) {
     SELECT r.*,
       COUNT(ra.id) as occupied,
       u.full_name as supervisor_name,
-      (SELECT COUNT(*) FROM maintenance_requests mr
-       WHERE mr.status != 'done'
-         AND mr.location LIKE '%' || r.block || '%Oda ' || r.room_no || '%'
-      ) as open_fault_count,
       (SELECT COALESCE(s2.shift_type,'day') FROM room_assignments ra2
        LEFT JOIN shifts s2 ON s2.personnel_id=ra2.personnel_id
        WHERE ra2.room_id=r.id AND ra2.check_out_at IS NULL LIMIT 1) as room_shift,
@@ -38,7 +37,11 @@ export function getRooms({ block, floor, status, empty_only, company } = {}) {
   q += ' GROUP BY r.id'
   if (empty_only) { q += ' HAVING COUNT(ra.id)=0' }
   q += ' ORDER BY r.block, r.floor, r.room_no'
-  return db.prepare(q).all(...params)
+  const rooms = db.prepare(q).all(...params)
+  const openFaults = faultCountsByRoom(db, db.prepare(
+    "SELECT id, location, block, room_id FROM maintenance_requests WHERE status != 'done'"
+  ).all())
+  return rooms.map(r => ({ ...r, open_fault_count: openFaults.get(r.id) || 0 }))
 }
 
 export function getRoomPersonnel(roomId) {
@@ -157,7 +160,7 @@ export function bulkAssignToRoom(personnelIds, roomId, userId) {
       if (!roomShift) roomShift = myShift
 
       count++
-      db.prepare('INSERT INTO room_assignments(personnel_id,room_id,bed_no,assigned_by) VALUES(?,?,?,?)').run(pid, roomId, count, userId)
+      db.prepare('INSERT INTO room_assignments(personnel_id,room_id,bed_no,assigned_by) VALUES(?,?,?,?)').run(pid, roomId, nextFreeBedNo(db, roomId), userId)
     }
   })
   tx()
@@ -229,7 +232,9 @@ export function bulkCheckout(personnelIds, userId, force = false) {
     }
     for (const pid of personnelIds) {
       db.prepare("UPDATE room_assignments SET check_out_at=datetime('now') WHERE personnel_id=? AND check_out_at IS NULL").run(pid)
-      db.prepare("UPDATE personnel SET check_out_date=datetime('now') WHERE id=?").run(pid)
+      // Daha önce çıkmış kişinin gerçek çıkış tarihi ezilmez
+      db.prepare("UPDATE personnel SET check_out_date=datetime('now') WHERE id=? AND check_out_date IS NULL").run(pid)
+      revokeLaundryCards(db, pid)
     }
   })
   tx()
@@ -315,7 +320,7 @@ export function reassignPersonnel(personnelId, newRoomId, userId) {
     }
 
     db.prepare("UPDATE room_assignments SET check_out_at=datetime('now') WHERE personnel_id=? AND check_out_at IS NULL").run(personnelId)
-    db.prepare('INSERT INTO room_assignments(personnel_id,room_id,bed_no,assigned_by) VALUES(?,?,?,?)').run(personnelId, newRoomId, count.c + 1, userId)
+    db.prepare('INSERT INTO room_assignments(personnel_id,room_id,bed_no,assigned_by) VALUES(?,?,?,?)').run(personnelId, newRoomId, nextFreeBedNo(db, newRoomId), userId)
   })
   tx()
 }

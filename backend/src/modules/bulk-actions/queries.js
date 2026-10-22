@@ -1,4 +1,6 @@
 import { getDB } from '../../shared/db/index.js'
+import { nextFreeBedNo } from '../../shared/beds.js'
+import { revokeLaundryCards } from '../checkout/queries.js'
 
 const VALID_SORT = {
   name: 'p.full_name',
@@ -143,9 +145,10 @@ export function bulkTransferTx(ids, { target_block, target_room_id }, assignedBy
           if (conflict > 0) continue
         }
         db.prepare("UPDATE room_assignments SET check_out_at=datetime('now') WHERE personnel_id=? AND check_out_at IS NULL").run(id)
+        const bedNo = nextFreeBedNo(db, room.id)
         db.prepare('INSERT INTO room_assignments(personnel_id,room_id,bed_no,assigned_by) VALUES(?,?,?,?)')
-          .run(id, room.id, count + 1, assignedBy)
-        success.push({ id, name: person.full_name, room: `${room.block}-${room.room_no}`, bed_no: count + 1 })
+          .run(id, room.id, bedNo, assignedBy)
+        success.push({ id, name: person.full_name, room: `${room.block}-${room.room_no}`, bed_no: bedNo })
         placed = true
         break
       }
@@ -176,6 +179,7 @@ export function bulkCheckoutTx(ids) {
       }
       db.prepare("UPDATE room_assignments SET check_out_at=datetime('now') WHERE personnel_id=? AND check_out_at IS NULL").run(id)
       db.prepare("UPDATE personnel SET check_out_date=datetime('now') WHERE id=?").run(id)
+      revokeLaundryCards(db, id)
       success.push({ id, name: person.full_name })
     }
   })

@@ -1,4 +1,5 @@
 import { getDB } from '../../shared/db/index.js'
+import { canonicalMaintenanceRow, faultCountsByRoom } from '../maintenance/location.js'
 
 /**
  * Tüm odaların son N günlük özet istatistikleri:
@@ -6,7 +7,7 @@ import { getDB } from '../../shared/db/index.js'
  */
 export function getRoomSummary(days = 7) {
   const db = getDB()
-  return db.prepare(`
+  const rooms = db.prepare(`
     SELECT
       r.id,
       r.block,
@@ -19,9 +20,7 @@ export function getRoomSummary(days = 7) {
       COALESCE(ct_done.photo_cnt, 0) as photo_count,
       ct_done.last_cleaned        as last_cleaned_at,
       COALESCE(ct_skip.cnt, 0)    as skipped_count,
-      COALESCE(ct_total.cnt, 0)   as total_tasks,
-      COALESCE(mr_total.cnt, 0)   as fault_count,
-      COALESCE(mr_open.cnt, 0)    as open_faults
+      COALESCE(ct_total.cnt, 0)   as total_tasks
     FROM rooms r
     LEFT JOIN (
       SELECT block, area, COUNT(*) as cnt,
@@ -45,25 +44,22 @@ export function getRoomSummary(days = 7) {
       WHERE DATE(scheduled_at) >= DATE('now', 'localtime', ?)
       GROUP BY block, area
     ) ct_total ON ct_total.area = (r.block || ' Oda ' || r.room_no)
-    LEFT JOIN (
-      SELECT location, COUNT(*) as cnt
-      FROM maintenance_requests
-      WHERE DATE(opened_at) >= DATE('now', ?)
-      GROUP BY location
-    ) mr_total ON mr_total.location LIKE (r.block || '%' || r.room_no || '%')
-    LEFT JOIN (
-      SELECT location, COUNT(*) as cnt
-      FROM maintenance_requests
-      WHERE status != 'done'
-      GROUP BY location
-    ) mr_open ON mr_open.location LIKE (r.block || '%' || r.room_no || '%')
     ORDER BY r.block, r.floor, r.room_no
   `).all(
     `-${days} days`,
     `-${days} days`,
-    `-${days} days`,
     `-${days} days`
   )
+  // Arızalar tam odaya çözülerek sayılır. Eskiden LIKE join'i (r.block || '%' || r.room_no || '%')
+  // bir odaya birden çok konum satırı eşleyip odayı listede TEKRARLIYOR, A-101'e A1-101'i sayıyordu.
+  const recent = faultCountsByRoom(db, db.prepare(`
+    SELECT id, location, block, room_id FROM maintenance_requests
+    WHERE DATE(opened_at) >= DATE('now', ?)
+  `).all(`-${days} days`))
+  const open = faultCountsByRoom(db, db.prepare(
+    "SELECT id, location, block, room_id FROM maintenance_requests WHERE status != 'done'"
+  ).all())
+  return rooms.map(r => ({ ...r, fault_count: recent.get(r.id) || 0, open_faults: open.get(r.id) || 0 }))
 }
 
 /**
@@ -73,6 +69,8 @@ export function getRoomTimeline(block, roomNo, days = 7) {
   const db = getDB()
 
   const areaName = `${block} Oda ${roomNo}`
+  // Oda bilgisi
+  const room = db.prepare('SELECT * FROM rooms WHERE block = ? AND room_no = ?').get(block, roomNo)
 
   // Temizlik kayıtları — foto kanıtı + kiosk personeli (staff) dahil
   const cleanings = db.prepare(`
@@ -97,7 +95,8 @@ export function getRoomTimeline(block, roomNo, days = 7) {
     ORDER BY ct.scheduled_at DESC
   `).all(areaName, `-${days} days`)
 
-  // Arıza kayıtları
+  // Arıza kayıtları — yalnız BU odanın: room_id eşleşmesi ya da eski kayıtta konum metninin bakım
+  // çözücüsüyle tam bu odaya çözülmesi. Eskiden '%Oda 101%' tüm blokların 101'ini getiriyordu.
   const faults = db.prepare(`
     SELECT
       mr.id,
@@ -114,14 +113,19 @@ export function getRoomTimeline(block, roomNo, days = 7) {
       mr.photo_url,
       t.full_name as technician_name,
       t.specialty as technician_specialty,
-      ru.full_name as reporter_name
+      ru.full_name as reporter_name,
+      mr.block as _block, mr.room_id as _room_id
     FROM maintenance_requests mr
     LEFT JOIN technicians t ON t.id = mr.assigned_to
     LEFT JOIN users ru ON ru.id = mr.reporter_user_id
-    WHERE (mr.location LIKE ? OR mr.location LIKE ?)
+    WHERE (mr.room_id = ? OR (mr.room_id IS NULL AND mr.location LIKE ?))
       AND DATE(mr.opened_at) >= DATE('now', ?)
     ORDER BY mr.opened_at DESC
-  `).all(`%${block}%${roomNo}%`, `%Oda ${roomNo}%`, `-${days} days`)
+  `).all(room?.id ?? -1, `%${roomNo}%`, `-${days} days`)
+    .filter(f => room && canonicalMaintenanceRow(db, {
+      location: f.location, block: f._block, room_id: f._room_id,
+    }).canonical_room_id === room.id)
+    .map(({ _block, _room_id, ...f }) => f)
 
   // Arıza yorumları
   const faultIds = faults.map(f => f.id)
@@ -143,9 +147,6 @@ export function getRoomTimeline(block, roomNo, days = 7) {
     commentsByRequest[c.request_id].push(c)
   })
   faults.forEach(f => { f.comments = commentsByRequest[f.id] || [] })
-
-  // Oda bilgisi
-  const room = db.prepare('SELECT * FROM rooms WHERE block = ? AND room_no = ?').get(block, roomNo)
 
   // Mevcut sakinler
   const occupants = db.prepare(`
