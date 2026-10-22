@@ -4,6 +4,7 @@ import { getDB } from '../../shared/db/index.js'
 import { logAudit } from '../../shared/audit.js'
 import { validate } from '../../shared/middleware/validate.js'
 import { createExpenseSchema } from './schemas.js'
+import { istanbulDate } from '../../shared/time.js'
 
 export const expensesRouter = Router()
 const mgmt = requireRole('campus_manager', 'shift_supervisor')
@@ -30,27 +31,35 @@ expensesRouter.get('/', ...mgmt, (req, res) => {
 expensesRouter.get('/summary', ...mgmt, (req, res) => {
   const db = getDB()
   const months = Math.min(Math.max(+req.query.months || 6, 1), 24)
+  // "Bu ay" İstanbul takvim ayıdır: SQLite 'now' UTC'dir, TR'de ayın 1'i 00:00–03:00
+  // arası önceki ayı veriyordu. Pencere de tam ay başından başlar: eskiden
+  // date('now','-N months') ayın ortasından kesiyor, ilk ay yarım toplamla ve
+  // N yerine N+1 ay listeleniyordu.
+  const thisMonthKey = istanbulDate().slice(0, 7)
+  const [cy, cm] = thisMonthKey.split('-').map(Number)
+  const startIdx = cy * 12 + (cm - 1) - (months - 1)
+  const fromDate = `${Math.floor(startIdx / 12)}-${String((startIdx % 12) + 1).padStart(2, '0')}-01`
   // Aylik toplam
   const monthly = db.prepare(`
     SELECT strftime('%Y-%m', expense_date) AS month,
       ROUND(SUM(amount), 2) AS total,
       COUNT(*) AS count
     FROM expenses
-    WHERE expense_date >= date('now', '-' || ? || ' months')
+    WHERE expense_date >= ?
     GROUP BY month ORDER BY month
-  `).all(months)
+  `).all(fromDate)
   // Kategori dagilimi (bu ay)
   const byCategory = db.prepare(`
     SELECT category, ROUND(SUM(amount), 2) AS total, COUNT(*) AS count
     FROM expenses
-    WHERE strftime('%Y-%m', expense_date) = strftime('%Y-%m', 'now')
+    WHERE strftime('%Y-%m', expense_date) = ?
     GROUP BY category ORDER BY total DESC
-  `).all()
+  `).all(thisMonthKey)
   // Sakin basina maliyet (bu ay)
   const thisMonth = db.prepare(`
     SELECT ROUND(SUM(amount), 2) AS total FROM expenses
-    WHERE strftime('%Y-%m', expense_date) = strftime('%Y-%m', 'now')
-  `).get()
+    WHERE strftime('%Y-%m', expense_date) = ?
+  `).get(thisMonthKey)
   const activeResidents = db.prepare(`
     SELECT COUNT(*) AS c FROM personnel WHERE check_out_date IS NULL
   `).get().c

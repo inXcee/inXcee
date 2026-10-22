@@ -69,10 +69,24 @@ export function createPO(supplierId, expectedDate, notes, items, userId) {
   return tx()
 }
 
+// Elle durum değişimi yalnız bu geçişlerle. 'partial_received' / 'received' yalnız
+// receivePO (stok girişiyle) üretilir: eskiden PATCH ile 'received' yazılabiliyordu →
+// stok hiç girmeden sipariş kapanıyor, sonra teslim alma da reddediliyordu.
+const MANUAL_TRANSITIONS = {
+  draft: ['sent', 'cancelled'],
+  sent: ['cancelled'],
+  partial_received: ['cancelled'],
+}
+
 export function setStatus(id, status) {
   const db = getDB()
   const valid = ['draft', 'sent', 'partial_received', 'received', 'cancelled']
   if (!valid.includes(status)) throw new Error('Gecersiz durum')
+  const po = db.prepare('SELECT status FROM purchase_orders WHERE id = ?').get(id)
+  if (!po) throw new Error('PO bulunamadi')
+  if (!(MANUAL_TRANSITIONS[po.status] || []).includes(status)) {
+    throw new Error(`"${po.status}" durumundan "${status}" durumuna gecilemez`)
+  }
   const extra = status === 'sent' ? ", sent_at = datetime('now')" : status === 'received' ? ", received_at = datetime('now')" : ''
   db.prepare(`UPDATE purchase_orders SET status = ?${extra} WHERE id = ?`).run(status, id)
 }

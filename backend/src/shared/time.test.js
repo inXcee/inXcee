@@ -31,3 +31,18 @@ describe('yerel gün koruması', () => {
     expect(src).not.toMatch(UTC_TODAY)
   })
 })
+
+describe('istanbulDayStartUtc', () => {
+  it("İstanbul 00:00'ı UTC metnine çevirir (TR = UTC+3)", async () => {
+    const { istanbulDayStartUtc } = await import('./time.js')
+    expect(istanbulDayStartUtc('2026-03-01')).toBe('2026-02-28 21:00:00')
+    expect(istanbulDayStartUtc('2026-01-01')).toBe('2025-12-31 21:00:00')
+  })
+
+  it('addDays ay/yıl sınırını geçer', async () => {
+    const { addDays } = await import('./time.js')
+    expect(addDays('2026-02-28', 1)).toBe('2026-03-01')
+    expect(addDays('2026-12-31', 1)).toBe('2027-01-01')
+    expect(addDays('2026-03-01', -6)).toBe('2026-02-23')
+  })
+})

@@ -15,6 +15,7 @@ import { locationsRouter } from './locations/routes.js'
 import { analyticsRouter } from './analytics/routes.js'
 import { logger } from '../../shared/logger.js'
 import { istanbulDate } from '../../shared/time.js'
+import { toCsv } from '../reports/routes/shared.js'
 
 export const inventoryRouter = Router()
 inventoryRouter.use('/suppliers', suppliersRouter)
@@ -169,13 +170,17 @@ inventoryRouter.post('/bulk-count', ...editAccess, (req, res) => {
 inventoryRouter.get('/export/csv', ...mgrAccess, (req, res) => {
   try {
     const items = service.listItems(req.query.category)
-    const header = 'Urun Adi,Kategori,Miktar,Birim,Esik,Konum,Birim Fiyat,Son Guncelleme'
-    const rows = items.map(i =>
-      `"${i.item_name}","${i.category}",${i.quantity},"${i.unit}",${i.reorder_threshold},"${i.location || ''}",${i.unit_price || 0},"${i.last_updated || ''}"`
+    // Ortak g\u00fcvenli yard\u0131mc\u0131: t\u0131rnak/ayra\u00e7 ka\u00e7\u0131\u015f\u0131 + form\u00fcl enjeksiyonu korumas\u0131.
+    // Elle "${ad}" yaz\u0131m\u0131 adda " olunca kolonlar\u0131 kayd\u0131r\u0131yor, "=..." ile ba\u015flayan
+    // ad Excel'de form\u00fcl olarak \u00e7al\u0131\u015f\u0131yordu.
+    const csv = toCsv(
+      ['Urun Adi', 'Kategori', 'Miktar', 'Birim', 'Esik', 'Konum', 'Birim Fiyat', 'Son Guncelleme'],
+      items.map(i => [i.item_name, i.category, i.quantity, i.unit, i.reorder_threshold,
+        i.location || '', i.unit_price || 0, i.last_updated || '']),
     )
     res.set('Content-Type', 'text/csv; charset=utf-8')
     res.set('Content-Disposition', `attachment; filename=envanter_${istanbulDate()}.csv`)
-    res.send('\ufeff' + header + '\n' + rows.join('\n'))
+    res.send(csv)
   } catch (e) { logger.error("[Route]", e); res.status(500).json({ error: "Sunucu hatası" }) }
 })
 

@@ -57,14 +57,16 @@ export function processCheckout(personnelId, zimmetActions, userId) {
     }
 
     // Process zimmet actions: each item can be 'return', 'damaged', 'lost'
+    // Yalnız BU kişinin açık zimmeti işlenir: eskiden id tek başına yetiyordu →
+    // başka personelin zimmeti 'iade' görünüyor, iade edilmiş kaydın durumu ezilebiliyordu.
     if (zimmetActions && zimmetActions.length > 0) {
       for (const action of zimmetActions) {
         if (action.action === 'return') {
-          db.prepare("UPDATE zimmet SET returned_at=datetime('now'), return_condition='normal' WHERE id=?").run(action.zimmet_id)
+          db.prepare("UPDATE zimmet SET returned_at=datetime('now'), return_condition='normal' WHERE id=? AND personnel_id=? AND returned_at IS NULL").run(action.zimmet_id, personnelId)
         } else if (action.action === 'damaged') {
-          db.prepare("UPDATE zimmet SET returned_at=datetime('now'), return_condition='damaged', damage_note=? WHERE id=?").run(action.note || null, action.zimmet_id)
+          db.prepare("UPDATE zimmet SET returned_at=datetime('now'), return_condition='damaged', damage_note=? WHERE id=? AND personnel_id=? AND returned_at IS NULL").run(action.note || null, action.zimmet_id, personnelId)
         } else if (action.action === 'lost') {
-          db.prepare("UPDATE zimmet SET returned_at=datetime('now'), return_condition='lost', damage_note=? WHERE id=?").run(action.note || 'Kayip bildirimi', action.zimmet_id)
+          db.prepare("UPDATE zimmet SET returned_at=datetime('now'), return_condition='lost', damage_note=? WHERE id=? AND personnel_id=? AND returned_at IS NULL").run(action.note || 'Kayip bildirimi', action.zimmet_id, personnelId)
         }
       }
     }

@@ -51,25 +51,40 @@ export function createItem(d) {
   return r.lastInsertRowid
 }
 
-export function updateItem(id, d) {
+export function updateItem(id, d, userId = null) {
   const db = getDB()
-  db.prepare(`
-    UPDATE inventory SET item_name=?, quantity=?, unit=?, reorder_threshold=?, category=?, location=?, unit_price=?,
-      sku=?, preferred_supplier_id=?, lead_time_days=?, safety_stock_days=?,
-      track_lots=?, track_expiry=?, track_locations=?,
-      last_updated=datetime('now')
-    WHERE id=?
-  `).run(
-    d.item_name, d.quantity, d.unit, d.reorder_threshold || 0, d.category, d.location || null, d.unit_price || 0,
-    d.sku || null,
-    d.preferred_supplier_id || null,
-    d.lead_time_days ?? 7,
-    d.safety_stock_days ?? 3,
-    d.track_lots ? 1 : 0,
-    d.track_expiry ? 1 : 0,
-    d.track_locations ? 1 : 0,
-    id,
-  )
+  // Düzenleme formundan miktar değişirse hareket defterine 'count' satırı düşer;
+  // yoksa stok, hareket toplamıyla (ve tahmin/analitik) sessizce ayrışırdı.
+  const tx = db.transaction(() => {
+    const old = db.prepare('SELECT quantity FROM inventory WHERE id=?').get(id)
+    if (!old) throw new Error('Urun bulunamadi')
+    const qty = d.quantity === undefined || d.quantity === null || d.quantity === '' ? old.quantity : Number(d.quantity)
+    if (!Number.isFinite(qty) || qty < 0) throw new Error('Gecersiz miktar')
+    db.prepare(`
+      UPDATE inventory SET item_name=?, quantity=?, unit=?, reorder_threshold=?, category=?, location=?, unit_price=?,
+        sku=?, preferred_supplier_id=?, lead_time_days=?, safety_stock_days=?,
+        track_lots=?, track_expiry=?, track_locations=?,
+        last_updated=datetime('now')
+      WHERE id=?
+    `).run(
+      d.item_name, qty, d.unit, d.reorder_threshold || 0, d.category, d.location || null, d.unit_price || 0,
+      d.sku || null,
+      d.preferred_supplier_id || null,
+      d.lead_time_days ?? 7,
+      d.safety_stock_days ?? 3,
+      d.track_lots ? 1 : 0,
+      d.track_expiry ? 1 : 0,
+      d.track_locations ? 1 : 0,
+      id,
+    )
+    const delta = qty - old.quantity
+    if (delta !== 0 && userId) {
+      db.prepare(
+        'INSERT INTO stock_movements(item_id,type,delta,quantity_after,reason,created_by) VALUES(?,?,?,?,?,?)'
+      ).run(id, 'count', delta, qty, `Duzenleme: ${old.quantity} -> ${qty}`, userId)
+    }
+  })
+  tx()
 }
 
 export function deleteItem(id) {
@@ -189,9 +204,15 @@ export function bulkCount(items, userId) {
   const db = getDB()
   const results = { updated: 0, skipped: 0, errors: [] }
   const tx = db.transaction(() => {
-    for (const { id, counted_qty } of items) {
+    for (const { id, counted_qty: raw } of items) {
       const item = db.prepare('SELECT * FROM inventory WHERE id=?').get(id)
       if (!item) { results.errors.push(`ID ${id}: Urun bulunamadi`); continue }
+      // Sayılan miktar sayı ve >= 0 olmalı: aksi halde stok eksiye düşer ya da
+      // REAL kolona metin yazılırdı ("abc" - 5 = NaN, NaN !== 0 → UPDATE).
+      const counted_qty = raw === null || raw === '' ? NaN : Number(raw)
+      if (!Number.isFinite(counted_qty) || counted_qty < 0) {
+        results.errors.push(`ID ${id}: Gecersiz sayim miktari`); continue
+      }
       const delta = counted_qty - item.quantity
       if (delta === 0) { results.skipped++; continue }
       db.prepare("UPDATE inventory SET quantity=?, last_updated=datetime('now') WHERE id=?").run(counted_qty, id)
@@ -298,7 +319,11 @@ export function returnItem(checkoutId, returnQty, userId) {
   if (co.returned_at) throw new Error('Bu teslim zaten iade edildi')
 
   const maxReturn = co.quantity - co.returned_qty
-  const qty = returnQty || maxReturn
+  // Miktar verilmezse kalanın tamamı. Verilirse sayı ve > 0 olmalı: "2" metni
+  // stokla birleşip ("5" + "2" = "52") stoğu şişiriyor, negatif miktar ise iade
+  // kılığında stoktan düşüyordu.
+  const qty = returnQty === undefined || returnQty === null || returnQty === '' ? maxReturn : Number(returnQty)
+  if (!Number.isFinite(qty) || qty <= 0) throw new Error('Gecersiz iade miktari')
   if (qty > maxReturn) throw new Error(`Maksimum iade: ${maxReturn}`)
 
   const newQty = co.current_qty + qty
@@ -619,31 +644,52 @@ export function getReceiptDetail(id) {
 
 export function deleteReceipt(id, userId) {
   const db = getDB()
-  // Receipt silinmeden önce stok hareketi geri alınmalı; aksi halde inventory.quantity
-  // ve lokasyon stoğu createReceipt'in eklediği miktar kadar fantom kalır.
-  // stock_movements.type CHECK ('in','out','count','initial') — reversal için 'out' kullan.
+  // Fiş silinirken girişin eklediği stok (ana miktar + lokasyon + lot) geri alınır.
+  // Hareketler fişin KENDİ numarasıyla eşlenir: eskiden yalnız "Mal giris:" + aynı
+  // miktara bakılıyordu; aynı üründen aynı miktarda başka fiş varsa satır çoğalıp
+  // lokasyon stoğu iki kez düşülüyor, aynı ürün fişte iki kalem olunca ise bayat
+  // miktar yüzünden yalnız biri geri alınıyordu. Giriş stoğu zaten kullanıldıysa
+  // sessizce 0'a kırpmak yerine silme reddedilir (hareket defteri tutarlı kalsın).
   const tx = db.transaction(() => {
-    const items = db.prepare(`
-      SELECT gri.item_id, gri.quantity, sm.to_location_id, i.quantity as current_qty
-      FROM goods_receipt_items gri
-      JOIN inventory i ON i.id = gri.item_id
-      LEFT JOIN stock_movements sm ON sm.item_id = gri.item_id
-        AND sm.reason LIKE 'Mal giris: %' AND sm.delta = gri.quantity
-      WHERE gri.receipt_id = ?
-    `).all(id)
-    for (const it of items) {
-      const newQty = Math.max(0, (it.current_qty ?? 0) - it.quantity)
-      db.prepare("UPDATE inventory SET quantity=?, last_updated=datetime('now') WHERE id=?").run(newQty, it.item_id)
-      if (it.to_location_id) {
-        const row = db.prepare('SELECT quantity FROM inventory_stock_by_location WHERE item_id=? AND location_id=?').get(it.item_id, it.to_location_id)
+    const receipt = db.prepare('SELECT receipt_no FROM goods_receipts WHERE id=?').get(id)
+    if (!receipt) return
+    const lines = db.prepare('SELECT item_id, quantity FROM goods_receipt_items WHERE receipt_id=? ORDER BY id').all(id)
+    const moves = db.prepare(`
+      SELECT id, item_id, delta, lot_id, to_location_id FROM stock_movements
+      WHERE type = 'in' AND reason LIKE ? ORDER BY id
+    `).all(`Mal giris: ${receipt.receipt_no} (%`)
+    const used = new Set()
+
+    for (const line of lines) {
+      const mv = moves.find(m => !used.has(m.id) && m.item_id === line.item_id && m.delta === line.quantity)
+      if (mv) used.add(mv.id)
+      const inv = db.prepare('SELECT quantity, item_name FROM inventory WHERE id=?').get(line.item_id)
+      if (!inv) continue
+      if (inv.quantity < line.quantity) {
+        throw new Error(`${inv.item_name}: giris stogu kullanilmis (mevcut ${inv.quantity}, giris ${line.quantity}) — fis silinemez`)
+      }
+      const newQty = inv.quantity - line.quantity
+      db.prepare("UPDATE inventory SET quantity=?, last_updated=datetime('now') WHERE id=?").run(newQty, line.item_id)
+
+      const locId = mv?.to_location_id || null
+      if (locId) {
+        const row = db.prepare('SELECT quantity FROM inventory_stock_by_location WHERE item_id=? AND location_id=?').get(line.item_id, locId)
         if (row) {
-          const newLocQty = Math.max(0, row.quantity - it.quantity)
-          db.prepare('UPDATE inventory_stock_by_location SET quantity=? WHERE item_id=? AND location_id=?').run(newLocQty, it.item_id, it.to_location_id)
+          if (row.quantity < line.quantity) throw new Error(`${inv.item_name}: lokasyondaki giris stogu kullanilmis — fis silinemez`)
+          db.prepare('UPDATE inventory_stock_by_location SET quantity = quantity - ? WHERE item_id=? AND location_id=?').run(line.quantity, line.item_id, locId)
+        }
+      }
+      if (mv?.lot_id) {
+        const lot = db.prepare('SELECT quantity FROM inventory_lots WHERE id=?').get(mv.lot_id)
+        if (lot) {
+          if (lot.quantity < line.quantity) throw new Error(`${inv.item_name}: lot stogu kullanilmis — fis silinemez`)
+          const left = lot.quantity - line.quantity
+          db.prepare('UPDATE inventory_lots SET quantity=?, status=? WHERE id=?').run(left, left <= 0 ? 'depleted' : 'active', mv.lot_id)
         }
       }
       db.prepare(
-        'INSERT INTO stock_movements(item_id,type,delta,quantity_after,reason,from_location_id,created_by) VALUES(?,?,?,?,?,?,?)'
-      ).run(it.item_id, 'out', -it.quantity, newQty, `Mal giris iptal: receipt #${id}`, it.to_location_id || null, userId)
+        'INSERT INTO stock_movements(item_id,type,delta,quantity_after,reason,lot_id,from_location_id,created_by) VALUES(?,?,?,?,?,?,?,?)'
+      ).run(line.item_id, 'out', -line.quantity, newQty, `Mal giris iptal: ${receipt.receipt_no}`, mv?.lot_id || null, locId, userId)
     }
     db.prepare('DELETE FROM goods_receipts WHERE id=?').run(id)
   })

@@ -1,4 +1,5 @@
 import { getDB } from '../../../shared/db/index.js'
+import { istanbulDayBoundsUtc, istanbulDayStartUtc, istanbulSqliteModifier, addDays } from '../../../shared/time.js'
 
 // Operatör performans kırılımı — kiosk işçileri (worker_id → staff) + hub
 // kullanıcıları (action_by → users) birleşik; aksiyon tipi history to_status'tan
@@ -63,16 +64,19 @@ export function getStatsQuery({ from_date, to_date } = {}) {
     WHERE status != 'delivered' GROUP BY status
   `).all()
 
+  // 'Bugün' İstanbul günüdür; kolonlar UTC. Eskiden date(col)=date('now') UTC günü
+  // karşılaştırıyordu: TR 00:00–03:00 arası teslimler dünün sayısına yazılıyordu.
+  const today = istanbulDayBoundsUtc()
   const delivered_today = db.prepare(`
     SELECT COUNT(*) as count FROM laundry_deliveries
-    WHERE date(delivered_at) = date('now')
-  `).get()
+    WHERE delivered_at >= ? AND delivered_at < ?
+  `).get(today.from, today.to)
 
   const washed_today = db.prepare(`
     SELECT COUNT(*) as count FROM laundry_history
     WHERE to_status = 'washing'
-      AND date(created_at) = date('now')
-  `).get()
+      AND created_at >= ? AND created_at < ?
+  `).get(today.from, today.to)
 
   const avg_hours = db.prepare(`
     SELECT li.status,
@@ -172,14 +176,14 @@ export function getStatsQuery({ from_date, to_date } = {}) {
 
   const weekly_trend = db.prepare(`
     SELECT
-      date(created_at) as day,
+      date(created_at, ?) as day,
       COUNT(*) as received,
       SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) as delivered
     FROM laundry_items
-    WHERE date(created_at) >= date('now', '-6 days')
-    GROUP BY date(created_at)
+    WHERE created_at >= ?
+    GROUP BY day
     ORDER BY day ASC
-  `).all()
+  `).all(istanbulSqliteModifier(), istanbulDayStartUtc(addDays(istanbulDayBoundsUtc().day, -6)))
 
   return { by_status, delivered_today, washed_today, avg_hours, sla_violations, period_total, period_delivered, machine_stats, by_room, lost_period, avg_delivery_hours, clothing_breakdown, weekly_trend }
 }
