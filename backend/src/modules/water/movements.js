@@ -159,6 +159,40 @@ export function createDistributionService(data, userId) {
   return id
 }
 
+// Boş kap dolaşımı = girişler − iadeler. İadesi yapılmış bir girişin silinmesi / küçültülmesi / başka ürüne
+// taşınması dolaşımı eksiye düşürmesin — iade oluştururken (assertReturnCapacity) korunan değişmezin aynısı.
+// Transaction içinde: önce depositSnapshot (değişiklikten ÖNCE), sonra assertDepositNotWorse (SONRA); atınca
+// değişiklik geri alınır. Yalnız dolaşımı eksiye DÜŞÜREN / eksiyi BÜYÜTEN değişiklik engellenir — zaten eksi
+// bir üründe ilgisiz düzeltme (ör. girişi artırmak) kilitlenmez. Hermes Excel geri alması iadeleri önce
+// sildiği için (iade → dağıtım → giriş) bu kontrole takılmaz.
+function depositBalance(productId) {
+  const { total_in, total_return } = q.depositPosition(productId)
+  return total_in - total_return
+}
+
+function depositSnapshot(productIds) {
+  const snap = new Map()
+  for (const productId of new Set(productIds)) {
+    const product = q.getProduct(productId)
+    if (product?.is_returnable) snap.set(productId, { product, before: depositBalance(productId) })
+  }
+  return snap
+}
+
+function assertDepositNotWorse(snap) {
+  for (const [productId, { product, before }] of snap) {
+    const after = depositBalance(productId)
+    if (after < 0 && after < before) {
+      const { total_in, total_return } = q.depositPosition(productId)
+      throw errorWithStatus(
+        `${product.name}: bu değişiklikle iade edilen boş kap (${humanize(product, total_return)}) girişleri `
+        + `(${humanize(product, total_in)}) aşar — önce ilgili iadeleri silin ya da düzeltin.`,
+        409,
+      )
+    }
+  }
+}
+
 // Giriş (irsaliye) kaydını düzenle — yanlış girilen tır/irsaliye düzeltmesi.
 // Bu girişin beslediği tahsisler serbest bırakılır, kayıt güncellenir ve
 // etkilenen ürünler için FIFO yeniden uzlaştırılır (karşılanamayan dağıtım
@@ -172,6 +206,7 @@ export function updateIntakeService(id, data, userId) {
   assertMonthUnlocked(data.move_date)
   const lot = normalizeIntakeLot(data, product, data.move_date)
   return q.runInTransaction(() => {
+    const deposit = depositSnapshot([existing.product_id, product.id])
     const freed = q.releaseIntakeAllocations(id)
     const ok = q.updateIntakeMovement(id, {
       product_id: product.id,
@@ -184,6 +219,7 @@ export function updateIntakeService(id, data, userId) {
       ...lot,
     })
     if (!ok) throw errorWithStatus('Giriş güncellenemedi', 500)
+    assertDepositNotWorse(deposit)
     reconcileUnallocatedOut([existing.product_id, product.id])
     if (freed.length) q.flagReviewForUnallocated([...new Set(freed.map(f => f.out_movement_id))])
     checkLowStock([existing.product_id, product.id])
@@ -207,8 +243,10 @@ export function deleteMovementService(id, { force = false } = {}) {
           409,
         )
       }
+      const deposit = depositSnapshot([existing.product_id])
       const freed = usage.allocated_base > 0 ? q.releaseIntakeAllocations(id) : []
       q.deleteMovement(id)
+      assertDepositNotWorse(deposit)
       if (freed.length) {
         reconcileUnallocatedOut(existing.product_id)
         q.flagReviewForUnallocated([...new Set(freed.map(f => f.out_movement_id))])

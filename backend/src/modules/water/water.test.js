@@ -650,6 +650,56 @@ describe('Su takip — marka + boş kap iadesi + INDEX pivot', () => {
     expect(getDB().prepare('SELECT COUNT(*) AS count FROM water_returns WHERE product_id=?').get(productId).count).toBe(0)
   })
 
+  // Ekim 2026: iadesi yapılmış giriş silinince / küçültülünce dolaşım (giriş − iade) eksiye düşüyordu.
+  it('iadesi yapılmış giriş silinemez ve iadenin altına küçültülemez (dolaşım eksiye düşmez)', async () => {
+    const auth = { Authorization: `Bearer ${managerToken}` }
+    const product = await request(app).post('/api/water/products').set(auth)
+      .send({ name: 'DOLAŞIM EKSİ TESTİ', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 1, is_returnable: true })
+    const productId = product.body.id
+    const intake = await request(app).post('/api/water/intake').set(auth)
+      .send({ product_id: productId, input_qty: 10, input_unit: 'adet', move_date: '2026-09-03', waybill_no: 'DOLASIM-1' })
+    expect(intake.status).toBe(201)
+    const intakeId = intake.body.id
+    const ret = await request(app).post('/api/water/returns').set(auth)
+      .send({ product_id: productId, input_qty: 8, input_unit: 'adet', move_date: '2026-09-04' })
+    expect(ret.status).toBe(201)
+
+    const del = await request(app).delete(`/api/water/movements/${intakeId}`).set(auth)
+    expect(del.status).toBe(409)
+    expect(del.body.error).toMatch(/iadeleri silin/)
+    expect(getDB().prepare('SELECT COUNT(*) c FROM water_movements WHERE id=?').get(intakeId).c).toBe(1)
+
+    const shrink = await request(app).put(`/api/water/movements/${intakeId}`).set(auth)
+      .send({ product_id: productId, input_qty: 5, input_unit: 'adet', move_date: '2026-09-03', waybill_no: 'DOLASIM-1' })
+    expect(shrink.status).toBe(409)
+    expect(getDB().prepare('SELECT qty_base FROM water_movements WHERE id=?').get(intakeId).qty_base).toBe(10)
+
+    // İade önce silinirse giriş silinebilir (Hermes geri alma sırası: iade → dağıtım → giriş)
+    expect((await request(app).delete(`/api/water/returns/${ret.body.id}`).set(auth)).status).toBe(200)
+    expect((await request(app).delete(`/api/water/movements/${intakeId}`).set(auth)).status).toBe(200)
+  })
+
+  it('zaten eksi dolaşımlı üründe durumu iyileştiren düzeltme engellenmez, kötüleştiren engellenir', async () => {
+    const auth = { Authorization: `Bearer ${managerToken}` }
+    const product = await request(app).post('/api/water/products').set(auth)
+      .send({ name: 'ESKİ EKSİ DOLAŞIM', unit_label: 'adet', units_per_case: 1, cases_per_pallet: 1, is_returnable: true })
+    const productId = product.body.id
+    const intake = await request(app).post('/api/water/intake').set(auth)
+      .send({ product_id: productId, input_qty: 10, input_unit: 'adet', move_date: '2026-09-05', waybill_no: 'ESKI-EKSI' })
+    // Eski veri: iade girişleri aşmış (kontrol öncesinden kalma) → dolaşım −3
+    getDB().prepare(`INSERT INTO water_returns(product_id, move_date, qty_base, input_qty, input_unit)
+      VALUES(?, '2026-09-06', 13, 13, 'adet')`).run(productId)
+
+    const grow = await request(app).put(`/api/water/movements/${intake.body.id}`).set(auth)
+      .send({ product_id: productId, input_qty: 12, input_unit: 'adet', move_date: '2026-09-05', waybill_no: 'ESKI-EKSI' })
+    expect(grow.status).toBe(200) // −3 → −1: iyileşme
+    const del = await request(app).delete(`/api/water/movements/${intake.body.id}`).set(auth)
+    expect(del.status).toBe(409) // −1 → −13: kötüleşme
+    // Sonraki özet testleri tüm iadeleri topluyor: bu testin verisini temizle
+    getDB().prepare('DELETE FROM water_returns WHERE product_id=?').run(productId)
+    getDB().prepare('DELETE FROM water_movements WHERE product_id=?').run(productId)
+  })
+
   it('depozito bakiyesi — dolaşımdaki = giriş − iade', async () => {
     const r = await request(app).get('/api/water/deposit').set('Authorization', `Bearer ${managerToken}`)
     expect(r.status).toBe(200)
