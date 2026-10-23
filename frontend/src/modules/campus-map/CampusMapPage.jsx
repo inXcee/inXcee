@@ -267,7 +267,7 @@ export default function CampusMapPage() {
     }
   }, [queryClient])
 
-  useEventStream('/api/notifications/stream', token, handleSSE, [handleSSE])
+  useEventStream('/api/notifications/stream', token, handleSSE)
 
   // Klavye kisayollari
   useEffect(() => {
