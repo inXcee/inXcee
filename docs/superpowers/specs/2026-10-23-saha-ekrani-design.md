@@ -80,26 +80,28 @@ WhatsApp Business API Meta doğrulaması + mesaj başı ücret ister; sahibin ki
 
 ## 6. API (kiosk, `requireAvsKiosk`, yalnız temizlik + çamaşır grupları)
 
-Oda panosu:
+Bir "yer" (`location`) oda için `BLOK-ODANO` (`M1-205`), M bloğu ortak alanı için `BLOK-KAT-kod`
+(`M1-2-toilet`) — üretimdeki anahtarın aynısı. Böylece oda ve ortak alan aynı uçlarla işaretlenir.
 
-- `GET /api/avs-self-service/board/blocks` — blok listesi + bugünkü sayaçlar (temizlendi, yapılamadı, dolu,
-  boş, bilinmiyor, kapalı).
-- `GET /api/avs-self-service/board/rooms?block=M1` — o bloğun odaları: kat, oda no, kullanım durumu
-  (açık/kapalı/kilitli), vardiya (gececi), doluluk, bugünkü temizlik (durum, saat, kim), son temizlik.
-- `POST /board/rooms/:id/clean` — temizlendi (isteğe bağlı foto). İdempotent: ikinci işaret ilk kişiyi ezmez.
-- `POST /board/rooms/:id/skip` `{reason}` — temizlenemedi. Sebepler: kilitli · rahatsız etmeyin/uyuyor ·
-  oda dolu, sonra · malzeme yok · diğer (not).
-- `POST /board/rooms/:id/undo` — bugünkü işareti geri al (yalnız aynı gün, kendi işareti; yönetici her şeyi).
-- `PATCH /board/rooms/:id/occupancy` `{occupancy: 'occupied'|'empty'|null}`.
-- `POST /board/floor-clean` `{block, floor}` — katın açık, kilitsiz, henüz işaretlenmemiş odalarını temizlendi
-  yapar; dönen kimliklerle tek dokunuşla geri alınabilir.
+Oda panosu (`/api/avs-self-service/board`):
 
-Çamaşır defteri:
+- `GET /blocks` — blok listesi + bugünkü sayaçlar (temizlendi, yapılamadı, dolu, boş, bilinmiyor, kapalı).
+- `GET /rooms?block=M1` — o bloğun katları: ortak alanlar + odalar (kullanım durumu, gececi, doluluk,
+  bugünkü temizlik durumu/saat/kim, son temizlik).
+- `POST /mark` `{location, action: 'clean'|'skip', reason?, note?}` (+ isteğe bağlı en çok 3 foto) —
+  temizlendi / temizlenemedi. İdempotent: ikinci "temizlendi" ilk kişiyi ezmez. Sebepler mevcut kioskla
+  aynı: oda kullanımda · rahatsız etmeyin · kapı kilitli · arıza nedeniyle · diğer (not).
+- `POST /undo` `{location}` — bugünkü işareti geri al (yalnız kendi işareti; başkasınınkini yönetici düzeltir).
+- `PATCH /rooms/:id/occupancy` `{occupancy: 'occupied'|'empty'|null}`.
+- `POST /floor` `{block, floor, dry_run}` — katın uygun tüm yerlerini temizlendi yapar; `dry_run` önce
+  sayıyı ve dışarıda kalanları söyler. `POST /floor-undo` `{locations}` ile tek dokunuşla geri alınır.
 
-- `GET /avs-self-service/laundry` — yıkamada (dirty/washing/ironing) · hazır · bugün teslim edilenler.
-- `POST /avs-self-service/laundry` `{room_id, bags, ironing, urgent, note, client_request_id}` — teslim al.
-- `PATCH /avs-self-service/laundry/:id/ready` · `PATCH .../:id/deliver {name?}` — mevcut defter servisleri.
-- `POST /avs-self-service/laundry/:id/undo` — son adımı geri al (kendi, 24 saat içinde).
+Çamaşır defteri (`/api/avs-self-service/laundry`, oda bazında):
+
+- `GET /` — yıkamada (dirty/washing/ironing) · hazır · bugün teslim edilenler, oda bazında gruplu.
+- `POST /` `{room_id, bags, ironing, urgent, note, client_request_id}` — teslim al (torba sayısı kadar kayıt).
+- `POST /rooms/:roomId/ready` · `POST /rooms/:roomId/deliver {name?}` — odanın uygun torbaları.
+- `POST /undo` `{action, ids}` — son adımı geri al (kendi, 24 saat içinde).
 
 Yönetici (web): `PATCH /api/housekeeping/rooms/:id/occupancy` (müdür + amir) — webden de doluluk verilebilsin.
 
