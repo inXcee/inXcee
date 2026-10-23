@@ -180,6 +180,42 @@ describe('getAnomalies', () => {
   })
 })
 
+describe('Gösterge doğruluğu — açık arıza ve blok doluluğu', () => {
+  const auth = () => ({ Authorization: `Bearer ${token}` })
+
+  // Uygulama arızayı open → in_progress → done yürütür. Panel 'açık arıza'yı status='open' sayınca
+  // teknisyen işe başladığı an arıza KPI'dan düşüyordu (bakım modülü açık = status != 'done' sayar).
+  it('işlemdeki (in_progress) arıza KPI\'da açık arıza sayılır', async () => {
+    const before = (await request(app).get('/api/dashboard/kpi').set(auth())).body.open_maintenance
+    getDB().prepare(`INSERT INTO maintenance_requests(location, description, status)
+      VALUES('M1 - Oda 101', 'Panel testi: işlemde', 'in_progress')`).run()
+    const after = (await request(app).get('/api/dashboard/kpi').set(auth())).body.open_maintenance
+    expect(after - before).toBe(1)
+  })
+
+  it('işlemdeki arıza sağlık skorunun ARIZA bileşenini düşürür', () => {
+    const ariza = () => getHealthScore().breakdown.find(c => c.label === 'ARIZA').value
+    const before = ariza()
+    getDB().prepare(`INSERT INTO maintenance_requests(location, description, status)
+      VALUES('M1 - Oda 103', 'Sağlık testi: işlemde', 'in_progress')`).run()
+    expect(before - ariza()).toBe(10)
+  })
+
+  // LEFT JOIN room_assignments ile SUM(r.active_beds): 3 kişilik odada odanın yatakları 3 kez toplanıyordu.
+  it('ısı haritası: dolu odadaki her kişi odanın yataklarını yeniden saymaz', async () => {
+    const db = getDB()
+    const dolu = db.prepare(`INSERT INTO rooms(block, floor, room_no, capacity, active_beds) VALUES('QX', 1, '101', 6, 6)`).run().lastInsertRowid
+    db.prepare(`INSERT INTO rooms(block, floor, room_no, capacity, active_beds) VALUES('QX', 1, '102', 6, 6)`).run()
+    for (let bed = 1; bed <= 3; bed++) {
+      const pid = db.prepare(`INSERT INTO personnel(full_name, check_in_date) VALUES(?, datetime('now'))`).run(`Isı Haritası ${bed}`).lastInsertRowid
+      db.prepare('INSERT INTO room_assignments(personnel_id, room_id, bed_no) VALUES(?, ?, ?)').run(pid, dolu, bed)
+    }
+    const res = await request(app).get('/api/dashboard/heatmap').set(auth())
+    expect(res.status).toBe(200)
+    expect(res.body.find(b => b.block === 'QX')).toMatchObject({ total_beds: 12, occupied: 3, pct: 25 })
+  })
+})
+
 describe('getAnomalies — erişim/güvenlik (Faz 6.2)', () => {
   it('bugün kara liste alarmı → critical anomali', () => {
     const db = getDB()

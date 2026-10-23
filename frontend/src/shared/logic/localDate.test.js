@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
-import { ymd, toLocalDate, startOfWeek, addDays } from './localDate.js'
+import { ymd, toLocalDate, startOfWeek, addDays, parseSqlUtc, utcSqlToLocalYmd } from './localDate.js'
 
 // Tarihler UTC'ye çevrilip geri okunuyordu: Türkiye UTC+3 olduğu için yerel
 // gece yarısı ile 03:00 arasında toISOString() BİR ÖNCEKİ günü veriyordu.
@@ -69,5 +69,36 @@ describe('addDays', () => {
   it('gün atlamaz: 7 gün eklemek hep aynı hafta gününü verir', () => {
     const bir = '2026-03-25'
     expect(new Date(addDays(bir, 7)).getDay()).toBe(new Date(bir).getDay())
+  })
+})
+
+// Sunucu zaman damgaları SQLite datetime('now') biçiminde UTC'dir: '2026-10-22 22:30:00' (Z'siz).
+// `new Date('2026-10-22 22:30:00')` bunu YEREL saat sanar (İstanbul'da 3 saat kayar), `.startsWith(bugün)`
+// ise UTC gününe bakar: gece 00:00–03:00 arası açılan arıza 'bugün' sayılmıyordu.
+describe('parseSqlUtc', () => {
+  it('Z\'siz SQLite metnini UTC an olarak okur', () => {
+    expect(parseSqlUtc('2026-10-22 22:30:00').getTime()).toBe(Date.UTC(2026, 9, 22, 22, 30))
+  })
+
+  it('zaten ISO (Z ya da ofsetli) değeri olduğu gibi okur', () => {
+    expect(parseSqlUtc('2026-10-22T22:30:00Z').getTime()).toBe(Date.UTC(2026, 9, 22, 22, 30))
+    expect(parseSqlUtc('2026-10-23T01:30:00+03:00').getTime()).toBe(Date.UTC(2026, 9, 22, 22, 30))
+  })
+
+  it('boş ya da bozuk değerde null döner', () => {
+    expect(parseSqlUtc(null)).toBeNull()
+    expect(parseSqlUtc('')).toBeNull()
+    expect(parseSqlUtc('tarih değil')).toBeNull()
+  })
+})
+
+describe('utcSqlToLocalYmd', () => {
+  it('UTC zaman damgasının yerel takvim gününü verir', () => {
+    // İstanbul'da 23 Ekim 01:30 — metnin ilk 10 hanesi (UTC günü) 22 Ekim diyor
+    expect(utcSqlToLocalYmd('2026-10-22 22:30:00')).toBe(ymd(new Date(Date.UTC(2026, 9, 22, 22, 30))))
+  })
+
+  it('boş değerde null döner', () => {
+    expect(utcSqlToLocalYmd(undefined)).toBeNull()
   })
 })

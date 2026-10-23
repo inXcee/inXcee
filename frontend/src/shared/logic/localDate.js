@@ -34,6 +34,24 @@ export function thisMonthStr(date = new Date()) {
   return ymd(date).slice(0, 7)
 }
 
+// Sunucu zaman damgası → Date. SQLite datetime('now') UTC'yi Z'siz yazar ('2026-10-22 22:30:00');
+// `new Date()` böyle bir metni YEREL saat sanar (İstanbul'da 3 saat kayar). ISO (Z/ofsetli) değer
+// olduğu gibi okunur. Boş ya da bozuk değer → null.
+export function parseSqlUtc(value) {
+  if (!value) return null
+  const s = String(value).trim()
+  const iso = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(s) ? s : s.replace(' ', 'T') + 'Z'
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+// UTC zaman damgasının yerel takvim günü. `ts.startsWith(bugün)` UTC gününe bakar:
+// gece 00:00–03:00 arası yazılan kayıt 'bugün' sayılmıyordu.
+export function utcSqlToLocalYmd(value) {
+  const d = parseSqlUtc(value)
+  return d ? ymd(d) : null
+}
+
 // Hafta pazartesi başlar (takvim haftası).
 export function startOfWeek(date) {
   const d = toLocalDate(date)

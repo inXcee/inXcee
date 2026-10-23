@@ -2,11 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import api from '../../shared/api/client.js'
 import DashCard from './DashCard.jsx'
-
-function todayDateStr() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
+import { todayStr, utcSqlToLocalYmd } from '../../shared/logic/localDate.js'
 
 function PulseRow({ label, value, sub, dotColor, onClick, isLast }) {
   return (
@@ -52,7 +48,7 @@ export default function TodaysPulse() {
   })
   const { data: openMaint = [] } = useQuery({
     queryKey: ['maint-open-pulse'],
-    queryFn: () => api.get('/maintenance/requests?status=open').then(r => r.data).catch(() => []),
+    queryFn: () => api.get('/maintenance/requests?status=active').then(r => r.data).catch(() => []),
     refetchInterval: 60000,
   })
   const { data: hkTasks = [] } = useQuery({
@@ -66,12 +62,13 @@ export default function TodaysPulse() {
     refetchInterval: 60000,
   })
 
-  const today = todayDateStr()
+  const today = todayStr()
   const todayPoint = trends?.checkins?.find(p => p.date === today)
   const inToday = todayPoint?.in ?? 0
   const outToday = todayPoint?.out ?? 0
-  const maintToday = openMaint.filter(r => (r.opened_at || '').startsWith(today)).length
-  const hkDoneToday = hkTasks.filter(t => (t.completed_at || '').startsWith(today)).length
+  // opened_at / completed_at UTC yazılır: metnin ilk 10 hanesi UTC günüdür, gece 00–03 arası kayıtları kaçırıyordu.
+  const maintToday = openMaint.filter(r => utcSqlToLocalYmd(r.opened_at) === today).length
+  const hkDoneToday = hkTasks.filter(t => utcSqlToLocalYmd(t.completed_at) === today).length
   const activeVisitors = visitors?.active ?? 0
 
   const rows = [

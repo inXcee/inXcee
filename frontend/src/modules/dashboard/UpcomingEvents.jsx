@@ -2,10 +2,11 @@ import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import api from '../../shared/api/client.js'
 import DashCard from './DashCard.jsx'
+import { parseSqlUtc } from '../../shared/logic/localDate.js'
 
 function daysUntil(dateStr) {
   if (!dateStr) return null
-  const target = new Date(dateStr)
+  const target = dateStr instanceof Date ? dateStr : new Date(dateStr)
   const now = new Date()
   return Math.ceil((target - now) / (1000 * 60 * 60 * 24))
 }
@@ -74,7 +75,7 @@ export default function UpcomingEvents() {
   })
   const { data: openMaint = [] } = useQuery({
     queryKey: ['upcoming-sla'],
-    queryFn: () => api.get('/maintenance/requests?status=open').then(r => r.data).catch(() => []),
+    queryFn: () => api.get('/maintenance/requests?status=active').then(r => r.data).catch(() => []),
     refetchInterval: 60 * 1000,
   })
 
@@ -104,7 +105,8 @@ export default function UpcomingEvents() {
 
   for (const r of openMaint) {
     if (r.sla_deadline) {
-      const d = daysUntil(r.sla_deadline)
+      // sla_deadline UTC metindir; new Date() onu yerel saat sanıp 3 saat kaydırıyordu
+      const d = daysUntil(parseSqlUtc(r.sla_deadline))
       if (d != null && d <= 7) {
         events.push({
           key: `sla-${r.id}`,

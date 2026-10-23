@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from '../../../shared/i18n/index.js'
 import { downscalePhoto } from '../../../shared/photo.js'
+import { isSlaOverdue } from '../../maintenance/sla.js'
 
 const PRIORITIES = ['all', 'high', 'medium', 'low']
 const SCOPES = ['mine', 'available', 'all']
@@ -134,8 +135,7 @@ export default function TechnicalTasksPanel({
           const available = !item.avs_assigned_worker_id && !item.assigned_to
           const ownerName = item.avs_worker_name || item.technician_name
           const draft = maintenanceDrafts[item.id] || {}
-          const overdue = item.sla_deadline && item.status !== 'done'
-            && new Date(item.sla_deadline).getTime() < Date.now()
+          const overdue = isSlaOverdue(item)
           const claiming = claimMaintenance?.isPending && claimMaintenance.variables === item.id
           const updating = updateMaintenanceStatus?.isPending
             && updateMaintenanceStatus.variables?.id === item.id

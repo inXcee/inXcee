@@ -19,6 +19,7 @@ import LocationPicker from './LocationPicker.jsx'
 import KanbanView from './KanbanView.jsx'
 import { AvailableTechnicians, TechnicianManager } from './TechnicianPanels.jsx'
 import DetailPanel from './DetailPanel.jsx'
+import { isSlaOverdue } from './sla.js'
 
 const INIT_MAINTENANCE = { location: '', description: '', priority: 'medium', category: 'genel' }
 
@@ -54,7 +55,7 @@ export default function MaintenancePage() {
 
   const buildQuery = () => {
     let url = '/maintenance/requests?'
-    if (filter === 'overdue') url += 'status=open&'
+    if (filter === 'overdue') url += 'status=active&'
     else if (filter === 'all' || filter === 'kanban') { /* no status filter */ }
     else url += `status=${filter}&`
     if (debouncedSearch.trim()) url += `search=${encodeURIComponent(debouncedSearch.trim())}&`
@@ -75,7 +76,7 @@ export default function MaintenancePage() {
   })
 
   const requests = filter === 'overdue'
-    ? rawRequests.filter(r => r.sla_deadline && new Date(r.sla_deadline) < new Date())
+    ? rawRequests.filter(r => isSlaOverdue(r))
     : rawRequests
 
   const createRequest = useMutation({
