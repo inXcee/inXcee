@@ -22,7 +22,7 @@ const truncate = (val, max) => {
   return s.length > max ? s.slice(0, max) : s
 }
 
-export function reportErrorService({ source, severity, message, stack, url, user_id, user_agent, context }) {
+export function reportErrorService({ source, severity, message, stack, url, user_id, user_agent, context, notify = true }) {
   if (!VALID_SOURCES.has(source)) return { error: 'Geçersiz source', status: 400 }
   if (severity && !VALID_SEVERITIES.has(severity)) return { error: 'Geçersiz severity', status: 400 }
   if (!message || String(message).trim().length === 0) return { error: 'Mesaj zorunlu', status: 400 }
@@ -48,7 +48,7 @@ export function reportErrorService({ source, severity, message, stack, url, user
       context: contextJson,
     })
     // A→Z: 'error' severity ile gelen hatalar bildirim akışına (warning suskun kalır)
-    if (severity === 'error' && id) {
+    if (notify && severity === 'error' && id) {
       try {
         createNotification({
           message: `🛑 ${source === 'frontend' ? 'Frontend' : 'Backend'} hata: ${truncate(message, 120)}`,

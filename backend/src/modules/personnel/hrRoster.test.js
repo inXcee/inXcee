@@ -249,3 +249,22 @@ describe('İK kadro senkronu', () => {
     expect(open).toBe(0)
   })
 })
+
+describe('PC ajanı hata bildirimi (POST /hr-roster/agent-error)', () => {
+  // Ajan düşünce (ör. Excel taşındı/silindi) nedeni yalnız PC'deki günlüğe yazılıyordu: 18–23 Eki arası 6 gün
+  // puantaj Excel'i güncellenmedi, Hermes "bilgisayar kapalı olabilir" diye tahmin yürüttü. Artık hata kaydına
+  // düşer (source=backend → Hermes server_watch Telegram'a taşır) ve müdüre bildirim açar.
+  it('ajanın hatası ajan adıyla backend hata kaydına yazılır', async () => {
+    const res = await request(app).post('/api/personnel/hr-roster/agent-error').set(auth(sup))
+      .send({ message: 'Excel bulunamadı: KAMP ALANI 2026 PUANTAJI-3.xlsx', host: 'OFIS-PC' })
+    expect(res.status).toBe(201)
+    const row = getDB().prepare('SELECT source, severity, message, user_id FROM error_log WHERE id=?').get(res.body.id)
+    expect(row).toMatchObject({ source: 'backend', severity: 'error', message: 'Puantaj ajanı: Excel bulunamadı: KAMP ALANI 2026 PUANTAJI-3.xlsx' })
+    expect(row.user_id).toBeTruthy()
+  })
+
+  it('oturumsuz ya da mesajsız istek reddedilir', async () => {
+    expect((await request(app).post('/api/personnel/hr-roster/agent-error').send({ message: 'x' })).status).toBe(401)
+    expect((await request(app).post('/api/personnel/hr-roster/agent-error').set(auth(sup)).send({ message: '  ' })).status).toBe(400)
+  })
+})

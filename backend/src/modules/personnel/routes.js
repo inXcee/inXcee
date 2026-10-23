@@ -19,6 +19,7 @@ import {
 import * as q from './queries.js'
 import { importPersonnel, listPersonnelImportBatches, undoPersonnelImport } from './import.js'
 import { logger } from '../../shared/logger.js'
+import { reportErrorService } from '../error-log/service.js'
 import { applyDossierAccess, dossierAccess } from './access-policy.js'
 import { getDossier, getDossierTimeline } from './dossier.js'
 import { documentUpload, verifyDocumentBytes } from '../../shared/uploads/document-middleware.js'
@@ -71,6 +72,24 @@ personnelRouter.post('/hr-roster', ...mgr, (req, res) => {
     try { evaluatePersonnelAlerts() } catch (error) { logger.error('[personnel/hr-roster] uyarı değerlendirme', error) }
     res.status(201).json(result)
   } catch (error) { trackingError(res, error, '[personnel/hr-roster]') }
+})
+
+// PC ajanının turu düşünce (Excel taşındı/silindi, dosya okunamadı...) nedeni hata kaydına yazılır: Hermes
+// server_watch onu Telegram'a taşır, müdüre bildirim açılır. Ajan eskiden yalnız PC'deki günlüğe yazıyordu —
+// 18–23 Eki 2026'da 6 gün kimse görmedi, Hermes 'bilgisayar kapalı olabilir' diye tahmin yürüttü.
+personnelRouter.post('/hr-roster/agent-error', ...mgr, (req, res) => {
+  const message = String(req.body?.message ?? '').trim()
+  if (!message) return res.status(400).json({ error: 'Mesaj zorunlu' })
+  const result = reportErrorService({
+    source: 'backend', severity: 'error',
+    message: `Puantaj ajanı: ${message}`,
+    url: 'POST /api/personnel/hr-roster/agent-error',
+    user_id: req.user.id,
+    user_agent: req.headers['user-agent'],
+    context: { agent: 'yys-puantaj-sync', host: String(req.body?.host ?? '').slice(0, 80) || null },
+  })
+  if (!result.ok) return res.status(500).json({ error: 'Hata kaydı yazılamadı' })
+  res.status(201).json({ ok: true, id: result.id })
 })
 
 personnelRouter.get('/hr-roster', ...mgr, (req, res) => {
