@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import api from '../../../shared/api/client.js'
 import { SkeletonGrid } from '../../../shared/components/Skeleton.jsx'
 import { DossierAnnualLeave, DossierSection } from './StaffDossierShared.jsx'
+import { isDateOnly, toLocalDate } from '../../../shared/logic/localDate.js'
 import './StaffWorkTrackingPanel.css'
 
 const EVENT_LABELS = {
@@ -35,6 +36,8 @@ function number(value, digits = 0) {
 
 function displayDate(value, withTime = false) {
   if (!value) return '—'
+  // Olay tarihleri (effective_at) yalnız gündür: saat uydurulmaz
+  if (isDateOnly(value)) return toLocalDate(value).toLocaleDateString('tr-TR', { dateStyle: withTime ? 'short' : 'medium' })
   const parsed = new Date(String(value).replace(' ', 'T'))
   if (Number.isNaN(parsed.getTime())) return value
   return parsed.toLocaleString('tr-TR', withTime ? { dateStyle: 'short', timeStyle: 'short' } : { dateStyle: 'medium' })

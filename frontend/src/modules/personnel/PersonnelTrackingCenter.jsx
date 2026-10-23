@@ -8,6 +8,7 @@ import { useToastStore } from '../../shared/store/toastStore.js'
 import { SkeletonGrid } from '../../shared/components/Skeleton.jsx'
 import { exportPersonnelTrackingExcel } from './logic/personnelTrackingExcel.js'
 import { describeTrackingErrors } from './logic/trackingErrors.js'
+import { isDateOnly, toLocalDate } from '../../shared/logic/localDate.js'
 import PersonnelTrackingDrilldown from './PersonnelTrackingDrilldown.jsx'
 import './PersonnelTrackingCenter.css'
 
@@ -50,6 +51,8 @@ function number(value, digits = 0) {
 
 function dateTime(value) {
   if (!value) return '—'
+  // Olay tarihleri (effective_at, last_event_at) yalnız gündür: saat uydurulmaz
+  if (isDateOnly(value)) return toLocalDate(value).toLocaleDateString('tr-TR', { dateStyle: 'short' })
   const parsed = new Date(String(value).replace(' ', 'T'))
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' })
 }

@@ -203,3 +203,24 @@ describe('Personel Takip Merkezi ayrıntı paneli', () => {
     expect(taskLink.getAttribute('href')).toContain('followup_category=attendance')
   })
 })
+
+describe('Personel Takip Merkezi tarih gösterimi', () => {
+  // effective_at yalnız gündür ('2026-10-23'). new Date('2026-10-23') UTC gece yarısıdır: tarih+saat biçimi
+  // İstanbul'da her olaya sahte bir '03:00' ekliyordu.
+  it('yalnız gün olan olay tarihini saat uydurmadan gösterir', async () => {
+    api.get.mockImplementation((url, config = {}) => {
+      if (url === '/personnel/tracking/overview') return Promise.resolve({ data: overview })
+      if (url === '/personnel/tracking/people') return Promise.resolve({ data: { total: 0, items: [] } })
+      if (url === '/personnel/tracking/events') {
+        return Promise.resolve({ data: { total: 1, items: [{ id: 5, staff_id: 44, full_name: 'Tarih Testi', event_type: 'leave_changed', effective_at: '2026-10-23', before: null, after: null }] } })
+      }
+      if (url === '/personnel/tracking/alerts') return Promise.resolve({ data: { items: [] } })
+      if (url === '/personnel/tracking/drilldown') return Promise.resolve({ data: drilldown(config.params) })
+      return Promise.resolve({ data: [] })
+    })
+    renderWithProviders(<Harness />)
+    const row = await screen.findByRole('button', { name: /Tarih Testi/ })
+    expect(row).toHaveTextContent('23.10.2026')
+    expect(row).not.toHaveTextContent('03:00')
+  })
+})

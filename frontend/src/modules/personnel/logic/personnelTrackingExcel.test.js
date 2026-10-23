@@ -124,6 +124,20 @@ describe('personnelTrackingExcel', () => {
     expect(reopened.worksheets.map(sheet => sheet.name)).toEqual(PERSONNEL_DOSSIER_EXCEL_SHEETS)
   })
 
+  // Excel'in saat dilimi yok: exceljs Date'in UTC bileşenlerini yazar. Sunucunun UTC damgası (created_at) hücrede
+  // 6 saat, yerel saat metni (due_at) 3 saat erken; yalnız gün değerleri (effective_at) sahte saatle çıkıyordu.
+  it('writes server timestamps as Istanbul wall-clock and date-only values without a time', () => {
+    const workbook = buildPersonnelTrackingWorkbook(ExcelJS, trackingOptions())
+    const moves = workbook.getWorksheet('Kalıcı Transferler')
+    expect(moves.getCell('A5').value.toISOString()).toBe('2026-08-01T00:00:00.000Z')   // effective_at: yalnız gün
+    expect(moves.getCell('A5').numFmt).toBe('dd.mm.yyyy')
+    expect(moves.getCell('I5').value.toISOString()).toBe('2026-08-01T12:00:00.000Z')   // created_at 09:00 UTC → 12:00 İstanbul
+    expect(moves.getCell('I5').numFmt).toBe('dd.mm.yyyy hh:mm')
+    const due = workbook.getWorksheet('Açık Aksiyonlar').getCell('H5')
+    expect(due.value.toISOString()).toBe('2026-08-10T17:00:00.000Z')                    // due_at yerel 17:00 → 17:00
+    expect(due.numFmt).toBe('dd.mm.yyyy hh:mm')
+  })
+
   it('uses stable, filesystem-safe filenames', () => {
     expect(personnelTrackingFilename('2026-08-01', '2026-08-31')).toBe('personel-takip-2026-08-01-2026-08-31.xlsx')
     expect(personnelDossierFilename(54, '2026-08-08')).toBe('personel-dosyasi-54-2026-08-08.xlsx')
