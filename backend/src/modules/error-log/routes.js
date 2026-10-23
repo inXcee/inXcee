@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
-import jwt from 'jsonwebtoken'
+import { sessionUser } from '../../shared/auth/owner.js'
 import { logger } from '../../shared/logger.js'
 import {
   reportErrorService, listErrorsService, getErrorService,
@@ -10,24 +10,20 @@ import {
 export const errorLogRouter = Router()
 const adminOnly = requireRole('campus_manager')
 
-// Frontend hata raporlama — auth opsiyonel (login öncesi de hata olabilir),
-// ama varsa user_id'yi token'dan çekeriz
+// Tarayıcıların hata raporu — auth isteğe bağlı (giriş öncesi de hata olur); oturum varsa (çerez ya da Bearer)
+// kullanıcı bağlanır. 'backend' kaydını yalnız sunucu yazar (globalErrorHandler, ajan uçları): HTTP'den kabul
+// edilince oturumsuz biri sahte "sunucu hatası" yazabiliyor, Hermes bunu Telegram'a taşıyordu.
 errorLogRouter.post('/', (req, res) => {
-  let userId = null
-  const h = req.headers.authorization
-  if (h?.startsWith('Bearer ')) {
-    try {
-      const decoded = jwt.verify(h.slice(7), process.env.JWT_SECRET)
-      userId = decoded?.id || decoded?.userId || null
-    } catch { /* ignore — anonymous error */ }
-  }
-
+  const user = sessionUser(req)
   const { source = 'frontend', severity, message, stack, url, context } = req.body || {}
+  if (source !== 'frontend') return res.status(400).json({ error: 'Geçersiz source' })
   const result = reportErrorService({
     source, severity, message, stack, url,
-    user_id: userId,
+    user_id: user?.id || user?.userId || null,
     user_agent: req.headers['user-agent'],
     context,
+    // Oturumsuz rapor yalnız kaydedilir: anonim istekle müdürlere bildirim yağdırılamasın.
+    notify: Boolean(user),
   })
   if (result.error) return res.status(result.status).json({ error: result.error })
   res.status(201).json(result)

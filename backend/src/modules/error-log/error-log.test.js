@@ -3,6 +3,7 @@ import request from 'supertest'
 import app from '../../app.js'
 import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
+import { reportErrorService } from './service.js'
 
 let adminToken, userToken
 
@@ -85,10 +86,51 @@ describe('Error Log — POST /', () => {
   })
 })
 
+describe('Error Log — POST / güvenliği', () => {
+  // 'backend' kaydını yalnız sunucu yazar (globalErrorHandler, ajan uçları). HTTP'den kabul edilince oturumsuz biri
+  // sahte "sunucu hatası" yazabiliyordu; Hermes bunları Telegram'a "🐞 YYS sunucu hatası" diye taşıyor.
+  it('oturumsuz istek backend kaydı yazamaz', async () => {
+    const res = await request(app).post('/api/error-log').send({ source: 'backend', message: 'sahte sunucu hatası' })
+    expect(res.status).toBe(400)
+    expect(getDB().prepare('SELECT COUNT(*) c FROM error_log').get().c).toBe(0)
+  })
+
+  it('oturumlu istek de HTTP üzerinden backend kaydı yazamaz', async () => {
+    const res = await request(app).post('/api/error-log').set('Authorization', `Bearer ${adminToken}`)
+      .send({ source: 'backend', message: 'yine sahte' })
+    expect(res.status).toBe(400)
+  })
+
+  // Oturumsuz rapor kaydedilir ama müdürlere bildirim açmaz: anonim istekle bildirim yağdırılamasın.
+  it('oturumsuz error raporu kaydedilir ama bildirim açmaz', async () => {
+    const res = await request(app).post('/api/error-log').send({ source: 'frontend', severity: 'error', message: 'anonim-bildirim-denemesi' })
+    expect(res.status).toBe(201)
+    const n = getDB().prepare("SELECT COUNT(*) c FROM notifications WHERE message LIKE '%anonim-bildirim-denemesi%'").get().c
+    expect(n).toBe(0)
+  })
+
+  it('oturumlu error raporu müdüre bildirim açar', async () => {
+    const res = await request(app).post('/api/error-log').set('Authorization', `Bearer ${userToken}`)
+      .send({ source: 'frontend', severity: 'error', message: 'oturumlu-bildirim' })
+    expect(res.status).toBe(201)
+    const n = getDB().prepare("SELECT COUNT(*) c FROM notifications WHERE message LIKE '%oturumlu-bildirim%'").get().c
+    expect(n).toBe(1)
+  })
+
+  // Web oturumu çerezdedir (yys_session); route yalnız Authorization başlığına bakıyordu.
+  it('çerez oturumu raporu kullanıcıya bağlar', async () => {
+    const res = await request(app).post('/api/error-log').set('Cookie', `yys_session=${userToken}`)
+      .send({ source: 'frontend', message: 'cerezli' })
+    expect(res.status).toBe(201)
+    expect(getDB().prepare('SELECT user_id FROM error_log WHERE id=?').get(res.body.id).user_id).toBeTruthy()
+  })
+})
+
 describe('Error Log — GET /', () => {
   beforeEach(async () => {
     await request(app).post('/api/error-log').send({ source: 'frontend', message: 'A' })
-    await request(app).post('/api/error-log').send({ source: 'backend', message: 'B' })
+    // 'backend' kaydını yalnız sunucu yazar (HTTP'den kabul edilmez) — fikstür sunucunun yolundan
+    reportErrorService({ source: 'backend', severity: 'warning', message: 'B' })
   })
 
   it('admin tüm hataları listeler', async () => {
