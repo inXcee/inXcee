@@ -35,7 +35,7 @@ documentsRouter.get('/', ...mgmt, (req, res) => {
   res.json(db.prepare(sql).all(...params))
 })
 
-documentsRouter.post('/', ...mgmt, documentUpload.single('file'), verifyDocumentBytes, (req, res) => {
+documentsRouter.post('/', ...mgmt, documentUpload.single('file'), verifyDocumentBytes, (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Dosya gerekli' })
     const { category, title, related_type, related_id, description } = req.body
@@ -65,7 +65,7 @@ documentsRouter.post('/', ...mgmt, documentUpload.single('file'), verifyDocument
     res.status(201).json({ id: r.lastInsertRowid })
   } catch (e) {
     try { if (req.file) fs.unlinkSync(req.file.path) } catch {}
-    res.status(500).json({ error: e.message })
+    next(e) // genel hata işleyicisi: iç ayrıntı istemciye gitmez, hata kaydına yazılır
   }
 })
 

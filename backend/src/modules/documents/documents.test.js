@@ -3,7 +3,7 @@ import request from 'supertest'
 import fs from 'fs'
 import path from 'path'
 import app from '../../app.js'
-import { initDB } from '../../shared/db/index.js'
+import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
 
 let token
@@ -74,5 +74,25 @@ describe('Documents', () => {
       .field('category', 'wrong_cat')
       .field('title', 'X')
     expect(res.status).toBe(400)
+  })
+})
+
+describe('Documents — beklenmeyen hata', () => {
+  // Rota e.message'ı istemciye dönüyordu; artık genel hata işleyicisine gider. Yüklenen dosya yine silinir.
+  it('veritabanı hatası iç ayrıntıyı sızdırmaz, yüklenen dosyayı bırakmaz', async () => {
+    const db = getDB()
+    const files = () => (fs.existsSync(tmpDir) ? fs.readdirSync(tmpDir, { recursive: true }).length : 0)
+    const before = files()
+    db.exec('ALTER TABLE documents RENAME TO documents_gecici')
+    try {
+      const res = await request(app).post('/api/documents').set('Authorization', `Bearer ${token}`)
+        .attach('file', Buffer.from('%PDF-1.4\n%hata testi', 'utf-8'), { filename: 'hata.pdf', contentType: 'application/pdf' })
+        .field('category', 'contract').field('title', 'Hata Testi')
+      expect(res.status).toBe(500)
+      expect(res.body.error).toBe('Sunucu hatası')
+      expect(files()).toBe(before)
+    } finally {
+      db.exec('ALTER TABLE documents_gecici RENAME TO documents')
+    }
   })
 })
