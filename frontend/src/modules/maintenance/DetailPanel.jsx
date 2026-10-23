@@ -5,6 +5,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { SkeletonCard } from '../../shared/components/Skeleton.jsx'
+import { parseSqlUtc } from '../../shared/logic/localDate.js'
+import { isSlaOverdue } from './sla.js'
 import {
   statusInfo, priInfo, PRIORITIES, SPECIALTIES, WAIT_REASONS,
   StatusTimeline, StatusActions, PhotoCapture,
@@ -104,14 +106,14 @@ export default function DetailPanel({ requestId, onClose }) {
               border: '1px solid rgba(26,188,156,.25)',
             }}>ODA QR · {request.identity_mode === 'resident_pin' ? 'PIN' : 'ANONİM'}</span>}
             {request.sla_deadline && request.status !== 'done' && (() => {
-              const isOverdue = new Date(request.sla_deadline) < new Date()
+              const isOverdue = isSlaOverdue(request)
               return (
                 <span style={{
                   fontFamily: 'var(--mono)', fontSize: '8.5px', padding: '2px 8px', borderRadius: '4px',
                   color: isOverdue ? 'var(--red)' : 'var(--teal)',
                   background: isOverdue ? 'rgba(231,76,60,.12)' : 'rgba(26,188,156,.12)',
                   border: isOverdue ? '1px solid rgba(231,76,60,.3)' : '1px solid rgba(26,188,156,.3)',
-                }}>SLA {isOverdue ? 'AŞILDI' : new Date(request.sla_deadline).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                }}>SLA {isOverdue ? 'AŞILDI' : parseSqlUtc(request.sla_deadline)?.toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
               )
             })()}
           </div>

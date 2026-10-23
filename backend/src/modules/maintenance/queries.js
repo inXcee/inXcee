@@ -37,7 +37,10 @@ export function createRequest({
 function buildRequestsFilter({ status, search, priority, category, reporter_user_id, assigned_user_id }) {
   let where = ' WHERE 1=1'
   const params = []
-  if (status) { where += ' AND mr.status=?'; params.push(status) }
+  // 'active' = tamamlanmamış her arıza (sla.js ve /stats ile aynı tanım). status=open yalnız henüz
+  // başlanmamışları verir; panel bunu 'açık arıza' sanınca işe başlanan arıza listelerden düşüyordu.
+  if (status === 'active') where += " AND mr.status != 'done'"
+  else if (status) { where += ' AND mr.status=?'; params.push(status) }
   if (priority) { where += ' AND mr.priority=?'; params.push(priority) }
   if (category) { where += ' AND mr.category=?'; params.push(category) }
   if (reporter_user_id) { where += ' AND mr.reporter_user_id=?'; params.push(reporter_user_id) }

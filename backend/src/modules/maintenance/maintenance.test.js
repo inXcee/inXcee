@@ -12,6 +12,31 @@ beforeAll(async () => {
   token = res.body.token
 })
 
+describe('Maintenance — status=active (tamamlanmamış tüm arızalar)', () => {
+  // Panel, mobil müdür ekranı ve 'Geciken' sekmesi status=open istiyordu: işe başlanmış (in_progress)
+  // arıza listelerden düşüyordu. 'active' = status != 'done' (sla.js ve /stats ile aynı tanım).
+  it('açık ve işlemdeki arızaları birlikte döner, tamamlananı dışarıda bırakır', async () => {
+    const ins = db.prepare(`INSERT INTO maintenance_requests(location, description, status) VALUES('M1 - Oda 104', ?, ?)`)
+    const acik = ins.run('aktif filtre: açık', 'open').lastInsertRowid
+    const islemde = ins.run('aktif filtre: işlemde', 'in_progress').lastInsertRowid
+    const bitti = ins.run('aktif filtre: bitti', 'done').lastInsertRowid
+
+    const res = await request(app).get('/api/maintenance/requests?status=active').set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    const ids = res.body.map(r => r.id)
+    expect(ids).toEqual(expect.arrayContaining([acik, islemde]))
+    expect(ids).not.toContain(bitti)
+  })
+
+  it('sayfalı listede toplam da aynı tanımı kullanır', async () => {
+    const res = await request(app).get('/api/maintenance/requests?status=active&page=1&limit=200').set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    const beklenen = db.prepare("SELECT COUNT(*) c FROM maintenance_requests WHERE status IN ('open','assigned','in_progress','review')").get().c
+    expect(res.body.total).toBe(beklenen)
+    expect(res.body.data.every(r => r.status !== 'done')).toBe(true)
+  })
+})
+
 describe('Maintenance — assign endpoint', () => {
   let requestId, techId
 

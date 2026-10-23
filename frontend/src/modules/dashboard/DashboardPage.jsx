@@ -22,6 +22,8 @@ import DashCard from './DashCard.jsx'
 import { SkeletonGrid } from '../../shared/components/Skeleton.jsx'
 import { exportRowsToXlsx } from '../../shared/utils/exportData.js'
 import { useDashboardLayout } from './useDashboardLayout.js'
+import { parseSqlUtc } from '../../shared/logic/localDate.js'
+import { isSlaOverdue } from '../maintenance/sla.js'
 
 // D3a: gizlenebilir ikincil widget'lar (çekirdek KPI/doluluk/trend sabit kalır).
 const DASH_WIDGETS = [
@@ -255,7 +257,7 @@ function AuditLogPanel({ globalFrom, globalTo }) {
               {log.detail || '—'}
             </span>
             <span style={{ fontSize: '11px', color: 'var(--text3)', flexShrink: 0 }}>
-              {log.user_name} · {new Date(log.created_at).toLocaleString('tr-TR', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
+              {log.user_name} · {parseSqlUtc(log.created_at)?.toLocaleString('tr-TR', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
             </span>
           </div>
         ))}
@@ -329,7 +331,7 @@ function TechnicianDashboard() {
   })
   const { data: openRequests = [] } = useQuery({
     queryKey: ['maintenance-open'],
-    queryFn: () => api.get('/maintenance/requests?status=open').then(r => r.data),
+    queryFn: () => api.get('/maintenance/requests?status=active').then(r => r.data),
     refetchInterval: 15000,
   })
   const { data: available = [] } = useQuery({
@@ -402,7 +404,7 @@ function TechnicianDashboard() {
                 <div style={{ fontSize: '13px', fontWeight: 500, marginBottom: '3px' }}>{req.description?.slice(0, 60)}</div>
                 <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)' }}>
                   {req.location}
-                  {req.sla_deadline && new Date(req.sla_deadline) < new Date() && (
+                  {isSlaOverdue(req) && (
                     <span style={{ color: 'var(--red)', marginLeft: '6px', fontWeight: 700 }}>SLA AŞILDI</span>
                   )}
                 </div>
@@ -599,7 +601,7 @@ export default function DashboardPage() {
   })
   const { data: maintRequests = [] } = useQuery({
     queryKey: ['dashboard-maintenance-open'],
-    queryFn: () => api.get('/maintenance/requests?status=open').then(r => r.data),
+    queryFn: () => api.get('/maintenance/requests?status=active').then(r => r.data),
     refetchInterval: 60000,
   })
 
@@ -681,7 +683,7 @@ export default function DashboardPage() {
               <div style={{ flex: 1 }}>
                 <span style={{ fontWeight: 600 }}>{n.message}</span>
                 <span style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginLeft: '8px' }}>
-                  {n.module} · {new Date(n.created_at).toLocaleString('tr-TR')}
+                  {n.module} · {parseSqlUtc(n.created_at)?.toLocaleString('tr-TR')}
                 </span>
               </div>
             </div>

@@ -13,7 +13,7 @@ export default function ManagerMaintenance() {
 
   const { data: rows = [], isLoading, refetch } = useQuery({
     queryKey: ['mobile-mgr-maintenance-open'],
-    queryFn: () => mobileApi.get('/maintenance/requests?status=open').then(r => r.data),
+    queryFn: () => mobileApi.get('/maintenance/requests?status=active').then(r => r.data),
     staleTime: 30_000,
     refetchInterval: 60_000,
   })

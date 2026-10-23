@@ -9,7 +9,8 @@ function _getKPI() {
   const total_beds = db.prepare("SELECT SUM(active_beds) as s FROM rooms WHERE status='active'").get().s || 0
   const occupied = db.prepare("SELECT COUNT(*) as c FROM room_assignments WHERE check_out_at IS NULL").get().c
   const occupancy_pct = total_beds > 0 ? Math.round((occupied / total_beds) * 100) : 0
-  const open_maintenance = db.prepare("SELECT COUNT(*) as c FROM maintenance_requests WHERE status='open'").get().c
+  // Açık = tamamlanmamış (bakım modülüyle aynı tanım); status='open' işe başlanan arızayı saymıyordu.
+  const open_maintenance = db.prepare("SELECT COUNT(*) as c FROM maintenance_requests WHERE status != 'done'").get().c
   const quarantine_rooms = db.prepare("SELECT COUNT(*) as c FROM rooms WHERE status='quarantine'").get().c
 
   // D2b: 7 gün önceki değerler (geçmişe-dönük rekonstrüksiyon). Payda güncel yatak
@@ -29,14 +30,18 @@ export const getKPI = memoize(_getKPI, 30_000)
 
 function _getHeatmap() {
   const db = getDB()
+  // Doluluk oda başına önceden sayılır: atamalarla doğrudan JOIN edilince 3 kişilik odanın yatakları
+  // SUM(active_beds)'e 3 kez giriyor, blok yüzdesi olduğundan düşük çıkıyordu.
   return db.prepare(`
     SELECT r.block,
       SUM(r.active_beds) as total_beds,
-      COUNT(ra.id) as occupied,
+      SUM(COALESCE(o.n, 0)) as occupied,
       MIN(r.status) as status,
-      ROUND(COUNT(ra.id) * 100.0 / MAX(SUM(r.active_beds), 1)) as pct
+      ROUND(SUM(COALESCE(o.n, 0)) * 100.0 / MAX(SUM(r.active_beds), 1)) as pct
     FROM rooms r
-    LEFT JOIN room_assignments ra ON ra.room_id=r.id AND ra.check_out_at IS NULL
+    LEFT JOIN (
+      SELECT room_id, COUNT(*) AS n FROM room_assignments WHERE check_out_at IS NULL GROUP BY room_id
+    ) o ON o.room_id = r.id
     GROUP BY r.block
     ORDER BY r.block
   `).all()
@@ -192,8 +197,8 @@ function _getHealthScore() {
   `).get(istanbulDate(), istanbulDate())
   const housekeepingScore = hkRow.total === 0 ? 100 : Math.round(hkRow.done * 100 / hkRow.total)
 
-  // Arıza skoru: 0 açık = 100, 10+ = 0, doğrusal
-  const openMaint = db.prepare("SELECT COUNT(*) as c FROM maintenance_requests WHERE status='open'").get().c
+  // Arıza skoru: 0 açık = 100, 10+ = 0, doğrusal (açık = tamamlanmamış)
+  const openMaint = db.prepare("SELECT COUNT(*) as c FROM maintenance_requests WHERE status != 'done'").get().c
   const maintenanceScore = Math.max(0, 100 - openMaint * 10)
 
   // Disiplin skoru: aktif kara liste sayısı × 5 cezalandır
