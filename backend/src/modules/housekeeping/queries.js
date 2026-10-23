@@ -7,6 +7,14 @@ import { BLOCK_BY_NAME } from '../../shared/blocks.js'
 export const ROOM_SKIP = { locked: 'Oda kilitli', noClean: 'Temizlik istenmiyor', closed: 'Oda kapalı' }
 const STATE_REASONS = Object.values(ROOM_SKIP)
 
+// M bloklarının kat ortak alanları — görev anahtarı `BLOK-KAT-kod` (üretim ve saha ekranı aynı anahtarı kullanır)
+export const COMMON_AREAS = [
+  { code: 'corridor', label: 'Koridor' },
+  { code: 'toilet', label: 'Tuvalet / WC' },
+  { code: 'bathroom', label: 'Banyo' },
+  { code: 'stairs', label: 'Merdiven' },
+]
+
 export function generateDailyTasks(date = new Date()) {
   const db = getDB()
   // YEREL tarih (toISOString UTC döndürür — 00:00-03:00 TR arasında üretim
@@ -42,14 +50,8 @@ export function generateDailyTasks(date = new Date()) {
     const mFloors = db.prepare(`SELECT block, floor FROM rooms WHERE status='active'
                                 GROUP BY block, floor HAVING SUM(use_state!='closed') > 0`).all()
       .filter(({ block }) => BLOCK_BY_NAME[block]?.type === 'M')
-    const commonAreas = [
-      { code: 'corridor', label: 'Koridor' },
-      { code: 'toilet', label: 'Tuvalet / WC' },
-      { code: 'bathroom', label: 'Banyo' },
-      { code: 'stairs', label: 'Merdiven' },
-    ]
     mFloors.forEach(({ block, floor }) => {
-      commonAreas.forEach(({ code, label }) => {
+      COMMON_AREAS.forEach(({ code, label }) => {
         const qrLocation = `${block}-${floor}-${code}`
         count += insert.run(
           `${block} ${floor}.Kat ${label}`, block, floor, 'common_area', scheduled,
@@ -346,7 +348,7 @@ export function toggleNoClean(roomId, value) {
 
 // ── Oda kullanım durumu (kapalı / kilitli / gececi) ────────────────────────────
 
-function localToday(db) {
+export function localToday(db) {
   return db.prepare("SELECT date('now','localtime') d").get().d
 }
 
