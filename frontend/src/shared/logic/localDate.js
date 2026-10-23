@@ -24,6 +24,12 @@ export function toLocalDate(value) {
   return new Date(yil, (ay || 1) - 1, gun || 1)
 }
 
+// Yalnız gün metni ('2026-10-23') mi? Böyle bir değere saat uydurulmamalı: `new Date('2026-10-23')` UTC gece
+// yarısıdır, tarih+saat biçimi İstanbul'da '23.10.2026 03:00' gibi sahte bir saat gösterir.
+export function isDateOnly(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(value ?? '').trim())
+}
+
 export function todayStr() {
   return ymd(new Date())
 }

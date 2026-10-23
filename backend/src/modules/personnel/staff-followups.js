@@ -22,8 +22,12 @@ function requireStaff(db, staffId) {
   return staff
 }
 
+// due_at yerel saat metnidir ('…T23:59:59', uyarıdan gelen '2026-10-23 06:40:00'): ana çevrilip kıyaslanır (sunucu
+// TZ=Europe/Istanbul). Eskiden toISOString() (UTC, 'T'li) ile METİN kıyası yapılıyordu: gün sonu son tarihi 3 saat geç,
+// boşluklu biçim aynı günün başından 'gecikmiş' sayılıyordu.
 function shape(row) {
-  const overdue = row.status === 'open' && row.due_at && row.due_at < new Date().toISOString()
+  const due = row.due_at ? new Date(String(row.due_at).replace(' ', 'T')) : null
+  const overdue = row.status === 'open' && due && !Number.isNaN(due.getTime()) && due < new Date()
   return { ...row, is_overdue: !!overdue }
 }
 

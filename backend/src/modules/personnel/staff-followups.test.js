@@ -1,8 +1,9 @@
-import { beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import request from 'supertest'
 import app from '../../app.js'
 import { getDB, initDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
+import { listFollowups } from './staff-followups.js'
 
 let managerToken
 let supervisorToken
@@ -126,5 +127,31 @@ describe('staff notes visibility', () => {
     const archive = await request(app).post(`/api/personnel/notes/${sensitiveId}/archive`)
       .set('Authorization', `Bearer ${managerToken}`)
     expect(archive.status).toBe(200)
+  })
+})
+
+describe('takip görevi gecikmesi yerel saatle', () => {
+  // due_at yerel saat metnidir ('…T23:59:59' ya da uyarıdan gelen '2026-10-23 06:40:00'). Eskiden
+  // new Date().toISOString() (UTC, 'T'li) ile METİN olarak kıyaslanıyordu: gün sonu son tarihi 3 saat geç,
+  // boşluklu biçim ise aynı günün başından 'gecikmiş' sayılıyordu.
+  afterEach(() => vi.useRealTimers())
+  const add = due => getDB().prepare(`INSERT INTO staff_followups(staff_id, title, due_at, status) VALUES(?, ?, ?, 'open')`)
+    .run(staffId, `gecikme ${due}`, due).lastInsertRowid
+  const overdueAt = (id, utcNow) => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(utcNow))
+    return listFollowups(staffId).followups.find(f => f.id === id).is_overdue
+  }
+
+  it('gün sonu son tarihi İstanbul gece yarısı geçince gecikmiştir', () => {
+    const id = add('2026-10-23T23:59:59')
+    expect(overdueAt(id, '2026-10-23T22:00:00Z')).toBe(true)    // İstanbul 24 Eki 01:00
+    expect(overdueAt(id, '2026-10-23T20:00:00Z')).toBe(false)   // İstanbul 23:00, gün bitmedi
+  })
+
+  it('saatli son tarih o saat gelmeden gecikmiş sayılmaz', () => {
+    const id = add('2026-10-23 06:40:00')
+    expect(overdueAt(id, '2026-10-23T01:00:00Z')).toBe(false)   // İstanbul 04:00
+    expect(overdueAt(id, '2026-10-23T04:00:00Z')).toBe(true)    // İstanbul 07:00
   })
 })

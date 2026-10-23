@@ -2,6 +2,7 @@ import {
   COLORS, argb, border, colLetter, fill, quoteSheet, saveWorkbook,
   setupSheet, setupTitle, styleHeaderRow,
 } from '../../../shared/logic/excelKit.js'
+import { parseSqlUtc } from '../../../shared/logic/localDate.js'
 
 export const PERSONNEL_TRACKING_EXCEL_SHEETS = [
   'Yönetim Özeti', 'Personel Metrikleri', 'İzin ve Raporlar', 'Fazla Mesai',
@@ -35,11 +36,27 @@ export function safeExcelText(value) {
 }
 
 function number(value) { return Number(value || 0) }
-function dateValue(value) {
+// Excel'in saat dilimi yok: exceljs Date'in UTC bileşenlerini yazar. Hücrede İstanbul duvar saati görünsün diye UTC
+// bileşenleri yerel saate eşit bir Date kurulur. Tarih sütunlarının türü (column.kind):
+//   'date'  — yalnız gün ('2026-10-23': work_date, effective_at…)              → gg.aa.yyyy
+//   'utc'   — sunucunun UTC damgası ('2026-08-01 09:00:00': created_at/updated_at) → İstanbul saati
+//   'local' — sunucunun yerel saat metni ('2026-08-10 17:00:00': uyarı son tarihi due_at)
+// Eskiden hepsi new Date(metin) ile okunuyordu: UTC damgalar hücrede 6, yerel saatler 3 saat erken görünüyordu.
+const WALL_CLOCK = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?/
+function dateValue(value, kind = 'date') {
   if (!value) return ''
-  const parsed = new Date(String(value).replace(' ', 'T'))
-  return Number.isNaN(parsed.getTime()) ? safeExcelText(value) : parsed
+  if (kind === 'utc') {
+    const instant = parseSqlUtc(value)
+    return instant ? new Date(instant.getTime() - instant.getTimezoneOffset() * 60000) : safeExcelText(value)
+  }
+  const m = WALL_CLOCK.exec(String(value).trim())
+  if (!m) return safeExcelText(value)
+  const [, y, mo, d, h = 0, mi = 0, sec = 0] = m
+  return kind === 'date'
+    ? new Date(Date.UTC(+y, +mo - 1, +d))
+    : new Date(Date.UTC(+y, +mo - 1, +d, +h, +mi, +sec))
 }
+const DATE_FORMATS = { date: 'dd.mm.yyyy', utc: 'dd.mm.yyyy hh:mm', local: 'dd.mm.yyyy hh:mm' }
 function isoDay(value = new Date()) {
   const date = value instanceof Date ? value : new Date(value)
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
@@ -84,7 +101,7 @@ function appendRows(ws, rows, columns) {
     const row = ws.addRow(columns.map(column => {
       const raw = typeof column.value === 'function' ? column.value(record) : record[column.key]
       if (column.type === 'number') return number(raw)
-      if (column.type === 'date') return dateValue(raw)
+      if (column.type === 'date') return dateValue(raw, column.kind)
       return safeExcelText(raw)
     }))
     row.height = 21
@@ -94,7 +111,7 @@ function appendRows(ws, rows, columns) {
       if (rowIndex % 2 === 1) cell.fill = fill(COLORS.surface)
     })
     columns.forEach((column, index) => {
-      if (column.type === 'date') row.getCell(index + 1).numFmt = 'dd.mm.yyyy hh:mm'
+      if (column.type === 'date') row.getCell(index + 1).numFmt = DATE_FORMATS[column.kind || 'date']
       if (column.type === 'number') row.getCell(index + 1).alignment = { horizontal: 'right', vertical: 'middle' }
     })
   })
@@ -160,7 +177,7 @@ function eventColumns() {
     { key: 'before', label: 'Önceki Değer', width: 34, value: row => compactObject(row.before) },
     { key: 'after', label: 'Yeni Değer', width: 34, value: row => compactObject(row.after) },
     { key: 'reason', label: 'Gerekçe / Açıklama', width: 30 }, { key: 'actor_name', label: 'İşlemi Yapan', width: 20 },
-    { key: 'created_at', label: 'Kayıt Zamanı', width: 18, type: 'date' },
+    { key: 'created_at', label: 'Kayıt Zamanı', width: 18, type: 'date', kind: 'utc' },
   ]
 }
 
@@ -219,7 +236,7 @@ export function buildPersonnelTrackingWorkbook(ExcelJS, options) {
     { key: 'start_date', label: 'Başlangıç', width: 15, type: 'date' }, { key: 'end_date', label: 'Bitiş', width: 15, type: 'date' },
     { key: 'total_days', label: 'Gün', width: 12, type: 'number' }, { key: 'status', label: 'Onay Durumu', width: 16 },
     { key: 'reason', label: 'Gerekçe', width: 30 }, { key: 'approved_by_name', label: 'Onaylayan', width: 20 },
-    { key: 'created_at', label: 'Kayıt Zamanı', width: 18, type: 'date' },
+    { key: 'created_at', label: 'Kayıt Zamanı', width: 18, type: 'date', kind: 'utc' },
   ]
   const leaveWs = prepareSheet(workbook, 'İzin ve Raporlar', 'İZİN VE RAPOR ÖZETİ', meta, leaveColumns, COLORS.amber)
   appendRows(leaveWs, details.leaves || [], leaveColumns)
@@ -230,7 +247,7 @@ export function buildPersonnelTrackingWorkbook(ExcelJS, options) {
     { key: 'department_name', label: 'Departman', width: 20 }, { key: 'work_date', label: 'Tarih', width: 15, type: 'date' },
     { key: 'hours', label: 'Saat', width: 12, type: 'number' }, { key: 'reason', label: 'Gerekçe', width: 32 },
     { key: 'approval', label: 'Onay Durumu', width: 16, value: row => row.approved_by ? 'Onaylı' : 'Kayıtlı' },
-    { key: 'approved_by_name', label: 'Onaylayan', width: 20 }, { key: 'created_at', label: 'Kayıt Zamanı', width: 18, type: 'date' },
+    { key: 'approved_by_name', label: 'Onaylayan', width: 20 }, { key: 'created_at', label: 'Kayıt Zamanı', width: 18, type: 'date', kind: 'utc' },
   ]
   const overtimeWs = prepareSheet(workbook, 'Fazla Mesai', 'FAZLA MESAİ ÖZETİ', meta, overtimeColumns, COLORS.purple)
   appendRows(overtimeWs, details.overtime || [], overtimeColumns)
@@ -267,7 +284,7 @@ export function buildPersonnelTrackingWorkbook(ExcelJS, options) {
     { key: 'full_name', label: 'Personel', width: 25 }, { key: 'project_name', label: 'Proje', width: 20 },
     { key: 'department_name', label: 'Departman', width: 19 }, { key: 'title', label: 'Risk / Kural', width: 28, value: row => row.title || row.rule_key },
     { key: 'message', label: 'Açıklama', width: 36 }, { key: 'assigned_user_name', label: 'Sorumlu', width: 20, value: row => row.assigned_user_name || 'Atanmadı' },
-    { key: 'due_at', label: 'Son Tarih', width: 18, type: 'date' }, { key: 'status', label: 'Durum', width: 15, value: row => ALERT_STATUS_LABELS[row.status] || row.status },
+    { key: 'due_at', label: 'Son Tarih', width: 18, type: 'date', kind: 'local' }, { key: 'status', label: 'Durum', width: 15, value: row => ALERT_STATUS_LABELS[row.status] || row.status },
     { key: 'followup', label: 'Takip Görevi', width: 18, value: row => row.followup_id ? (row.followup_status || 'Açık') : 'Oluşturulmadı' },
   ]
   const openAlerts = alerts.filter(row => ['open', 'acknowledged'].includes(row.status))
@@ -337,7 +354,7 @@ export function buildPersonnelDossierWorkbook(ExcelJS, options) {
     { key: 'work_date', label: 'Tarih', width: 15, type: 'date' }, { key: 'shift_name', label: 'Vardiya', width: 18 },
     { key: 'status', label: 'Durum', width: 16, value: row => SHIFT_LABELS[row.status] || row.status },
     { key: 'work_project_name', label: 'Çalışılan Proje', width: 22 }, { key: 'work_location_name', label: 'Çalışma Noktası', width: 22 },
-    { key: 'note', label: 'Not / Gerekçe', width: 34 }, { key: 'updated_at', label: 'Son Güncelleme', width: 18, type: 'date' },
+    { key: 'note', label: 'Not / Gerekçe', width: 34 }, { key: 'updated_at', label: 'Son Güncelleme', width: 18, type: 'date', kind: 'utc' },
   ]
   const shiftsWs = prepareSheet(workbook, 'Vardiyalar', 'VARDİYALAR VE GERÇEKLEŞEN ÇALIŞMA', meta, shiftColumns, COLORS.blue)
   appendRows(shiftsWs, tracking.shifts || [], shiftColumns)
@@ -346,7 +363,7 @@ export function buildPersonnelDossierWorkbook(ExcelJS, options) {
     { key: 'leave_type', label: 'İzin Türü', width: 18, value: row => LEAVE_LABELS[row.leave_type] || row.leave_type },
     { key: 'start_date', label: 'Başlangıç', width: 15, type: 'date' }, { key: 'end_date', label: 'Bitiş', width: 15, type: 'date' },
     { key: 'total_days', label: 'Gün / Saat', width: 14, type: 'number' }, { key: 'status', label: 'Onay Durumu', width: 16 },
-    { key: 'reason', label: 'Gerekçe', width: 34 }, { key: 'updated_at', label: 'Son Güncelleme', width: 18, type: 'date' },
+    { key: 'reason', label: 'Gerekçe', width: 34 }, { key: 'updated_at', label: 'Son Güncelleme', width: 18, type: 'date', kind: 'utc' },
   ]
   const leaveWs = prepareSheet(workbook, 'İzin ve Rapor', 'İZİN, RAPOR VE REVİZYON KAYITLARI', meta, leaveColumns, COLORS.amber)
   appendRows(leaveWs, tracking.leaves || [], leaveColumns)
@@ -355,7 +372,7 @@ export function buildPersonnelDossierWorkbook(ExcelJS, options) {
   const overtimeColumns = [
     { key: 'work_date', label: 'Tarih', width: 15, type: 'date' }, { key: 'hours', label: 'Saat', width: 12, type: 'number' },
     { key: 'status', label: 'Onay Durumu', width: 17 }, { key: 'reason', label: 'Gerekçe', width: 36 },
-    { key: 'approved_by_name', label: 'Onaylayan', width: 20 }, { key: 'updated_at', label: 'Son Güncelleme', width: 18, type: 'date' },
+    { key: 'approved_by_name', label: 'Onaylayan', width: 20 }, { key: 'updated_at', label: 'Son Güncelleme', width: 18, type: 'date', kind: 'utc' },
   ]
   const overtimeWs = prepareSheet(workbook, 'Fazla Mesai', 'FAZLA MESAİ VE REVİZYON KAYITLARI', meta, overtimeColumns, COLORS.purple)
   appendRows(overtimeWs, tracking.overtime || [], overtimeColumns)
@@ -376,7 +393,7 @@ export function buildPersonnelDossierWorkbook(ExcelJS, options) {
     { key: 'before', label: 'Önceki Değer', width: 34, value: row => compactObject(row.before) },
     { key: 'after', label: 'Yeni Değer', width: 34, value: row => compactObject(row.after) },
     { key: 'reason', label: 'Gerekçe / Açıklama', width: 32 }, { key: 'actor_name', label: 'İşlemi Yapan', width: 20 },
-    { key: 'source_type', label: 'Kaynak', width: 18 }, { key: 'created_at', label: 'Kayıt Zamanı', width: 18, type: 'date' },
+    { key: 'source_type', label: 'Kaynak', width: 18 }, { key: 'created_at', label: 'Kayıt Zamanı', width: 18, type: 'date', kind: 'utc' },
   ]
   const movementWs = prepareSheet(workbook, 'Hareket Günlüğü', 'SİLİNEMEZ PERSONEL HAREKET GÜNLÜĞÜ', meta, movementColumns, COLORS.red)
   appendRows(movementWs, tracking.events || [], movementColumns)
