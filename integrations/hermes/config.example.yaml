@@ -1,0 +1,36 @@
+# inXcee için Hermes Agent ayarları — ~/.hermes/config.yaml içine BİRLEŞTİR (üzerine yazma).
+# Gizli değerler (bot token, INXCEE_AGENT_TOKEN, model anahtarı) burada DEĞİL,
+# ~/.hermes/.env içinde durur. Ayrıntı: docs/hermes-integration.md
+
+terminal:
+  # Üretimde ajan komutları konteynerde koşsun; yys.db ve sunucu .env'ine erişemesin.
+  backend: docker
+  # Skill (inxcee-ops) ve bekçi script'i bu iki değişkeni okur.
+  env_passthrough:
+    - INXCEE_URL
+    - INXCEE_AGENT_TOKEN
+
+approvals:
+  mode: manual        # tehlikeli komutta her seferinde Telegram'dan "yes" iste
+  cron_mode: deny     # zamanlanmış işler tehlikeli komut çalıştıramaz
+
+skills:
+  # inXcee reposundaki proje skill'i. Yolu sunucudaki checkout'a göre düzelt.
+  external_dirs:
+    - /opt/inXcee/.hermes/skills
+
+# Kimin konuşabileceği .env'deki TELEGRAM_ALLOWED_USERS ile belirlenir — yalnız SENİN ID'n.
+# Slash komut kısıtı (allow_admin_from) düz sohbeti KISITLAMAZ: listeye eklenen herkes
+# ajana terminal komutu çalıştırtabilir ve onay sorusuna kendisi "yes" diyebilir.
+# Başkasına açmadan önce ayrı bir Hermes profili + kısıtlı toolset kur.
+gateway:
+  platforms:
+    telegram:
+      extra:
+        allow_admin_from:
+          - "<SENIN_TELEGRAM_ID>"
+
+display:
+  platforms:
+    telegram:
+      notifications: important   # yalnız son yanıt ve onay istekleri bildirim çalar
