@@ -44,7 +44,7 @@ notifGroupsRouter.get('/:id', ...readAccess, (req, res) => {
   res.json({ ...g, channels: g.channels.split(','), members })
 })
 
-notifGroupsRouter.post('/', ...mgmt, validate(groupSchema), (req, res) => {
+notifGroupsRouter.post('/', ...mgmt, validate(groupSchema), (req, res, next) => {
   const { name, description } = req.validated
   const channels = normalizeChannels(req.body.channels)
   try {
@@ -55,11 +55,11 @@ notifGroupsRouter.post('/', ...mgmt, validate(groupSchema), (req, res) => {
     res.status(201).json({ id: r.lastInsertRowid })
   } catch (e) {
     if (e.message?.includes('UNIQUE')) return res.status(409).json({ error: 'Bu isimde grup zaten var' })
-    res.status(500).json({ error: e.message })
+    next(e) // genel hata işleyicisi: iç ayrıntı istemciye gitmez
   }
 })
 
-notifGroupsRouter.put('/:id', ...mgmt, validate(groupSchema), (req, res) => {
+notifGroupsRouter.put('/:id', ...mgmt, validate(groupSchema), (req, res, next) => {
   const { name, description } = req.validated
   const channels = normalizeChannels(req.body.channels)
   const db = getDB()
@@ -69,7 +69,7 @@ notifGroupsRouter.put('/:id', ...mgmt, validate(groupSchema), (req, res) => {
     res.json({ ok: true })
   } catch (e) {
     if (e.message?.includes('UNIQUE')) return res.status(409).json({ error: 'Bu isimde grup zaten var' })
-    res.status(500).json({ error: e.message })
+    next(e)
   }
 })
 
@@ -81,14 +81,14 @@ notifGroupsRouter.delete('/:id', ...mgmt, (req, res) => {
   res.json({ ok: true })
 })
 
-notifGroupsRouter.post('/:id/members', ...mgmt, validate(memberSchema), (req, res) => {
+notifGroupsRouter.post('/:id/members', ...mgmt, validate(memberSchema), (req, res, next) => {
   const { user_id } = req.validated
   const db = getDB()
   try {
     db.prepare('INSERT OR IGNORE INTO notification_group_members (group_id, user_id) VALUES (?,?)')
       .run(+req.params.id, user_id)
     res.status(201).json({ ok: true })
-  } catch (e) { res.status(500).json({ error: e.message }) }
+  } catch (e) { next(e) } // olmayan grup/kullanıcı: yabancı anahtar ihlali → genel işleyicide 409
 })
 
 notifGroupsRouter.delete('/:id/members/:userId', ...mgmt, (req, res) => {

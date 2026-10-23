@@ -136,3 +136,19 @@ describe('Visitors — ön-kayıt + QR', () => {
     expect(pdf.headers['content-type']).toContain('application/pdf')
   })
 })
+
+describe('Visitors — beklenmeyen hata', () => {
+  // Rota hatayı kendisi yanıtlayıp e.message'ı (SQLite iç metni) istemciye dönüyordu. Artık genel hata
+  // işleyicisine gider: 'Sunucu hatası' döner, hata kaydına yazılır.
+  it('veritabanı hatası iç ayrıntıyı sızdırmaz', async () => {
+    const db = getDB()
+    db.exec('ALTER TABLE visitors RENAME TO visitors_gecici')
+    try {
+      const res = await request(app).post('/api/visitors').set('Authorization', `Bearer ${token}`).send({ full_name: 'Hata Testi' })
+      expect(res.status).toBe(500)
+      expect(res.body.error).toBe('Sunucu hatası')
+    } finally {
+      db.exec('ALTER TABLE visitors_gecici RENAME TO visitors')
+    }
+  })
+})

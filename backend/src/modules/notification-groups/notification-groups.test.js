@@ -66,3 +66,13 @@ describe('Notification Groups', () => {
     expect(d.status).toBe(200)
   })
 })
+
+describe('Notification Groups — olmayan gruba üye', () => {
+  // INSERT OR IGNORE yabancı anahtar ihlalini yutmaz: ham 'FOREIGN KEY constraint failed' metni 500 ile dönüyordu.
+  it('olmayan gruba üye eklemek 409 döner, ham SQLite metni sızmaz', async () => {
+    const res = await request(app).post('/api/notification-groups/999999/members')
+      .set('Authorization', `Bearer ${token}`).send({ user_id: userId })
+    expect(res.status).toBe(409)
+    expect(res.body.error).not.toMatch(/FOREIGN KEY|SQLITE/i)
+  })
+})

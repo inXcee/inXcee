@@ -20,25 +20,25 @@ visitorsRouter.get('/stats', ...requireStaff, (req, res) => {
   res.json(q.getVisitorStats())
 })
 
-visitorsRouter.post('/', ...mgmt, validate(createVisitorSchema), (req, res) => {
+visitorsRouter.post('/', ...mgmt, validate(createVisitorSchema), (req, res, next) => {
   try {
     const id = q.createVisitor(req.validated, req.user.id)
     logAudit(req.user.id, 'visitor_checkin', 'visitors', id, req.validated.full_name)
     res.status(201).json({ id })
-  } catch (e) { res.status(500).json({ error: e.message }) }
+  } catch (e) { next(e) } // genel hata işleyicisi: iç ayrıntı istemciye gitmez, hata kaydına yazılır
 })
 
 // Ön-kayıt — beklenen ziyaretçi + QR token.
-visitorsRouter.post('/preregister', ...mgmt, validate(preRegisterSchema), (req, res) => {
+visitorsRouter.post('/preregister', ...mgmt, validate(preRegisterSchema), (req, res, next) => {
   try {
     const { id, qr_token } = q.preRegisterVisitor(req.validated, req.user.id)
     logAudit(req.user.id, 'visitor_preregister', 'visitors', id, req.validated.full_name)
     res.status(201).json({ id, qr_token })
-  } catch (e) { logger.error('[visitors/preregister]', e); res.status(500).json({ error: e.message }) }
+  } catch (e) { next(e) }
 })
 
 // QR ile check-in + ev sahibi bildirimi.
-visitorsRouter.post('/checkin', ...mgmt, validate(checkinSchema), (req, res) => {
+visitorsRouter.post('/checkin', ...mgmt, validate(checkinSchema), (req, res, next) => {
   try {
     const result = q.checkInByToken(req.validated.qr_token)
     if (!result) return res.status(404).json({ error: 'Geçersiz QR kod' })
@@ -56,7 +56,7 @@ visitorsRouter.post('/checkin', ...mgmt, validate(checkinSchema), (req, res) => 
     })
     logAudit(req.user.id, 'visitor_checkin_qr', 'visitors', v.id, v.full_name)
     res.json({ ok: true, status: result.status, visitor: v })
-  } catch (e) { logger.error('[visitors/checkin]', e); res.status(500).json({ error: e.message }) }
+  } catch (e) { next(e) }
 })
 
 visitorsRouter.post('/:id/checkout', ...mgmt, (req, res) => {
