@@ -13,6 +13,7 @@ import { createItemService, deleteItemService, deliverItemService, revertItemSer
 const fail = (message, statusCode) => Object.assign(new Error(message), { statusCode })
 const OPEN = ['dirty', 'washing', 'ironing']
 const CARD_REASON = 'Saha ekranı' // kart zorunluyken kartsız geçiş gerekçesi
+const LEDGER_NOTE = 'Defter (Saha ekranı) · parça sayısı yazılmadı'
 const LIST_LIMIT = 200
 
 const workerName = (db, workerId) => db.prepare('SELECT full_name FROM staff WHERE id=?').get(workerId)?.full_name || `#${workerId}`
@@ -87,7 +88,7 @@ export function intakeBags({ roomId, bags, ironing = false, urgent = false, note
   if (!gate.allowed) throw fail(gate.message, 409)
   const systemUserId = getKioskSystemUserId()
   const historyNote = `Saha ekranı · ${workerName(db, workerId)}`
-  const notes = ['Defter (Saha ekranı) · parça sayısı yazılmadı', String(note ?? '').trim()].filter(Boolean).join(' · ')
+  const notes = [LEDGER_NOTE, String(note ?? '').trim()].filter(Boolean).join(' · ')
   const ids = db.transaction(() => {
     const out = []
     for (let i = 1; i <= bags; i += 1) {
@@ -110,7 +111,7 @@ export function markRoomReady({ roomId, workerId }, db = getDB()) {
   const systemUserId = getKioskSystemUserId()
   const note = `Saha ekranı · ${workerName(db, workerId)}`
   db.transaction(() => {
-    for (const id of ids) markReadyFromLedgerService(id, { note }, systemUserId)
+    for (const id of ids) markReadyFromLedgerService(id, { note, workerId }, systemUserId)
     touch(db, ids, workerId)
     audit(db, 'field_laundry_ready', { workerId, roomId, ids })
   })()
@@ -137,14 +138,27 @@ export function deliverRoom({ roomId, name = null, workerId }, db = getDB()) {
 
 const UNDO = {
   intake: { from: 'dirty', run: (db, id, userId) => deleteItemService(id, userId) },
-  ready: { from: 'ready', run: (db, id, userId) => revertItemService(id, 'dirty', userId) },
+  ready: { from: 'ready', run: (db, id, userId, workerId) => revertItemService(id, 'dirty', userId, workerId) },
   deliver: {
     from: 'delivered',
-    run: (db, id, userId) => {
-      revertItemService(id, 'ready', userId)
+    run: (db, id, userId, workerId) => {
+      revertItemService(id, 'ready', userId, workerId)
       db.prepare('UPDATE laundry_items SET delivered_name=NULL WHERE id=?').run(id)
     },
   },
+}
+
+// Geri alınacak adım bu kişinin mi? Torbanın geçmişine bakılır (last_modified_worker_id başka akışlarca da
+// yazılır, tek başına yetki sayılmaz): hazır/teslim → SON geçmiş satırı bu adım ve bu kişi; alım → torba
+// sahadan bu kişi tarafından açılmış ve o günden beri bütün geçmişi bu kişinin (başkası işlediyse silinmez).
+function ownsStep(row, history, action, workerId, systemUserId) {
+  const mine = h => h.worker_id != null && Number(h.worker_id) === Number(workerId)
+  const last = history[history.length - 1]
+  if (!last) return false
+  if (action !== 'intake') return last.to_status === UNDO[action].from && mine(last)
+  const first = history[0]
+  return row.created_by === systemUserId && String(row.notes || '').startsWith(LEDGER_NOTE)
+    && first.from_status == null && first.to_status === 'dirty' && history.every(mine)
 }
 
 // Son adımı geri al: yalnız o adımı yapan kişi ve 24 saat içinde; hepsi ya da hiçbiri.
@@ -154,19 +168,25 @@ export function undoLedger({ action, ids, workerId }, db = getDB()) {
   if (!Array.isArray(ids) || !ids.length || ids.length > 50) throw fail('Geçersiz torba listesi', 400)
   const systemUserId = getKioskSystemUserId()
   return db.transaction(() => {
-    const read = db.prepare(`
-      SELECT id, status, tracking_mode, last_modified_worker_id AS worker,
-             COALESCE(last_modified_at, created_at) >= datetime('now','-1 day') AS fresh
-      FROM laundry_items WHERE id=?
+    const readItem = db.prepare('SELECT id, status, tracking_mode, created_by, notes FROM laundry_items WHERE id=?')
+    const readHistory = db.prepare(`
+      SELECT from_status, to_status, worker_id, created_at >= datetime('now','-1 day') AS fresh
+      FROM laundry_history WHERE item_id=? ORDER BY id
     `)
-    const rows = ids.map(id => read.get(id))
+    const rows = ids.map(id => readItem.get(id))
     if (rows.some(r => !r)) throw fail('Torba bulunamadı', 404)
-    if (rows.some(r => Number(r.worker) !== Number(workerId))) throw fail('Yalnız kendi yaptığın adımı geri alabilirsin', 403)
-    if (rows.some(r => !r.fresh)) throw fail('24 saatten eski adım — çamaşırhane ekranından düzeltilmeli', 403)
     if (rows.some(r => r.status !== step.from || r.tracking_mode === 'individual')) {
       throw fail('Torbanın durumu değişmiş; bu adım geri alınamaz', 409)
     }
-    for (const r of rows) step.run(db, r.id, systemUserId)
+    const histories = new Map(rows.map(r => [r.id, readHistory.all(r.id)]))
+    if (rows.some(r => !ownsStep(r, histories.get(r.id), action, workerId, systemUserId))) {
+      throw fail('Yalnız kendi yaptığın adımı geri alabilirsin', 403)
+    }
+    if (rows.some(r => !histories.get(r.id).at(-1).fresh)) {
+      throw fail('24 saatten eski adım — çamaşırhane ekranından düzeltilmeli', 403)
+    }
+    for (const r of rows) step.run(db, r.id, systemUserId, workerId)
+    if (action !== 'intake') touch(db, rows.map(r => r.id), workerId)
     audit(db, 'field_laundry_undo', { workerId, action, ids: rows.map(r => r.id) })
     return { undone: rows.length }
   })()

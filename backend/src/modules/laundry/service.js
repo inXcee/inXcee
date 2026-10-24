@@ -393,7 +393,7 @@ export function setCompensationService(id, { value, note }, userId) {
   return q.getItemQuery(id)
 }
 
-export function revertItemService(id, targetStatus, userId) {
+export function revertItemService(id, targetStatus, userId, workerId = null) {
   const item = q.getItemQuery(id)
   if (!item) throw new Error('Kayıt bulunamadı')
 
@@ -452,7 +452,7 @@ export function revertItemService(id, targetStatus, userId) {
   }
 
   q.updateItemStatusQuery(id, targetStatus, extra)
-  q.insertHistoryQuery({ item_id: id, from_status: item.status, to_status: targetStatus, action_by: userId, notes: 'Geri alındı' })
+  q.insertHistoryQuery({ item_id: id, from_status: item.status, to_status: targetStatus, action_by: userId, worker_id: workerId, notes: 'Geri alındı' })
   logAudit(userId, 'laundry_revert', 'laundry', id, `${item.status} → ${targetStatus}`)
 
   return q.getItemQuery(id)

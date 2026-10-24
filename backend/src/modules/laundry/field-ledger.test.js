@@ -3,6 +3,7 @@ import { getDB, initDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
 import { AKSIYON, setCardSetting } from './cardScan.js'
 import { deliverRoom, intakeBags, ledgerOverview, markRoomReady, undoLedger } from './field-ledger.js'
+import { markReadyFromLedgerService } from './ledger.js'
 
 // Saha ekranı çamaşır defteri (spec: docs/superpowers/specs/2026-10-23-saha-ekrani-design.md §5, §10):
 // her laundry_items satırı bir torba; alım → hazır → teslim oda bazında; geri alma yalnız kendi, 24 saat.
@@ -18,7 +19,7 @@ beforeAll(() => {
   seedDev()
   db = getDB()
   const room = db.prepare(`INSERT INTO rooms(block, floor, room_no, capacity, active_beds) VALUES('FL', 1, ?, 6, 6)`)
-  for (const no of ['101', '102', '103', '104', '201', '202', '203']) rooms[no] = Number(room.run(no).lastInsertRowid)
+  for (const no of ['101', '102', '103', '104', '105', '106', '201', '202', '203']) rooms[no] = Number(room.run(no).lastInsertRowid)
   const laundry = db.prepare("SELECT id FROM departments WHERE name='Çamaşırhane'").get().id
   const staff = db.prepare('INSERT INTO staff(full_name, is_active, department_id) VALUES(?, 1, ?)')
   workerId = Number(staff.run('Çamaşır Test', laundry).lastInsertRowid)
@@ -117,19 +118,41 @@ describe('hazır → teslim → geri al (oda bazında)', () => {
     expect(statuses(ids)).toEqual(['delivered', 'delivered'])
   })
 
-  it('geri al: teslim → hazır, hazır → yıkamada, alım → torbalar silinir', () => {
+  it('geri al: teslim → hazır, hazır → yıkamada (adımı yapan kişi)', () => {
     expect(undoLedger({ action: 'deliver', ids, workerId: otherWorkerId })).toEqual({ undone: 2 })
     expect(statuses(ids)).toEqual(['ready', 'ready'])
     expect(item(ids[0]).delivered_name).toBeNull()
     expect(undoLedger({ action: 'ready', ids, workerId: otherWorkerId })).toEqual({ undone: 2 })
     expect(statuses(ids)).toEqual(['dirty', 'dirty'])
-    db.prepare('UPDATE laundry_items SET last_modified_worker_id=? WHERE id IN (?, ?)').run(workerId, ...ids)
-    expect(undoLedger({ action: 'intake', ids, workerId })).toEqual({ undone: 2 })
-    expect(statuses(ids)).toEqual([null, null])
+  })
+
+  it('alımı yalnız açan kişi, torbaya kimse dokunmadıysa geri alır (torba silinir)', () => {
+    // ids'i workerId açtı ama hazır/teslim başkasınca yapılıp geri alındı → açan bile silemez
+    expect(errorOf(() => undoLedger({ action: 'intake', ids, workerId }))).toMatchObject({ statusCode: 403 })
+    expect(statuses(ids)).toEqual(['dirty', 'dirty'])
+    const own = intakeBags({ roomId: rooms['105'], bags: 1, clientRequestId: 'saha-flow0003', workerId }).ids
+    expect(undoLedger({ action: 'intake', ids: own, workerId })).toEqual({ undone: 1 })
+    expect(statuses(own)).toEqual([null])
+  })
+
+  it('başkasının açtığı torba "hazır → geri al hazır → geri al alım" zinciriyle silinemez', () => {
+    const theirs = intakeBags({ roomId: rooms['106'], bags: 1, clientRequestId: 'saha-flow0004', workerId: otherWorkerId }).ids
+    markRoomReady({ roomId: rooms['106'], workerId })
+    expect(undoLedger({ action: 'ready', ids: theirs, workerId })).toEqual({ undone: 1 })
+    expect(errorOf(() => undoLedger({ action: 'intake', ids: theirs, workerId }))).toMatchObject({ statusCode: 403 })
+    expect(statuses(theirs)).toEqual(['dirty'])
+  })
+
+  it('masadan (web/Hermes) yapılan adımı saha personeli geri alamaz', () => {
+    const [bag] = intakeBags({ roomId: rooms['106'], bags: 1, clientRequestId: 'saha-flow0005', workerId }).ids
+    const deskUser = db.prepare("SELECT id FROM users WHERE username='camasir'").get().id
+    markReadyFromLedgerService(bag, {}, deskUser)
+    expect(errorOf(() => undoLedger({ action: 'ready', ids: [bag], workerId }))).toMatchObject({ statusCode: 403 })
+    expect(statuses([bag])).toEqual(['ready'])
   })
 
   it('24 saatten eski adım sahada geri alınamaz (403); geçersiz istek 400', () => {
-    db.prepare("UPDATE laundry_items SET last_modified_at=datetime('now','-2 day') WHERE id=?").run(neighbour[0])
+    db.prepare("UPDATE laundry_history SET created_at=datetime('now','-2 day') WHERE item_id=?").run(neighbour[0])
     expect(errorOf(() => undoLedger({ action: 'deliver', ids: neighbour, workerId }))).toMatchObject({ statusCode: 403 })
     expect(errorOf(() => undoLedger({ action: 'sil', ids: neighbour, workerId }))).toMatchObject({ statusCode: 400 })
     expect(errorOf(() => undoLedger({ action: 'deliver', ids: [], workerId }))).toMatchObject({ statusCode: 400 })
