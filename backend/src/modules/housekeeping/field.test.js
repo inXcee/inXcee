@@ -1,7 +1,9 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import { getDB, initDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
-import { boardBlocks, boardRooms, markField, resolveFieldLocation, undoField } from './field.js'
+import {
+  boardBlocks, boardRooms, cleanFloor, markField, resolveFieldLocation, setOccupancy, undoField, undoFloor,
+} from './field.js'
 
 // Saha ekranı oda panosu (spec: docs/superpowers/specs/2026-10-23-saha-ekrani-design.md).
 // FX: M tipi olmayan deneme bloğu — odalar sırasız eklenir ki sıralama sınansın.
@@ -203,5 +205,106 @@ describe('saha işareti (markField / undoField)', () => {
       { action: 'field_undo', user_id: null, worker: workerId, location: 'FZ-310' },
       { action: 'field_skip', user_id: null, worker: workerId, location: 'FZ-310' },
     ])
+  })
+})
+
+// FK: doluluk ve "katın hepsi temizlendi" için deneme bloğu; FK-1 katında her dışlama sebebinden bir oda.
+describe('doluluk (setOccupancy)', () => {
+  let open, closed, userId
+  beforeAll(() => {
+    const room = db.prepare(`INSERT INTO rooms(block, floor, room_no, capacity, active_beds, use_state) VALUES('FK', 2, ?, 6, 6, ?)`)
+    open = room.run('501', 'open').lastInsertRowid
+    closed = room.run('502', 'closed').lastInsertRowid
+    userId = db.prepare("SELECT id FROM users WHERE username='mudur'").get().id
+  })
+  const occupancyAudit = id => db.prepare(`
+    SELECT user_id, module, json_extract(detail, '$.before') AS before, json_extract(detail, '$.after') AS after,
+           json_extract(detail, '$.workerId') AS worker
+    FROM audit_log WHERE action='room_occupancy_change' AND target_id=? ORDER BY id
+  `).all(id)
+  const errorOf = fn => { try { fn() } catch (e) { return e } return null }
+
+  it('sahadan dolu, webden bilinmiyor yapılır; kim/ne zaman yazılır, her değişiklik önce/sonra ile denetime düşer', () => {
+    const res = setOccupancy(open, 'occupied', { workerId })
+    expect(res).toMatchObject({ id: open, occupancy: 'occupied' })
+    expect(res.occupancy_updated_at).toBeTruthy()
+    expect(db.prepare('SELECT occupancy_updated_by_worker w, occupancy_updated_by_user u FROM rooms WHERE id=?').get(open))
+      .toEqual({ w: workerId, u: null })
+    expect(setOccupancy(open, null, { userId })).toMatchObject({ occupancy: null })
+    expect(db.prepare('SELECT occupancy_updated_by_worker w, occupancy_updated_by_user u FROM rooms WHERE id=?').get(open))
+      .toEqual({ w: null, u: userId })
+    expect(occupancyAudit(open)).toEqual([
+      { user_id: null, module: 'avs-self-service', before: null, after: 'occupied', worker: workerId },
+      { user_id: userId, module: 'housekeeping', before: 'occupied', after: null, worker: null },
+    ])
+  })
+
+  it('aynı değer yeniden verilince denetime yeni satır düşmez', () => {
+    setOccupancy(open, 'empty', { workerId })
+    setOccupancy(open, 'empty', { workerId: otherWorkerId })
+    expect(occupancyAudit(open).filter(r => r.after === 'empty')).toHaveLength(1)
+  })
+
+  it('geçersiz değer 400, kapalı oda 409, olmayan oda 404', () => {
+    expect(errorOf(() => setOccupancy(open, 'full', { workerId }))).toMatchObject({ statusCode: 400 })
+    expect(errorOf(() => setOccupancy(open, undefined, { workerId }))).toMatchObject({ statusCode: 400 })
+    expect(errorOf(() => setOccupancy(closed, 'occupied', { workerId }))).toMatchObject({ statusCode: 409, message: 'Oda kapalı' })
+    expect(db.prepare('SELECT occupancy FROM rooms WHERE id=?').get(closed).occupancy).toBeNull()
+    expect(errorOf(() => setOccupancy(999999, 'occupied', { workerId }))).toMatchObject({ statusCode: 404 })
+  })
+})
+
+describe('katın hepsi temizlendi (cleanFloor / undoFloor)', () => {
+  beforeAll(() => {
+    const room = db.prepare(`INSERT INTO rooms(block, floor, room_no, capacity, active_beds, use_state, occupant_shift, no_clean, occupancy)
+                             VALUES('FK', 1, ?, 6, 6, ?, ?, ?, ?)`)
+    room.run('401', 'open', null, 0, null)        // uygun (doluluk bilinmiyor)
+    room.run('402', 'open', 'day', 0, 'occupied') // uygun (dolu)
+    room.run('403', 'locked', null, 0, null)
+    room.run('404', 'open', 'night', 0, null)
+    room.run('405', 'open', null, 0, 'empty')
+    room.run('406', 'open', null, 0, null)        // bugün başkası temizledi
+    room.run('407', 'closed', null, 0, null)
+    room.run('408', 'open', null, 1, null)        // temizlik istemiyor
+    markField({ location: 'FK-406', action: 'clean', workerId: otherWorkerId })
+  })
+  const fieldTasks = () => db.prepare(`SELECT qr_location, completed_by_worker_id AS by FROM cleaning_tasks
+                                       WHERE block='FK' AND DATE(scheduled_at)=? ORDER BY qr_location`).all(today)
+
+  it('kuru deneme hiçbir şey yazmaz; uygun yerleri ve her dışlama sebebini sayar', () => {
+    const before = fieldTasks()
+    expect(cleanFloor({ block: 'FK', floor: 1, workerId, dryRun: true })).toEqual({
+      locations: ['FK-401', 'FK-402'],
+      excluded: { closed: 1, locked: 1, night: 1, empty: 1, no_clean: 1, marked: 1 },
+    })
+    expect(fieldTasks()).toEqual(before)
+  })
+
+  it('M katında işaretsiz ortak alanlar da girer (kuru deneme)', () => {
+    const rooms = db.prepare("SELECT COUNT(*) n FROM rooms WHERE block='M3' AND floor=2 AND status='active'").get().n
+    const { locations } = cleanFloor({ block: 'M3', floor: 2, workerId, dryRun: true })
+    expect(locations.slice(0, 4)).toEqual(['M3-2-corridor', 'M3-2-toilet', 'M3-2-bathroom', 'M3-2-stairs'])
+    expect(locations).toHaveLength(4 + rooms)
+  })
+
+  it('gerçek koşu yalnız uygun odaları bu personel adına temizlendi yapar; sonra o kat için iş kalmaz', () => {
+    expect(cleanFloor({ block: 'FK', floor: 1, workerId }).locations).toEqual(['FK-401', 'FK-402'])
+    expect(fieldTasks()).toEqual([
+      { qr_location: 'FK-401', by: workerId },
+      { qr_location: 'FK-402', by: workerId },
+      { qr_location: 'FK-406', by: otherWorkerId },
+    ])
+    expect(cleanFloor({ block: 'FK', floor: 1, workerId, dryRun: true })).toMatchObject({ locations: [], excluded: { marked: 3 } })
+  })
+
+  it('geri al aynı listeyi geri alır, başkasının işaretini atlanmış sayar', () => {
+    expect(undoFloor({ locations: ['FK-401', 'FK-402', 'FK-406'], workerId })).toEqual({ undone: 2, skipped: 1 })
+    expect(fieldTasks()).toEqual([{ qr_location: 'FK-406', by: otherWorkerId }])
+  })
+
+  it('olmayan kat 404, geçersiz liste 400', () => {
+    const errorOf = fn => { try { fn() } catch (e) { return e } return null }
+    expect(errorOf(() => cleanFloor({ block: 'FK', floor: 9, workerId, dryRun: true }))).toMatchObject({ statusCode: 404 })
+    expect(errorOf(() => undoFloor({ locations: 'FK-401', workerId }))).toMatchObject({ statusCode: 400 })
   })
 })

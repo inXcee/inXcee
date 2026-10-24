@@ -72,10 +72,11 @@ function addFieldPhotos(db, taskId, photoUrls, category, workerId) {
   db.prepare('UPDATE cleaning_tasks SET photo_url=COALESCE(photo_url, ?) WHERE id=?').run(photoUrls[0], taskId)
 }
 
-// Kiosk oturumunda users kaydı yok: kişi detail.workerId'de (mevcut kiosk denetim kaydı düzeni)
-function audit(db, action, taskId, detail) {
-  db.prepare(`INSERT INTO audit_log(user_id, action, module, target_id, detail) VALUES(NULL, ?, 'avs-self-service', ?, ?)`)
-    .run(action, taskId, JSON.stringify(detail))
+// Kiosk oturumunda users kaydı yok: kişi detail.workerId'de (mevcut kiosk denetim kaydı düzeni);
+// web'den (müdür/amir) gelen yazım kullanıcıyla ve housekeeping modülüyle düşer.
+function audit(db, action, targetId, detail, userId = null) {
+  db.prepare('INSERT INTO audit_log(user_id, action, module, target_id, detail) VALUES(?, ?, ?, ?, ?)')
+    .run(userId, action, userId ? 'housekeeping' : 'avs-self-service', targetId, JSON.stringify(detail))
 }
 
 // Temizlendi / temizlenemedi. İkinci "temizlendi" ilk temizleyeni ve saatini ezmez (already: true).
@@ -222,4 +223,91 @@ export function boardRooms(block, { workerId = null } = {}, db = getDB()) {
     }
   }
   return { block, date: today, type: BLOCK_BY_NAME[block]?.type ?? null, floors: [...floors.values()] }
+}
+
+// Oda doluluğu: 'occupied' / 'empty' / null (bilinmiyor). Kapalı odada ayarlanamaz. Aynı değer yeniden
+// verilince yalnız "son teyit" zamanı tazelenir, denetime satır düşmez.
+export function setOccupancy(roomId, occupancy, { workerId = null, userId = null } = {}, db = getDB()) {
+  if (occupancy !== null && occupancy !== 'occupied' && occupancy !== 'empty') throw fail('Geçersiz doluluk', 400)
+  return db.transaction(() => {
+    const room = db.prepare('SELECT id, block, room_no, use_state, occupancy FROM rooms WHERE id=?').get(roomId)
+    if (!room) throw fail('Oda bulunamadı', 404)
+    if (room.use_state === 'closed') throw fail('Oda kapalı', 409)
+    db.prepare(`
+      UPDATE rooms SET occupancy=?, occupancy_updated_at=datetime('now'),
+        occupancy_updated_by_worker=?, occupancy_updated_by_user=? WHERE id=?
+    `).run(occupancy, workerId, userId, room.id)
+    if (room.occupancy !== occupancy) {
+      audit(db, 'room_occupancy_change', room.id, {
+        workerId, location: `${room.block}-${room.room_no}`, before: room.occupancy, after: occupancy,
+      }, userId)
+    }
+    return db.prepare('SELECT id, occupancy, occupancy_updated_at FROM rooms WHERE id=?').get(room.id)
+  })()
+}
+
+// "Katın hepsi temizlendi" dışında kalanlar; oda birden çok sebebe uyuyorsa ilk sebepte sayılır
+// (önce odanın durumu, en son "bugün zaten işaretli").
+function floorExclusion(room, task) {
+  if (room.use_state === 'closed') return 'closed'
+  if (room.use_state === 'locked') return 'locked'
+  if (room.no_clean) return 'no_clean'
+  if (room.occupant_shift === 'night') return 'night'
+  if (room.occupancy === 'empty') return 'empty'
+  if (task && (task.completed_at || task.skipped)) return 'marked'
+  return null
+}
+
+const isMarked = task => Boolean(task && (task.completed_at || task.skipped))
+
+// Katın uygun bütün yerlerini (işaretsiz açık odalar + M ise işaretsiz ortak alanlar) temizlendi yapar.
+// dryRun: hiçbir şey yazmaz, onay penceresi için listeyi ve dışarıda kalanların sayısını verir.
+export function cleanFloor({ block, floor, workerId, dryRun = false }, db = getDB()) {
+  return db.transaction(() => {
+    const rooms = db.prepare(`
+      SELECT room_no, use_state, occupant_shift, no_clean, occupancy FROM rooms
+      WHERE block=? AND floor=? AND status='active' ORDER BY CAST(room_no AS INTEGER), room_no
+    `).all(block, Number(floor))
+    if (!rooms.length) throw fail('Kat bulunamadı', 404)
+    const today = localToday(db)
+    const tasks = new Map(db.prepare(`
+      SELECT qr_location, completed_at, skipped FROM cleaning_tasks WHERE block=? AND floor=? AND DATE(scheduled_at)=?
+    `).all(block, Number(floor), today).map(t => [t.qr_location, t]))
+    const excluded = { closed: 0, locked: 0, night: 0, empty: 0, no_clean: 0, marked: 0 }
+    const locations = []
+    if (isMBlock(block) && rooms.some(r => r.use_state !== 'closed')) {
+      for (const { code } of COMMON_AREAS) {
+        const key = `${block}-${floor}-${code}`
+        if (isMarked(tasks.get(key))) excluded.marked += 1
+        else locations.push(key)
+      }
+    }
+    for (const r of rooms) {
+      const key = `${block}-${r.room_no}`
+      const why = floorExclusion(r, tasks.get(key))
+      if (why) excluded[why] += 1
+      else locations.push(key)
+    }
+    if (!dryRun) for (const location of locations) markField({ location, action: 'clean', workerId }, db)
+    return { locations, excluded }
+  })()
+}
+
+// Kat toplusunun geri alınışı: dönen yer listesi; yalnız bu kişinin işaretleri geri alınır, gerisi sayılır.
+export function undoFloor({ locations, workerId }, db = getDB()) {
+  if (!Array.isArray(locations) || !locations.length || locations.length > 200) throw fail('Geçersiz yer listesi', 400)
+  return db.transaction(() => {
+    let undone = 0
+    let skipped = 0
+    for (const location of locations) {
+      try {
+        undoField({ location, workerId }, db)
+        undone += 1
+      } catch (e) {
+        if (!e.statusCode) throw e
+        skipped += 1
+      }
+    }
+    return { undone, skipped }
+  })()
 }
