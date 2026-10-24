@@ -305,7 +305,8 @@ function locationByToken(token, db) {
  * Beklenen konum verildiyse ve QR başka konumu gösteriyorsa doğrulama
  * SAYILMAZ — uyuşmazlık kaydedilir, düzeltme listesine düşer.
  */
-export function verifyDeployment({ token, expectedLocationId = null, userId = null, note = null }, db = getDB()) {
+// staffId: saha ekranından (kiosk) doğrulayan personel — users kaydı yok, ayrı sütuna yazılır (migration 126)
+export function verifyDeployment({ token, expectedLocationId = null, userId = null, note = null, staffId = null }, db = getDB()) {
   const bulunan = locationByToken(token, db)
   const beklenen = expectedLocationId ? Number(expectedLocationId) : null
 
@@ -313,9 +314,9 @@ export function verifyDeployment({ token, expectedLocationId = null, userId = nu
     if (beklenen) {
       db.prepare(`
         INSERT INTO location_qr_verify_mismatches
-          (scanned_qr_code_id, scanned_location_id, expected_location_id, reason, reported_by)
-        VALUES(NULL, NULL, ?, 'unknown_token', ?)
-      `).run(beklenen, userId)
+          (scanned_qr_code_id, scanned_location_id, expected_location_id, reason, reported_by, reported_by_staff_id)
+        VALUES(NULL, NULL, ?, 'unknown_token', ?, ?)
+      `).run(beklenen, userId, staffId)
     }
     throw hata('Bu QR sistemde tanımlı değil — etiket başka bir kurulumdan kalmış olabilir', 404, 'qr_unknown')
   }
@@ -325,9 +326,9 @@ export function verifyDeployment({ token, expectedLocationId = null, userId = nu
     // sayılmaz; asıl aksiyon yeniden basımdır.
     db.prepare(`
       INSERT INTO location_qr_verify_mismatches
-        (scanned_qr_code_id, scanned_location_id, expected_location_id, reason, reported_by)
-      VALUES(?,?,?,'revoked_label',?)
-    `).run(bulunan.qr_id, bulunan.location_id, beklenen, userId)
+        (scanned_qr_code_id, scanned_location_id, expected_location_id, reason, reported_by, reported_by_staff_id)
+      VALUES(?,?,?,'revoked_label',?,?)
+    `).run(bulunan.qr_id, bulunan.location_id, beklenen, userId, staffId)
     return {
       ok: false,
       code: 'qr_revoked',
@@ -340,9 +341,9 @@ export function verifyDeployment({ token, expectedLocationId = null, userId = nu
     const hedef = db.prepare('SELECT id, display_name FROM service_locations WHERE id=?').get(beklenen)
     db.prepare(`
       INSERT INTO location_qr_verify_mismatches
-        (scanned_qr_code_id, scanned_location_id, expected_location_id, reason, reported_by)
-      VALUES(?,?,?,'location_mismatch',?)
-    `).run(bulunan.qr_id, bulunan.location_id, beklenen, userId)
+        (scanned_qr_code_id, scanned_location_id, expected_location_id, reason, reported_by, reported_by_staff_id)
+      VALUES(?,?,?,'location_mismatch',?,?)
+    `).run(bulunan.qr_id, bulunan.location_id, beklenen, userId, staffId)
     return {
       ok: false,
       code: 'location_mismatch',
@@ -354,20 +355,23 @@ export function verifyDeployment({ token, expectedLocationId = null, userId = nu
 
   db.prepare(`
     INSERT INTO location_qr_deployments
-      (location_id, qr_code_id, status, installed_at, verified_at, verified_by, verify_count, note, updated_at)
-    VALUES(?,?, 'verified', datetime('now'), datetime('now'), ?, 1, ?, datetime('now'))
+      (location_id, qr_code_id, status, installed_at, installed_by_staff_id, verified_at, verified_by,
+       verified_by_staff_id, verify_count, note, updated_at)
+    VALUES(?,?, 'verified', datetime('now'), ?, datetime('now'), ?, ?, 1, ?, datetime('now'))
     ON CONFLICT(location_id) DO UPDATE SET
       qr_code_id=excluded.qr_code_id,
       status='verified',
       -- Doğrulama aynı zamanda "asılı" kanıtıdır: kurulum kaydı yoksa şimdi doğar.
       installed_at=COALESCE(location_qr_deployments.installed_at, datetime('now')),
+      installed_by_staff_id=COALESCE(location_qr_deployments.installed_by_staff_id, excluded.installed_by_staff_id),
       verified_at=datetime('now'),
       verified_by=excluded.verified_by,
+      verified_by_staff_id=excluded.verified_by_staff_id,
       verify_count=location_qr_deployments.verify_count+1,
       damaged_at=NULL, damage_note=NULL, removed_at=NULL,
       note=COALESCE(excluded.note, location_qr_deployments.note),
       updated_at=datetime('now')
-  `).run(bulunan.location_id, bulunan.qr_id, userId, note)
+  `).run(bulunan.location_id, bulunan.qr_id, staffId, userId, staffId, note)
 
   return { ok: true, code: 'verified', message: `${bulunan.display_name} doğrulandı`, scanned: bulunan }
 }

@@ -58,6 +58,16 @@ export const fieldFloorUndoSchema = z.object({
   locations: z.array(fieldLocation).min(1, 'Yer listesi boş').max(200, 'Yer listesi çok uzun'),
 })
 
+// Kapıdaki QR (qr.js, board.js /label-verify): okutulan metin tam adres ya da çıplak token olabilir
+const scannedQr = z.string({ required_error: 'QR gerekli' }).trim().min(10, 'Geçersiz QR').max(500, 'Geçersiz QR')
+
+export const qrScanSchema = z.object({
+  qr: scannedQr,
+  via: z.enum(['camera', 'in_app']).optional().default('in_app'),
+})
+
+export const fieldLabelVerifySchema = z.object({ location: fieldLocation, qr: scannedQr })
+
 // Saha ekranı çamaşır defteri (laundry.js) — oda bazında torba; istemci anahtarı çift gönderimi önler
 export const fieldLaundryIntakeSchema = z.object({
   room_id: z.coerce.number({ invalid_type_error: 'Oda seçilmeli' }).int().positive('Oda seçilmeli'),

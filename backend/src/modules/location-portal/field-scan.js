@@ -3,7 +3,7 @@
 // 60 dk içindeki işareti QR ile doğrulanmış yapar. Konum anahtarı saha anahtarıyla aynıdır (M1-101, M1-1-corridor).
 // Token hiçbir yanıtta dönmez.
 import { getDB } from '../../shared/db/index.js'
-import { effectiveDeploymentState } from './deployment.js'
+import { effectiveDeploymentState, verifyDeployment } from './deployment.js'
 import { recordPortalEvent } from './public-service.js'
 import { resolveLocationToken } from './service.js'
 
@@ -93,6 +93,17 @@ export function labelStates(db = getDB(), keys = []) {
 }
 
 export const labelState = (db, key) => labelStates(db, [key]).get(String(key))
+
+// Sahadan etiket doğrulama: beklenen yer = görevlinin panoda açtığı yer. Yanlış kapı ve iptal etiket
+// verifyDeployment kuralıyla kaydedilir; doğrulayan saha personeli ayrı sütuna yazılır.
+export function verifyFieldLabel({ location, qr, workerId }, db = getDB()) {
+  const expected = db.prepare('SELECT id FROM service_locations WHERE qr_location=? AND is_active=1').get(String(location))
+  if (!expected) throw fail('Yer bulunamadı', 404, 'location_not_found')
+  const { ok, code, message } = verifyDeployment({
+    token: parseQrInput(qr) ?? String(qr), expectedLocationId: expected.id, staffId: workerId,
+  }, db)
+  return { ok, code, message }
+}
 
 export function fieldQrEnforcement(db = getDB()) {
   const value = db.prepare("SELECT value FROM system_settings WHERE key='saha_qr_enforcement'").get()?.value

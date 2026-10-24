@@ -26,11 +26,14 @@ import { FIELD_SKIP_REASONS } from '../housekeeping/field.js'
 import { removeUploadedFiles, uploadedFiles, validateUploadBody } from './upload-helpers.js'
 import { avsBoardRouter } from './board.js'
 import { avsLaundryRouter } from './laundry.js'
+import { avsQrRouter } from './qr.js'
 
 export const avsSelfServiceRouter = Router()
 // Saha ekranı oda panosu (temizlik + çamaşırhane grubu) — docs/saha-ekrani.md
 avsSelfServiceRouter.use('/board', avsBoardRouter)
 avsSelfServiceRouter.use('/laundry', avsLaundryRouter)
+// Kapıdaki QR'ı okutma (bütün kiosk personeli) — docs/superpowers/specs/2026-10-24-oda-qr-saha-design.md
+avsSelfServiceRouter.use('/qr-scan', avsQrRouter)
 const cleaningProofUpload = createImageUpload('housekeeping').fields([
   { name: 'photo', maxCount: 1 },
   { name: 'photos', maxCount: 3 },

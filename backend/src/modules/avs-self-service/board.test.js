@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import app from '../../app.js'
 import { getDB, initDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
+import { generateMissingQrCodes } from '../location-portal/service.js'
 
 // Saha ekranı kiosk oda panosu uçları (spec: docs/superpowers/specs/2026-10-23-saha-ekrani-design.md §6).
 // FB: deneme bloğu — 101 ve 102 açık, 103 kapalı.
@@ -150,5 +151,33 @@ describe('saha oda panosu uçları', () => {
     } finally {
       db.exec('ALTER TABLE cleaning_tasks_gecici RENAME TO cleaning_tasks')
     }
+  })
+})
+
+// Etiket kurulumu sahadan (spec 2026-10-24-oda-qr-saha §Hedefler 4): beklenen yer = görevlinin panoda açtığı yer
+describe('sahadan etiket doğrulama', () => {
+  const token = key => db.prepare(`
+    SELECT q.token FROM location_qr_codes q JOIN service_locations sl ON sl.id=q.location_id
+    WHERE sl.qr_location=? AND q.status='active'
+  `).get(key).token
+  const locationId = key => db.prepare('SELECT id FROM service_locations WHERE qr_location=?').get(key).id
+
+  it('doğru kapı doğrulanır; başka odanın etiketi yanlış kapı kaydı açar; teknik giremez', async () => {
+    generateMissingQrCodes({}, null)
+    const verify = (who, body) => request(app).post(`${BOARD}/label-verify`).set(auth(who.token)).send(body)
+    const ok = await verify(cleaner, { location: 'FB-101', qr: `https://avskamp.com/r/${token('FB-101')}` })
+    expect(ok.status).toBe(200)
+    expect(ok.body).toMatchObject({ ok: true, code: 'verified' })
+    expect(db.prepare('SELECT verified_by_staff_id FROM location_qr_deployments WHERE location_id=?').get(locationId('FB-101')))
+      .toEqual({ verified_by_staff_id: cleaner.id })
+
+    const wrong = await verify(cleaner, { location: 'FB-101', qr: token('FB-102') })
+    expect(wrong.status).toBe(200)
+    expect(wrong.body).toMatchObject({ ok: false, code: 'location_mismatch' })
+    expect(db.prepare(`
+      SELECT reported_by_staff_id FROM location_qr_verify_mismatches WHERE expected_location_id=? ORDER BY id DESC
+    `).get(locationId('FB-101'))).toEqual({ reported_by_staff_id: cleaner.id })
+
+    expect((await verify(technician, { location: 'FB-101', qr: token('FB-101') })).status).toBe(403)
   })
 })

@@ -7,8 +7,9 @@ import { createImageUpload, verifyImageMagicBytes } from '../../shared/uploads/m
 import {
   boardBlocks, boardRooms, cleanFloor, markField, setOccupancy, undoField, undoFloor,
 } from '../housekeeping/field.js'
+import { verifyFieldLabel } from '../location-portal/field-scan.js'
 import {
-  fieldFloorSchema, fieldFloorUndoSchema, fieldLocationSchema, fieldMarkSchema, fieldOccupancySchema,
+  fieldFloorSchema, fieldFloorUndoSchema, fieldLabelVerifySchema, fieldLocationSchema, fieldMarkSchema, fieldOccupancySchema,
 } from './schemas.js'
 import { removeUploadedFiles, uploadedFiles, validateUploadBody } from './upload-helpers.js'
 
@@ -107,6 +108,15 @@ avsBoardRouter.post('/floor', validate(fieldFloorSchema), (req, res, next) => {
     const { block, floor, dry_run: dryRun } = req.validated
     if (!blockAllowed(req, block)) return res.status(403).json(BLOCK_DENIED)
     res.json(cleanFloor({ block, floor, workerId: req.fieldWorker.id, dryRun }))
+  } catch (e) { next(e) }
+})
+
+// Etiket kurulumu: görevli panoda açtığı yerin kapısındaki etiketi okutur; yanlış kapı / iptal etiket kaydedilir
+avsBoardRouter.post('/label-verify', validate(fieldLabelVerifySchema), (req, res, next) => {
+  try {
+    const { location, qr } = req.validated
+    if (!blockAllowed(req, blockOf(location))) return res.status(403).json(BLOCK_DENIED)
+    res.json(verifyFieldLabel({ location, qr, workerId: req.fieldWorker.id }))
   } catch (e) { next(e) }
 })
 

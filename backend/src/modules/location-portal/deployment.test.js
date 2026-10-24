@@ -192,6 +192,18 @@ describe('yerinde doğrulama', () => {
     expect(k.verify_count).toBe(1)
   })
 
+  // Saha ekranından (kiosk) doğrulayanın users kaydı yok; personel ayrı sütuna yazılır (migration 126)
+  it('sahadan doğrulayan personel ayrı sütunlara yazılır', () => {
+    const staffId = Number(getDB().prepare("INSERT INTO staff(full_name, is_active) VALUES('Saha Doğrulayan', 1)").run().lastInsertRowid)
+    expect(verifyDeployment({ token: odaKonum.token, expectedLocationId: odaKonum.id, staffId }).ok).toBe(true)
+    expect(kurulum(odaKonum.id)).toMatchObject({
+      status: 'verified', verified_by: null, verified_by_staff_id: staffId, installed_by_staff_id: staffId,
+    })
+    expect(verifyDeployment({ token: digerKonum.token, expectedLocationId: odaKonum.id, staffId }).ok).toBe(false)
+    expect(getDB().prepare('SELECT reason, reported_by_staff_id FROM location_qr_verify_mismatches ORDER BY id DESC').get())
+      .toEqual({ reason: 'location_mismatch', reported_by_staff_id: staffId })
+  })
+
   it('tam URL okutulsa da token ayıklanır', () => {
     const sonuc = verifyDeployment({
       token: `https://avskamp.com/q/${odaKonum.token}`, userId: kullaniciId,
