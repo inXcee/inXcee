@@ -18,7 +18,7 @@ import { removeUploadedFiles, uploadedFiles, validateUploadBody } from './upload
 export const avsBoardRouter = Router()
 const FIELD_GROUPS = new Set(['housekeeping', 'laundry'])
 const fieldPhotoUpload = createImageUpload('housekeeping').array('photos', 3)
-const BLOCK_DENIED = { error: 'Bu blok size atanmamış' }
+export const BLOCK_DENIED = { error: 'Bu blok size atanmamış' }
 
 export function requireFieldGroup(req, res, next) {
   const worker = getDB().prepare(`
@@ -35,8 +35,8 @@ export function requireFieldGroup(req, res, next) {
 
 avsBoardRouter.use(requireAvsKiosk, requireFieldGroup)
 
-// Bloğa atanmış personel yalnız kendi bloğunu görür ve işaretler (atama yoksa kısıt yok)
-const blockAllowed = (req, block) => !req.fieldWorker.assigned_block || req.fieldWorker.assigned_block === block
+// Bloğa atanmış personel yalnız kendi bloğunu görür ve işaretler (atama yoksa kısıt yok) — çamaşır defteri de kullanır
+export const blockAllowed = (req, block) => !req.fieldWorker.assigned_block || req.fieldWorker.assigned_block === block
 const blockOf = location => String(location).split('-')[0]
 
 function acceptFieldPhotos(req, res, next) {

@@ -57,15 +57,16 @@ function groupByRoom(rows) {
   return [...groups.values()]
 }
 
-// Üç liste oda bazında: yıkamada (acil önce, en eski önce) · hazır · bugün teslim (İstanbul günü)
-export function ledgerOverview(db = getDB()) {
+// Üç liste oda bazında: yıkamada (acil önce, en eski önce) · hazır · bugün teslim (İstanbul günü).
+// block verilirse yalnız o bloğun odaları (bloğa atanmış personel).
+export function ledgerOverview(db = getDB(), { block = null } = {}) {
   const { from, to } = istanbulDayBoundsUtc()
   const list = (where, params) => groupByRoom(db.prepare(`
     SELECT li.id, li.room_id, r.block, r.room_no, li.needs_ironing, li.urgent, li.created_at, li.updated_at
     FROM laundry_items li JOIN rooms r ON r.id=li.room_id
-    WHERE li.tracking_mode!='individual' AND ${where}
+    WHERE li.tracking_mode!='individual' AND (? IS NULL OR r.block=?) AND ${where}
     LIMIT ${LIST_LIMIT}
-  `).all(...params))
+  `).all(block, block, ...params))
   return {
     open: list("li.status IN ('dirty','washing','ironing') ORDER BY li.urgent DESC, li.created_at, li.id", []),
     ready: list("li.status='ready' ORDER BY li.updated_at, li.id", []),
