@@ -14,6 +14,8 @@ import BlockFloorView from './BlockFloorView.jsx'
 import RoomDetailPanel from './RoomDetailPanel.jsx'
 import StaffSection from './StaffSection.jsx'
 import PhotoControlCenter from './PhotoControlCenter.jsx'
+import FieldTrackingPanel from './FieldTrackingPanel.jsx'
+import { useAuthStore } from '../../shared/store/authStore.js'
 
 export default function HousekeepingPage() {
   const qc = useQueryClient()
@@ -23,6 +25,7 @@ export default function HousekeepingPage() {
   const [selectedRoomNo, setSelected] = useState(null)
   const [uncleanedOnly, setUncleanedOnly] = useState(false)
   const [viewMode, setViewMode] = useState('plan')
+  const isManager = useAuthStore(state => state.user?.role) === 'campus_manager'
 
   const cfg = BLOCK_BY_NAME[block]
   const isM = cfg?.type === 'M'
@@ -154,9 +157,10 @@ export default function HousekeepingPage() {
       <div style={{ display: 'flex', gap: '5px', marginBottom: '14px', padding: '3px', width: 'fit-content', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '9px' }}>
         <button className={`filter-chip${viewMode === 'plan' ? ' active' : ''}`} onClick={() => setViewMode('plan')}>🧹 GÜNLÜK PLAN</button>
         <button className={`filter-chip${viewMode === 'photos' ? ' active' : ''}`} onClick={() => { setViewMode('photos'); setSelected(null) }}>📷 FOTOĞRAF MERKEZİ</button>
+        <button className={`filter-chip${viewMode === 'field' ? ' active' : ''}`} onClick={() => { setViewMode('field'); setSelected(null) }}>📍 SAHA TAKİBİ</button>
       </div>
 
-      {viewMode === 'photos' ? <PhotoControlCenter /> : <>
+      {viewMode === 'photos' ? <PhotoControlCenter /> : viewMode === 'field' ? <FieldTrackingPanel canManage={isManager} /> : <>
 
       {/* Progress */}
       {isLoading
