@@ -32,13 +32,14 @@ function writeBlock(value) {
 }
 
 // Okutulan etiketin sakin sayfası: kampta kalan görevli kendi odası için sakin hizmetlerini kullanabilsin
-// (?sakin=1 portalın görevliyi sahaya yönlendirmesini atlar)
+// (?sakin=1 portalın görevliyi sahaya yönlendirmesini atlar). Yalnız kendi adresimiz: okunan metnin alan adı
+// kullanılmaz (başka alana basılmış sahte QR görevliyi oraya götürmesin); token, sunucudaki gibi son yol parçası.
 function residentHref(qr) {
-  try {
-    const url = /^https?:\/\//i.test(qr) ? new URL(qr) : new URL(`/r/${qr}`, window.location.origin)
-    url.searchParams.set('sakin', '1')
-    return url.toString()
-  } catch { return null }
+  const token = String(qr ?? '').trim().split(/[?#]/)[0].split('/').filter(Boolean).pop()
+  if (!token) return null
+  const url = new URL(`/r/${encodeURIComponent(token)}`, window.location.origin)
+  url.searchParams.set('sakin', '1')
+  return url.toString()
 }
 
 export default function RoomsBoardTab({ avsApi, onReportFault, isOnline = true, pendingScan = null, onPendingScanDone }) {

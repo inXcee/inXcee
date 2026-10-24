@@ -129,7 +129,8 @@ describe('RoomsBoardTab — kapıdaki QR', () => {
     expect(api.post).toHaveBeenCalledWith('/avs-self-service/qr-scan', { qr: QR, via: 'camera' })
     expect(done).toHaveBeenCalled()
     expect(within(sheet).getByText(/QR ile doğrulandı/)).toBeInTheDocument()
-    expect(within(sheet).getByRole('link', { name: 'Sakin sayfası' })).toHaveAttribute('href', `${QR}?sakin=1`)
+    expect(within(sheet).getByRole('link', { name: 'Sakin sayfası' }))
+      .toHaveAttribute('href', `${window.location.origin}/r/${'T'.repeat(43)}?sakin=1`)
     fireEvent.click(within(sheet).getByRole('button', { name: /Temizlendi$/ }))
     await waitFor(() => expect(api.post).toHaveBeenCalledWith('/avs-self-service/board/mark', { location: 'M1-101', action: 'clean', scan_id: 77 }))
   })
@@ -180,5 +181,17 @@ describe('RoomsBoardTab — kapıdaki QR', () => {
       <RoomsBoardTab avsApi={makeApi({ scanError })} onReportFault={() => {}} pendingScan={{ qr: QR, via: 'camera' }} onPendingScanDone={() => {}} />,
     )
     expect(await screen.findByText('Bu QR sistemde tanımlı değil')).toBeInTheDocument()
+  })
+
+  // Güvenlik incelemesi: başka alan adına basılmış sahte QR (gerçek token'la) görevliyi o siteye götürmesin
+  it('sakin sayfası bağlantısı okutulan metnin alan adını değil kendi adresimizi kullanır', async () => {
+    renderWithProviders(
+      <RoomsBoardTab avsApi={makeApi({ scan: scanResult() })} onReportFault={() => {}}
+        pendingScan={{ qr: `https://kotu.example/r/${'T'.repeat(43)}?x=1`, via: 'in_app' }} onPendingScanDone={() => {}} />,
+    )
+    const sheet = await screen.findByRole('dialog', { name: 'M1-101' })
+    const href = within(sheet).getByRole('link', { name: 'Sakin sayfası' }).getAttribute('href')
+    expect(href).toBe(`${window.location.origin}/r/${'T'.repeat(43)}?sakin=1`)
+    expect(href).not.toContain('kotu.example')
   })
 })
