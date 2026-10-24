@@ -11,6 +11,7 @@ const OCCUPANCY = [['occupied', '👤'], ['empty', '○'], [null, '?']]
 export default function SpotSheet({
   spot, isOnline = true, pending = false, error = '',
   onClose, onMark, onUndo, onOccupancy, onReportFault,
+  scan = null, onScanRequest, onVerifyLabel, portalHref = null,
 }) {
   const { t } = useTranslation()
   const [skipOpen, setSkipOpen] = useState(false)
@@ -22,6 +23,11 @@ export default function SpotSheet({
   const closed = spot.use_state === 'closed'
   const cleaned = spot.status === 'cleaned'
   const blocked = !isOnline || pending || closed
+  // Etiketi doğrulanmış kapıda (zorunluluk açık) işaret ancak kapıdaki QR okutulunca yapılır
+  const needsScan = Boolean(spot.qr_required) && !scan
+  const markBlocked = blocked || needsScan
+  const scanTime = scan ? spotTime(scan.at) : null
+  const qrLabel = spot.qr_label || 'none'
   const title = isRoom ? `${t('avs_kiosk.board.room')} ${spot.room_no}` : t(`avs_kiosk.board.area_${spot.code}`, spot.label)
   const time = spotTime(spot.at)
   const lastCleaned = spotTime(spot.last_cleaned_at)
@@ -54,6 +60,11 @@ export default function SpotSheet({
                 ? `${t('avs_kiosk.board.last_cleaned')}: ${lastCleaned}`
                 : t('avs_kiosk.board.never_cleaned'))}
             </p>
+            {scan && (
+              <p className="mt-1 text-sm font-semibold text-green-300">
+                📍 {t('avs_kiosk.board.qr_verified')}{scanTime ? ` · ${scanTime}` : ''}
+              </p>
+            )}
           </div>
           <button type="button" onClick={onClose} aria-label={t('avs_kiosk.board.close')}
             className="min-h-12 min-w-12 rounded-xl bg-slate-800 text-slate-300">✕</button>
@@ -66,6 +77,31 @@ export default function SpotSheet({
           </p>
         )}
         {error && <p role="alert" className="rounded-xl border border-red-500/40 bg-red-950/30 p-3 text-sm text-red-300">{error}</p>}
+        {spot.complaint?.open && (
+          <div className="rounded-xl border border-red-500/50 bg-red-950/40 p-3 text-sm text-red-200">
+            <b>⚠ {t('avs_kiosk.board.complaint')}</b>
+            {spot.complaint.comment && <p className="mt-1">“{spot.complaint.comment}”</p>}
+          </div>
+        )}
+        {spot.complaint && !spot.complaint.open && (
+          <p className="text-xs text-slate-400">{t('avs_kiosk.board.complaint_done')}</p>
+        )}
+        {spot.pickup_request && (
+          <div className="rounded-xl border border-amber-500/40 bg-amber-950/30 p-3 text-sm text-amber-200">
+            🧺 {t('avs_kiosk.board.pickup_request')}
+            {spotTime(spot.pickup_request.created_at) ? ` · ${spotTime(spot.pickup_request.created_at)}` : ''}
+            {spot.pickup_request.note && <p className="mt-1 text-amber-100/80">{spot.pickup_request.note}</p>}
+          </div>
+        )}
+        {needsScan && !closed && (
+          <div className="rounded-xl border border-blue-500/40 bg-blue-950/40 p-3 text-sm text-blue-200">
+            <p>{t('avs_kiosk.board.scan_required')}</p>
+            <button type="button" onClick={onScanRequest} disabled={!isOnline || pending}
+              className="mt-2 min-h-12 w-full rounded-xl bg-blue-600 font-semibold text-white disabled:opacity-50">
+              📷 {t('avs_kiosk.board.scan')}
+            </button>
+          </div>
+        )}
 
         {cleaned ? (
           spot.mine && (
@@ -76,11 +112,11 @@ export default function SpotSheet({
           )
         ) : (
           <>
-            <button type="button" onClick={() => mark('clean')} disabled={blocked}
+            <button type="button" onClick={() => mark('clean')} disabled={markBlocked}
               className="min-h-16 w-full rounded-2xl bg-green-600 text-lg font-semibold text-white disabled:bg-slate-700 disabled:text-slate-400">
               ✓ {t('avs_kiosk.board.clean')}
             </button>
-            <button type="button" onClick={() => setSkipOpen(open => !open)} disabled={blocked} aria-expanded={skipOpen}
+            <button type="button" onClick={() => setSkipOpen(open => !open)} disabled={markBlocked} aria-expanded={skipOpen}
               className="min-h-12 w-full rounded-2xl bg-slate-800 text-sm font-semibold text-amber-300 disabled:opacity-50">
               ⊘ {t('avs_kiosk.board.not_cleaned')}
             </button>
@@ -99,7 +135,7 @@ export default function SpotSheet({
                     placeholder={t('avs_kiosk.tasks.skip_note')}
                     className="min-h-12 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 text-sm text-white" />
                 )}
-                <button type="button" disabled={!reason || blocked}
+                <button type="button" disabled={!reason || markBlocked}
                   onClick={() => mark('skip', { reason, ...(note.trim() ? { note: note.trim() } : {}) })}
                   className="min-h-12 w-full rounded-xl bg-amber-600 text-sm font-semibold text-white disabled:bg-slate-700">
                   {t('avs_kiosk.board.save_skip')}
@@ -154,11 +190,26 @@ export default function SpotSheet({
           </div>
         )}
 
+        <div className="flex min-h-12 items-center justify-between gap-3 rounded-xl bg-slate-800/60 px-3 py-2 text-xs text-slate-300">
+          <span><span aria-hidden="true">🏷 </span>{t(`avs_kiosk.board.label_${qrLabel}`, qrLabel)}</span>
+          {qrLabel !== 'verified' && !closed && (
+            <button type="button" onClick={onVerifyLabel} disabled={!isOnline || pending}
+              className="min-h-10 shrink-0 rounded-lg bg-slate-700 px-3 font-semibold text-slate-100 disabled:opacity-50">
+              {t('avs_kiosk.board.verify_label')}
+            </button>
+          )}
+        </div>
+
         {isRoom && (
           <button type="button" onClick={onReportFault}
             className="min-h-12 w-full rounded-2xl bg-amber-600/20 text-sm font-medium text-amber-300">
             🔧 {t('avs_kiosk.board.report_fault')}
           </button>
+        )}
+        {portalHref && (
+          <a href={portalHref} className="block text-center text-xs text-slate-400 underline">
+            {t('avs_kiosk.board.resident_page')}
+          </a>
         )}
       </div>
     </div>
