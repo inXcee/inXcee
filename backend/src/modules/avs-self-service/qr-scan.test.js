@@ -52,7 +52,7 @@ describe('QR okutma ucu', () => {
     const t = token('FB-101')
     const res = await request(app).post(SCAN).set(auth(cleaner.token)).send({ qr: `https://avskamp.com/r/${t}`, via: 'camera' })
     expect(res.status).toBe(200)
-    expect(res.body).toMatchObject({ location: 'FB-101', kind: 'room', block: 'FB', group: 'housekeeping', label: 'none' })
+    expect(res.body).toMatchObject({ location: 'FB-101', kind: 'room', block: 'FB', group: 'housekeeping', qr_label: 'none' })
     expect(res.body.scan_id).toBeGreaterThan(0)
     expect(JSON.stringify(res.body)).not.toContain(t)
   })

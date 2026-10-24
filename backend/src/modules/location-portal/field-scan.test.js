@@ -56,7 +56,7 @@ describe('saha QR okutması', () => {
     const target = resolveScanTarget(`https://avskamp.com/r/${t}`, db)
     expect(target).toMatchObject({ location: 'QB-101', kind: 'room', block: 'QB', floor: 1, display_name: 'QB Oda 101' })
     const scan = recordFieldScan({ target, workerId: workerA, via: 'camera', ip: '10.0.0.5' }, db)
-    expect(scan).toMatchObject({ location: 'QB-101', kind: 'room', label: 'none', room_id: target.room_id })
+    expect(scan).toMatchObject({ location: 'QB-101', kind: 'room', qr_label: 'none', room_id: target.room_id })
     expect(scan.scan_id).toBeGreaterThan(0)
     const event = db.prepare('SELECT * FROM location_portal_events WHERE id=?').get(scan.scan_id)
     expect(event).toMatchObject({

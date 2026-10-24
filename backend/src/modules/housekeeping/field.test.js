@@ -400,3 +400,71 @@ describe('QR ile kanıtlı işaret', () => {
     expect(db.prepare('SELECT completed_at FROM cleaning_tasks WHERE id=?').get(followup)).toEqual({ completed_at: null })
   })
 })
+
+// Panoda QR, etiket, sakin çamaşır talebi ve şikayet bilgisi (spec 2026-10-24-oda-qr-saha §Hedefler 5–6).
+// FP: 101 okutmalı temizlik, 102 etiketi doğrulanmış, 103 çamaşır talepli, 104 şikayetli.
+describe('pano: QR, etiket, çamaşır talebi, şikayet', () => {
+  const tokenOf = key => db.prepare(`
+    SELECT q.token FROM location_qr_codes q JOIN service_locations sl ON sl.id=q.location_id
+    WHERE sl.qr_location=? AND q.status='active'
+  `).get(key).token
+  const locId = key => db.prepare('SELECT id FROM service_locations WHERE qr_location=?').get(key).id
+  const setEnforcement = value => db.prepare(`
+    INSERT INTO system_settings(key, value) VALUES('saha_qr_enforcement', ?)
+    ON CONFLICT(key) DO UPDATE SET value=excluded.value
+  `).run(value)
+  const scanOf = key => recordFieldScan({ target: resolveScanTarget(tokenOf(key), db), workerId, ip: '127.0.0.1' }, db)
+  const spotOf = key => boardRooms('FP', { workerId }).floors.flatMap(f => f.rooms).find(r => r.location === key)
+  // reviewPortalCleaning'in yazdığı şekil (bkz. ledger ruling, Task 3)
+  const addComplaint = (key, taskId) => {
+    const followup = Number(db.prepare(`
+      INSERT INTO cleaning_tasks(area, block, floor, task_type, scheduled_at, qr_location) VALUES(?, 'FP', 1, 'room', ?, ?)
+    `).run(`FP Oda ${key.split('-')[1]}`, `${today} 12:00:00`, key).lastInsertRowid)
+    db.prepare(`
+      INSERT INTO cleaning_task_reviews(task_id, location_id, identity_mode, outcome, rating, comment, followup_task_id)
+      VALUES(?, ?, 'anonymous', 'issue', 2, 'Çöp alınmamış', ?)
+    `).run(taskId, locId(key), followup)
+    return followup
+  }
+
+  beforeAll(() => {
+    const room = db.prepare(`INSERT INTO rooms(block, floor, room_no, capacity, active_beds, use_state) VALUES('FP', 1, ?, 6, 6, 'open')`)
+    for (const no of ['101', '102', '103', '104']) room.run(no)
+    generateMissingQrCodes({}, null)
+    verifyDeployment({ token: tokenOf('FP-102'), expectedLocationId: locId('FP-102') }, db)
+  })
+  afterEach(() => setEnforcement('off'))
+
+  it('QR ve etiket alanları; zorunluluk açıkken doğrulanmış etiketli yer okutma ister', () => {
+    markField({ location: 'FP-101', action: 'clean', workerId, scanId: scanOf('FP-101').scan_id })
+    expect(spotOf('FP-101')).toMatchObject({ status: 'cleaned', verified_by_qr: true, qr_label: 'none', qr_required: false })
+    expect(spotOf('FP-102')).toMatchObject({ status: null, verified_by_qr: false, qr_label: 'verified', qr_required: false })
+    expect(boardRooms('FP').enforcement).toBe('off')
+    setEnforcement('verified_labels')
+    const board = boardRooms('FP', { workerId })
+    const rooms = board.floors.flatMap(f => f.rooms)
+    expect(board.enforcement).toBe('verified_labels')
+    expect(rooms.find(r => r.location === 'FP-102').qr_required).toBe(true)
+    expect(rooms.find(r => r.location === 'FP-101').qr_required).toBe(false)
+  })
+
+  it('açık çamaşır talebi ve sakin şikayeti panoda görünür; takip temizlenince şikayet kapanır', () => {
+    const roomId = db.prepare("SELECT id FROM rooms WHERE block='FP' AND room_no='103'").get().id
+    db.prepare(`
+      INSERT INTO laundry_pickup_requests(service_location_id, room_id, note, request_count) VALUES(?, ?, 'Kapının önünde', 2)
+    `).run(locId('FP-103'), roomId)
+    expect(spotOf('FP-103').pickup_request).toMatchObject({ request_count: 2, note: 'Kapının önünde' })
+    expect(spotOf('FP-101').pickup_request).toBeNull()
+
+    const first = markField({ location: 'FP-104', action: 'clean', workerId })
+    addComplaint('FP-104', first.task_id)
+    expect(spotOf('FP-104')).toMatchObject({ status: null, complaint: { comment: 'Çöp alınmamış', rating: 2, open: true } })
+    markField({ location: 'FP-104', action: 'clean', workerId })
+    expect(spotOf('FP-104')).toMatchObject({ status: 'cleaned', complaint: { open: false } })
+    expect(spotOf('FP-101').complaint).toBeNull()
+  })
+
+  it('blok sayaçları yer başına geçerli görevi sayar: takip görevi çift saymaz', () => {
+    expect(boardBlocks().find(b => b.block === 'FP')).toMatchObject({ cleaned: 2, skipped: 0, qr_verified: 1 })
+  })
+})

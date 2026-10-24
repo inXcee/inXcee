@@ -165,7 +165,7 @@ export function undoField({ location, workerId }, db = getDB()) {
 }
 
 function spotState(task, workerId) {
-  if (!task) return { status: null, at: null, by: null, skip_reason: null, mine: false }
+  if (!task) return { status: null, at: null, by: null, skip_reason: null, mine: false, verified_by_qr: false, complaint: null }
   const status = task.completed_at ? 'cleaned' : task.skipped ? 'skipped' : null
   return {
     status,
@@ -173,6 +173,11 @@ function spotState(task, workerId) {
     by: status ? task.by_name || null : null,
     skip_reason: status === 'skipped' ? task.skip_reason : null,
     mine: Boolean(status && workerId != null && task.field_worker_id === Number(workerId)),
+    verified_by_qr: Boolean(status && task.verified_by_qr),
+    // Geçerli görev sakin şikayetinin takip göreviyse: temizlenene kadar açık
+    complaint: task.complaint_comment == null ? null : {
+      comment: task.complaint_comment, rating: task.complaint_rating ?? null, created_at: task.complaint_at, open: !task.completed_at,
+    },
   }
 }
 
@@ -186,15 +191,20 @@ export function boardBlocks(db = getDB()) {
       SUM(occupancy IS NULL AND use_state!='closed') AS unknown
     FROM rooms WHERE status='active' GROUP BY block ORDER BY block
   `).all()
+  // Yer başına geçerli (son) görev: şikayet takip görevi aynı odayı ikinci kez saydırmaz
   const tasks = new Map(db.prepare(`
-    SELECT block, SUM(completed_at IS NOT NULL) AS cleaned, SUM(skipped=1 AND completed_at IS NULL) AS skipped
-    FROM cleaning_tasks WHERE DATE(scheduled_at)=? AND task_type='room' GROUP BY block
+    SELECT block, SUM(completed_at IS NOT NULL) AS cleaned, SUM(skipped=1 AND completed_at IS NULL) AS skipped,
+           SUM(completed_at IS NOT NULL AND verified_by_qr=1) AS qr_verified
+    FROM cleaning_tasks
+    WHERE id IN (SELECT MAX(id) FROM cleaning_tasks WHERE DATE(scheduled_at)=? AND task_type='room' GROUP BY qr_location)
+    GROUP BY block
   `).all(today).map(t => [t.block, t]))
   return blocks.map(b => ({
     ...b,
     type: BLOCK_BY_NAME[b.block]?.type ?? null,
     cleaned: Number(tasks.get(b.block)?.cleaned || 0),
     skipped: Number(tasks.get(b.block)?.skipped || 0),
+    qr_verified: Number(tasks.get(b.block)?.qr_verified || 0),
   }))
 }
 
@@ -207,13 +217,16 @@ export function boardRooms(block, { workerId = null } = {}, db = getDB()) {
   `).all(block)
   if (!rooms.length) return null
   const today = localToday(db)
+  // Sırayla okunur, haritada son görev kalır (geçerli görev = currentTask ile aynı kural)
   const todayTasks = new Map(db.prepare(`
-    SELECT ct.qr_location, ct.completed_at, ct.skipped, ct.skip_reason, ct.field_worker_id,
-           COALESCE(cw.full_name, fw.full_name, u.full_name) AS by_name
+    SELECT ct.qr_location, ct.completed_at, ct.skipped, ct.skip_reason, ct.field_worker_id, ct.verified_by_qr,
+           COALESCE(cw.full_name, fw.full_name, u.full_name) AS by_name,
+           cr.comment AS complaint_comment, cr.rating AS complaint_rating, cr.created_at AS complaint_at
     FROM cleaning_tasks ct
     LEFT JOIN staff cw ON cw.id=ct.completed_by_worker_id
     LEFT JOIN staff fw ON fw.id=ct.field_worker_id
     LEFT JOIN users u ON u.id=ct.assigned_to
+    LEFT JOIN cleaning_task_reviews cr ON cr.followup_task_id=ct.id
     WHERE ct.block=? AND DATE(ct.scheduled_at)=?
     ORDER BY ct.id
   `).all(block, today).map(t => [t.qr_location, t]))
@@ -221,26 +234,44 @@ export function boardRooms(block, { workerId = null } = {}, db = getDB()) {
     SELECT qr_location, MAX(completed_at) AS at FROM cleaning_tasks
     WHERE block=? AND DATE(scheduled_at)<? AND completed_at IS NOT NULL GROUP BY qr_location
   `).all(block, today).map(r => [r.qr_location, r.at]))
+  // Sakinin oda QR'ından açık çamaşır alma talebi (oda başına en çok bir açık talep)
+  const pickups = new Map(db.prepare(`
+    SELECT sl.qr_location, r.id, r.created_at, r.request_count, r.note
+    FROM laundry_pickup_requests r JOIN service_locations sl ON sl.id=r.service_location_id
+    WHERE r.status='open' AND sl.block=? AND sl.location_type='room'
+  `).all(block).map(({ qr_location: key, ...request }) => [key, request]))
+  const enforcement = fieldQrEnforcement(db)
+  const keys = rooms.map(r => `${block}-${r.room_no}`)
+  if (isMBlock(block)) {
+    for (const floor of new Set(rooms.map(r => r.floor))) keys.push(...COMMON_AREAS.map(({ code }) => `${block}-${floor}-${code}`))
+  }
+  const labels = labelStates(db, keys)
 
-  const spot = (location, extra) => ({
-    location, ...extra, ...spotState(todayTasks.get(location), workerId), last_cleaned_at: lastCleaned.get(location) || null,
-  })
+  // qr_label: kapı etiketinin durumu (ortak alanın `label` alanı adıdır, çakışmasın)
+  const spot = (location, extra, isRoom) => {
+    const qrLabel = labels.get(location) || 'none'
+    return {
+      location, ...extra, ...spotState(todayTasks.get(location), workerId), last_cleaned_at: lastCleaned.get(location) || null,
+      qr_label: qrLabel, qr_required: enforcement === 'verified_labels' && qrLabel === 'verified',
+      ...(isRoom ? { pickup_request: pickups.get(location) || null } : {}),
+    }
+  }
   const floors = new Map()
   for (const r of rooms) {
     if (!floors.has(r.floor)) floors.set(r.floor, { floor: r.floor, common_areas: [], rooms: [] })
     floors.get(r.floor).rooms.push(spot(`${block}-${r.room_no}`, {
       id: r.id, room_no: r.room_no, use_state: r.use_state, occupant_shift: r.occupant_shift,
       no_clean: Boolean(r.no_clean), occupancy: r.occupancy,
-    }))
+    }, true))
   }
   if (isMBlock(block)) {
     // Üretimle aynı: katın bütün odaları kapalıysa o katın ortak alanı temizlenmez
     for (const f of floors.values()) {
       if (!f.rooms.some(r => r.use_state !== 'closed')) continue
-      f.common_areas = COMMON_AREAS.map(({ code, label }) => spot(`${block}-${f.floor}-${code}`, { code, label }))
+      f.common_areas = COMMON_AREAS.map(({ code, label }) => spot(`${block}-${f.floor}-${code}`, { code, label }, false))
     }
   }
-  return { block, date: today, type: BLOCK_BY_NAME[block]?.type ?? null, floors: [...floors.values()] }
+  return { block, date: today, type: BLOCK_BY_NAME[block]?.type ?? null, enforcement, floors: [...floors.values()] }
 }
 
 // Oda doluluğu: 'occupied' / 'empty' / null (bilinmiyor). Kapalı odada ayarlanamaz. Aynı değer yeniden

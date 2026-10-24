@@ -182,4 +182,13 @@ describe('sahadan etiket doğrulama', () => {
 
     expect((await verify(technician, { location: 'FB-101', qr: token('FB-101') })).status).toBe(403)
   })
+
+  it('pano yanıtı zorunluluk ayarını ve yer başına etiket, okutma, talep, şikayet alanlarını taşır', async () => {
+    const res = await request(app).get(`${BOARD}/rooms?block=FB`).set(auth(cleaner.token))
+    expect(res.status).toBe(200)
+    expect(res.body.enforcement).toBe('off')
+    const room = res.body.floors[0].rooms.find(r => r.location === 'FB-101')
+    expect(room).toMatchObject({ qr_label: 'verified', qr_required: false, pickup_request: null, complaint: null })
+    expect(room).toHaveProperty('verified_by_qr')
+  })
 })

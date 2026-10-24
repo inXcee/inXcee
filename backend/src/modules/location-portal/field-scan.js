@@ -57,7 +57,7 @@ export function recordFieldScan({ target, workerId, via = 'in_app', ip }, db = g
     floor: target.floor,
     room_id: target.room_id,
     display_name: target.display_name,
-    label: labelState(db, target.location),
+    qr_label: labelState(db, target.location),
     at,
   }
 }
