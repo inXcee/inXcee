@@ -239,3 +239,45 @@ describe('getAnomalies — erişim/güvenlik (Faz 6.2)', () => {
     expect(hit.severity).toBe('warning')
   })
 })
+
+// Saha ekranı (spec §8): sakin takibi yokken doluluk oda bazlı gelir — herhangi bir odada saha doluluk
+// bilgisi varsa dolu / (dolu + boş), kapalı odalar hariç; yoksa yatak bazlı hesap aynen kalır.
+describe('Panel doluluğu — saha verisi (oda bazlı)', () => {
+  const auth = () => ({ Authorization: `Bearer ${token}` })
+  const kpi = async () => (await request(app).get('/api/dashboard/kpi').set(auth())).body
+
+  it('hiç saha verisi yokken yatak bazlı hesap aynen kalır (kaynak "beds")', async () => {
+    const db = getDB()
+    const beds = db.prepare("SELECT SUM(active_beds) s FROM rooms WHERE status='active'").get().s
+    const occupied = db.prepare('SELECT COUNT(*) c FROM room_assignments WHERE check_out_at IS NULL').get().c
+    const body = await kpi()
+    expect(body).toMatchObject({ occupancy_source: 'beds', occupancy_pct: Math.round(occupied * 100 / beds), rooms_occupied: 0, rooms_empty: 0 })
+    expect(typeof body.occupancy_pct_prev).toBe('number')
+  })
+
+  it('3 dolu + 1 boş işaretlenince kaynak "field", %75; kapalı oda paydaya girmez; sağlık skoru ve ısı haritası aynı yüzdeyi kullanır', async () => {
+    const db = getDB()
+    const room = db.prepare(`INSERT INTO rooms(block, floor, room_no, capacity, active_beds, use_state, occupancy) VALUES('QF', 1, ?, 6, 6, ?, ?)`)
+    room.run('101', 'open', 'occupied')
+    room.run('102', 'open', 'occupied')
+    room.run('103', 'locked', 'occupied')
+    room.run('104', 'open', 'empty')
+    room.run('105', 'closed', 'occupied') // kapanmadan önce dolu işaretlenmiş: sayılmaz
+    room.run('106', 'open', null)
+    const unknown = db.prepare("SELECT COUNT(*) c FROM rooms WHERE status='active' AND use_state!='closed' AND occupancy IS NULL").get().c
+
+    expect(await kpi()).toMatchObject({
+      occupancy_source: 'field', occupancy_pct: 75, occupancy_pct_prev: null,
+      rooms_occupied: 3, rooms_empty: 1, rooms_unknown: unknown,
+    })
+    expect(getHealthScore().breakdown.find(c => c.label === 'DOLULUK').value).toBe(90)
+
+    const heat = (await request(app).get('/api/dashboard/heatmap').set(auth())).body
+    expect(heat.find(b => b.block === 'QF')).toMatchObject({ pct: 75, occupied_rooms: 3, empty_rooms: 1, unknown_rooms: 1 })
+    expect(heat.find(b => b.block === 'QX')).toMatchObject({ pct: 25, occupied_rooms: 0, empty_rooms: 0 }) // saha verisiz blok: yatak bazlı
+
+    const beds = (await request(app).get('/api/dashboard/bed-occupancy').set(auth())).body
+    expect(beds.blocks.find(b => b.block === 'QF')).toMatchObject({ occupied_rooms: 3, empty_rooms: 1, unknown_rooms: 1 })
+    expect(beds.totals).toMatchObject({ occupied_rooms: 3, empty_rooms: 1, unknown_rooms: unknown })
+  })
+})

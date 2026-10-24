@@ -3,6 +3,8 @@
 // State priority: done > closed > locked > skipped > DND > noClean > pending > noTask
 
 const SHIFT_BADGE = { night: ['☾', 'Gececi — 07–19 uyur, temizlik 19:00'], day: ['☀', 'Gündüzcü'], mixed: ['◐', 'Karışık vardiya'] }
+// Saha ekranından gelen oda doluluğu (rooms.occupancy); bilinmiyorsa rozet yok
+const OCCUPANCY_BADGE = { occupied: ['👤', 'Dolu'], empty: ['○', 'Boş'] }
 
 export default function RoomTile({ rno, task, roomInfo, isDnd, dndInfo, isM, isS2Floor2, selected, onSelect, faultCount }) {
   const isDone    = !!task?.completed_at
@@ -11,6 +13,7 @@ export default function RoomTile({ rno, task, roomInfo, isDnd, dndInfo, isM, isS
   const isClosed  = roomInfo?.use_state === 'closed'
   const isLocked  = roomInfo?.use_state === 'locked'
   const shiftBadge = SHIFT_BADGE[roomInfo?.occupant_shift]
+  const occupancyBadge = OCCUPANCY_BADGE[roomInfo?.occupancy]
   const stateTitle = [roomInfo?.state_note, roomInfo?.state_until && `${roomInfo.state_until} tarihine kadar`].filter(Boolean).join(' · ')
   const hasTask   = !!task
   const hasNote   = !!roomInfo?.notes
@@ -130,6 +133,9 @@ export default function RoomTile({ rno, task, roomInfo, isDnd, dndInfo, isM, isS
           )}
           {shiftBadge && (
             <span style={{ fontSize: '9px', lineHeight: 1, opacity: 0.85 }} title={shiftBadge[1]}>{shiftBadge[0]}</span>
+          )}
+          {occupancyBadge && (
+            <span style={{ fontSize: '9px', lineHeight: 1, opacity: 0.85 }} title={occupancyBadge[1]}>{occupancyBadge[0]}</span>
           )}
         </div>
       </div>

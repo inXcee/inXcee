@@ -91,8 +91,10 @@ export function resolveKioskDevice(rawKey) {
   `).get(tokenHash) || null
 }
 
-export function kioskSessionPolicy(device = null) {
-  if (device?.mode === 'personal') {
+// Kayıtlı cihazın kuralı önceliklidir; cihaz yoksa istenen kip (yalnız 'personal' — /saha telefonu) dikkate alınır.
+export function kioskSessionPolicy(device = null, requestedMode = null) {
+  const mode = device ? device.mode : requestedMode
+  if (mode === 'personal') {
     const days = numberSetting('kiosk_personal_session_days', 30)
     return {
       mode: 'personal', idle_minutes: null, absolute_minutes: days * 24 * 60,
@@ -123,14 +125,14 @@ function pendingInitialPin(kind, id) {
   } catch { return null }
 }
 
-function kioskLoginOptions(kind, id, device) {
+function kioskLoginOptions(kind, id, device, deviceMode = null) {
   const issuance = pendingInitialPin(kind, id)
   if (issuance) {
     const expiresAt = new Date(`${issuance.expires_at.replace(' ', 'T')}Z`).getTime()
     if (expiresAt <= Date.now()) return { error: 'Geçici PIN süresi dolmuş. Yöneticinizden yeni PIN alın.', status: 410 }
     if (issuance.first_used_at) return { error: 'Geçici PIN daha önce kullanılmış. Yöneticinizden yeni PIN alın.', status: 410 }
   }
-  const policy = kioskSessionPolicy(device)
+  const policy = kioskSessionPolicy(device, deviceMode)
   return {
     issuance,
     policy,
@@ -281,7 +283,7 @@ export function searchAvsWorkers(q) {
   ).all(`%${q}%`)
 }
 
-export function loginAvsKiosk(workerId, pin, { device = null } = {}) {
+export function loginAvsKiosk(workerId, pin, { device = null, deviceMode = null } = {}) {
   const db = getDB()
   const w = db.prepare('SELECT * FROM staff WHERE id=? AND is_active=1').get(workerId)
   if (!w) return { error: 'Çalışan bulunamadı veya pasif', status: 401 }
@@ -289,7 +291,7 @@ export function loginAvsKiosk(workerId, pin, { device = null } = {}) {
   if (!bcrypt.compareSync(pin, w.kiosk_pin)) {
     return noteFailedPin('staff', w.id, w.full_name)
   }
-  const loginOptions = kioskLoginOptions('staff', w.id, device)
+  const loginOptions = kioskLoginOptions('staff', w.id, device, deviceMode)
   if (loginOptions.error) return loginOptions
   db.prepare('UPDATE staff SET pin_attempts=0, pin_locked_until=NULL WHERE id=?').run(w.id)
   const tokenResult = makeKioskToken({ workerId: w.id, role: 'avs_kiosk', full_name: w.full_name }, loginOptions.sessionOptions)
@@ -389,7 +391,7 @@ function continuationOptions(previousJti) {
   const device = previous?.device_id
     ? getDB().prepare('SELECT id, device_type, mode FROM kiosk_devices WHERE id=?').get(previous.device_id)
     : null
-  const policy = kioskSessionPolicy(device)
+  const policy = kioskSessionPolicy(device, previous?.session_mode)
   return {
     deviceId: device?.id || null,
     mode: policy.mode,
@@ -405,7 +407,7 @@ export function issueAvsKioskSession(workerId, { previousJti = null } = {}) {
   return {
     token,
     worker: { id: w.id, full_name: w.full_name, role_label: w.role_label },
-    session: { ...kioskSessionPolicy(sessionOptions.deviceId ? resolveDeviceById(sessionOptions.deviceId) : null), absolute_expires_at: new Date(sessionOptions.absoluteExpiresAt * 1000).toISOString() },
+    session: { ...kioskSessionPolicy(resolveDeviceById(sessionOptions.deviceId), sessionOptions.mode), absolute_expires_at: new Date(sessionOptions.absoluteExpiresAt * 1000).toISOString() },
   }
 }
 
@@ -421,7 +423,7 @@ export function issuePersonnelKioskSession(personnelId, { previousJti = null } =
   return {
     token,
     personnel: { id: p.id, full_name: p.full_name },
-    session: { ...kioskSessionPolicy(resolveDeviceById(sessionOptions.deviceId)), absolute_expires_at: new Date(sessionOptions.absoluteExpiresAt * 1000).toISOString() },
+    session: { ...kioskSessionPolicy(resolveDeviceById(sessionOptions.deviceId), sessionOptions.mode), absolute_expires_at: new Date(sessionOptions.absoluteExpiresAt * 1000).toISOString() },
   }
 }
 
@@ -543,7 +545,7 @@ function sessionPolicyResponse(row) {
   const device = row.device_id
     ? getDB().prepare('SELECT id, device_type, mode FROM kiosk_devices WHERE id=?').get(row.device_id)
     : null
-  const policy = kioskSessionPolicy(device)
+  const policy = kioskSessionPolicy(device, row.session_mode)
   return {
     ...policy,
     locked: Boolean(row.locked_at),

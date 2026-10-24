@@ -1,6 +1,5 @@
 import { Router } from 'express'
 import { randomBytes } from 'crypto'
-import { unlinkSync } from 'node:fs'
 import { requireAvsKiosk } from '../../shared/auth/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import { istanbulNowNaive } from '../../shared/time.js'
@@ -23,8 +22,15 @@ import {
 } from './schemas.js'
 import { getStaffTransport } from '../transport/self-service.js'
 import { avsRoleGroup } from '../../shared/auth/avsRoles.js'
+import { FIELD_SKIP_REASONS } from '../housekeeping/field.js'
+import { removeUploadedFiles, uploadedFiles, validateUploadBody } from './upload-helpers.js'
+import { avsBoardRouter } from './board.js'
+import { avsLaundryRouter } from './laundry.js'
 
 export const avsSelfServiceRouter = Router()
+// Saha ekranı oda panosu (temizlik + çamaşırhane grubu) — docs/saha-ekrani.md
+avsSelfServiceRouter.use('/board', avsBoardRouter)
+avsSelfServiceRouter.use('/laundry', avsLaundryRouter)
 const cleaningProofUpload = createImageUpload('housekeeping').fields([
   { name: 'photo', maxCount: 1 },
   { name: 'photos', maxCount: 3 },
@@ -42,17 +48,6 @@ function loadTechnicalWorker(db, workerId) {
 
 function maintenanceTrackingNo(id) {
   return `ARZ-${String(id).padStart(6, '0')}`
-}
-
-function uploadedFiles(req) {
-  if (req.files) return Object.values(req.files).flat()
-  return req.file ? [req.file] : []
-}
-
-function removeUploadedFiles(req) {
-  for (const file of uploadedFiles(req)) {
-    try { unlinkSync(file.path) } catch { /* already removed or unavailable */ }
-  }
 }
 
 function acceptCleaningProof(req, res, next) {
@@ -75,22 +70,6 @@ function acceptMaintenancePhoto(req, res, next) {
       : err.message || 'Arıza fotoğrafı yüklenemedi'
     return res.status(400).json({ error: message })
   })
-}
-
-function validateUploadBody(schema) {
-  return (req, res, next) => {
-    const parsed = schema.safeParse(req.body)
-    if (!parsed.success) {
-      removeUploadedFiles(req)
-      const details = parsed.error.issues.map(issue => ({
-        path: issue.path.join('.') || '(root)',
-        message: issue.message,
-      }))
-      return res.status(400).json({ error: details[0]?.message || 'Geçersiz istek', details })
-    }
-    req.validated = parsed.data
-    next()
-  }
 }
 
 function loadAuthorizedCleaningTask(req, res, next) {
@@ -714,14 +693,7 @@ avsSelfServiceRouter.patch(
       if (req.avsTask.completed_at) {
         return res.status(409).json({ error: 'Tamamlanmış görev temizlenemedi olarak işaretlenemez' })
       }
-      const labels = {
-        occupied: 'Oda kullanımda',
-        dnd: 'Rahatsız etmeyin',
-        locked: 'Kapı kilitli',
-        fault: 'Arıza nedeniyle',
-        other: 'Diğer',
-      }
-      const reason = `${labels[req.validated.reason]}${req.validated.note ? `: ${req.validated.note}` : ''}`
+      const reason = `${FIELD_SKIP_REASONS[req.validated.reason]}${req.validated.note ? `: ${req.validated.note}` : ''}`
       const db = getDB()
       const applySkip = db.transaction(() => {
         db.prepare(`

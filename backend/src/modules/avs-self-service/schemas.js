@@ -28,3 +28,52 @@ export const feedbackSchema = z.object({
   type: z.enum(['complaint', 'suggestion', 'other'], { errorMap: () => ({ message: 'Geçersiz tip' }) }),
   message: z.string().trim().min(20, 'Mesaj en az 20 karakter olmalıdır').max(4000, 'Mesaj çok uzun'),
 }).passthrough()
+
+// Saha ekranı oda panosu (board.js). Yer anahtarı: oda `BLOK-ODANO`, M ortak alanı `BLOK-KAT-kod`.
+const fieldLocation = z.string({ required_error: 'Yer gerekli' }).trim().min(1, 'Yer gerekli').max(40, 'Geçersiz yer')
+
+export const fieldMarkSchema = z.object({
+  location: fieldLocation,
+  action: z.enum(['clean', 'skip'], { errorMap: () => ({ message: 'Geçersiz işlem' }) }),
+  reason: z.enum(['occupied', 'dnd', 'locked', 'fault', 'other'], {
+    errorMap: () => ({ message: 'Geçersiz temizlenememe nedeni' }),
+  }).optional(),
+  note: z.string().trim().max(300, 'Not çok uzun').nullish(),
+})
+
+export const fieldLocationSchema = z.object({ location: fieldLocation })
+
+export const fieldOccupancySchema = z.object({
+  occupancy: z.enum(['occupied', 'empty'], { errorMap: () => ({ message: 'Geçersiz doluluk' }) }).nullable(),
+})
+
+// dry_run zorunlu: istemci önce kuru denemeyle sayıyı gösterir, onayda açıkça false gönderir
+export const fieldFloorSchema = z.object({
+  block: z.string().trim().min(1, 'Blok gerekli').max(10, 'Geçersiz blok'),
+  floor: z.coerce.number().int().min(0).max(20),
+  dry_run: z.boolean({ required_error: 'dry_run gerekli', invalid_type_error: 'dry_run true/false olmalı' }),
+})
+
+export const fieldFloorUndoSchema = z.object({
+  locations: z.array(fieldLocation).min(1, 'Yer listesi boş').max(200, 'Yer listesi çok uzun'),
+})
+
+// Saha ekranı çamaşır defteri (laundry.js) — oda bazında torba; istemci anahtarı çift gönderimi önler
+export const fieldLaundryIntakeSchema = z.object({
+  room_id: z.coerce.number({ invalid_type_error: 'Oda seçilmeli' }).int().positive('Oda seçilmeli'),
+  bags: z.coerce.number().int('Torba sayısı tam sayı olmalı').min(1, 'En az 1 torba').max(20, 'En fazla 20 torba'),
+  ironing: z.boolean().optional().default(false),
+  urgent: z.boolean().optional().default(false),
+  note: z.string().trim().max(200, 'Not çok uzun').nullish(),
+  client_request_id: z.string({ required_error: 'İstek anahtarı gerekli' }).trim().min(8, 'Geçersiz istek anahtarı')
+    .max(80, 'Geçersiz istek anahtarı').regex(/^[a-zA-Z0-9-]+$/, 'Geçersiz istek anahtarı'),
+})
+
+export const fieldLaundryDeliverSchema = z.object({
+  name: z.string().trim().max(100, 'Ad çok uzun').nullish(),
+})
+
+export const fieldLaundryUndoSchema = z.object({
+  action: z.enum(['intake', 'ready', 'deliver'], { errorMap: () => ({ message: 'Geçersiz işlem' }) }),
+  ids: z.array(z.coerce.number().int().positive()).min(1, 'Torba listesi boş').max(50, 'Torba listesi çok uzun'),
+})

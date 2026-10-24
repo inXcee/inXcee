@@ -11,7 +11,8 @@ import { deleteItemService } from './service.js'
 // tekil kıyafet takibindeki (kiosk) torbalar bu yoldan geçemez — onlar parça parça ilerler.
 const FROM = new Set(['dirty', 'washing', 'ironing'])
 
-export function markReadyFromLedgerService(id, { shelf_location = null, note = null } = {}, userId) {
+// workerId: saha ekranından (kiosk) hazır diyen personel — geçmiş satırına yazılır, geri almayı o yapabilir
+export function markReadyFromLedgerService(id, { shelf_location = null, note = null, workerId = null } = {}, userId) {
   const db = getDB()
   const item = db.transaction(() => {
     const it = q.getItemQuery(id)
@@ -24,7 +25,7 @@ export function markReadyFromLedgerService(id, { shelf_location = null, note = n
     q.removeItemFromQueueQuery(id)
     q.updateItemStatusQuery(id, 'ready', { shelf_location: shelf_location || null })
     q.insertHistoryQuery({
-      item_id: id, from_status: it.status, to_status: 'ready', action_by: userId,
+      item_id: id, from_status: it.status, to_status: 'ready', action_by: userId, worker_id: workerId,
       notes: ['Defter: hazır (makine adımı kaydedilmedi)', note].filter(Boolean).join(' · '),
     })
     return it

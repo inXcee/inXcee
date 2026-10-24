@@ -1,9 +1,11 @@
 // Oda kullanım durumu: açık / kapalı / kilitli + oturanın vardiyası (gündüzcü / gececi / karışık).
 // Kapalı odaya temizlik görevi açılmaz, kilitli oda "Oda kilitli" diye atlanır, gececi odası 19:00'a planlanır.
 // Aynı alanlar Telegram'dan (/oda) da değişir — kaynak backend PATCH /housekeeping/rooms/:id/state.
+// Doluluk (dolu / boş / bilinmiyor) saha ekranıyla aynı alandır; webden yalnız müdür ve amir verir.
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
+import { useAuthStore } from '../../shared/store/authStore.js'
 
 const STATES = [
   { value: 'open', label: 'Açık', icon: '✓', color: 'var(--green)' },
@@ -16,21 +18,36 @@ const SHIFTS = [
   { value: 'mixed', label: '◐ Karışık' },
   { value: null, label: '— Bilinmiyor' },
 ]
+const OCCUPANCY = [
+  { value: 'occupied', label: '👤 Dolu' },
+  { value: 'empty', label: '○ Boş' },
+  { value: null, label: '— Bilinmiyor' },
+]
+const OCCUPANCY_ROLES = ['campus_manager', 'shift_supervisor']
 
 export default function RoomStatePanel({ room, block, roomNo, onChanged }) {
   const qc = useQueryClient()
   const [note, setNote] = useState(room.state_note || '')
   const [until, setUntil] = useState(room.state_until || '')
   const state = room.use_state || 'open'
+  const canSetOccupancy = OCCUPANCY_ROLES.includes(useAuthStore(s => s.user?.role)) && state !== 'closed'
 
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ['hk-room-details', block, roomNo] })
+    qc.invalidateQueries({ queryKey: ['capacity-rooms', block] })
+    qc.invalidateQueries({ queryKey: ['cleaning-tasks'] })
+    qc.invalidateQueries({ queryKey: ['dnd-rooms'] })
+    onChanged?.()
+  }
   const mut = useMutation({
     mutationFn: (body) => api.patch(`/housekeeping/rooms/${room.id}/state`, body),
+    onSuccess: refresh,
+  })
+  const occ = useMutation({
+    mutationFn: (occupancy) => api.patch(`/housekeeping/rooms/${room.id}/occupancy`, { occupancy }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['hk-room-details', block, roomNo] })
-      qc.invalidateQueries({ queryKey: ['capacity-rooms', block] })
-      qc.invalidateQueries({ queryKey: ['cleaning-tasks'] })
-      qc.invalidateQueries({ queryKey: ['dnd-rooms'] })
-      onChanged?.()
+      qc.invalidateQueries({ queryKey: ['dashboard-kpi'] })
+      refresh()
     },
   })
 
@@ -83,9 +100,23 @@ export default function RoomStatePanel({ room, block, roomNo, onChanged }) {
           Gececi 07–19 uyur: görev 19:00'a planlanır, DND listesinde görünür.
         </div>
       )}
-      {mut.isError && (
+      {canSetOccupancy && (
+        <>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '2px', margin: '10px 0 6px' }}>DOLULUK</div>
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+            {OCCUPANCY.map(o => (
+              <button key={String(o.value)} type="button" disabled={occ.isPending}
+                style={chip((room.occupancy ?? null) === o.value, 'var(--accent)')}
+                onClick={() => (room.occupancy ?? null) !== o.value && occ.mutate(o.value)}>
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+      {(mut.isError || occ.isError) && (
         <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--red)', marginTop: '6px' }}>
-          {mut.error?.response?.data?.error || 'Kaydedilemedi'}
+          {(mut.error || occ.error)?.response?.data?.error || 'Kaydedilemedi'}
         </div>
       )}
     </div>

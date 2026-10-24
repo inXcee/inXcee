@@ -35,4 +35,13 @@ describe('housekeeping/RoomTile smoke', () => {
     render(<RoomTile rno="103" task={{ completed_at: '2026-01-01', photo_url: '/uploads/room.jpg' }} roomInfo={null} isM={true} selected={false} onSelect={() => {}} />)
     expect(screen.getByTitle('Temizlik kanıt fotoğrafı var')).toBeInTheDocument()
   })
+
+  it('saha doluluk rozeti: dolu 👤, boş ○, bilinmiyorsa rozet yok', () => {
+    render(<RoomTile rno="120" task={null} roomInfo={{ use_state: 'open', occupancy: 'occupied' }} isM={true} selected={false} onSelect={() => {}} />)
+    expect(screen.getByTitle('Dolu')).toHaveTextContent('👤')
+    render(<RoomTile rno="121" task={null} roomInfo={{ use_state: 'open', occupancy: 'empty' }} isM={true} selected={false} onSelect={() => {}} />)
+    expect(screen.getByTitle('Boş')).toHaveTextContent('○')
+    render(<RoomTile rno="122" task={null} roomInfo={{ use_state: 'open', occupancy: null }} isM={true} selected={false} onSelect={() => {}} />)
+    expect(screen.getAllByTitle(/^(Dolu|Boş)$/)).toHaveLength(2)
+  })
 })

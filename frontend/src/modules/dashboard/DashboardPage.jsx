@@ -24,6 +24,7 @@ import { exportRowsToXlsx } from '../../shared/utils/exportData.js'
 import { useDashboardLayout } from './useDashboardLayout.js'
 import { parseSqlUtc } from '../../shared/logic/localDate.js'
 import { isSlaOverdue } from '../maintenance/sla.js'
+import { occupancySubtitle } from './occupancyText.js'
 
 // D3a: gizlenebilir ikincil widget'lar (çekirdek KPI/doluluk/trend sabit kalır).
 const DASH_WIDGETS = [
@@ -714,7 +715,7 @@ export default function DashboardPage() {
             />
             <KPICard
               label="Doluluk" value={`${kpi.occupancy_pct}%`}
-              color={occupancyColor} subtitle={`${kpi.occupied}/${kpi.total_beds} yatak`}
+              color={occupancyColor} subtitle={occupancySubtitle(kpi)}
               barPct={kpi.occupancy_pct}
               delta={kpi.occupancy_pct_prev != null ? kpi.occupancy_pct - kpi.occupancy_pct_prev : undefined}
               onClick={() => navigate('/capacity')}

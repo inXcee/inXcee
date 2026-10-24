@@ -23,15 +23,23 @@ import LeaveTab from './tabs/LeaveTab.jsx'
 import MealsTab from './tabs/MealsTab.jsx'
 import InventoryTab from './tabs/InventoryTab.jsx'
 import HomeTab from './tabs/HomeTab.jsx'
+import RoomsBoardTab from './tabs/RoomsBoardTab.jsx'
+import LaundryLedgerTab from './tabs/LaundryLedgerTab.jsx'
 import { downscalePhoto, dataUrlToBlob } from '../../shared/photo.js'
 import { readKioskSession, writeKioskSession, clearKioskSession } from '../../shared/kioskSession.js'
 import KioskSessionGate from '../../shared/components/KioskSessionGate.jsx'
 import { clearDraft, loadDraft, saveDraft } from '../../shared/utils/offlineDB.js'
 
 const SESSION_KEY = 'avs-kiosk-session'
+// /saha: personelin kendi telefonu — kişisel oturum (kilitsiz), ortak kiosktan ayrı oturum anahtarı
+const PERSONAL_SESSION_KEY = 'saha-session'
+// Saha ekranı sekmeleri (Odalar, Çamaşır) yalnız bu gruplarda; görev listesi yalnız teknikte
+const FIELD_GROUPS = ['housekeeping', 'laundry']
 
 const TAB_KEYS = [
   { key: 'home',          icon: '🏠', i18n: 'avs_kiosk.nav.home' },
+  { key: 'rooms',         icon: '🛏', i18n: 'avs_kiosk.nav.rooms' },
+  { key: 'laundry',       icon: '🧺', i18n: 'avs_kiosk.nav.laundry' },
   { key: 'shifts',        icon: '⏱', i18n: 'avs_kiosk.nav.shifts' },
   { key: 'transport',     icon: '🚌', i18n: 'avs_kiosk.nav.transport' },
   { key: 'tasks',         icon: '✅', i18n: 'avs_kiosk.nav.tasks' },
@@ -55,11 +63,12 @@ const EMPTY_FAULT_FORM = {
   cleaning_task_id: '',
 }
 
-export default function AvsSelfServicePage() {
+export default function AvsSelfServicePage({ deviceMode = null }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
+  const sessionKey = deviceMode === 'personal' ? PERSONAL_SESSION_KEY : SESSION_KEY
   // Oturum cihaz yeniden başlasa da durur; yalnızca çıkış düğmesi kapatır.
-  const initialSession = useRef(readKioskSession(SESSION_KEY)).current
+  const initialSession = useRef(readKioskSession(sessionKey)).current
   const [avsToken, setAvsToken] = useState(initialSession?.token || null)
   const [sessionPolicy, setSessionPolicy] = useState(initialSession?.session || null)
   const [mustChangePin, setMustChangePin] = useState(Boolean(initialSession?.must_change_pin))
@@ -114,9 +123,11 @@ export default function AvsSelfServicePage() {
   const hasSessionDrafts = taskDraftCount > 0 || faultHasDraft || maintenanceDraftCount > 0
 
   const handleLogout = useCallback(() => {
-    const activeToken = readKioskSession(SESSION_KEY)?.token
+    const activeToken = readKioskSession(sessionKey)?.token
     if (activeToken) api.post('/auth/logout', null, { headers: { Authorization: `Bearer ${activeToken}` } }).catch(() => {})
-    clearKioskSession(SESSION_KEY)
+    clearKioskSession(sessionKey)
+    // Ortak tablette sonraki kişi öncekinin panosunu bir an bile görmesin
+    for (const key of ['avs-board-blocks', 'avs-board-rooms', 'avs-laundry-ledger']) queryClient.removeQueries({ queryKey: [key] })
     if (loadedDraftKey.current) clearDraft(loadedDraftKey.current).catch(() => {})
     setAvsToken(null)
     setSessionPolicy(null)
@@ -141,7 +152,17 @@ export default function AvsSelfServicePage() {
     setInvMsg({ type: '', text: '' })
     setFeedOpen(false)
     setLogoutConfirmOpen(false)
-  }, [])
+  }, [sessionKey, queryClient])
+
+  // /saha ana ekrana eklenince kendi adı ve başlangıç yoluyla açılsın
+  useEffect(() => {
+    if (deviceMode !== 'personal') return undefined
+    const link = document.querySelector('link[rel="manifest"]')
+    if (!link) return undefined
+    const previous = link.getAttribute('href')
+    link.setAttribute('href', '/manifest-saha.json')
+    return () => { link.setAttribute('href', previous) }
+  }, [deviceMode])
 
   useEffect(() => {
     const workerId = selected?.id || initialSession?.worker?.id
@@ -434,7 +455,7 @@ export default function AvsSelfServicePage() {
       // PIN değişikliği bu personelin tüm oturumlarını iptal eder; sunucu yerine
       // taze bir token döner. Saklamazsak bu cihaz da bir sonraki istekte düşer.
       if (res?.data?.token) {
-        writeKioskSession(SESSION_KEY, {
+        writeKioskSession(sessionKey, {
           token: res.data.token,
           worker: selected,
           session: sessionPolicy,
@@ -573,8 +594,10 @@ export default function AvsSelfServicePage() {
     if (!selected) return setLoginError(t('avs_kiosk.select_required'))
     const pinToUse = completedPin ?? pin
     try {
-      const res = await api.post('/auth/avs-login', { worker_id: selected.id, pin: pinToUse })
-      writeKioskSession(SESSION_KEY, res.data)
+      const res = await api.post('/auth/avs-login', {
+        worker_id: selected.id, pin: pinToUse, ...(deviceMode === 'personal' ? { device_mode: 'personal' } : {}),
+      })
+      writeKioskSession(sessionKey, res.data)
       setSessionPolicy(res.data.session)
       setMustChangePin(Boolean(res.data.must_change_pin))
       setAvsToken(res.data.token)
@@ -624,7 +647,7 @@ export default function AvsSelfServicePage() {
         onSessionChange={next => {
           setSessionPolicy(next)
           setMustChangePin(Boolean(next?.must_change_pin))
-          writeKioskSession(SESSION_KEY, { token: avsToken, worker: selected, session: next, must_change_pin: Boolean(next?.must_change_pin) })
+          writeKioskSession(sessionKey, { token: avsToken, worker: selected, session: next, must_change_pin: Boolean(next?.must_change_pin) })
         }}
         onLogout={handleLogout}
       />
@@ -693,6 +716,10 @@ export default function AvsSelfServicePage() {
         <HomeTab query={overviewQuery} data={overview} onNavigate={navigateTo}
           selectedBlock={taskBlock} onSelectBlock={setTaskBlock} />
       )}
+
+      {activeTab === 'rooms' && <RoomsBoardTab avsApi={avsApi} onReportFault={openFaultFromTask} isOnline={isOnline} />}
+
+      {activeTab === 'laundry' && <LaundryLedgerTab avsApi={avsApi} isOnline={isOnline} />}
 
       {activeTab === 'shifts' && <ShiftsTab query={shiftsQuery} data={shiftsData} />}
 
@@ -776,12 +803,14 @@ export default function AvsSelfServicePage() {
 
       <BottomNav
         tabs={[...TAB_KEYS]
+          .filter(tb => !['rooms', 'laundry'].includes(tb.key) || FIELD_GROUPS.includes(overview?.role_group))
+          .filter(tb => tb.key !== 'tasks' || overview?.role_group === 'technical')
           .sort((a, b) => {
             const orders = {
-              housekeeping: ['home', 'tasks', 'quick_fault', 'shifts'],
+              housekeeping: ['home', 'rooms', 'laundry', 'quick_fault'],
               technical: ['home', 'tasks', 'quick_fault', 'inventory'],
               general: ['home', 'shifts', 'transport', 'announcements'],
-              laundry: ['home', 'tasks', 'shifts', 'inventory'],
+              laundry: ['home', 'laundry', 'rooms', 'shifts'],
             }
             const order = orders[overview?.role_group] || orders.general
             const ai = order.indexOf(a.key)

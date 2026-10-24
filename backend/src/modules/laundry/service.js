@@ -28,7 +28,9 @@ const TRANSITIONS = {
 // ITEM CRUD
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function createItemService({ room_id, item_count, item_details, notes, urgent, photo_url, phone_override, intake_name, intake_signature, clothing_items, needs_ironing, garments }, userId, { cardScan = null } = {}) {
+// Saha ekranı defteri (field-ledger.js) kaydı sistem kullanıcısı adına açar: gerçek kişi workerId
+// (geçmiş + last_modified_worker_id + okutma), çift gönderime karşı clientRequestId.
+export function createItemService({ room_id, item_count, item_details, notes, urgent, photo_url, phone_override, intake_name, intake_signature, clothing_items, needs_ironing, garments }, userId, { cardScan = null, clientRequestId = null, workerId = null, historyNote = null } = {}) {
   if (!room_id) throw new Error('Oda seçilmeli')
   if (!item_count || item_count < 1) throw new Error('Parça adedi en az 1 olmalı')
 
@@ -45,12 +47,18 @@ export function createItemService({ room_id, item_count, item_details, notes, ur
     const newId = q.insertItemQuery({
       room_id, item_count, item_details, notes, urgent, photo_url, phone_override,
       intake_name, intake_signature, clothing_items, needs_ironing, is_premium,
-      created_by: userId, tracking_mode: hasGarments ? 'individual' : 'legacy',
+      created_by: userId, tracking_mode: hasGarments ? 'individual' : 'legacy', client_request_id: clientRequestId,
     })
     if (hasGarments) q.insertTrackedGarmentsQuery(newId, garments, { source: 'admin' })
-    q.insertHistoryQuery({ item_id: newId, from_status: null, to_status: 'dirty', action_by: userId, notes: `${item_count} parça kayıt` })
+    q.insertHistoryQuery({
+      item_id: newId, from_status: null, to_status: 'dirty', action_by: userId, worker_id: workerId,
+      notes: historyNote || `${item_count} parça kayıt`,
+    })
+    if (workerId) {
+      db.prepare("UPDATE laundry_items SET last_modified_worker_id=?, last_modified_at=datetime('now') WHERE id=?").run(workerId, newId)
+    }
     if (urgent) q.addToQueueQuery({ item_id: newId, priority: 'urgent' })
-    recordScan(cardScan, { item_id: newId, operator_user_id: userId })
+    recordScan(cardScan, { item_id: newId, operator_user_id: userId, operator_worker_id: workerId })
     return newId
   }).immediate()
 
@@ -385,7 +393,7 @@ export function setCompensationService(id, { value, note }, userId) {
   return q.getItemQuery(id)
 }
 
-export function revertItemService(id, targetStatus, userId) {
+export function revertItemService(id, targetStatus, userId, workerId = null) {
   const item = q.getItemQuery(id)
   if (!item) throw new Error('Kayıt bulunamadı')
 
@@ -444,7 +452,7 @@ export function revertItemService(id, targetStatus, userId) {
   }
 
   q.updateItemStatusQuery(id, targetStatus, extra)
-  q.insertHistoryQuery({ item_id: id, from_status: item.status, to_status: targetStatus, action_by: userId, notes: 'Geri alındı' })
+  q.insertHistoryQuery({ item_id: id, from_status: item.status, to_status: targetStatus, action_by: userId, worker_id: workerId, notes: 'Geri alındı' })
   logAudit(userId, 'laundry_revert', 'laundry', id, `${item.status} → ${targetStatus}`)
 
   return q.getItemQuery(id)
