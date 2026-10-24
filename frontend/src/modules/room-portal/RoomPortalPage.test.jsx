@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import RoomPortalPage from './RoomPortalPage.jsx'
 import api from '../../shared/api/client.js'
 
@@ -117,33 +117,18 @@ describe('RoomPortalPage', () => {
     expect(JSON.parse(localStorage.getItem('room-portal-draft:token-123:survey')).scores.room_score).toBe(4)
   })
 
-  it('bekleyen temizlik görevini çalışan PIN’i, tüm kontrol listesi ve kanıt fotoğrafıyla tamamlar', async () => {
+  // Temizlik sahada işaretlenir (spec 2026-10-24-oda-qr-saha): eski çalışan PIN'i + kontrol listesi formu kalktı
+  it('bekleyen temizlikte görevliye saha ekranı bağlantısı gösterir; eski çalışan formu yok', async () => {
     mockCleaningStatus({
       state: 'pending', review_pin_required: false,
       checklist: ['floor_cleaned', 'surfaces_wiped', 'waste_removed', 'bed_area_checked'],
       task: { scheduled_date: '2026-08-13' },
     })
-    api.post.mockImplementation(url => {
-      if (url === '/auth/avs-login') return Promise.resolve({ data: { token: 'worker-token' } })
-      return Promise.resolve({ data: { receipt: 'cleaning-complete-receipt', status: 'completed', summary: { message: 'Temizlik tamamlandı' } } })
-    })
     renderPage(); fireEvent.click(await screen.findByRole('button', { name: /Temizlik durumu/ }))
     expect(await screen.findByText('Bugünkü temizlik görevi bekliyor')).toBeInTheDocument()
-    fireEvent.change(screen.getByLabelText('AVS çalışan numarası'), { target: { value: '42' } })
-    fireEvent.change(screen.getByLabelText('Çalışan PIN’i'), { target: { value: '8642' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Çalışan olarak doğrula' }))
-    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/auth/avs-login', { worker_id: 42, pin: '8642' }))
-    screen.getAllByRole('checkbox').forEach(checkbox => fireEvent.click(checkbox))
-    const photo = new File(['proof'], 'proof.jpg', { type: 'image/jpeg' })
-    fireEvent.change(screen.getByLabelText('Kanıt fotoğrafları (1–3)'), { target: { files: [photo] } })
-    fireEvent.click(screen.getByRole('button', { name: 'Temizliği QR ile tamamla' }))
-    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(2))
-    const [url, data, config] = api.post.mock.calls[1]
-    expect(url).toBe('/room-portal/token-123/cleaning/complete')
-    expect(data).toBeInstanceOf(FormData)
-    expect(JSON.parse(data.get('checklist'))).toEqual({ floor_cleaned: true, surfaces_wiped: true, waste_removed: true, bed_area_checked: true })
-    expect(config.headers).toEqual({ Authorization: 'Bearer worker-token' })
-    expect(await screen.findByText('cleaning-complete-receipt')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Saha ekranında aç/ })).toHaveAttribute('href', '/saha?qr=token-123')
+    expect(screen.queryByLabelText('AVS çalışan numarası')).toBeNull()
+    expect(api.post).not.toHaveBeenCalled()
   })
 
   it('tamamlanan temizlikte zorunlu oda PIN’ini doğrulayıp sakin değerlendirmesini gönderir', async () => {
@@ -184,5 +169,48 @@ describe('RoomPortalPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Sunucuya gönderilmedi')
     expect(api.post).not.toHaveBeenCalled()
     expect(JSON.parse(localStorage.getItem('room-portal-draft:token-123:cleaning_review'))).toMatchObject({ outcome: 'issue', comment: 'Lavabo tekrar temizlenmeli' })
+  })
+})
+
+// Saha personelinin telefonu: portal hiç yüklenmeden saha ekranına geçer (sakin analitiğine 'scan' düşmez)
+describe('RoomPortalPage — saha personeli yönlendirmesi', () => {
+  function SahaProbe() {
+    const { search } = useLocation()
+    return <div data-testid="saha">{search}</div>
+  }
+  const renderAt = entry => render(
+    <MemoryRouter initialEntries={[entry]}>
+      <Routes>
+        <Route path="/r/:token" element={<RoomPortalPage />} />
+        <Route path="/saha" element={<SahaProbe />} />
+      </Routes>
+    </MemoryRouter>,
+  )
+
+  beforeEach(() => {
+    sessionStorage.clear(); localStorage.clear(); api.get.mockReset(); api.post.mockReset()
+    vi.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(true)
+  })
+  afterEach(() => vi.restoreAllMocks())
+
+  it('saha oturumu olan telefonda portal isteği atılmadan /saha?qr= sayfasına geçer', async () => {
+    localStorage.setItem('saha-session', JSON.stringify({ token: 'tok' }))
+    renderAt('/r/token-123')
+    expect(await screen.findByTestId('saha')).toHaveTextContent('?qr=token-123')
+    expect(api.get).not.toHaveBeenCalled()
+  })
+
+  it('?sakin=1 ile saha oturumlu telefonda da sakin portalı açılır', async () => {
+    localStorage.setItem('saha-session', JSON.stringify({ token: 'tok' }))
+    api.get.mockResolvedValue({ data: roomPortal })
+    renderAt('/r/token-123?sakin=1')
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/room-portal/token-123'))
+    expect(screen.queryByTestId('saha')).toBeNull()
+  })
+
+  it('oturumu olmayan telefonda portal her zamanki gibi açılır', async () => {
+    api.get.mockResolvedValue({ data: roomPortal })
+    renderAt('/r/token-123')
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/room-portal/token-123'))
   })
 })

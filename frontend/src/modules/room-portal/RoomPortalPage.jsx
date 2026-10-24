@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import api from '../../shared/api/client.js'
 import LanguageSwitcher from '../../shared/components/LanguageSwitcher.jsx'
 import { useTranslation } from '../../shared/i18n/index.js'
@@ -82,6 +82,7 @@ const COPY = {
 
 const CLEANING_COPY = {
   tr: {
+    fieldStaffHint: 'Temizlik, saha ekranından kapıdaki QR okutularak işaretlenir.', fieldStaffLink: 'Görevliysen: Saha ekranında aç',
     cleaningLoading: 'Bugünkü temizlik görevi kontrol ediliyor…', cleaningNone: 'Bugün için bu konumda temizlik görevi bulunmuyor.',
     cleaningPending: 'Bugünkü temizlik görevi bekliyor', cleaningCompleted: 'Bugünkü temizlik QR ile tamamlandı', cleaningSkipped: 'Bugünkü görev atlandı.',
     proofCount: 'Kanıt fotoğrafı', workerTitle: 'Temizlik çalışanı doğrulaması', workerId: 'AVS çalışan numarası', workerPin: 'Çalışan PIN’i', workerLogin: 'Çalışan olarak doğrula',
@@ -94,6 +95,7 @@ const CLEANING_COPY = {
     checklist: { floor_cleaned: 'Zemin temizlendi', surfaces_wiped: 'Yüzeyler silindi', waste_removed: 'Atıklar toplandı', bed_area_checked: 'Yatak alanı kontrol edildi', supplies_checked: 'Sarf malzemeleri kontrol edildi' },
   },
   en: {
+    fieldStaffHint: 'Cleaning is marked from the field screen by scanning the door QR.', fieldStaffLink: 'Staff? Open in the field screen',
     cleaningLoading: 'Checking today’s cleaning task…', cleaningNone: 'There is no cleaning task for this location today.',
     cleaningPending: 'Today’s cleaning task is pending', cleaningCompleted: 'Today’s cleaning was completed through the QR', cleaningSkipped: 'Today’s task was skipped.',
     proofCount: 'Proof photos', workerTitle: 'Cleaning worker verification', workerId: 'AVS worker number', workerPin: 'Worker PIN', workerLogin: 'Verify as worker',
@@ -106,6 +108,7 @@ const CLEANING_COPY = {
     checklist: { floor_cleaned: 'Floor cleaned', surfaces_wiped: 'Surfaces wiped', waste_removed: 'Waste removed', bed_area_checked: 'Bed area checked', supplies_checked: 'Supplies checked' },
   },
   ar: {
+    fieldStaffHint: 'يُسجَّل التنظيف من شاشة الميدان بمسح رمز QR على الباب.', fieldStaffLink: 'هل أنت موظف؟ افتح في شاشة الميدان',
     cleaningLoading: 'جارٍ التحقق من مهمة التنظيف اليوم…', cleaningNone: 'لا توجد مهمة تنظيف لهذا الموقع اليوم.',
     cleaningPending: 'مهمة التنظيف اليوم قيد الانتظار', cleaningCompleted: 'اكتمل تنظيف اليوم عبر رمز QR', cleaningSkipped: 'تم تخطي مهمة اليوم.',
     proofCount: 'صور الإثبات', workerTitle: 'التحقق من عامل التنظيف', workerId: 'رقم موظف AVS', workerPin: 'رمز PIN للموظف', workerLogin: 'التحقق كموظف',
@@ -273,12 +276,6 @@ function CleaningPanel({ c, token, mode, session, online, onRequestResidentAuth,
   const [status, setStatus] = useState(null)
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState('')
-  const [workerId, setWorkerId] = useState('')
-  const [workerPin, setWorkerPin] = useState('')
-  const [workerToken, setWorkerToken] = useState('')
-  const [checks, setChecks] = useState({})
-  const [photos, setPhotos] = useState([])
-  const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState(null)
   const [reviewMode, setReviewMode] = useState(mode === 'resident_pin' ? 'resident_pin' : null)
@@ -294,37 +291,6 @@ function CleaningPanel({ c, token, mode, session, online, onRequestResidentAuth,
   }
   useEffect(() => { loadStatus() }, [token]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (mode === 'resident_pin') setReviewMode('resident_pin') }, [mode])
-
-  const loginWorker = async event => {
-    event.preventDefault(); setMessage('')
-    if (!online) return setMessage(c.onlineRequired)
-    setBusy(true)
-    try {
-      const response = await api.post('/auth/avs-login', { worker_id: Number(workerId), pin: workerPin })
-      setWorkerToken(response.data.token); setWorkerPin('')
-    } catch (error) { setMessage(error.response?.data?.error || c.workerAuthFailed) }
-    finally { setBusy(false) }
-  }
-
-  const complete = async event => {
-    event.preventDefault(); setMessage('')
-    if (!online) return setMessage(c.onlineRequired)
-    if (!status.checklist.every(key => checks[key])) return setMessage(c.allChecksRequired)
-    if (photos.length < 1 || photos.length > 3 || photos.some(file => file.size > 10 * 1024 * 1024)) return setMessage(c.proofRequired)
-    const data = new FormData()
-    data.append('client_request_id', ensureRequestId(token, 'cleaning_complete'))
-    data.append('checklist', JSON.stringify(checks))
-    if (note.trim()) data.append('note', note.trim())
-    photos.forEach(photo => data.append('photos', photo))
-    setBusy(true)
-    try {
-      const response = await api.post(`/room-portal/${encodeURIComponent(token)}/cleaning/complete`, data, { headers: { Authorization: `Bearer ${workerToken}` } })
-      clearSubmission(token, 'cleaning_complete'); setResult(response.data)
-    } catch (error) {
-      if (error.response?.status === 401) setWorkerToken('')
-      setMessage(error.response?.data?.error || c.sendFailed)
-    } finally { setBusy(false) }
-  }
 
   const submitReview = async event => {
     event.preventDefault(); setMessage('')
@@ -356,13 +322,10 @@ function CleaningPanel({ c, token, mode, session, online, onRequestResidentAuth,
   if (status.state === 'none' || status.state === 'skipped') return <div className="rp-cleaning-state"><span>ℹ️</span><h3>{status.state === 'skipped' ? c.cleaningSkipped : c.cleaningNone}</h3></div>
   if (status.state === 'pending') return <div className="rp-cleaning-panel">
     <div className="rp-cleaning-banner pending"><span>⌛</span><div><strong>{c.cleaningPending}</strong><small>{status.task?.scheduled_date}</small></div></div>
-    {!workerToken ? <form key="worker-login" className="rp-worker-login" onSubmit={loginWorker}><h3>{c.workerTitle}</h3><label>{c.workerId}<input aria-label={c.workerId} type="number" min="1" value={workerId ?? ''} onChange={event => setWorkerId(event.target.value)} required /></label><label>{c.workerPin}<input aria-label={c.workerPin} type="password" inputMode="numeric" pattern="[0-9]{4}" maxLength={4} value={workerPin ?? ''} onChange={event => setWorkerPin(event.target.value.replace(/\D/g, '').slice(0, 4))} required /></label><button type="submit" className="rp-primary rp-submit" disabled={busy || workerPin.length !== 4}>{busy ? c.sending : c.workerLogin}</button></form> : <form key="cleaning-complete" className="rp-public-form" onSubmit={complete}>
-      <div className="rp-verified">✓ {c.workerReady}</div><fieldset className="rp-checklist"><legend>{c.checklistTitle}</legend>{status.checklist.map(key => <label key={key}><input type="checkbox" checked={Boolean(checks[key])} onChange={event => { const checked = event.target.checked; setChecks(current => ({ ...current, [key]: checked })) }} /> <span>{c.checklist[key] || key}</span></label>)}</fieldset>
-      <label>{c.cleaningProofs}<input aria-label={c.cleaningProofs} type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={event => setPhotos(Array.from(event.target.files || []))} /><small>{c.cleaningProofHint}</small></label>
-      <label>{c.cleaningNote}<textarea aria-label={c.cleaningNote} rows={3} maxLength={500} value={note ?? ''} onChange={event => setNote(event.target.value)} /></label>
-      {message && <div className="rp-alert" role="alert">{message}</div>}<button type="submit" className="rp-primary rp-submit" disabled={busy}>{busy ? c.sending : c.completeCleaning}</button>
-    </form>}
-    {message && !workerToken && <div className="rp-alert" role="alert">{message}</div>}
+    {/* Temizlik saha ekranında işaretlenir (docs/superpowers/specs/2026-10-24-oda-qr-saha-design.md); eski çalışan PIN'i +
+        kontrol listesi formu kalktı */}
+    <div className="rp-mode-card"><p>{c.fieldStaffHint}</p><Link className="rp-primary" to={`/saha?qr=${encodeURIComponent(token)}`}>{c.fieldStaffLink}</Link></div>
+    {message && <div className="rp-alert" role="alert">{message}</div>}
   </div>
 
   const review = status.task?.review
@@ -379,8 +342,21 @@ function CleaningPanel({ c, token, mode, session, online, onRequestResidentAuth,
   </div>
 }
 
+// Saha personelinin telefonu (/saha kişisel oturumu): sakin portalı hiç yüklenmeden saha ekranına geçer — portal
+// açılışı sakin analitiğine 'scan' yazar. ?sakin=1 bunu atlar (kampta kalan görevli kendi odası için).
+function fieldStaffTarget(token, search) {
+  try {
+    if (new URLSearchParams(search).has('sakin')) return null
+    const session = JSON.parse(localStorage.getItem('saha-session') || 'null')
+    return session?.token ? `/saha?qr=${encodeURIComponent(token)}` : null
+  } catch { return null }
+}
+
 export default function RoomPortalPage() {
   const { token = '' } = useParams()
+  const { search } = useLocation()
+  const navigate = useNavigate()
+  const staffTarget = useMemo(() => fieldStaffTarget(token, search), [token, search])
   const { locale } = useTranslation()
   const c = { ...(COPY[locale] || COPY.tr), ...(CLEANING_COPY[locale] || CLEANING_COPY.tr) }
   const [portal, setPortal] = useState(null)
@@ -403,7 +379,10 @@ export default function RoomPortalPage() {
     finally { setLoading(false) }
   }
 
-  useEffect(() => { loadPortal() }, [token]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (staffTarget) navigate(staffTarget, { replace: true })
+    else loadPortal()
+  }, [token, staffTarget]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setSession(readSession(token)); setSelectedAction(null); setMode(null); setShowAuth(false); setAuthError('') }, [token])
   useEffect(() => {
     const goOnline = () => setOnline(true); const goOffline = () => setOnline(false)
@@ -444,6 +423,7 @@ export default function RoomPortalPage() {
   }
 
   const header = <header className="rp-header"><div className="rp-brand"><span className="rp-mark">AVS</span><div><strong>{c.brand}</strong><small>{c.scan}</small></div></div><LanguageSwitcher compact /></header>
+  if (staffTarget) return null
   if (loading) return <main className="room-portal-page">{header}<section className="rp-state"><span className="rp-spinner" /><h1>{c.loading}</h1></section></main>
   if (error) return <main className="room-portal-page">{header}<section className="rp-state rp-error-state"><span className="rp-state-icon">{error.status === 410 ? '⛔' : '⚠️'}</span><h1>{c.unavailable}</h1><p>{error.message}</p>{error.status !== 410 && <button type="button" className="rp-primary" onClick={loadPortal}>{c.retry}</button>}</section></main>
 
