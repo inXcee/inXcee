@@ -12,12 +12,12 @@ test.beforeAll(async () => {
   const w = await ctx.post(`${API}/avs-workers`, { headers: auth, data: { full_name: PINNED, role_label: 'Temizlik Görevlisi' } })
   pinnedId = (await w.json()).id
   await ctx.put(`${API}/avs-workers/${pinnedId}/pin`, { headers: auth, data: { new_pin: '1234' } })
-  await ctx.post(`${API}/housekeeping/tasks/generate-daily`, { headers: auth })
   await ctx.dispose()
 })
 
-async function loginKiosk(page) {
-  await page.goto('/avs-kiosk')
+// /avs-kiosk = ortak tablet, /saha = personelin kendi telefonu (kişisel oturum); giriş ekranı aynı
+async function loginKiosk(page, path = '/avs-kiosk') {
+  await page.goto(path)
   await page.getByPlaceholder('Ad/soyad ara…').fill('UX Test')
   await page.getByRole('button', { name: new RegExp(PINNED.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) }).click()
   for (const digit of ['1', '2', '3', '4']) {
@@ -26,13 +26,6 @@ async function loginKiosk(page) {
   // PIN 4 ya da 6 haneli olabildiği için giriş artık açık basışla yapılır (8b763ab6).
   await page.getByRole('button', { name: 'Giriş Yap' }).click()
   await expect(page.getByRole('tab', { name: /Ana Sayfa/ })).toBeVisible({ timeout: 10_000 })
-  // Blok seçimi istemci durumudur; seçici ancak "overview" verisi gelince çizilir. Eskiden `isVisible()` (beklemez)
-  // veri geç geldiğinde A'yı seçmeden geçiyordu → görev sekmesi oda yerine blok seçici gösterdi, CI aralıklı düştü.
-  // Test işçisinin atanmış bloğu yok (beforeAll) → seçici her zaman gelir: bekle, seç, seçildiğini doğrula.
-  const blockA = page.getByRole('button', { name: 'A', exact: true })
-  await expect(blockA).toBeVisible({ timeout: 10_000 })
-  await blockA.click()
-  await expect(blockA).toHaveAttribute('aria-pressed', 'true')
 }
 
 async function expectNoHorizontalOverflow(page, viewportWidth) {
@@ -53,11 +46,14 @@ test('numpad ile giris + alt nav ile sekme gezme + varsayilan TR', async ({ page
     await page.getByRole('button', { name: new RegExp(`^${d}$`) }).click()
   }
   await page.getByRole('button', { name: 'Giriş Yap' }).click()
-  // Giris sonrasi alt nav gorunur
-  await expect(page.getByRole('tab', { name: /Vardiya/ })).toBeVisible({ timeout: 10_000 })
+  // Giris sonrasi alt nav gorunur; temizlik grubunda Odalar + Çamaşır önde, Vardiya "Daha fazla"da (saha ekranı)
+  await expect(page.getByRole('tab', { name: /Ana Sayfa/ })).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByRole('tab', { name: /Odalar/ })).toBeVisible()
+  await expect(page.getByRole('tab', { name: /Çamaşır/ })).toBeVisible()
 
   // Profil sekmesi nav taşmasıyla "Daha fazla" sheet'ine taşındı (10 sekme > 5 slot)
   await page.getByRole('button', { name: /Daha fazla/ }).click()
+  await expect(page.getByRole('menuitem', { name: /Vardiya/ })).toBeVisible()
   await page.getByRole('menuitem', { name: /Profil/ }).click()
   await expect(page.getByText('Kişisel Bilgiler')).toBeVisible({ timeout: 10_000 })
 })
@@ -70,7 +66,7 @@ test('Kartlarım: giriş + yemek kartı ayrı görünür (QR ile)', async ({ pag
     await page.getByRole('button', { name: new RegExp(`^${d}$`) }).click()
   }
   await page.getByRole('button', { name: 'Giriş Yap' }).click()
-  await expect(page.getByRole('tab', { name: /Vardiya/ })).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByRole('tab', { name: /Ana Sayfa/ })).toBeVisible({ timeout: 10_000 })
 
   // "Kartlarım" nav taşmasında ("Daha fazla")
   await page.getByRole('button', { name: /Daha fazla/ }).click()
@@ -83,33 +79,44 @@ test('Kartlarım: giriş + yemek kartı ayrı görünür (QR ile)', async ({ pag
   await expect(page.locator('img[alt="meal"]')).toBeVisible()
 })
 
-test('temizlik fotoğrafı zorunlu + görevden konumlu arıza bildirimi', async ({ page }) => {
+// Temizlik grubunda Görevler'in yerini Odalar panosu aldı (docs/saha-ekrani.md): görev önceden üretilmez,
+// oda işaretlenince açılır; fotoğraf isteğe bağlı, eklenirse temizlik kanıtı olarak kaydedilir.
+test('Odalar panosu (/saha): fotoğraflı temizlendi + geri al + doluluk + odadan konumlu arıza bildirimi', async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 800 })
-  await loginKiosk(page)
+  await loginKiosk(page, '/saha')
+  await page.getByRole('tab', { name: /Odalar/ }).click()
+  // Blok çipinde ad + sayaç var; A1–A4 de olduğu için adı tam "A" olan çip seçilir
+  const blockA = page.locator('button[aria-pressed]').filter({ has: page.getByText('A', { exact: true }) })
+  await blockA.click()
+  await expect(blockA).toHaveAttribute('aria-pressed', 'true')
+
+  // Kutucuğun adı oda no + durum: "101" → "101, temizlendi" / "101, dolu"
+  const tile = page.getByRole('button', { name: /^\d+$/ }).first()
+  await expect(tile).toBeVisible({ timeout: 10_000 })
   await expectNoHorizontalOverflow(page, 360)
-  await page.getByRole('tab', { name: /Görev/ }).click()
-  await expectNoHorizontalOverflow(page, 360)
+  const roomNo = await tile.getAttribute('aria-label')
+  const sheet = page.getByRole('dialog', { name: `A-${roomNo}` })
 
-  const pendingRoom = page.locator('button').filter({ hasText: /^\d+$/ }).first()
-  await expect(pendingRoom).toBeVisible({ timeout: 10_000 })
-  await pendingRoom.click()
+  await tile.click()
+  await sheet.locator('input[type="file"]').setInputFiles({ name: 'temizlik.png', mimeType: 'image/png', buffer: PNG })
+  await expect(sheet.getByRole('button', { name: 'Fotoğrafı kaldır' })).toBeVisible()
+  await sheet.getByRole('button', { name: /Temizlendi$/ }).click()
+  const toast = page.getByRole('status').filter({ hasText: `A-${roomNo} temizlendi` })
+  await expect(toast).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByRole('button', { name: `${roomNo}, temizlendi` })).toBeVisible()
 
-  const completeButton = page.getByRole('button', { name: /Tamamla/ })
-  await expect(completeButton).toBeDisabled()
-  await page.locator('input[type="file"][multiple]').setInputFiles({
-    name: 'temizlik.png',
-    mimeType: 'image/png',
-    buffer: PNG,
-  })
-  await expect(page.getByText(/1\/3/)).toBeVisible()
-  await expect(completeButton).toBeEnabled()
-  await completeButton.click()
-  await expect(page.getByText(/1\/3/)).not.toBeVisible({ timeout: 10_000 })
+  await toast.getByRole('button', { name: /Geri al/ }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Geri alındı' })).toBeVisible()
+  const idleTile = page.getByRole('button', { name: roomNo, exact: true })
+  await expect(idleTile).toBeVisible()
 
-  const anotherRoom = page.locator('button').filter({ hasText: /^\d+$/ }).first()
-  await anotherRoom.click()
-  await page.getByRole('button', { name: /Arıza bildir/i }).click()
-  await expect(page.getByText(/Temizlik görevinden bildiriliyor/)).toBeVisible()
+  await idleTile.click()
+  await sheet.getByRole('button', { name: /Dolu$/ }).click()
+  await expect(sheet.getByRole('button', { name: /Dolu$/ })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: `${roomNo}, dolu` })).toBeVisible()
+
+  await sheet.getByRole('button', { name: /Arıza bildir/ }).click()
+  await expect(page.getByPlaceholder('Konum yaz veya yukarıdan seç')).toHaveValue(`A Oda ${roomNo}`)
   await page.setViewportSize({ width: 412, height: 850 })
   await expectNoHorizontalOverflow(page, 412)
   await page.getByPlaceholder(/Sorunu ve gördüğünüz durumu/).fill('Priz kapağı gevşemiş ve güvenli görünmüyor')

@@ -31,7 +31,7 @@ test('envanter: login → Daha fazla → Malzeme → ürün al → stok düşer 
   }
   // PIN 4 ya da 6 haneli olabildiği için giriş artık açık basışla yapılır (8b763ab6).
   await page.getByRole('button', { name: 'Giriş Yap' }).click()
-  await expect(page.getByRole('tab', { name: /Vardiya/ })).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByRole('tab', { name: /Ana Sayfa/ })).toBeVisible({ timeout: 10_000 })
 
   // "Daha fazla" → "Malzeme" (envanter sekmesi overflow'da) — Profil'e girmeden görünür olmalı
   await page.getByRole('button', { name: /Daha fazla/ }).click()

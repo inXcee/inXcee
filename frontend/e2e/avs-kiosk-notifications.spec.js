@@ -28,7 +28,7 @@ async function loginKiosk(page) {
   }
   // PIN 4 ya da 6 haneli olabildiği için giriş artık açık basışla yapılır (8b763ab6).
   await page.getByRole('button', { name: 'Giriş Yap' }).click()
-  await expect(page.getByRole('tab', { name: /Vardiya/ })).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByRole('tab', { name: /Ana Sayfa/ })).toBeVisible({ timeout: 10_000 })
 }
 
 test('bildirim zili: panel açılır + seed duyuru feed\'de görünür + kapanır', async ({ page }) => {
