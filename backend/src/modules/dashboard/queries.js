@@ -3,12 +3,30 @@ import { istanbulDate, istanbulDayBoundsUtc, istanbulDayStartUtc, addDays, istan
 import { memoize } from '../../shared/middleware/memo.js'
 import { getOverdueInside } from '../access/service.js'
 
+// Saha ekranı doluluğu (rooms.occupancy, oda bazlı): kapalı odalar hariç. Herhangi bir odada saha bilgisi
+// varsa panel doluluğu bundan gelir (dolu / (dolu + boş)); yoksa yatak bazlı eski hesap aynen kalır.
+function fieldOccupancy(db) {
+  const r = db.prepare(`
+    SELECT COALESCE(SUM(occupancy='occupied'), 0) AS occupied, COALESCE(SUM(occupancy='empty'), 0) AS empty,
+           COALESCE(SUM(occupancy IS NULL), 0) AS unknown
+    FROM rooms WHERE status='active' AND use_state!='closed'
+  `).get()
+  const known = r.occupied + r.empty
+  return { ...r, active: known > 0, pct: known > 0 ? Math.round(r.occupied * 100 / known) : null }
+}
+
+const roomPct = row => {
+  const known = row.occupied_rooms + row.empty_rooms
+  return known > 0 ? Math.round(row.occupied_rooms * 100 / known) : null
+}
+
 function _getKPI() {
   const db = getDB()
   const active_personnel = db.prepare("SELECT COUNT(*) as c FROM personnel WHERE check_out_date IS NULL AND check_in_date IS NOT NULL").get().c
   const total_beds = db.prepare("SELECT SUM(active_beds) as s FROM rooms WHERE status='active'").get().s || 0
   const occupied = db.prepare("SELECT COUNT(*) as c FROM room_assignments WHERE check_out_at IS NULL").get().c
-  const occupancy_pct = total_beds > 0 ? Math.round((occupied / total_beds) * 100) : 0
+  const field = fieldOccupancy(db)
+  const occupancy_pct = field.active ? field.pct : (total_beds > 0 ? Math.round((occupied / total_beds) * 100) : 0)
   // Açık = tamamlanmamış (bakım modülüyle aynı tanım); status='open' işe başlanan arızayı saymıyordu.
   const open_maintenance = db.prepare("SELECT COUNT(*) as c FROM maintenance_requests WHERE status != 'done'").get().c
   const quarantine_rooms = db.prepare("SELECT COUNT(*) as c FROM rooms WHERE status='quarantine'").get().c
@@ -18,26 +36,36 @@ function _getKPI() {
   const D = "date('now','-7 days')"
   const active_personnel_prev = db.prepare(`SELECT COUNT(*) c FROM personnel WHERE date(check_in_date) <= ${D} AND (check_out_date IS NULL OR date(check_out_date) > ${D})`).get().c
   const occupied_prev = db.prepare(`SELECT COUNT(*) c FROM room_assignments WHERE date(assigned_at) <= ${D} AND (check_out_at IS NULL OR date(check_out_at) > ${D})`).get().c
-  const occupancy_pct_prev = total_beds > 0 ? Math.round((occupied_prev / total_beds) * 100) : 0
+  // Saha doluluğunun geçmişi tutulmuyor (anlık): karşılaştırma yok
+  const occupancy_pct_prev = field.active ? null : (total_beds > 0 ? Math.round((occupied_prev / total_beds) * 100) : 0)
   const open_maintenance_prev = db.prepare(`SELECT COUNT(*) c FROM maintenance_requests WHERE date(opened_at) <= ${D} AND (closed_at IS NULL OR date(closed_at) > ${D})`).get().c
 
   return {
     active_personnel, occupancy_pct, open_maintenance, quarantine_rooms, occupied, total_beds,
     active_personnel_prev, occupancy_pct_prev, open_maintenance_prev, compare_days: 7,
+    occupancy_source: field.active ? 'field' : 'beds',
+    rooms_occupied: field.occupied, rooms_empty: field.empty, rooms_unknown: field.unknown,
   }
 }
 export const getKPI = memoize(_getKPI, 30_000)
+
+// Blok başına saha doluluk sayıları (aktif, kapalı olmayan odalar) — ısı haritası ve blok doluluk paneli
+const FIELD_ROOM_COUNTS = `
+      SUM(CASE WHEN r.status='active' AND r.use_state!='closed' AND r.occupancy='occupied' THEN 1 ELSE 0 END) as occupied_rooms,
+      SUM(CASE WHEN r.status='active' AND r.use_state!='closed' AND r.occupancy='empty' THEN 1 ELSE 0 END) as empty_rooms,
+      SUM(CASE WHEN r.status='active' AND r.use_state!='closed' AND r.occupancy IS NULL THEN 1 ELSE 0 END) as unknown_rooms`
 
 function _getHeatmap() {
   const db = getDB()
   // Doluluk oda başına önceden sayılır: atamalarla doğrudan JOIN edilince 3 kişilik odanın yatakları
   // SUM(active_beds)'e 3 kez giriyor, blok yüzdesi olduğundan düşük çıkıyordu.
-  return db.prepare(`
+  const rows = db.prepare(`
     SELECT r.block,
       SUM(r.active_beds) as total_beds,
       SUM(COALESCE(o.n, 0)) as occupied,
       MIN(r.status) as status,
-      ROUND(SUM(COALESCE(o.n, 0)) * 100.0 / MAX(SUM(r.active_beds), 1)) as pct
+      ROUND(SUM(COALESCE(o.n, 0)) * 100.0 / MAX(SUM(r.active_beds), 1)) as pct,
+      ${FIELD_ROOM_COUNTS}
     FROM rooms r
     LEFT JOIN (
       SELECT room_id, COUNT(*) AS n FROM room_assignments WHERE check_out_at IS NULL GROUP BY room_id
@@ -45,6 +73,9 @@ function _getHeatmap() {
     GROUP BY r.block
     ORDER BY r.block
   `).all()
+  // Saha modunda saha bilgisi olan blok oda bazlı; bilgisi olmayan blok yatak bazlı kalır
+  if (!fieldOccupancy(db).active) return rows
+  return rows.map(r => ({ ...r, pct: roomPct(r) ?? r.pct }))
 }
 export const getHeatmap = memoize(_getHeatmap, 60_000)
 
@@ -57,7 +88,8 @@ function _getBedOccupancy() {
       SUM(r.active_beds) as total_beds,
       COUNT(CASE WHEN r.status='active' THEN 1 END) as active_rooms,
       COUNT(CASE WHEN r.status='maintenance' THEN 1 END) as maintenance_rooms,
-      COUNT(CASE WHEN r.status='quarantine' THEN 1 END) as quarantine_rooms
+      COUNT(CASE WHEN r.status='quarantine' THEN 1 END) as quarantine_rooms,
+      ${FIELD_ROOM_COUNTS}
     FROM rooms r
     GROUP BY r.block
     ORDER BY r.block
@@ -74,7 +106,10 @@ function _getBedOccupancy() {
 
   const occMap = Object.fromEntries(occupancy.map(o => [o.block, o.occupied_beds]))
 
-  const totals = { total_rooms: 0, total_capacity: 0, total_beds: 0, occupied: 0, active_rooms: 0, maintenance_rooms: 0, quarantine_rooms: 0 }
+  const totals = {
+    total_rooms: 0, total_capacity: 0, total_beds: 0, occupied: 0, active_rooms: 0, maintenance_rooms: 0, quarantine_rooms: 0,
+    occupied_rooms: 0, empty_rooms: 0, unknown_rooms: 0,
+  }
 
   const result = blocks.map(b => {
     const occ = occMap[b.block] || 0
@@ -87,6 +122,9 @@ function _getBedOccupancy() {
     totals.active_rooms += b.active_rooms
     totals.maintenance_rooms += b.maintenance_rooms
     totals.quarantine_rooms += b.quarantine_rooms
+    totals.occupied_rooms += b.occupied_rooms
+    totals.empty_rooms += b.empty_rooms
+    totals.unknown_rooms += b.unknown_rooms
     return { ...b, occupied: occ, empty, pct }
   })
 
@@ -170,10 +208,11 @@ export function exportMaintenance() {
 function _getHealthScore() {
   const db = getDB()
 
-  // Doluluk skoru: 100 - |85 - actual%|, hedef %85
+  // Doluluk skoru: 100 - |85 - actual%|, hedef %85 (saha verisi varsa KPI ile aynı oda bazlı yüzde)
   const totalBeds = db.prepare("SELECT COALESCE(SUM(active_beds), 0) as t FROM rooms WHERE status='active'").get().t
   const occupied = db.prepare("SELECT COUNT(*) as c FROM room_assignments WHERE check_out_at IS NULL").get().c
-  const occPct = totalBeds > 0 ? Math.round(occupied * 100 / totalBeds) : 0
+  const field = fieldOccupancy(db)
+  const occPct = field.active ? field.pct : (totalBeds > 0 ? Math.round(occupied * 100 / totalBeds) : 0)
   const occupancyScore = Math.max(0, 100 - Math.abs(85 - occPct))
 
   // SLA skoru: son 30 gün SLA uyum yüzdesi

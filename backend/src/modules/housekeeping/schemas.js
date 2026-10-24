@@ -97,3 +97,8 @@ export const photoRetentionSchema = z.object({
     message: 'Fotoğraf saklama süresi 3 veya 7 gün olmalı',
   }),
 })
+
+// Saha ekranıyla aynı oda doluluğu: 'occupied' / 'empty' / null (bilinmiyor)
+export const roomOccupancySchema = z.object({
+  occupancy: z.enum(['occupied', 'empty'], { errorMap: () => ({ message: 'Geçersiz doluluk' }) }).nullable(),
+})

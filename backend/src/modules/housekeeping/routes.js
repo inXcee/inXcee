@@ -2,13 +2,14 @@ import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { createImageUpload, upload, verifyMagicBytes, verifyImageMagicBytes } from '../../shared/uploads/middleware.js'
 import * as svc from './service.js'
+import { setOccupancy } from './field.js'
 import { getDailyGenerationStatus, setDailyGenerationEnabled } from './generation.js'
 import { logger } from '../../shared/logger.js'
 import { validate } from '../../shared/middleware/validate.js'
 import {
   completeFloorSchema, skipTaskSchema, roomNotesSchema, noCleanSchema,
   faultReportSchema, createStaffSchema, updateStaffSchema, completeTaskSchema, photoRetentionSchema,
-  addTaskPhotoSchema, updateTaskPhotoSchema, roomStateSchema, roomStateBulkSchema,
+  addTaskPhotoSchema, updateTaskPhotoSchema, roomStateSchema, roomStateBulkSchema, roomOccupancySchema,
 } from './schemas.js'
 
 export const housekeepingRouter = Router()
@@ -189,6 +190,12 @@ housekeepingRouter.get('/rooms/state', ...hkAccess, (req, res) => {
 housekeepingRouter.patch('/rooms/:id/state', ...hkAccess, validate(roomStateSchema), (req, res) => {
   try { res.json({ ok: true, ...svc.setRoomStateService({ roomId: +req.params.id, data: req.validated, userId: req.user.id }) }) }
   catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+// Saha ekranıyla aynı oda doluluğu (dolu / boş / bilinmiyor) — webden müdür/amir de verebilsin
+housekeepingRouter.patch('/rooms/:id/occupancy', ...supervisorAccess, validate(roomOccupancySchema), (req, res, next) => {
+  try { res.json(setOccupancy(+req.params.id, req.validated.occupancy, { userId: req.user.id })) }
+  catch (e) { next(e) }
 })
 
 housekeepingRouter.post('/rooms/state-bulk', ...hkAccess, validate(roomStateBulkSchema), (req, res) => {

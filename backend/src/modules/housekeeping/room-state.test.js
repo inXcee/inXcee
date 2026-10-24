@@ -128,6 +128,25 @@ describe('Oda durumu API', () => {
     expect(res.body.date).toBe(today())
   })
 
+  it('doluluk (web): amir dolu/boş/bilinmiyor yapar ve denetime düşer; teknik 403, kapalı oda 409, geçersiz 400', async () => {
+    const id = roomId('M3', 105)
+    const patch = (token, body, rid = id) => request(app).patch(`/api/housekeeping/rooms/${rid}/occupancy`)
+      .set('Authorization', `Bearer ${token}`).send(body)
+    const ok = await patch(supervisor, { occupancy: 'empty' })
+    expect(ok.status).toBe(200)
+    expect(ok.body).toMatchObject({ id, occupancy: 'empty' })
+    expect(getDB().prepare('SELECT occupancy_updated_by_user u FROM rooms WHERE id=?').get(id).u).toBeTruthy()
+    expect(getDB().prepare("SELECT module, user_id FROM audit_log WHERE action='room_occupancy_change' AND target_id=? ORDER BY id DESC").get(id))
+      .toMatchObject({ module: 'housekeeping' })
+    expect((await patch(supervisor, { occupancy: null })).body.occupancy).toBeNull()
+    expect((await patch(await login('teknik'), { occupancy: 'occupied' })).status).toBe(403)
+    expect((await patch(supervisor, { occupancy: 'dolu' })).status).toBe(400)
+    getDB().prepare("UPDATE rooms SET use_state='closed' WHERE id=?").run(roomId('M3', 106))
+    const closed = await patch(supervisor, { occupancy: 'occupied' }, roomId('M3', 106))
+    expect(closed.status).toBe(409)
+    expect(closed.body.error).toBe('Oda kapalı')
+  })
+
   it('doğrulama ve yetki: boş gövde 400, geçersiz durum 400, çamaşırhane 403', async () => {
     const id = roomId('S1', 105)
     expect((await request(app).patch(`/api/housekeeping/rooms/${id}/state`).set('Authorization', `Bearer ${supervisor}`).send({})).status).toBe(400)
