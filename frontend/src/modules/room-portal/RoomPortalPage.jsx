@@ -316,15 +316,21 @@ function CleaningPanel({ c, token, mode, session, online, onRequestResidentAuth,
     } finally { setBusy(false) }
   }
 
+  // Temizlik saha ekranında işaretlenir (docs/superpowers/specs/2026-10-24-oda-qr-saha-design.md); eski çalışan PIN'i +
+  // kontrol listesi formu kalktı. Görev sahadan istenince açıldığı için temizlenmemiş oda çoğunlukla görevsizdir ('none'):
+  // bağlantı temizlik bitene kadar her durumda görünür.
+  const fieldStaffCard = <div className="rp-mode-card"><p>{c.fieldStaffHint}</p><Link className="rp-primary" to={`/saha?qr=${encodeURIComponent(token)}`}>{c.fieldStaffLink}</Link></div>
+
   if (result) return <ReceiptCard c={c} result={result} action="cleaning" />
   if (loading) return <div className="rp-cleaning-state"><span className="rp-spinner" /><p>{c.cleaningLoading}</p></div>
   if (!status) return <div className="rp-cleaning-state">{message && <div className="rp-alert" role="alert">{message}</div>}<button type="button" onClick={loadStatus}>{c.retry}</button></div>
-  if (status.state === 'none' || status.state === 'skipped') return <div className="rp-cleaning-state"><span>ℹ️</span><h3>{status.state === 'skipped' ? c.cleaningSkipped : c.cleaningNone}</h3></div>
+  if (status.state === 'none' || status.state === 'skipped') return <>
+    <div className="rp-cleaning-state"><span>ℹ️</span><h3>{status.state === 'skipped' ? c.cleaningSkipped : c.cleaningNone}</h3></div>
+    {fieldStaffCard}
+  </>
   if (status.state === 'pending') return <div className="rp-cleaning-panel">
     <div className="rp-cleaning-banner pending"><span>⌛</span><div><strong>{c.cleaningPending}</strong><small>{status.task?.scheduled_date}</small></div></div>
-    {/* Temizlik saha ekranında işaretlenir (docs/superpowers/specs/2026-10-24-oda-qr-saha-design.md); eski çalışan PIN'i +
-        kontrol listesi formu kalktı */}
-    <div className="rp-mode-card"><p>{c.fieldStaffHint}</p><Link className="rp-primary" to={`/saha?qr=${encodeURIComponent(token)}`}>{c.fieldStaffLink}</Link></div>
+    {fieldStaffCard}
     {message && <div className="rp-alert" role="alert">{message}</div>}
   </div>
 

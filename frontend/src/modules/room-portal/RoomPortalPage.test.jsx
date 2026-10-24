@@ -131,6 +131,17 @@ describe('RoomPortalPage', () => {
     expect(api.post).not.toHaveBeenCalled()
   })
 
+  // Görev sahadan istenince açılır: temizlenmemiş oda çoğunlukla görevsizdir; bağlantı temizlik bitene kadar görünür
+  it.each([
+    ['none', 'Bugün için bu konumda temizlik görevi bulunmuyor.'],
+    ['skipped', 'Bugünkü görev atlandı.'],
+  ])('temizlik "%s" durumundayken de görevliye saha ekranı bağlantısı gösterir', async (state, text) => {
+    mockCleaningStatus({ state, review_pin_required: false, task: state === 'none' ? null : { scheduled_date: '2026-08-13' } })
+    renderPage(); fireEvent.click(await screen.findByRole('button', { name: /Temizlik durumu/ }))
+    expect(await screen.findByText(text)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Saha ekranında aç/ })).toHaveAttribute('href', '/saha?qr=token-123')
+  })
+
   it('tamamlanan temizlikte zorunlu oda PIN’ini doğrulayıp sakin değerlendirmesini gönderir', async () => {
     mockCleaningStatus({
       state: 'completed', review_pin_required: true, checklist: [],
