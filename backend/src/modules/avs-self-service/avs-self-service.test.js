@@ -372,6 +372,25 @@ describe('AVS Self-Service — overview', () => {
       .set('Authorization', `Bearer ${avsToken}`)
     expect(res.status).toBe(403)
   })
+
+  // Saha ekranı: ana sayfa kartı "Bugün temizlediğin" — blok seçimine bağlı değil, başkasının işareti sayılmaz
+  it('bugün sahadan kendi temizlediği yer sayısını blok seçmeden döner', async () => {
+    const me = await createUnassignedHousekeeper()
+    const other = await createUnassignedHousekeeper()
+    const [mine, theirs] = getDB().prepare(`
+      SELECT block, room_no FROM rooms WHERE block='M2' AND status='active' ORDER BY id LIMIT 2
+    `).all()
+    const mark = (token, room) => request(app).post('/api/avs-self-service/board/mark')
+      .set('Authorization', `Bearer ${token}`).send({ location: `${room.block}-${room.room_no}`, action: 'clean' })
+    expect((await mark(me.token, mine)).status).toBe(200)
+    expect((await mark(other.token, theirs)).status).toBe(200)
+
+    const res = await request(app).get('/api/avs-self-service/overview')
+      .set('Authorization', `Bearer ${me.token}`)
+    expect(res.status).toBe(200)
+    expect(res.body.selected_block).toBeNull()
+    expect(res.body.field_cleaned_today).toBe(1)
+  })
 })
 
 describe('AVS Self-Service — announcements', () => {

@@ -713,8 +713,7 @@ export default function AvsSelfServicePage({ deviceMode = null }) {
       )}
 
       {activeTab === 'home' && (
-        <HomeTab query={overviewQuery} data={overview} onNavigate={navigateTo}
-          selectedBlock={taskBlock} onSelectBlock={setTaskBlock} />
+        <HomeTab query={overviewQuery} data={overview} onNavigate={navigateTo} />
       )}
 
       {activeTab === 'rooms' && <RoomsBoardTab avsApi={avsApi} onReportFault={openFaultFromTask} isOnline={isOnline} />}

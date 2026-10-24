@@ -195,6 +195,15 @@ avsSelfServiceRouter.get('/overview', requireAvsKiosk, (req, res) => {
         `).get(selectedBlock)
       : null
 
+    // Saha ekranı ana sayfa kartı: bu personelin bugün temizlediği yer — blok seçiminden bağımsız
+    const fieldCleanedToday = group === 'housekeeping'
+      ? db.prepare(`
+          SELECT COUNT(*) AS c FROM cleaning_tasks
+          WHERE date(scheduled_at)=date('now','localtime') AND completed_at IS NOT NULL
+            AND COALESCE(field_worker_id, completed_by_worker_id)=?
+        `).get(req.user.workerId).c
+      : 0
+
     const nextShift = db.prepare(`
       SELECT ss.work_date, ss.status, sd.name AS shift_name,
              sd.start_hour, sd.end_hour
@@ -259,6 +268,7 @@ avsSelfServiceRouter.get('/overview', requireAvsKiosk, (req, res) => {
       worker,
       selected_block: selectedBlock,
       available_blocks: availableBlocks,
+      field_cleaned_today: fieldCleanedToday,
       tasks: {
         total: Number(taskSummary.total || 0),
         completed: Number(taskSummary.completed || 0),
