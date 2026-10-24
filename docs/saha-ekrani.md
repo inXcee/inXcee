@@ -15,7 +15,8 @@ bu kayıtlardan gelir. Tasarım: `docs/superpowers/specs/2026-10-23-saha-ekrani-
   `saha-session` anahtarında tutar (ortak kiosktan ayrı).
 - **Kayıtlı kiosk cihazı** anahtarı varsa cihazın kuralı önceliklidir; `device_mode` yok sayılır.
 - `kiosk_device_required=1` ise kayıtlı cihazı olmayan telefon **giriş yapamaz** — `/saha` için bu ayar kapalı olmalı.
-- Giriş: isim + 4 haneli PIN (mevcut kiosk girişi).
+- Giriş: isim + PIN (mevcut kiosk girişi). İlk girişte fişteki 6 haneli geçici PIN girilir ve kişi orada kendine
+  4 haneli kalıcı PIN belirler; o belirlenene kadar saha uçları 423 döner.
 
 ## Kimler kullanır
 
@@ -28,8 +29,11 @@ Eski "Görevler" sekmesi yalnız teknik grupta görünür.
 
 ## Kurulum (canlıya alındıktan sonra)
 
-1. **PIN:** Ayarlar → Kiosk PIN → AVS personeli → Kat Hizmetleri + Çamaşırhane personelini seç → *Geçici PIN üret* →
-   yazdır ve teslim et. İlk girişte kişi kendi PIN'ini belirler. (Kişiye dokunan işlem — yönetici onayıyla.)
+1. **PIN:** Ayarlar → Kiosk PIN → AVS personeli → Kat Hizmetleri + Çamaşırhane (+ arızalar için Teknik Servis)
+   personelini seç → *Geçici PIN üret* → yazdır ve teslim et. İlk girişte kişi kendi PIN'ini belirler. (Kişiye dokunan
+   işlem — yönetici onayıyla.) Geçici PIN tek kullanımlıktır ve **verildiği anda** "Geçici PIN süresi" (varsayılan
+   24 sa) kadar geçerli kalır. Toplu dağıtımda süreyi aynı sayfanın Ayarlar sekmesinden geçici olarak 168 saate
+   (en çok, 7 gün — her vardiya bir kez gelir) alıp PIN'leri üretin, sonra 24'e döndürün; tek tek verilenler 24 sa kalır.
 2. **Afiş:** aynı sayfada *🖨 Saha afişi yazdır* — bu sunucunun `/saha` adresinin QR'ı + 3 adımlık kullanım.
 3. Bağlantıyı (`avskamp.com/saha`) personelin WhatsApp grubuna ve panoya koy. Bot gerekmez.
 

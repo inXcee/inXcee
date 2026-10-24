@@ -24,7 +24,7 @@ export function sahaPosterHtml({ url, qrDataUrl }) {
   <div class="url">${shown}</div>
   <ol>
     <li>Telefonunun kamerasıyla kodu okut ya da adresi tarayıcıya yaz.</li>
-    <li>Adını ara, sana verilen 4 haneli PIN'i gir; ilk girişte kendi PIN'ini belirle.</li>
+    <li>Adını ara, fişindeki 6&nbsp;haneli geçici PIN'i gir; ilk girişte kendine 4&nbsp;haneli PIN belirle, sonra onu kullan.</li>
     <li>"Ana ekrana ekle" de; sonraki girişlerde ekran kilitlenmez, doğrudan açılır.</li>
   </ol>
   <p class="foot">PIN'in yoksa ya da unuttuysan yöneticine söyle.</p>
