@@ -57,3 +57,23 @@ export const fieldFloorSchema = z.object({
 export const fieldFloorUndoSchema = z.object({
   locations: z.array(fieldLocation).min(1, 'Yer listesi boş').max(200, 'Yer listesi çok uzun'),
 })
+
+// Saha ekranı çamaşır defteri (laundry.js) — oda bazında torba; istemci anahtarı çift gönderimi önler
+export const fieldLaundryIntakeSchema = z.object({
+  room_id: z.coerce.number({ invalid_type_error: 'Oda seçilmeli' }).int().positive('Oda seçilmeli'),
+  bags: z.coerce.number().int('Torba sayısı tam sayı olmalı').min(1, 'En az 1 torba').max(20, 'En fazla 20 torba'),
+  ironing: z.boolean().optional().default(false),
+  urgent: z.boolean().optional().default(false),
+  note: z.string().trim().max(200, 'Not çok uzun').nullish(),
+  client_request_id: z.string({ required_error: 'İstek anahtarı gerekli' }).trim().min(8, 'Geçersiz istek anahtarı')
+    .max(80, 'Geçersiz istek anahtarı').regex(/^[a-zA-Z0-9-]+$/, 'Geçersiz istek anahtarı'),
+})
+
+export const fieldLaundryDeliverSchema = z.object({
+  name: z.string().trim().max(100, 'Ad çok uzun').nullish(),
+})
+
+export const fieldLaundryUndoSchema = z.object({
+  action: z.enum(['intake', 'ready', 'deliver'], { errorMap: () => ({ message: 'Geçersiz işlem' }) }),
+  ids: z.array(z.coerce.number().int().positive()).min(1, 'Torba listesi boş').max(50, 'Torba listesi çok uzun'),
+})

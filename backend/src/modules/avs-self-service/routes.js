@@ -25,10 +25,12 @@ import { avsRoleGroup } from '../../shared/auth/avsRoles.js'
 import { FIELD_SKIP_REASONS } from '../housekeeping/field.js'
 import { removeUploadedFiles, uploadedFiles, validateUploadBody } from './upload-helpers.js'
 import { avsBoardRouter } from './board.js'
+import { avsLaundryRouter } from './laundry.js'
 
 export const avsSelfServiceRouter = Router()
 // Saha ekranı oda panosu (temizlik + çamaşırhane grubu) — docs/saha-ekrani.md
 avsSelfServiceRouter.use('/board', avsBoardRouter)
+avsSelfServiceRouter.use('/laundry', avsLaundryRouter)
 const cleaningProofUpload = createImageUpload('housekeeping').fields([
   { name: 'photo', maxCount: 1 },
   { name: 'photos', maxCount: 3 },
