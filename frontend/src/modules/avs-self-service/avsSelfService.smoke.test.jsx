@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest'
-import { fireEvent, screen } from '@testing-library/react'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react'
 import { renderWithProviders } from '../../test/renderWithProviders.jsx'
 
@@ -12,6 +12,7 @@ vi.mock('../../shared/api/client.js', () => ({
   },
 }))
 
+import api from '../../shared/api/client.js'
 import AvsSelfServicePage from './AvsSelfServicePage.jsx'
 import ShiftsTab from './tabs/ShiftsTab.jsx'
 import TasksTab from './tabs/TasksTab.jsx'
@@ -322,10 +323,24 @@ describe('AVS sekme parçaları smoke', () => {
       tasks: { pending: 4, completed: 7, skipped: 1, next: { area: 'M1 Oda 101', block: 'M1', floor: 1 } },
       faults: { open: 1, urgent: 0 },
     }
-    renderWithProviders(<HomeTab query={{ ...idleQuery, data }} data={data} onNavigate={() => {}} />)
+    const onNavigate = vi.fn()
+    renderWithProviders(<HomeTab query={{ ...idleQuery, data }} data={data} onNavigate={onNavigate} />)
     expect(screen.getByText(/Ayşe Test/)).toBeInTheDocument()
     expect(screen.getByText('M1 Oda 101')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Görevlere git/ })).toBeInTheDocument()
+    // Saha ekranı: temizlik ekibinin görev kartı Odalar sekmesine gider ve bugün temizleneni söyler
+    const rooms = screen.getByRole('button', { name: /Odalara git/ })
+    expect(rooms).toHaveTextContent('7 bugün temizlendi')
+    fireEvent.click(rooms)
+    expect(onNavigate).toHaveBeenCalledWith('rooms')
+    expect(screen.queryByRole('button', { name: /Görevlere git/ })).toBeNull()
+  })
+
+  it('HomeTab çamaşırhanede Çamaşır sekmesine kısayol verir', () => {
+    const onNavigate = vi.fn()
+    const data = { role_group: 'laundry', worker: { full_name: 'Çamaşır Test' }, faults: { open: 0 } }
+    renderWithProviders(<HomeTab query={{ ...idleQuery, data }} data={data} onNavigate={onNavigate} />)
+    fireEvent.click(screen.getByRole('button', { name: /Çamaşıra git/ }))
+    expect(onNavigate).toHaveBeenCalledWith('laundry')
   })
 
   it('HomeTab atamasız temizlikçiden oturumluk blok seçmesini ister', () => {
@@ -438,5 +453,88 @@ describe('AVS sekme parçaları smoke', () => {
     )
     expect(screen.getByRole('img', { name: 'Bildirim fotoğrafı' })).toHaveAttribute('src', '/uploads/bildirim.jpg')
     expect(screen.getByRole('img', { name: 'Çözüm fotoğrafı' })).toHaveAttribute('src', '/uploads/cozum.jpg')
+  })
+})
+
+// Saha ekranı (spec §7, §4): temizlik ve çamaşırhane gruplarında Odalar / Çamaşır sekmeleri; /saha kişisel oturum
+describe('Saha ekranı sekmeleri ve /saha girişi', () => {
+  function loginAs(roleGroup, key = 'avs-kiosk-session') {
+    window.localStorage.setItem(key, JSON.stringify({
+      token: 'tok', worker: { id: 7, full_name: 'Ayşe Saha' }, session: { mode: 'shared', idle_minutes: null },
+    }))
+    api.get.mockImplementation(url => {
+      if (url.startsWith('/avs-self-service/overview')) {
+        return Promise.resolve({ data: { role_group: roleGroup, worker: { full_name: 'Ayşe Saha' }, tasks: { total: 0, completed: 0 }, faults: {} } })
+      }
+      if (url === '/auth/kiosk-session') {
+        return Promise.resolve({ data: { session: { mode: 'shared', idle_minutes: null, locked: false, must_change_pin: false } } })
+      }
+      return Promise.resolve({ data: [] })
+    })
+  }
+  const tabNames = () => screen.getAllByRole('tab').map(tab => tab.textContent)
+
+  beforeEach(() => {
+    window.localStorage.clear()
+    api.get.mockReset()
+    api.post.mockReset()
+    api.get.mockImplementation(() => Promise.resolve({ data: [] }))
+    api.post.mockImplementation(() => Promise.resolve({ data: {} }))
+  })
+
+  it('temizlik grubunda alt menü Ana Sayfa + Odalar ile başlar; Görev sekmesi hiç yok', async () => {
+    loginAs('housekeeping')
+    renderWithProviders(<AvsSelfServicePage />)
+    await waitFor(() => expect(tabNames()[1]).toMatch(/Odalar/))
+    expect(tabNames()[0]).toMatch(/Ana Sayfa/)
+    expect(tabNames()[2]).toMatch(/Çamaşır/)
+    expect(tabNames().join(' ')).not.toMatch(/Görev/)
+    fireEvent.click(screen.getByRole('button', { name: /Daha fazla/ }))
+    expect(screen.queryByRole('menuitem', { name: /Görev/ })).toBeNull()
+  })
+
+  it('çamaşırhane grubunda Çamaşır ikinci sekme, Odalar üçüncü', async () => {
+    loginAs('laundry')
+    renderWithProviders(<AvsSelfServicePage />)
+    await waitFor(() => expect(tabNames()[1]).toMatch(/Çamaşır/))
+    expect(tabNames()[2]).toMatch(/Odalar/)
+  })
+
+  it('teknik grupta Görev kalır, Odalar ve Çamaşır sekmesi yok', async () => {
+    loginAs('technical')
+    renderWithProviders(<AvsSelfServicePage />)
+    await waitFor(() => expect(tabNames()[1]).toMatch(/Görev/))
+    fireEvent.click(screen.getByRole('button', { name: /Daha fazla/ }))
+    expect(screen.queryByRole('menuitem', { name: /Odalar|Çamaşır/ })).toBeNull()
+    expect(tabNames().join(' ')).not.toMatch(/Odalar|Çamaşır/)
+  })
+
+  it('/saha: giriş isteği device_mode personal içerir, oturum saha-session anahtarına yazılır', async () => {
+    api.get.mockImplementation(url => (url.startsWith('/auth/avs-search')
+      ? Promise.resolve({ data: [{ id: 7, full_name: 'Ayşe Saha', role_label: 'Temizlik', has_pin: true }] })
+      : Promise.resolve({ data: [] })))
+    api.post.mockImplementation(url => (url === '/auth/avs-login'
+      ? Promise.resolve({ data: { token: 'tok-saha', worker: { id: 7, full_name: 'Ayşe Saha' }, session: { mode: 'personal', idle_minutes: null } } })
+      : Promise.resolve({ data: {} })))
+    renderWithProviders(<AvsSelfServicePage deviceMode="personal" />)
+    fireEvent.change(screen.getByPlaceholderText(/ad\/soyad ara/i), { target: { value: 'Ayşe' } })
+    fireEvent.click(await screen.findByRole('button', { name: /Ayşe Saha/ }, { timeout: 2000 }))
+    for (const digit of ['1', '2', '3', '4']) fireEvent.click(screen.getByRole('button', { name: digit }))
+    fireEvent.click(screen.getByRole('button', { name: /giriş yap/i }))
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/auth/avs-login', { worker_id: 7, pin: '1234', device_mode: 'personal' }))
+    await waitFor(() => expect(JSON.parse(window.localStorage.getItem('saha-session')).token).toBe('tok-saha'))
+    expect(window.localStorage.getItem('avs-kiosk-session')).toBeNull()
+  })
+
+  it('/saha sayfası kendi manifest dosyasını bağlar', () => {
+    const link = document.createElement('link')
+    link.rel = 'manifest'
+    link.href = '/manifest.json'
+    document.head.appendChild(link)
+    const { unmount } = renderWithProviders(<AvsSelfServicePage deviceMode="personal" />)
+    expect(document.querySelector('link[rel="manifest"]').getAttribute('href')).toBe('/manifest-saha.json')
+    unmount()
+    expect(document.querySelector('link[rel="manifest"]').getAttribute('href')).toBe('/manifest.json')
+    link.remove()
   })
 })

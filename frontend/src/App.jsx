@@ -316,6 +316,7 @@ export default function App() {
           <Route path="/kiosk" element={<SelfServicePage />} />
           <Route path="/laundry-kiosk" element={<LaundryKioskPage />} />
           <Route path="/avs-kiosk" element={<AvsSelfServicePage />} />
+          <Route path="/saha" element={<AvsSelfServicePage deviceMode="personal" />} />
           <Route path="/display" element={<DisplayPage />} />
           <Route path="/display/kitchen" element={<KitchenDisplayPage />} />
           <Route path="/station" element={<StationPage />} />

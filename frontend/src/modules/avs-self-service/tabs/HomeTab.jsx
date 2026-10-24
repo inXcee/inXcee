@@ -84,7 +84,7 @@ export default function HomeTab({ query, data, onNavigate, selectedBlock, onSele
                   </div>
                 </section>
                 {tasks.next && (
-                  <button type="button" onClick={() => onNavigate('tasks')}
+                  <button type="button" onClick={() => onNavigate('rooms')}
                     className="w-full rounded-2xl border border-slate-700 bg-slate-900 p-5 text-left active:scale-[0.99]">
                     <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">
                       {t('avs_kiosk.home.next_task')}
@@ -179,7 +179,23 @@ export default function HomeTab({ query, data, onNavigate, selectedBlock, onSele
         )}
 
         <div className="grid grid-cols-2 gap-3">
-          {(role === 'housekeeping' || role === 'technical') && (
+          {/* Saha ekranı: temizlik ekibi Odalar'a, çamaşırhane Çamaşır'a gider; görev listesi yalnız teknikte */}
+          {role === 'housekeeping' && (
+            <button type="button" onClick={() => onNavigate('rooms')}
+              className="min-h-24 rounded-2xl bg-blue-600 p-4 text-left text-white active:bg-blue-500">
+              <div className="text-2xl">🛏</div>
+              <div className="mt-2 text-sm font-semibold">{t('avs_kiosk.home.go_rooms')}</div>
+              <div className="mt-0.5 text-xs text-blue-100">{tasks.completed || 0} {t('avs_kiosk.home.cleaned_today')}</div>
+            </button>
+          )}
+          {role === 'laundry' && (
+            <button type="button" onClick={() => onNavigate('laundry')}
+              className="min-h-24 rounded-2xl bg-blue-600 p-4 text-left text-white active:bg-blue-500">
+              <div className="text-2xl">🧺</div>
+              <div className="mt-2 text-sm font-semibold">{t('avs_kiosk.home.go_laundry')}</div>
+            </button>
+          )}
+          {role === 'technical' && (
             <button type="button" onClick={() => onNavigate('tasks')}
               className="min-h-24 rounded-2xl bg-blue-600 p-4 text-left text-white active:bg-blue-500">
               <div className="text-2xl">✅</div>
