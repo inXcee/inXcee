@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../../shared/api/client.js'
 import { confirmDialog } from '../../shared/components/ConfirmDialog.jsx'
 import { useDebounce } from '../../shared/hooks/useDebounce.js'
+import { openPrintWindow } from '../../shared/logic/printWindow.js'
+import { sahaPosterHtml } from './sahaPoster.js'
 
 const STATUS = {
   missing: ['PIN yok', 'muted'], issued: ['Teslim bekliyor', 'warning'], delivered: ['Geçici PIN teslim', 'info'],
@@ -99,6 +101,18 @@ export default function KioskPinPage() {
     return next
   })
 
+  // Saha ekranı afişi: bu sunucunun /saha adresi (canlıda avskamp.com/saha) QR ile
+  const printSahaPoster = async () => {
+    try {
+      const url = `${window.location.origin}/saha`
+      const { default: QRCode } = await import('qrcode')
+      const qrDataUrl = await QRCode.toDataURL(url, { width: 720, margin: 1 })
+      openPrintWindow(sahaPosterHtml({ url, qrDataUrl }), { width: 900, height: 1100 })
+    } catch {
+      setMessage({ type: 'err', text: 'Afiş açılamadı. Tarayıcı açılır pencereyi engelliyor olabilir.' })
+    }
+  }
+
   const printIssued = async () => {
     try {
       await Promise.all(issued.map(item => api.post(`/kiosk-management/pins/${item.issuance_id}/deliver`, {
@@ -122,10 +136,13 @@ export default function KioskPinPage() {
             <h2 style={{ fontSize: 28, margin: '5px 0 0' }}>Kiosk erişim merkezi</h2>
             <p style={{ color: 'var(--text3)', margin: '7px 0 0', fontSize: 13 }}>Geçici PIN teslimi, ilk giriş durumu ve açık cihaz oturumları tek yerde.</p>
           </div>
-          <div className="view-toggle">
-            {[['pins', 'PIN dağıtımı'], ['sessions', 'Açık oturumlar'], ['settings', 'Süre politikaları']].map(([value, label]) => (
-              <button key={value} className={tab === value ? 'active' : ''} onClick={() => { setTab(value); setMessage(null) }}>{label}</button>
-            ))}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <button className="btn btn-ghost" onClick={printSahaPoster} title="Personel telefonundan /saha'ya girsin">🖨 Saha afişi yazdır</button>
+            <div className="view-toggle">
+              {[['pins', 'PIN dağıtımı'], ['sessions', 'Açık oturumlar'], ['settings', 'Süre politikaları']].map(([value, label]) => (
+                <button key={value} className={tab === value ? 'active' : ''} onClick={() => { setTab(value); setMessage(null) }}>{label}</button>
+              ))}
+            </div>
           </div>
         </div>
       </div>

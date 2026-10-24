@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { screen, fireEvent, waitFor } from '@testing-library/react'
 import { renderWithProviders } from '../../test/renderWithProviders.jsx'
 
@@ -7,10 +7,12 @@ vi.mock('../../shared/api/client.js', () => ({
 }))
 
 import api from '../../shared/api/client.js'
+import { useAuthStore } from '../../shared/store/authStore.js'
 import RoomStatePanel from './RoomStatePanel.jsx'
 
 describe('housekeeping/RoomStatePanel smoke', () => {
   beforeEach(() => vi.clearAllMocks())
+  afterEach(() => useAuthStore.setState({ user: null }))
 
   it('açık odayı not + bitiş tarihiyle kilitler', async () => {
     const onChanged = vi.fn()
@@ -30,5 +32,24 @@ describe('housekeeping/RoomStatePanel smoke', () => {
     await waitFor(() => expect(api.patch).toHaveBeenCalledWith('/housekeeping/rooms/8/state', { use_state: 'open' }))
     fireEvent.click(screen.getByText(/Gececi/))
     await waitFor(() => expect(api.patch).toHaveBeenCalledWith('/housekeeping/rooms/8/state', { occupant_shift: 'night' }))
+  })
+
+  // Saha ekranı: oda doluluğu webden de verilir (müdür + amir); saha personelinin işaretiyle aynı alan
+  it('amir doluluk satırında Boş seçince oda doluluğunu yazar', async () => {
+    useAuthStore.setState({ user: { id: 2, role: 'shift_supervisor' } })
+    renderWithProviders(<RoomStatePanel room={{ id: 9, use_state: 'open', occupancy: null }} block="S1" roomNo="103" />)
+    expect(screen.getByText('DOLULUK')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Boş/ }))
+    await waitFor(() => expect(api.patch).toHaveBeenCalledWith('/housekeeping/rooms/9/occupancy', { occupancy: 'empty' }))
+  })
+
+  it('doluluk satırı meydancıya ve kapalı odada gösterilmez', () => {
+    useAuthStore.setState({ user: { id: 5, role: 'housekeeper' } })
+    const { unmount } = renderWithProviders(<RoomStatePanel room={{ id: 10, use_state: 'open' }} block="S1" roomNo="104" />)
+    expect(screen.queryByText('DOLULUK')).toBeNull()
+    unmount()
+    useAuthStore.setState({ user: { id: 1, role: 'campus_manager' } })
+    renderWithProviders(<RoomStatePanel room={{ id: 11, use_state: 'closed' }} block="S1" roomNo="105" />)
+    expect(screen.queryByText('DOLULUK')).toBeNull()
   })
 })

@@ -63,6 +63,14 @@ cd backend && node -e "import('./src/shared/db/index.js').then(m=>m.initDB()).th
 - Föy takibi bölüm × gün başına SON kontrolü gösterir: fotoğraftan okunan sayfa ASLA tek başına kontrol edilmez — `POST /schedule/signature-prints/:id/reads` ile kaydedilir, kontrol haftanın tüm okunan sayfalarının birleşimiyle yapılır (`signatureReads.js`).
 - Puantaja hiçbir şey yazılmaz; uyarılar insan kararına bırakılır.
 
+### Saha Ekranı (oda temizliği, doluluk, çamaşır defteri)
+
+- Güncel işletim, API, kurallar ve kurulum kaynağı: `docs/saha-ekrani.md`. Telefon: `/saha` (kişisel oturum, kilitsiz); ortak tablet: `/avs-kiosk`.
+- Temizlik kaydı sahadan **istendiğinde** açılır (`cleaning_tasks.origin='field'`); günlük toplu üretim kapalı kalır. Kural kodu `housekeeping/field.js`.
+- Doluluk **oda bazlıdır** (`rooms.occupancy`); herhangi bir odada saha bilgisi varsa panel doluluğu bundan gelir, kapalı odalar paydaya girmez.
+- Çamaşır defterinde her `laundry_items` satırı bir **torba** (Hermes `/camasir` ile aynı). Geri alma yetkisi `last_modified_worker_id`'den değil torbanın `laundry_history`'sinden okunur (`laundry/field-ledger.js`).
+- Yalnız temizlik + çamaşırhane grupları (`requireFieldGroup`); kayıtlı kiosk cihazının kuralı `device_mode`'dan önceliklidir.
+
 ### Oda QR Portalı Modülü
 
 - Güncel işletim, API, rol, etiket basımı ve saha kurulumu kaynağı: `docs/room-qr-portal.md`.
