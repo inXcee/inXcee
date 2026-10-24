@@ -194,11 +194,13 @@ authRouter.get('/avs-search', pinLimiter, (req, res) => {
 })
 
 authRouter.post('/avs-login', pinLimiter, kioskPinFailureLimiter, (req, res) => {
-  const { worker_id, pin } = req.body
+  const { worker_id, pin, device_mode } = req.body
   if (!worker_id || !pin) return res.status(400).json({ error: 'worker_id ve pin gerekli' })
   const deviceResult = loginDevice(req)
   if (deviceResult.error) return res.status(deviceResult.status).json({ error: deviceResult.error })
-  const result = loginAvsKiosk(Number(worker_id), pin, { device: deviceResult.device })
+  // /saha (personelin kendi telefonu) kişisel oturum ister; başka değer ortak kurala düşer
+  const deviceMode = device_mode === 'personal' ? 'personal' : null
+  const result = loginAvsKiosk(Number(worker_id), pin, { device: deviceResult.device, deviceMode })
   if (result.error) return res.status(result.status).json({ error: result.error })
   res.json(result)
 })
