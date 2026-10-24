@@ -1,6 +1,5 @@
 import { Router } from 'express'
 import { randomBytes } from 'crypto'
-import { unlinkSync } from 'node:fs'
 import { requireAvsKiosk } from '../../shared/auth/middleware.js'
 import { getDB } from '../../shared/db/index.js'
 import { istanbulNowNaive } from '../../shared/time.js'
@@ -24,8 +23,12 @@ import {
 import { getStaffTransport } from '../transport/self-service.js'
 import { avsRoleGroup } from '../../shared/auth/avsRoles.js'
 import { FIELD_SKIP_REASONS } from '../housekeeping/field.js'
+import { removeUploadedFiles, uploadedFiles, validateUploadBody } from './upload-helpers.js'
+import { avsBoardRouter } from './board.js'
 
 export const avsSelfServiceRouter = Router()
+// Saha ekranı oda panosu (temizlik + çamaşırhane grubu) — docs/saha-ekrani.md
+avsSelfServiceRouter.use('/board', avsBoardRouter)
 const cleaningProofUpload = createImageUpload('housekeeping').fields([
   { name: 'photo', maxCount: 1 },
   { name: 'photos', maxCount: 3 },
@@ -43,17 +46,6 @@ function loadTechnicalWorker(db, workerId) {
 
 function maintenanceTrackingNo(id) {
   return `ARZ-${String(id).padStart(6, '0')}`
-}
-
-function uploadedFiles(req) {
-  if (req.files) return Object.values(req.files).flat()
-  return req.file ? [req.file] : []
-}
-
-function removeUploadedFiles(req) {
-  for (const file of uploadedFiles(req)) {
-    try { unlinkSync(file.path) } catch { /* already removed or unavailable */ }
-  }
 }
 
 function acceptCleaningProof(req, res, next) {
@@ -76,22 +68,6 @@ function acceptMaintenancePhoto(req, res, next) {
       : err.message || 'Arıza fotoğrafı yüklenemedi'
     return res.status(400).json({ error: message })
   })
-}
-
-function validateUploadBody(schema) {
-  return (req, res, next) => {
-    const parsed = schema.safeParse(req.body)
-    if (!parsed.success) {
-      removeUploadedFiles(req)
-      const details = parsed.error.issues.map(issue => ({
-        path: issue.path.join('.') || '(root)',
-        message: issue.message,
-      }))
-      return res.status(400).json({ error: details[0]?.message || 'Geçersiz istek', details })
-    }
-    req.validated = parsed.data
-    next()
-  }
 }
 
 function loadAuthorizedCleaningTask(req, res, next) {
