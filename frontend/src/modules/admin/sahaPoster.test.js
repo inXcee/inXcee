@@ -15,6 +15,13 @@ describe('sahaPosterHtml', () => {
     expect(doc().querySelectorAll('ol > li')).toHaveLength(3)
   })
 
+  // Toplu verilen geçici PIN 6 haneli (fişte), ilk girişte belirlenen kalıcı PIN 4 haneli (kiosk-management/pins.js)
+  it('PIN adımı fişteki 6 haneli geçici PIN ile kendi 4 haneli PIN ayrımını söyler', () => {
+    const step = doc().querySelectorAll('ol > li')[1].textContent
+    expect(step).toMatch(/6\s+haneli/)
+    expect(step).toMatch(/4\s+haneli/)
+  })
+
   it('adres HTML olarak kaçırılır', () => {
     const html = sahaPosterHtml({ url: 'https://x.test/saha?a=<b>', qrDataUrl: 'data:image/png;base64,QUJD' })
     expect(html).not.toContain('<b>')
