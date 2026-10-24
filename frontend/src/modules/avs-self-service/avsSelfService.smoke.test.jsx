@@ -316,22 +316,23 @@ describe('AVS sekme parçaları smoke', () => {
     expect(screen.getByText(/1\/3/)).toBeInTheDocument()
   })
 
-  it('HomeTab temizlik özeti ve hızlı aksiyonları render eder', () => {
+  it('HomeTab temizlikte Odalar kısayolu bugün kendi temizlediğini söyler; eski görev özeti yok', () => {
     const data = {
       role_group: 'housekeeping',
       worker: { full_name: 'Ayşe Test', department_name: 'Temizlik', assigned_block: 'M1' },
-      tasks: { pending: 4, completed: 7, skipped: 1, next: { area: 'M1 Oda 101', block: 'M1', floor: 1 } },
+      field_cleaned_today: 7,
+      tasks: { pending: 4, completed: 2, skipped: 1, next: { area: 'M1 Oda 101', block: 'M1', floor: 1 } },
       faults: { open: 1, urgent: 0 },
     }
     const onNavigate = vi.fn()
     renderWithProviders(<HomeTab query={{ ...idleQuery, data }} data={data} onNavigate={onNavigate} />)
     expect(screen.getByText(/Ayşe Test/)).toBeInTheDocument()
-    expect(screen.getByText('M1 Oda 101')).toBeInTheDocument()
-    // Saha ekranı: temizlik ekibinin görev kartı Odalar sekmesine gider ve bugün temizleneni söyler
+    // Saha ekranı: görev önceden üretilmez, blok/kat/oda Odalar panosunda seçilir — sayı personelin kendi işi
     const rooms = screen.getByRole('button', { name: /Odalara git/ })
-    expect(rooms).toHaveTextContent('7 bugün temizlendi')
+    expect(rooms).toHaveTextContent('Bugün temizlediğin: 7')
     fireEvent.click(rooms)
     expect(onNavigate).toHaveBeenCalledWith('rooms')
+    expect(screen.queryByText('M1 Oda 101')).toBeNull()
     expect(screen.queryByRole('button', { name: /Görevlere git/ })).toBeNull()
   })
 
@@ -343,8 +344,7 @@ describe('AVS sekme parçaları smoke', () => {
     expect(onNavigate).toHaveBeenCalledWith('laundry')
   })
 
-  it('HomeTab atamasız temizlikçiden oturumluk blok seçmesini ister', () => {
-    const onSelectBlock = vi.fn()
+  it('HomeTab atamasız temizlikçiye ana sayfada blok seçtirmez (blok Odalar panosunda seçilir)', () => {
     const data = {
       role_group: 'housekeeping',
       worker: { full_name: 'Bloksuz Test', department_name: 'Temizlik', assigned_block: null },
@@ -353,13 +353,10 @@ describe('AVS sekme parçaları smoke', () => {
       tasks: { total: 0, pending: 0, completed: 0, skipped: 0, next: null },
       faults: { open: 0, urgent: 0 },
     }
-    renderWithProviders(
-      <HomeTab query={{ ...idleQuery, data }} data={data} onNavigate={() => {}}
-        selectedBlock="" onSelectBlock={onSelectBlock} />
-    )
-    expect(screen.getByText(/Başlamak için çalışacağın bloğu seç/)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'M1' }))
-    expect(onSelectBlock).toHaveBeenCalledWith('M1')
+    renderWithProviders(<HomeTab query={{ ...idleQuery, data }} data={data} onNavigate={() => {}} />)
+    expect(screen.queryByText(/Başlamak için çalışacağın bloğu seç/)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'M1' })).toBeNull()
+    expect(screen.getByRole('button', { name: /Odalara git/ })).toHaveTextContent('Bugün temizlediğin: 0')
   })
 
   it('HomeTab teknik personelde kendi, alınabilir ve acil işleri gösterir', () => {

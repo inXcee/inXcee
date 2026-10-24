@@ -16,15 +16,11 @@ function Metric({ value, label, tone = 'blue' }) {
   )
 }
 
-export default function HomeTab({ query, data, onNavigate, selectedBlock, onSelectBlock }) {
+export default function HomeTab({ query, data, onNavigate }) {
   const { t } = useTranslation()
   const role = data?.role_group || 'general'
   const worker = data?.worker || {}
-  const tasks = data?.tasks || {}
   const faults = data?.faults || {}
-  const activeBlock = worker.assigned_block || selectedBlock || data?.selected_block || null
-  const availableBlocks = data?.available_blocks || []
-  const taskProgress = tasks.total ? Math.round(((tasks.completed || 0) / tasks.total) * 100) : 0
 
   return (
     <TabState query={query}>
@@ -42,68 +38,7 @@ export default function HomeTab({ query, data, onNavigate, selectedBlock, onSele
           </p>
         </section>
 
-        {role === 'housekeeping' && (
-          <>
-            {!worker.assigned_block && availableBlocks.length > 0 && (
-              <section className={`rounded-2xl border p-4 ${
-                activeBlock ? 'border-slate-700 bg-slate-900' : 'border-blue-500/50 bg-blue-950/30'
-              }`}>
-                <div className="font-semibold text-slate-100">
-                  {activeBlock ? t('avs_kiosk.tasks.change_block') : t('avs_kiosk.tasks.choose_block')}
-                </div>
-                <p className="mt-1 text-xs text-slate-400">{t('avs_kiosk.tasks.choose_block_hint')}</p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {availableBlocks.map(block => (
-                    <button key={block} type="button" onClick={() => onSelectBlock(block)}
-                      aria-pressed={activeBlock === block}
-                      className={`min-h-11 min-w-12 rounded-xl px-4 text-sm font-bold ${
-                        activeBlock === block ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300'
-                      }`}>
-                      {block}
-                    </button>
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {activeBlock ? (
-              <>
-                <div className="grid grid-cols-3 gap-2">
-                  <Metric value={tasks.pending} label={t('avs_kiosk.home.pending')} tone="amber" />
-                  <Metric value={tasks.completed} label={t('avs_kiosk.home.completed')} tone="green" />
-                  <Metric value={tasks.skipped} label={t('avs_kiosk.home.skipped')} tone="red" />
-                </div>
-                <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="font-medium text-slate-200">{activeBlock} · {t('avs_kiosk.home.daily_progress')}</span>
-                    <span className="font-bold text-green-400">%{taskProgress}</span>
-                  </div>
-                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-800">
-                    <div className="h-full rounded-full bg-green-500 transition-all"
-                      style={{ width: `${taskProgress}%` }} />
-                  </div>
-                </section>
-                {tasks.next && (
-                  <button type="button" onClick={() => onNavigate('rooms')}
-                    className="w-full rounded-2xl border border-slate-700 bg-slate-900 p-5 text-left active:scale-[0.99]">
-                    <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                      {t('avs_kiosk.home.next_task')}
-                    </div>
-                    <div className="mt-2 text-lg font-semibold text-slate-100">{tasks.next.area}</div>
-                    <div className="mt-1 text-sm text-slate-400">
-                      {tasks.next.block} · {t('avs_kiosk.home.floor')} {tasks.next.floor}
-                    </div>
-                  </button>
-                )}
-              </>
-            ) : (
-              <div className="rounded-2xl bg-slate-900 p-5 text-center text-sm text-slate-400">
-                {t('avs_kiosk.home.select_block_first')}
-              </div>
-            )}
-          </>
-        )}
-
+        {/* Temizlik ekibinde blok/kat/oda seçimi Odalar panosunda (saha ekranı); görev önceden üretilmez */}
         {role === 'technical' && (
           <>
             <div className="grid grid-cols-3 gap-2">
@@ -185,7 +120,7 @@ export default function HomeTab({ query, data, onNavigate, selectedBlock, onSele
               className="min-h-24 rounded-2xl bg-blue-600 p-4 text-left text-white active:bg-blue-500">
               <div className="text-2xl">🛏</div>
               <div className="mt-2 text-sm font-semibold">{t('avs_kiosk.home.go_rooms')}</div>
-              <div className="mt-0.5 text-xs text-blue-100">{tasks.completed || 0} {t('avs_kiosk.home.cleaned_today')}</div>
+              <div className="mt-0.5 text-xs text-blue-100">{t('avs_kiosk.home.cleaned_by_me_today')} {data?.field_cleaned_today || 0}</div>
             </button>
           )}
           {role === 'laundry' && (
