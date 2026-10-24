@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from '../../../shared/i18n/index.js'
 import { dataUrlToBlob } from '../../../shared/photo.js'
 import TabState from '../components/TabState.jsx'
 import SpotSheet from '../components/SpotSheet.jsx'
+import UndoToast, { useUndoToast } from '../components/UndoToast.jsx'
 import { floorProgress, spotTone } from '../logic/board.js'
 
 // Saha ekranı Odalar sekmesi (docs/saha-ekrani.md): blok → kat → oda kutucuğu. Dokun → alt sayfa:
@@ -33,8 +34,7 @@ export default function RoomsBoardTab({ avsApi, onReportFault, isOnline = true }
   const [chosen, setChosen] = useState(readBlock)
   const [openLocation, setOpenLocation] = useState(null)
   const [floorPlan, setFloorPlan] = useState(null)
-  const [toast, setToast] = useState(null)
-  const toastTimer = useRef(null)
+  const { toast, showToast, clearToast } = useUndoToast()
 
   const blocksQuery = useQuery({
     queryKey: ['avs-board-blocks'],
@@ -52,17 +52,10 @@ export default function RoomsBoardTab({ avsApi, onReportFault, isOnline = true }
   const spots = floors.flatMap(floor => [...floor.common_areas, ...floor.rooms])
   const openSpot = spots.find(item => item.location === openLocation) || null
 
-  useEffect(() => () => window.clearTimeout(toastTimer.current), [])
-
   const errorText = err => err?.response?.data?.error || t('avs_kiosk.board.save_error')
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ['avs-board-rooms', block] })
     queryClient.invalidateQueries({ queryKey: ['avs-board-blocks'] })
-  }
-  const showToast = (text, undo = null) => {
-    window.clearTimeout(toastTimer.current)
-    setToast({ text, undo })
-    toastTimer.current = window.setTimeout(() => setToast(null), 6000)
   }
 
   const undo = useMutation({
@@ -287,18 +280,7 @@ export default function RoomsBoardTab({ avsApi, onReportFault, isOnline = true }
         />
       )}
 
-      {toast && (
-        <div role="status"
-          className="fixed inset-x-4 bottom-24 z-[80] mx-auto flex max-w-md items-center justify-between gap-3 rounded-2xl border border-slate-700 bg-slate-800 px-4 py-3 text-sm text-white shadow-xl">
-          <span>{toast.text}</span>
-          {toast.undo && (
-            <button type="button" onClick={() => { const run = toast.undo; setToast(null); run() }}
-              className="min-h-10 shrink-0 rounded-xl bg-slate-700 px-3 font-semibold text-blue-300">
-              {t('avs_kiosk.board.undo')}
-            </button>
-          )}
-        </div>
-      )}
+      <UndoToast toast={toast} onDismiss={clearToast} />
     </TabState>
   )
 }
