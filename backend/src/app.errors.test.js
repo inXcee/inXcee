@@ -41,6 +41,17 @@ describe('Global hata işleyici', () => {
     expect(res.json).toHaveBeenCalledWith({ error: 'Tarih YYYY-MM-DD olmalı' })
   })
 
+  // İstemci hangi durumda olduğunu metinden değil koddan anlasın (ör. saha: kapıdaki QR'ı okut → kamera aç)
+  it('istemci hatasının kodu varsa iletilir; sunucu hatasında kod sızmaz', () => {
+    const res = mockRes()
+    globalErrorHandler(Object.assign(new Error('x'), { statusCode: 409, code: 'qr_scan_required' }), req, res, () => {})
+    expect(res.status).toHaveBeenCalledWith(409)
+    expect(res.json).toHaveBeenCalledWith({ error: 'x', code: 'qr_scan_required' })
+    const res500 = mockRes()
+    globalErrorHandler(Object.assign(new Error('iç ayrıntı'), { code: 'ENOENT' }), req, res500, () => {})
+    expect(res500.json).toHaveBeenCalledWith({ error: 'Sunucu hatası' })
+  })
+
   it('istemci hatası uyarı seviyesinde ve yığın izisiz; sunucu hatası hata seviyesinde günlüğe düşer', () => {
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {})
     const error = vi.spyOn(logger, 'error').mockImplementation(() => {})

@@ -20,11 +20,11 @@ const ROOMS = {
   ] }],
 }
 
-function makeApi({ failFirstIntake = false } = {}) {
+function makeApi({ failFirstIntake = false, ledger = LEDGER } = {}) {
   let intakeCalls = 0
   return {
     get: vi.fn(url => Promise.resolve({
-      data: url.includes('/board/rooms') ? ROOMS : url.includes('/board/blocks') ? BLOCKS : LEDGER,
+      data: url.includes('/board/rooms') ? ROOMS : url.includes('/board/blocks') ? BLOCKS : ledger,
     })),
     post: vi.fn(url => {
       if (url === '/avs-self-service/laundry') {
@@ -113,5 +113,28 @@ describe('LaundryLedgerTab', () => {
     await waitFor(() => expect(api.post).toHaveBeenCalledWith('/avs-self-service/laundry/rooms/502/deliver', { name: 'Ahmet' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Geri al' }))
     await waitFor(() => expect(api.post).toHaveBeenCalledWith('/avs-self-service/laundry/undo', { action: 'deliver', ids: [21] }))
+  })
+})
+
+// Sakinin oda QR'ından çamaşır alma talebi (spec 2026-10-24-oda-qr-saha §Hedefler 6): defterin başında, tek dokunuşla alım
+describe('LaundryLedgerTab — sakin talepleri', () => {
+  it('Talepler bölümünde oda ve not; "Çamaşırı al" alım sayfasını o oda seçili açar ve kaydeder', async () => {
+    const request = { id: 9, room_id: 502, block: 'M1', room_no: '102', note: 'Kapının önünde', request_count: 1, created_at: '2026-10-24 06:00:00' }
+    const api = makeApi({ ledger: { ...LEDGER, requests: [request] } })
+    renderWithProviders(<LaundryLedgerTab avsApi={api} />)
+    const section = await screen.findByRole('region', { name: /Talepler/ })
+    expect(within(section).getByText('M1-102')).toBeInTheDocument()
+    expect(within(section).getByText(/Kapının önünde/)).toBeInTheDocument()
+    fireEvent.click(within(section).getByRole('button', { name: 'Çamaşırı al' }))
+    const form = await screen.findByRole('dialog', { name: 'Çamaşır al' })
+    expect(await within(form).findByRole('button', { name: '102' })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(within(form).getByRole('button', { name: 'Kaydet' }))
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/avs-self-service/laundry', expect.objectContaining({ room_id: 502, bags: 1 })))
+  })
+
+  it('talep yoksa bölüm görünmez', async () => {
+    renderWithProviders(<LaundryLedgerTab avsApi={makeApi()} />)
+    await screen.findByRole('heading', { name: /Yıkamada/ })
+    expect(screen.queryByRole('region', { name: /Talepler/ })).toBeNull()
   })
 })

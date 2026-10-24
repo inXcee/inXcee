@@ -102,3 +102,8 @@ export const photoRetentionSchema = z.object({
 export const roomOccupancySchema = z.object({
   occupancy: z.enum(['occupied', 'empty'], { errorMap: () => ({ message: 'Geçersiz doluluk' }) }).nullable(),
 })
+
+// Saha QR zorunluluğu: kapalı ya da yalnız etiketi doğrulanmış kapılarda okutma şartı
+export const fieldQrEnforcementSchema = z.object({
+  mode: z.enum(['off', 'verified_labels'], { errorMap: () => ({ message: 'Geçersiz mod' }) }),
+})

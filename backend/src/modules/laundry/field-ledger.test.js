@@ -181,3 +181,57 @@ describe('defter görünümü (ledgerOverview)', () => {
     expect(group('ready', '203')).toBeUndefined()
   })
 })
+
+// Sakinin oda QR'ından çamaşır alma talebi sahaya düşer (spec 2026-10-24-oda-qr-saha §Hedefler 6). Talep teslim değildir:
+// torba sahada alınınca talep 'collected' olur ve ilk torbaya bağlanır; alım geri alınırsa talep geri açılır.
+describe('sakinin çamaşır talebi (oda QR portalı)', () => {
+  const fr = {}
+  const systemUser = () => db.prepare("SELECT id FROM users WHERE username='avs_kiosk_system'").get().id
+  const ask = no => Number(db.prepare(`
+    INSERT INTO laundry_pickup_requests(service_location_id, room_id, note, request_count)
+    VALUES((SELECT id FROM service_locations WHERE room_id=?), ?, 'Kapının önünde', 1)
+  `).run(fr[no], fr[no]).lastInsertRowid)
+  const requestRow = id => db.prepare('SELECT * FROM laundry_pickup_requests WHERE id=?').get(id)
+
+  beforeAll(() => {
+    const room = db.prepare(`INSERT INTO rooms(block, floor, room_no, capacity, active_beds) VALUES('FR', 1, ?, 6, 6)`)
+    for (const no of ['101', '102', '103']) fr[no] = Number(room.run(no).lastInsertRowid)
+  })
+
+  it('açık talep defterde oda bazında; sakin adı yok; blok kuralına uyar', () => {
+    const id = ask('101')
+    const found = ledgerOverview().requests.find(r => r.id === id)
+    expect(found).toMatchObject({ room_id: fr['101'], block: 'FR', room_no: '101', note: 'Kapının önünde', request_count: 1 })
+    expect(found.created_at).toBeTruthy()
+    expect(found).not.toHaveProperty('resident_name')
+    expect(ledgerOverview(undefined, { block: 'M2' }).requests.some(r => r.id === id)).toBe(false)
+  })
+
+  it('alım talebi kapatır ve ilk torbaya bağlar; talepsiz odada kapanan yok', () => {
+    const id = ledgerOverview().requests.find(r => r.room_id === fr['101']).id
+    const res = intakeBags({ roomId: fr['101'], bags: 2, clientRequestId: 'saha-talep0001', workerId })
+    expect(res.request_closed).toBe(id)
+    expect(requestRow(id)).toMatchObject({ status: 'collected', laundry_item_id: res.ids[0], collected_by: systemUser() })
+    expect(requestRow(id).collected_at).toBeTruthy()
+    expect(ledgerOverview().requests.some(r => r.id === id)).toBe(false)
+    expect(intakeBags({ roomId: fr['103'], bags: 1, clientRequestId: 'saha-talep0003', workerId }).request_closed).toBeNull()
+  })
+
+  it('alım geri alınınca talep yeniden açılır; torbalar silinir', () => {
+    const ids = db.prepare("SELECT id FROM laundry_items WHERE substr(client_request_id, 1, 15)='saha-talep0001#' ORDER BY id").all().map(r => r.id)
+    const id = db.prepare('SELECT id FROM laundry_pickup_requests WHERE laundry_item_id=?').get(ids[0]).id
+    expect(undoLedger({ action: 'intake', ids, workerId })).toEqual({ undone: 2 })
+    expect(requestRow(id)).toMatchObject({ status: 'open', laundry_item_id: null, collected_at: null, collected_by: null })
+    expect(ids.map(item)).toEqual([undefined, undefined])
+  })
+
+  it('yeni talep açıkken geri alma eskiyi iptal eder, yenisi açık kalır', () => {
+    const first = ask('102')
+    const { ids } = intakeBags({ roomId: fr['102'], bags: 1, clientRequestId: 'saha-talep0002', workerId })
+    const second = ask('102')
+    undoLedger({ action: 'intake', ids, workerId })
+    expect(requestRow(first)).toMatchObject({ status: 'cancelled', laundry_item_id: null })
+    expect(requestRow(first).cancelled_reason).toBeTruthy()
+    expect(requestRow(second)).toMatchObject({ status: 'open' })
+  })
+})

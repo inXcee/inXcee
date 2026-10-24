@@ -2,8 +2,8 @@
 
 Her oda, koridor, WC, banyo ve merdiven alanına asılan bir QR etiketi. Sakin
 telefonuyla okutur; arıza bildirir, çamaşırının alınmasını ister, temizliği
-değerlendirir, anket doldurur. Görevli aynı QR'ı okutarak temizlik görevini
-kapatır.
+değerlendirir, anket doldurur. Görevli aynı QR'ı **saha ekranında** okutur; işareti
+QR ile doğrulanır (`docs/saha-ekrani.md` → Kapıdaki QR).
 
 Bu dosya modülün **tek güncel kaynağıdır**. Kod ile burası çelişirse kod
 doğrudur ve burası güncellenmelidir.
@@ -75,6 +75,7 @@ yapabilir. Canlıda sakinlerin çoğunda PIN yok; dağıtım tamamlanmadan açma
 | `campus_manager` | Ayarlar, token üretme/döndürme/iptal, basım partileri, tüm kurulum işlemleri |
 | `shift_supervisor` | Görüntüleme, raporlar, saha kurulum doğrulaması |
 | `housekeeper`, `technical` | Saha: yerinde doğrulama, "asıldı" işaretleme, hasar bildirimi |
+| Saha personeli (kiosk) | `/saha`: kapıdaki QR'la kanıtlı temizlik, alt sayfadan etiket doğrulama (`*_staff_id`) |
 | Sakin | Girişsiz, `/r/:token` üzerinden yalnız kendi konumunun hizmetleri |
 
 ---
@@ -205,8 +206,8 @@ KİMİN ekranına düşüyor? İki boşluk tam da bu soruyla bulundu.
 | Hizmet | Kayıt | Kim görür |
 |---|---|---|
 | Arıza | `maintenance_requests` (`source='room_qr'`) + medya | Teknik/arıza ekranları, kampüs haritası |
-| Çamaşır talebi | `laundry_pickup_requests` | **Çamaşırhane ekranındaki talep paneli** |
-| Temizlik — şikayet | `cleaning_task_reviews` + otomatik takip `cleaning_tasks` | Normal temizlik kuyruğu |
+| Çamaşır talebi | `laundry_pickup_requests` | **Çamaşırhane ekranındaki talep paneli** + saha Çamaşır sekmesi (Talepler); saha alımı kapatır |
+| Temizlik — şikayet | `cleaning_task_reviews` + otomatik takip `cleaning_tasks` | Normal temizlik kuyruğu + saha panosunda ⚠ (takip görevi) |
 | Temizlik — puan/onay | `cleaning_task_reviews` | **QR Analitiği → sakin temizlik değerlendirmesi** |
 | Anket | `surveys` | Anket ekranları, yönetim widget'ları |
 
@@ -215,6 +216,18 @@ açık talep kısıtı (kısmi UNIQUE index) yüzünden kapatılmayan talep, o o
 bir daha "yeni" talep açmasını engeller — sonraki istekler eskisine birleşir.
 
 ---
+
+## Saha ekranıyla bağlantı (24 Eki 2026)
+
+- Görevli okutması `location_portal_events.event_type='field_scan'` (`actor_mode='worker'`, `actor_staff_id`); sakin
+  analitiğinin `scan` sayısına girmez. 60 dk içindeki işaret `cleaning_tasks.verified_by_qr` + `verified_scan_event_id`.
+- Portal sayfası, cihazda `/saha` kişisel oturumu varsa veri çekmeden `/saha?qr=<token>`'a geçer; `?sakin=1` bunu atlar.
+  Eski "çalışan numarası + PIN + kontrol listesi + kanıt fotoğrafı" formu kaldırıldı (bloğa atama ve önceden üretilmiş
+  görev istediği için canlıda çalışmıyordu); yerine "Görevliysen: Saha ekranında aç" bağlantısı. `/:token/cleaning/complete`
+  ucu geriye dönük duruyor.
+- Sahadan etiket doğrulama `verifyDeployment({ ..., staffId })`: `installed_by_staff_id`, `verified_by_staff_id`,
+  uyuşmazlıkta `reported_by_staff_id` (migration 126; `*_by` sütunları `users`'a bağlı, kiosk personeli orada yok).
+- QR zorunluluğu (`saha_qr_enforcement='verified_labels'`) yalnız kurulumu `verified` ve asılı QR'ı aktif olan konumda.
 
 ## Analitik ve sessiz sıfır kuralı
 
@@ -282,5 +295,6 @@ frontend/src/modules/admin/QrDeploymentPage.jsx        basım & kurulum
 frontend/src/modules/admin/QrPortalAdminPage.jsx       ayarlar & analitik
 
 migrations: 105 (temel) · 106 (güvenlik) · 107 (arıza/anket) ·
-            108 (temizlik) · 109 (çamaşır talebi) · 110 (basım/kurulum)
+            108 (temizlik) · 109 (çamaşır talebi) · 110 (basım/kurulum) ·
+            126 (saha okutması, *_staff_id)
 ```

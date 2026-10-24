@@ -1,6 +1,9 @@
-import { beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { getDB, initDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
+import { verifyDeployment } from '../location-portal/deployment.js'
+import { recordFieldScan, resolveScanTarget } from '../location-portal/field-scan.js'
+import { generateMissingQrCodes } from '../location-portal/service.js'
 import {
   boardBlocks, boardRooms, cleanFloor, markField, resolveFieldLocation, setOccupancy, undoField, undoFloor,
 } from './field.js'
@@ -113,7 +116,7 @@ describe('saha işareti (markField / undoField)', () => {
   it('ikinci "temizlendi" ilk temizleyeni ve saati ezmez, yeni görev açmaz (already)', () => {
     const first = markField({ location: 'FZ-302', action: 'clean', workerId })
     const second = markField({ location: 'FZ-302', action: 'clean', workerId: otherWorkerId })
-    expect(second).toEqual({ task_id: first.task_id, status: 'cleaned', at: first.at, already: true })
+    expect(second).toEqual({ task_id: first.task_id, status: 'cleaned', at: first.at, already: true, verified_by_qr: false })
     expect(taskOf('FZ-302')).toMatchObject({ completed_by_worker_id: workerId, field_worker_id: workerId, completed_at: first.at })
     expect(db.prepare("SELECT COUNT(*) n FROM cleaning_tasks WHERE qr_location='FZ-302'").get().n).toBe(1)
   })
@@ -275,7 +278,7 @@ describe('katın hepsi temizlendi (cleanFloor / undoFloor)', () => {
     const before = fieldTasks()
     expect(cleanFloor({ block: 'FK', floor: 1, workerId, dryRun: true })).toEqual({
       locations: ['FK-401', 'FK-402'],
-      excluded: { closed: 1, locked: 1, night: 1, empty: 1, no_clean: 1, marked: 1 },
+      excluded: { closed: 1, locked: 1, night: 1, empty: 1, no_clean: 1, qr_required: 0, marked: 1 },
     })
     expect(fieldTasks()).toEqual(before)
   })
@@ -306,5 +309,162 @@ describe('katın hepsi temizlendi (cleanFloor / undoFloor)', () => {
     const errorOf = fn => { try { fn() } catch (e) { return e } return null }
     expect(errorOf(() => cleanFloor({ block: 'FK', floor: 9, workerId, dryRun: true }))).toMatchObject({ statusCode: 404 })
     expect(errorOf(() => undoFloor({ locations: 'FK-401', workerId }))).toMatchObject({ statusCode: 400 })
+  })
+})
+
+// Oda QR'ı ile saha takibi (spec: docs/superpowers/specs/2026-10-24-oda-qr-saha-design.md §Hedefler 2–3, 6).
+// FQ: 101 etiketsiz, 102 etiketi doğrulanmış, 103 kat toplusu için, 104 şikayet için.
+describe('QR ile kanıtlı işaret', () => {
+  const token = key => db.prepare(`
+    SELECT q.token FROM location_qr_codes q JOIN service_locations sl ON sl.id=q.location_id
+    WHERE sl.qr_location=? AND q.status='active'
+  `).get(key).token
+  const locationId = key => db.prepare('SELECT id FROM service_locations WHERE qr_location=?').get(key).id
+  const setEnforcement = value => db.prepare(`
+    INSERT INTO system_settings(key, value) VALUES('saha_qr_enforcement', ?)
+    ON CONFLICT(key) DO UPDATE SET value=excluded.value
+  `).run(value)
+  const scan = (key, who = workerId) => recordFieldScan({ target: resolveScanTarget(token(key), db), workerId: who, ip: '127.0.0.1' }, db)
+  const age = scanId => db.prepare("UPDATE location_portal_events SET created_at=datetime('now','-61 minutes') WHERE id=?").run(scanId)
+  const thrown = fn => { try { fn() } catch (e) { return e } return null }
+  const QR_REQUIRED = { statusCode: 409, code: 'qr_scan_required', message: "Bu kapıda QR etiketi var; işaretlemek için kapıdaki QR'ı okut" }
+
+  beforeAll(() => {
+    const room = db.prepare(`INSERT INTO rooms(block, floor, room_no, capacity, active_beds, use_state) VALUES('FQ', 1, ?, 6, 6, 'open')`)
+    for (const no of ['101', '102', '103', '104']) room.run(no)
+    generateMissingQrCodes({}, null)
+    verifyDeployment({ token: token('FQ-102'), expectedLocationId: locationId('FQ-102') }, db)
+  })
+  afterEach(() => setEnforcement('off'))
+
+  it('geçerli okutma işareti QR ile doğrulanmış yapar', () => {
+    const s = scan('FQ-101')
+    const result = markField({ location: 'FQ-101', action: 'clean', workerId, scanId: s.scan_id })
+    expect(result).toMatchObject({ status: 'cleaned', already: false, verified_by_qr: true })
+    expect(db.prepare('SELECT verified_by_qr, verified_scan_event_id FROM cleaning_tasks WHERE id=?').get(result.task_id))
+      .toEqual({ verified_by_qr: 1, verified_scan_event_id: s.scan_id })
+    undoField({ location: 'FQ-101', workerId })
+  })
+
+  it("başka kişinin ya da 60 dk'dan eski okutması doğrulamaz", () => {
+    expect(markField({ location: 'FQ-101', action: 'clean', workerId, scanId: scan('FQ-101', otherWorkerId).scan_id }).verified_by_qr).toBe(false)
+    undoField({ location: 'FQ-101', workerId })
+    const old = scan('FQ-101')
+    age(old.scan_id)
+    expect(markField({ location: 'FQ-101', action: 'clean', workerId, scanId: old.scan_id }).verified_by_qr).toBe(false)
+    undoField({ location: 'FQ-101', workerId })
+
+    setEnforcement('verified_labels')
+    const foreign = scan('FQ-102', otherWorkerId)
+    expect(thrown(() => markField({ location: 'FQ-102', action: 'clean', workerId, scanId: foreign.scan_id }))).toMatchObject(QR_REQUIRED)
+    const stale = scan('FQ-102')
+    age(stale.scan_id)
+    expect(thrown(() => markField({ location: 'FQ-102', action: 'skip', reason: 'dnd', workerId, scanId: stale.scan_id }))).toMatchObject(QR_REQUIRED)
+  })
+
+  it('zorunluluk yalnız doğrulanmış etikette; geri alma ve doluluk okutma istemez', () => {
+    setEnforcement('verified_labels')
+    expect(markField({ location: 'FQ-101', action: 'clean', workerId }).status).toBe('cleaned')
+    undoField({ location: 'FQ-101', workerId })
+    expect(thrown(() => markField({ location: 'FQ-102', action: 'clean', workerId }))).toMatchObject(QR_REQUIRED)
+    expect(thrown(() => markField({ location: 'FQ-102', action: 'skip', reason: 'dnd', workerId }))).toMatchObject(QR_REQUIRED)
+    expect(markField({ location: 'FQ-102', action: 'clean', workerId, scanId: scan('FQ-102').scan_id })).toMatchObject({ verified_by_qr: true })
+    expect(markField({ location: 'FQ-102', action: 'clean', workerId: otherWorkerId })).toMatchObject({ already: true })
+    expect(undoField({ location: 'FQ-102', workerId }).ok).toBe(true)
+    const roomId = db.prepare("SELECT id FROM rooms WHERE block='FQ' AND room_no='102'").get().id
+    expect(setOccupancy(roomId, 'occupied', { workerId }).occupancy).toBe('occupied')
+    setOccupancy(roomId, null, { workerId })
+  })
+
+  it('kat toplusu zorunlu yeri dışarıda bırakır', () => {
+    setEnforcement('verified_labels')
+    const plan = cleanFloor({ block: 'FQ', floor: 1, workerId, dryRun: true })
+    expect(plan.excluded.qr_required).toBe(1)
+    expect(plan.locations).not.toContain('FQ-102')
+    expect(plan.locations).toContain('FQ-103')
+  })
+
+  it('şikayet takip görevi: yeniden temizlik takip görevini kapatır, geri alma ilk görevi bozmaz', () => {
+    const first = markField({ location: 'FQ-104', action: 'clean', workerId })
+    // reviewPortalCleaning'in yazdığı şekil (ledger ruling: portal günü date('now','+3 hours') ile alır, CI'da saat ayrışır)
+    const followup = Number(db.prepare(`
+      INSERT INTO cleaning_tasks(area, block, floor, task_type, scheduled_at, qr_location) VALUES('FQ Oda 104', 'FQ', 1, 'room', ?, 'FQ-104')
+    `).run(`${today} 12:00:00`).lastInsertRowid)
+    db.prepare(`
+      INSERT INTO cleaning_task_reviews(task_id, location_id, identity_mode, outcome, comment, followup_task_id)
+      VALUES(?, ?, 'anonymous', 'issue', 'Çöp alınmamış', ?)
+    `).run(first.task_id, locationId('FQ-104'), followup)
+    expect(markField({ location: 'FQ-104', action: 'clean', workerId })).toMatchObject({ already: false, task_id: followup, status: 'cleaned' })
+    expect(undoField({ location: 'FQ-104', workerId })).toMatchObject({ ok: true, removed: false })
+    expect(db.prepare('SELECT completed_at IS NOT NULL AS done FROM cleaning_tasks WHERE id=?').get(first.task_id)).toEqual({ done: 1 })
+    expect(db.prepare('SELECT completed_at FROM cleaning_tasks WHERE id=?').get(followup)).toEqual({ completed_at: null })
+  })
+})
+
+// Panoda QR, etiket, sakin çamaşır talebi ve şikayet bilgisi (spec 2026-10-24-oda-qr-saha §Hedefler 5–6).
+// FP: 101 okutmalı temizlik, 102 etiketi doğrulanmış, 103 çamaşır talepli, 104 şikayetli.
+describe('pano: QR, etiket, çamaşır talebi, şikayet', () => {
+  const tokenOf = key => db.prepare(`
+    SELECT q.token FROM location_qr_codes q JOIN service_locations sl ON sl.id=q.location_id
+    WHERE sl.qr_location=? AND q.status='active'
+  `).get(key).token
+  const locId = key => db.prepare('SELECT id FROM service_locations WHERE qr_location=?').get(key).id
+  const setEnforcement = value => db.prepare(`
+    INSERT INTO system_settings(key, value) VALUES('saha_qr_enforcement', ?)
+    ON CONFLICT(key) DO UPDATE SET value=excluded.value
+  `).run(value)
+  const scanOf = key => recordFieldScan({ target: resolveScanTarget(tokenOf(key), db), workerId, ip: '127.0.0.1' }, db)
+  const spotOf = key => boardRooms('FP', { workerId }).floors.flatMap(f => f.rooms).find(r => r.location === key)
+  // reviewPortalCleaning'in yazdığı şekil (bkz. ledger ruling, Task 3)
+  const addComplaint = (key, taskId) => {
+    const followup = Number(db.prepare(`
+      INSERT INTO cleaning_tasks(area, block, floor, task_type, scheduled_at, qr_location) VALUES(?, 'FP', 1, 'room', ?, ?)
+    `).run(`FP Oda ${key.split('-')[1]}`, `${today} 12:00:00`, key).lastInsertRowid)
+    db.prepare(`
+      INSERT INTO cleaning_task_reviews(task_id, location_id, identity_mode, outcome, rating, comment, followup_task_id)
+      VALUES(?, ?, 'anonymous', 'issue', 2, 'Çöp alınmamış', ?)
+    `).run(taskId, locId(key), followup)
+    return followup
+  }
+
+  beforeAll(() => {
+    const room = db.prepare(`INSERT INTO rooms(block, floor, room_no, capacity, active_beds, use_state) VALUES('FP', 1, ?, 6, 6, 'open')`)
+    for (const no of ['101', '102', '103', '104']) room.run(no)
+    generateMissingQrCodes({}, null)
+    verifyDeployment({ token: tokenOf('FP-102'), expectedLocationId: locId('FP-102') }, db)
+  })
+  afterEach(() => setEnforcement('off'))
+
+  it('QR ve etiket alanları; zorunluluk açıkken doğrulanmış etiketli yer okutma ister', () => {
+    markField({ location: 'FP-101', action: 'clean', workerId, scanId: scanOf('FP-101').scan_id })
+    expect(spotOf('FP-101')).toMatchObject({ status: 'cleaned', verified_by_qr: true, qr_label: 'none', qr_required: false })
+    expect(spotOf('FP-102')).toMatchObject({ status: null, verified_by_qr: false, qr_label: 'verified', qr_required: false })
+    expect(boardRooms('FP').enforcement).toBe('off')
+    setEnforcement('verified_labels')
+    const board = boardRooms('FP', { workerId })
+    const rooms = board.floors.flatMap(f => f.rooms)
+    expect(board.enforcement).toBe('verified_labels')
+    expect(rooms.find(r => r.location === 'FP-102').qr_required).toBe(true)
+    expect(rooms.find(r => r.location === 'FP-101').qr_required).toBe(false)
+  })
+
+  it('açık çamaşır talebi ve sakin şikayeti panoda görünür; takip temizlenince şikayet kapanır', () => {
+    const roomId = db.prepare("SELECT id FROM rooms WHERE block='FP' AND room_no='103'").get().id
+    db.prepare(`
+      INSERT INTO laundry_pickup_requests(service_location_id, room_id, note, request_count) VALUES(?, ?, 'Kapının önünde', 2)
+    `).run(locId('FP-103'), roomId)
+    expect(spotOf('FP-103').pickup_request).toMatchObject({ request_count: 2, note: 'Kapının önünde' })
+    expect(spotOf('FP-101').pickup_request).toBeNull()
+
+    const first = markField({ location: 'FP-104', action: 'clean', workerId })
+    addComplaint('FP-104', first.task_id)
+    expect(spotOf('FP-104')).toMatchObject({ status: null, complaint: { comment: 'Çöp alınmamış', rating: 2, open: true } })
+    markField({ location: 'FP-104', action: 'clean', workerId })
+    expect(spotOf('FP-104')).toMatchObject({ status: 'cleaned', complaint: { open: false } })
+    expect(spotOf('FP-101').complaint).toBeNull()
+  })
+
+  it('blok sayaçları yer başına geçerli görevi sayar: takip görevi çift saymaz', () => {
+    expect(boardBlocks().find(b => b.block === 'FP')).toMatchObject({ cleaned: 2, skipped: 0, qr_verified: 1 })
   })
 })

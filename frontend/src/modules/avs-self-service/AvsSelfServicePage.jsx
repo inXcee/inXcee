@@ -35,6 +35,22 @@ const SESSION_KEY = 'avs-kiosk-session'
 const PERSONAL_SESSION_KEY = 'saha-session'
 // Saha ekranı sekmeleri (Odalar, Çamaşır) yalnız bu gruplarda; görev listesi yalnız teknikte
 const FIELD_GROUPS = ['housekeeping', 'laundry']
+const PENDING_QR_KEY = 'saha-pending-qr'
+
+// Telefon kamerasıyla okutulan kapı etiketi /saha?qr= ile gelir: adresten hemen silinir (token geçmişte ve ekranda
+// kalmasın), girişten sonra işlenmek üzere bu sekmede saklanır (docs/superpowers/specs/2026-10-24-oda-qr-saha-design.md)
+function takePendingQr() {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    const fromUrl = params.get('qr')
+    if (!fromUrl) return window.sessionStorage.getItem(PENDING_QR_KEY)
+    window.sessionStorage.setItem(PENDING_QR_KEY, fromUrl)
+    params.delete('qr')
+    const rest = params.toString()
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}${rest ? `?${rest}` : ''}${window.location.hash}`)
+    return fromUrl
+  } catch { return null }
+}
 
 const TAB_KEYS = [
   { key: 'home',          icon: '🏠', i18n: 'avs_kiosk.nav.home' },
@@ -73,6 +89,8 @@ export default function AvsSelfServicePage({ deviceMode = null }) {
   const [sessionPolicy, setSessionPolicy] = useState(initialSession?.session || null)
   const [mustChangePin, setMustChangePin] = useState(Boolean(initialSession?.must_change_pin))
   const [activeTab, setActiveTab] = useState('home')
+  const [pendingQr, setPendingQr] = useState(takePendingQr)
+  const [pendingScan, setPendingScan] = useState(null)
 
   // İsimle giriş
   const [nameQuery, setNameQuery] = useState('')
@@ -625,6 +643,26 @@ export default function AvsSelfServicePage({ deviceMode = null }) {
     setActiveTab(tabKey)
   }
 
+  // Bekleyen kamera okutması girişten ve grup bilgisinden sonra bir kez işlenir: temizlik/çamaşırhane → o yerin
+  // Odalar sayfası; teknik/diğer → konumu dolu arıza formu
+  useEffect(() => {
+    const group = overview?.role_group
+    if (!pendingQr || !avsToken || !group) return
+    try { window.sessionStorage.removeItem(PENDING_QR_KEY) } catch { /* özel pencere */ }
+    setPendingQr(null)
+    if (FIELD_GROUPS.includes(group)) {
+      setPendingScan({ qr: pendingQr, via: 'camera' })
+      setActiveTab('rooms')
+      return
+    }
+    avsApi.post('/avs-self-service/qr-scan', { qr: pendingQr, via: 'camera' })
+      .then(({ data }) => openFaultFromTask({ area: data.display_name, block: data.block, floor: data.floor, room_id: data.room_id, id: '' }))
+      .catch(err => {
+        setFaultError(err.response?.data?.error || t('avs_kiosk.board.scan_failed'))
+        setActiveTab('quick_fault')
+      })
+  }, [pendingQr, avsToken, overview?.role_group]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // ─── Login ekranı ───────────────────────────────────────────
   if (!avsToken) {
     return (
@@ -716,7 +754,10 @@ export default function AvsSelfServicePage({ deviceMode = null }) {
         <HomeTab query={overviewQuery} data={overview} onNavigate={navigateTo} />
       )}
 
-      {activeTab === 'rooms' && <RoomsBoardTab avsApi={avsApi} onReportFault={openFaultFromTask} isOnline={isOnline} />}
+      {activeTab === 'rooms' && (
+        <RoomsBoardTab avsApi={avsApi} onReportFault={openFaultFromTask} isOnline={isOnline}
+          pendingScan={pendingScan} onPendingScanDone={() => setPendingScan(null)} />
+      )}
 
       {activeTab === 'laundry' && <LaundryLedgerTab avsApi={avsApi} isOnline={isOnline} />}
 

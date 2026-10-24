@@ -75,24 +75,62 @@ Eski "Görevler" sekmesi yalnız teknik grupta görünür.
   alım için torba sahadan o kişi tarafından açılmış ve bütün geçmişi onun olmalı (başkası işlediyse açan bile silemez —
   çamaşırhane ekranından silinir).
 
+## Kapıdaki QR (oda QR'ı ile takip)
+
+Tasarım: `docs/superpowers/specs/2026-10-24-oda-qr-saha-design.md`. Etiketler oda QR portalınınkidir
+(`docs/room-qr-portal.md`); konum anahtarı saha anahtarıyla aynıdır (`M1-101`, `M1-1-corridor`).
+
+- **Okutma:** telefon kamerası ya da Odalar'da **📷 QR okut**. Kamera yolu: etiket `/r/<token>` açar; cihazda `/saha` oturumu
+  varsa portal hiç yüklenmeden `/saha?qr=<token>`'a döner, `?qr` adresten hemen silinir ve girişten sonra işlenir. Okutma
+  `location_portal_events`'e `field_scan` (`actor_mode='worker'`) olarak yazılır; sakin analitiğinin `scan` sayısına girmez.
+  Temizlik/çamaşırhane → o yerin alt sayfası; teknik/diğer → konumu dolu arıza formu.
+- **Kanıtlı işaret:** aynı kişinin aynı yerdeki son **60 dk** okutmasıyla verilen temizlendi / temizlenemedi
+  `verified_by_qr=1` + `verified_scan_event_id` olur. Başkasının ya da eski okutma doğrulamaz (sessizce doğrulamasız sayılır).
+  Panoda 📍, kat başlığında "· N QR", alt sayfada "📍 QR ile doğrulandı · 10:42".
+- **Zorunluluk** `system_settings.saha_qr_enforcement`: `off` (varsayılan) | `verified_labels`. Açıkken yalnız etiketi
+  **doğrulanmış ve güncel** (asılı QR = aktif QR) kapıda okutmasız temizlendi/temizlenemedi 409 `qr_scan_required` döner;
+  kat toplusu bu yerleri dışarıda bırakır (`excluded.qr_required`). Etiketsiz kapı engellenmez; geri alma ve doluluk
+  okutma istemez. Web: Temizlik → **📍 SAHA TAKİBİ** (yalnız müdür değiştirir; denetim `saha_qr_enforcement_change`).
+- **Etiket doğrulama sahadan:** alt sayfada **🏷 Etiketi doğrula** → okut; beklenen yer = açık yer. Yanlış kapı / iptal etiket
+  `location_qr_verify_mismatches`'e (`reported_by_staff_id`), doğru kapı `verified_by_staff_id` ile `verified` yazılır.
+- **Sakin talepleri:** açık çamaşır talebi panoda 🧺, Çamaşır sekmesinde **Talepler**; odaya saha alımı talebi `collected`
+  yapar (ilk torbaya bağlanır), alım geri alınırsa talep yeniden açılır (o arada yeni talep açıldıysa eskisi iptal). Sakin
+  şikayetinin takip görevi panoda ⚠ ve yorumla görünür; "Temizlendi" takip görevini kapatır (geçerli görev = günün **son**
+  görevi; pano, işaret, geri alma, kat toplusu ve blok sayaçları hep bunu görür).
+- **Sakin sayfası:** okutulan yerin alt sayfasında bağlantı (`/r/<token>?sakin=1`, yalnız kendi adresimizden); `?sakin=1`
+  saha yönlendirmesini atlar — kampta kalan görevli kendi odası için sakin hizmetlerini kullanabilir.
+
+### Etiketleri kapıya asma (kullanıcı)
+
+1. Ayarlar → **QR Basım & Kurulum** → parti aç (önce pilot blok; ör. M1: 60 oda + 8 ortak alan = 68 etiket, 9 sayfa) →
+   PDF → **99,1 × 67,7 mm 8'li A4 etiket kâğıdı**, yazıcıda **%100 / sayfaya sığdır kapalı** → "basıldı".
+2. Etiketleri kapılara göz hizasında yapıştır.
+3. Görevli `/saha`'da odayı açar → **🏷 Etiketi doğrula** → okutur (yanlış kapı burada yakalanır).
+4. Blok doğrulanınca web Saha Takibi'nden **QR zorunluluğu: doğrulanmış etiketli kapılarda zorunlu**.
+
 ## API (kiosk token, `requireAvsKiosk` + `requireFieldGroup`)
 
 | Uç | İş |
 |---|---|
 | `GET /api/avs-self-service/board/blocks` | bloklar + bugünkü sayaçlar, `assigned_block` |
-| `GET /api/avs-self-service/board/rooms?block=` | katlar → ortak alanlar + odalar (durum, doluluk, bugünkü işaret, son temizlik) |
-| `POST /api/avs-self-service/board/mark` | `{location, action:'clean'\|'skip', reason?, note?}` + isteğe bağlı `photos` (multipart) |
+| `GET /api/avs-self-service/board/rooms?block=` | katlar → ortak alanlar + odalar (durum, doluluk, bugünkü işaret, son temizlik; `verified_by_qr`, `qr_label`, `qr_required`, `pickup_request`, `complaint`) + `enforcement` |
+| `POST /api/avs-self-service/board/mark` | `{location, action:'clean'\|'skip', reason?, note?, scan_id?}` + isteğe bağlı `photos` (multipart) |
+| `POST /api/avs-self-service/board/label-verify` | `{location, qr}` — sahadan etiket doğrulama |
+| `POST /api/avs-self-service/qr-scan` | `{qr, via:'camera'\|'in_app'}` — **bütün kiosk personeli**; konum, `group`, `qr_label` döner, token dönmez |
 | `POST /api/avs-self-service/board/undo` | `{location}` |
 | `PATCH /api/avs-self-service/board/rooms/:id/occupancy` | `{occupancy}` |
 | `POST /api/avs-self-service/board/floor` | `{block, floor, dry_run}` — **dry_run zorunlu** |
 | `POST /api/avs-self-service/board/floor-undo` | `{locations}` |
-| `GET /api/avs-self-service/laundry` | yıkamada · hazır · bugün teslim (oda bazında) |
+| `GET /api/avs-self-service/laundry` | yıkamada · hazır · bugün teslim (oda bazında) + `requests` (sakin talepleri) |
 | `POST /api/avs-self-service/laundry` | `{room_id, bags, ironing, urgent, note?, client_request_id}` |
 | `POST /api/avs-self-service/laundry/rooms/:roomId/ready` · `/deliver` `{name?}` | oda bazında |
 | `POST /api/avs-self-service/laundry/undo` | `{action:'intake'\|'ready'\|'deliver', ids}` |
 | `PATCH /api/housekeeping/rooms/:id/occupancy` | web, müdür + amir |
+| `GET /api/housekeeping/field-report?date=` | web, müdür + amir: kişi başı temizlik / QR, blok etiket kapsaması, açık yanlış kapı |
+| `PUT /api/housekeeping/field-qr-enforcement` | web, yalnız müdür: `{mode:'off'\|'verified_labels'}` |
 
-Servis hatası `statusCode`'uyla döner (400/403/404/409); beklenmeyen hata genel işleyicide *"Sunucu hatası"* + hata kaydı.
+Servis hatası `statusCode`'uyla (ve varsa `code`'uyla, ör. `qr_scan_required`) döner (400/403/404/409); beklenmeyen hata genel
+işleyicide *"Sunucu hatası"* + hata kaydı.
 
 ## Panel
 
@@ -108,6 +146,8 @@ Servis hatası `statusCode`'uyla döner (400/403/404/409); beklenmeyen hata gene
 
 - Migration 125: `rooms.occupancy`, `occupancy_updated_at`, `occupancy_updated_by_worker`, `occupancy_updated_by_user`;
   `cleaning_tasks.origin`, `cleaning_tasks.field_worker_id`.
+- Migration 126: `cleaning_tasks.verified_scan_event_id`; `location_qr_deployments.installed_by_staff_id`,
+  `verified_by_staff_id`; `location_qr_verify_mismatches.reported_by_staff_id`; `saha_qr_enforcement='off'`.
 - `audit_log` (`module='avs-self-service'`, `user_id=NULL`, kişi `detail.workerId`): `field_clean`, `field_skip`, `field_undo`,
   `room_occupancy_change`, `field_laundry_intake`, `field_laundry_ready`, `field_laundry_deliver`, `field_laundry_undo`.
   Webden doluluk: `module='housekeeping'`, `user_id` = kullanıcı.

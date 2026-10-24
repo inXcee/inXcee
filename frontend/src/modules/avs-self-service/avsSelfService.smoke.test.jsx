@@ -473,6 +473,8 @@ describe('Saha ekranı sekmeleri ve /saha girişi', () => {
 
   beforeEach(() => {
     window.localStorage.clear()
+    window.sessionStorage.clear()
+    window.history.replaceState(null, '', '/')
     api.get.mockReset()
     api.post.mockReset()
     api.get.mockImplementation(() => Promise.resolve({ data: [] }))
@@ -521,6 +523,50 @@ describe('Saha ekranı sekmeleri ve /saha girişi', () => {
     await waitFor(() => expect(api.post).toHaveBeenCalledWith('/auth/avs-login', { worker_id: 7, pin: '1234', device_mode: 'personal' }))
     await waitFor(() => expect(JSON.parse(window.localStorage.getItem('saha-session')).token).toBe('tok-saha'))
     expect(window.localStorage.getItem('avs-kiosk-session')).toBeNull()
+  })
+
+  // Oda QR'ı (spec 2026-10-24-oda-qr-saha): telefon kamerasıyla okutulan etiket /saha?qr= ile gelir
+  it('bekleyen QR girişten sonra işlenir: adresten hemen silinir, girişte Odalar açılır ve okutma gönderilir', async () => {
+    window.history.replaceState(null, '', '/saha?qr=QRX')
+    api.get.mockImplementation(url => {
+      if (url.startsWith('/auth/avs-search')) {
+        return Promise.resolve({ data: [{ id: 7, full_name: 'Ayşe Saha', role_label: 'Temizlik', has_pin: true }] })
+      }
+      if (url.startsWith('/avs-self-service/overview')) {
+        return Promise.resolve({ data: { role_group: 'housekeeping', worker: { full_name: 'Ayşe Saha' }, tasks: {}, faults: {} } })
+      }
+      if (url === '/auth/kiosk-session') {
+        return Promise.resolve({ data: { session: { mode: 'personal', idle_minutes: null, locked: false, must_change_pin: false } } })
+      }
+      return Promise.resolve({ data: [] })
+    })
+    api.post.mockImplementation(url => (url === '/auth/avs-login'
+      ? Promise.resolve({ data: { token: 'tok-saha', worker: { id: 7, full_name: 'Ayşe Saha' }, session: { mode: 'personal', idle_minutes: null } } })
+      : Promise.resolve({ data: {} })))
+    renderWithProviders(<AvsSelfServicePage deviceMode="personal" />)
+    expect(window.location.search).toBe('')
+    expect(window.sessionStorage.getItem('saha-pending-qr')).toBe('QRX')
+    fireEvent.change(screen.getByPlaceholderText(/ad\/soyad ara/i), { target: { value: 'Ayşe' } })
+    fireEvent.click(await screen.findByRole('button', { name: /Ayşe Saha/ }, { timeout: 2000 }))
+    for (const digit of ['1', '2', '3', '4']) fireEvent.click(screen.getByRole('button', { name: digit }))
+    fireEvent.click(screen.getByRole('button', { name: /giriş yap/i }))
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/avs-self-service/qr-scan', { qr: 'QRX', via: 'camera' }, expect.anything()))
+    expect(screen.getByRole('tab', { name: /Odalar/ })).toHaveAttribute('aria-selected', 'true')
+    expect(window.sessionStorage.getItem('saha-pending-qr')).toBeNull()
+  })
+
+  it('teknik personel QR okutunca konumu dolu arıza formu açılır', async () => {
+    window.history.replaceState(null, '', '/saha?qr=QRT')
+    loginAs('technical', 'saha-session')
+    api.post.mockImplementation(url => (url === '/avs-self-service/qr-scan'
+      ? Promise.resolve({ data: {
+        scan_id: 5, location: 'FB-101', kind: 'room', block: 'FB', floor: 1, room_id: 9, display_name: 'FB Oda 101',
+        qr_label: 'none', at: '2026-10-24 10:00:00', group: 'technical',
+      } })
+      : Promise.resolve({ data: {} })))
+    renderWithProviders(<AvsSelfServicePage deviceMode="personal" />)
+    await waitFor(() => expect(screen.getByPlaceholderText('Konum yaz veya yukarıdan seç')).toHaveValue('FB Oda 101'))
+    expect(api.post).toHaveBeenCalledWith('/avs-self-service/qr-scan', { qr: 'QRT', via: 'camera' }, expect.anything())
   })
 
   it('/saha sayfası kendi manifest dosyasını bağlar', () => {

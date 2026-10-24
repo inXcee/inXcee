@@ -21,11 +21,12 @@ function newRequestKey() {
 const roomLabel = group => `${group.block}-${group.room_no}`
 const bagCount = groups => groups.reduce((sum, group) => sum + group.bags, 0)
 
-function IntakeSheet({ avsApi, isOnline, onClose, onSaved }) {
+// initialRoom: sakin talebinden açılınca oda seçili gelir ({ room_id, block, room_no })
+function IntakeSheet({ avsApi, isOnline, onClose, onSaved, initialRoom = null }) {
   const { t } = useTranslation()
   const [requestKey] = useState(newRequestKey)
-  const [chosenBlock, setChosenBlock] = useState('')
-  const [room, setRoom] = useState(null)
+  const [chosenBlock, setChosenBlock] = useState(initialRoom?.block || '')
+  const [room, setRoom] = useState(initialRoom ? { id: initialRoom.room_id, room_no: initialRoom.room_no } : null)
   const [bags, setBags] = useState(1)
   const [ironing, setIroning] = useState(false)
   const [urgent, setUrgent] = useState(false)
@@ -147,7 +148,7 @@ function IntakeSheet({ avsApi, isOnline, onClose, onSaved }) {
 export default function LaundryLedgerTab({ avsApi, isOnline = true }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const [intakeOpen, setIntakeOpen] = useState(false)
+  const [intake, setIntake] = useState(null) // null: kapalı · {}: oda seçilmemiş · talep: oda seçili
   const [deliverFor, setDeliverFor] = useState(null)
   const [deliverName, setDeliverName] = useState('')
   const { toast, showToast, clearToast } = useUndoToast()
@@ -157,7 +158,8 @@ export default function LaundryLedgerTab({ avsApi, isOnline = true }) {
     queryFn: () => avsApi.get(LEDGER).then(r => r.data),
     refetchInterval: 60000,
   })
-  const ledger = ledgerQuery.data || { open: [], ready: [], delivered_today: [] }
+  const ledger = ledgerQuery.data || { open: [], ready: [], delivered_today: [], requests: [] }
+  const requests = ledger.requests || []
   const refresh = () => queryClient.invalidateQueries({ queryKey: LEDGER_KEY })
   const errorText = err => err?.response?.data?.error || t('avs_kiosk.laundry.save_error')
 
@@ -195,10 +197,36 @@ export default function LaundryLedgerTab({ avsApi, isOnline = true }) {
   return (
     <TabState query={ledgerQuery}>
       <div className="space-y-4">
-        <button type="button" onClick={() => setIntakeOpen(true)}
+        <button type="button" onClick={() => setIntake({})}
           className="min-h-16 w-full rounded-2xl bg-blue-600 text-lg font-semibold text-white">
           🧺 {t('avs_kiosk.laundry.intake')}
         </button>
+
+        {requests.length > 0 && (
+          <section aria-label={t('avs_kiosk.laundry.requests')} className="space-y-2 rounded-2xl border border-amber-600/50 bg-amber-950/20 p-4">
+            <h2 className="flex items-center justify-between text-sm font-semibold text-amber-200">
+              <span>🧺 {t('avs_kiosk.laundry.requests')}</span>
+              <span className="rounded-full bg-amber-900/60 px-2.5 py-0.5 text-xs">{requests.length}</span>
+            </h2>
+            <p className="text-xs text-amber-200/70">{t('avs_kiosk.laundry.requests_hint')}</p>
+            {requests.map(request => (
+              <article key={request.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-700 bg-slate-800 p-3">
+                <div>
+                  <div className="font-semibold text-white">{roomLabel(request)}</div>
+                  <div className="text-xs text-slate-400">
+                    {spotTime(request.created_at) || ''}
+                    {request.request_count > 1 && ` · ${request.request_count}×`}
+                    {request.note && ` · ${request.note}`}
+                  </div>
+                </div>
+                <button type="button" disabled={!isOnline} onClick={() => setIntake(request)}
+                  className="min-h-12 shrink-0 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white disabled:bg-slate-700">
+                  {t('avs_kiosk.laundry.take_request')}
+                </button>
+              </article>
+            ))}
+          </section>
+        )}
 
         {lists.map(([key, groups, emptyKey]) => (
           <section key={key} className="space-y-2 rounded-2xl bg-slate-900 p-4">
@@ -259,12 +287,14 @@ export default function LaundryLedgerTab({ avsApi, isOnline = true }) {
         ))}
       </div>
 
-      {intakeOpen && (
-        <IntakeSheet avsApi={avsApi} isOnline={isOnline} onClose={() => setIntakeOpen(false)}
+      {intake && (
+        <IntakeSheet avsApi={avsApi} isOnline={isOnline} onClose={() => setIntake(null)}
+          initialRoom={intake.room_id ? intake : null}
           onSaved={(data, label, bags) => {
-            setIntakeOpen(false)
+            setIntake(null)
             refresh()
-            showToast(`${label}: ${bags} ${t('avs_kiosk.laundry.taken')}`, () => undo.mutate({ action: 'intake', ids: data.ids }))
+            const closed = data.request_closed ? ` · ${t('avs_kiosk.laundry.request_closed')}` : ''
+            showToast(`${label}: ${bags} ${t('avs_kiosk.laundry.taken')}${closed}`, () => undo.mutate({ action: 'intake', ids: data.ids }))
           }} />
       )}
       <UndoToast toast={toast} onDismiss={clearToast} />

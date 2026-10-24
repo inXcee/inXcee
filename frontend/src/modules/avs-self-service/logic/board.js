@@ -2,9 +2,20 @@
 // sunucunun UTC zaman damgasının yerel gösterimi tek yerden.
 import { parseSqlUtc, ymd } from '../../../shared/logic/localDate.js'
 
+// Kapıdaki QR okutması bu kadar süre ve yalnız okutulan yer için işareti doğrular (sunucuyla aynı pencere).
+export const SCAN_WINDOW_MS = 60 * 60 * 1000
+
+export function scanFresh(scan, location, now = Date.now()) {
+  if (!scan || scan.location !== location) return false
+  const at = parseSqlUtc(scan.at)
+  return Boolean(at) && now - at.getTime() < SCAN_WINDOW_MS
+}
+
 // Kapalı oda her durumda soluk görünür (işaretlenemez); ortak alanın kullanım durumu yoktur.
+// Sakin şikayeti açıksa (takip görevi temizlenmedi) yer "tekrar temizle" olarak öne çıkar.
 export function spotTone(spot) {
   if (spot.use_state === 'closed') return 'closed'
+  if (spot.complaint?.open) return 'complaint'
   if (spot.status === 'cleaned') return 'cleaned'
   if (spot.status === 'skipped') return 'skipped'
   return 'idle'
@@ -19,6 +30,7 @@ export function floorProgress(floor) {
     skipped: rooms.filter(room => room.status === 'skipped').length,
     occupied: rooms.filter(room => room.occupancy === 'occupied').length,
     empty: rooms.filter(room => room.occupancy === 'empty').length,
+    qr: rooms.filter(room => room.status === 'cleaned' && room.verified_by_qr).length,
   }
 }
 

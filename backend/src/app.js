@@ -522,7 +522,10 @@ export function globalErrorHandler(err, req, res, _next) {
     } catch { /* ignore — hata loglarken hata olursa sessiz */ }
   }
   if (res.headersSent) return _next(err)
-  res.status(status).json({ error: fkViolation ? FK_VIOLATION_MESSAGE : status < 500 ? err.message : 'Sunucu hatası' })
+  const body = { error: fkViolation ? FK_VIOLATION_MESSAGE : status < 500 ? err.message : 'Sunucu hatası' }
+  // İstemci hatasının kodu (ör. saha 'qr_scan_required') iletilir; sunucu hatası ve FK ihlali iç kodu sızdırmaz
+  if (status < 500 && !fkViolation && typeof err.code === 'string') body.code = err.code
+  res.status(status).json(body)
 }
 app.use(globalErrorHandler)
 
