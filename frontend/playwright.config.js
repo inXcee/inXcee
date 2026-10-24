@@ -4,9 +4,12 @@ import { dirname, resolve } from 'node:path'
 import { randomBytes } from 'node:crypto'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const RUN_ID = `${process.pid}-${randomBytes(4).toString('hex')}`
+// Çalıştırıcı ve worker'lar bu dosyayı ayrı ayrı yükler; worker ortamı devraldığı için kimlik bir kez üretilir
+const RUN_ID = process.env.E2E_RUN_ID ||= `${process.pid}-${randomBytes(4).toString('hex')}`
 const E2E_DB = resolve(__dirname, `e2e/.tmp/yys-e2e-${RUN_ID}.db`)
 const E2E_UPLOADS = resolve(__dirname, `e2e/.tmp/uploads-${RUN_ID}`)
+// Testler bu çalıştırmanın veritabanını salt okunur açabilsin (ör. oda QR token'ı yalnız etikette, hiçbir uç döndürmez)
+process.env.E2E_DB_PATH = E2E_DB
 const BACKEND_PORT = process.env.E2E_BACKEND_PORT || '3001'
 const FRONTEND_PORT = process.env.E2E_FRONTEND_PORT || '5174'
 const BACKEND_URL = `http://localhost:${BACKEND_PORT}`

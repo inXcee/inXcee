@@ -1,4 +1,5 @@
 import { test, expect, request as pwRequest } from '@playwright/test'
+import Database from 'better-sqlite3'
 
 const API = `${process.env.E2E_BACKEND_URL || `http://localhost:${process.env.E2E_BACKEND_PORT || '3001'}`}/api`
 const PINNED = `UX Test ${Date.now()}`
@@ -123,4 +124,40 @@ test('Odalar panosu (/saha): fotoğraflı temizlendi + geri al + doluluk + odada
   await page.getByRole('button', { name: /Elektrik/ }).click()
   await page.getByRole('button', { name: /^Arıza Bildir$/ }).click()
   await expect(page.getByText(/^ARZ-\d+$/)).toBeVisible({ timeout: 10_000 })
+})
+
+// Oda QR'ı (docs/superpowers/specs/2026-10-24-oda-qr-saha-design.md): kapıdaki etiket telefon kamerasıyla okutulunca
+// /saha?qr= ile o odanın sayfası "QR ile doğrulandı" açılır; sakin portalı adresi (/r/token) saha oturumlu telefonda
+// saha ekranına döner. Token yalnız etikette: test onu E2E veritabanından salt okunur okur.
+test('QR okutma: /saha?qr= odanın sayfasını doğrulanmış açar; portal görevliyi sahaya yollar', async ({ page }) => {
+  const ctx = await pwRequest.newContext()
+  const admin = (await (await ctx.post(`${API}/auth/login`, { data: { username: 'mudur', password: 'admin123' } })).json()).token
+  await ctx.post(`${API}/location-portal/locations/generate-missing`, { headers: { Authorization: `Bearer ${admin}` }, data: { block: 'A' } })
+  await ctx.dispose()
+  const db = new Database(process.env.E2E_DB_PATH, { readonly: true, fileMustExist: true })
+  const { token } = db.prepare(`
+    SELECT q.token FROM location_qr_codes q JOIN service_locations sl ON sl.id=q.location_id
+    WHERE sl.qr_location='A-101' AND q.status='active'
+  `).get()
+  db.close()
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto(`/saha?qr=${encodeURIComponent(`https://avskamp.com/r/${token}`)}`)
+  await expect(page).not.toHaveURL(/qr=/)
+  await page.getByPlaceholder('Ad/soyad ara…').fill('UX Test')
+  await page.getByRole('button', { name: new RegExp(PINNED.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) }).click()
+  for (const digit of ['1', '2', '3', '4']) await page.getByRole('button', { name: new RegExp(`^${digit}$`) }).click()
+  await page.getByRole('button', { name: 'Giriş Yap' }).click()
+
+  const sheet = page.getByRole('dialog', { name: 'A-101' })
+  await expect(sheet.getByText(/QR ile doğrulandı/)).toBeVisible({ timeout: 10_000 })
+  await sheet.getByRole('button', { name: /Temizlendi$/ }).click()
+  await expect(page.getByRole('button', { name: /^101, temizlendi, QR ile doğrulandı/ })).toBeVisible({ timeout: 10_000 })
+  const toast = page.getByRole('status').filter({ hasText: 'A-101 temizlendi' })
+  await toast.getByRole('button', { name: /Geri al/ }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Geri alındı' })).toBeVisible()
+
+  await page.goto(`/r/${token}`)
+  await expect(page).toHaveURL(/\/saha$/, { timeout: 10_000 })
+  await expect(page.getByRole('dialog', { name: 'A-101' })).toBeVisible({ timeout: 10_000 })
 })

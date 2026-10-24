@@ -91,10 +91,10 @@ Okutma kaydı mevcut `location_portal_events` tablosuna: `event_type='field_scan
 
 | Uç | Kim | Ne |
 |---|---|---|
-| `POST /avs-self-service/qr-scan` `{qr, via}` | tüm kiosk personeli | URL ya da token → aktif QR + aktif konum; bloğa atanmışsa blok kuralı; olay yazar. Döner: `scan_id, location, kind, block, floor, room_id, display_name, label, at`. 404 `qr_unknown`, 410 `qr_revoked` / `location_inactive`, 403 blok. |
+| `POST /avs-self-service/qr-scan` `{qr, via}` | tüm kiosk personeli | URL ya da token → aktif QR + aktif konum; bloğa atanmışsa blok kuralı; olay yazar. Döner: `scan_id, location, kind, block, floor, room_id, display_name, qr_label, at`. 404 `qr_unknown`, 410 `qr_revoked` / `location_inactive`, 403 blok. |
 | `POST /board/mark` `+scan_id` | saha | Geçerli okutma → doğrulanmış; zorunluysa okutmasız 409 `qr_scan_required`. |
 | `POST /board/label-verify` `{location, qr}` | saha | `verifyDeployment` + saha personeli; döner `{ok, code, message}`. |
-| `GET /board/rooms` | saha | Her yer için `verified_by_qr`, `label`, `qr_required`, `pickup_request`, `complaint`. |
+| `GET /board/rooms` | saha | Her yer için `verified_by_qr`, `qr_label`, `qr_required`, `pickup_request`, `complaint`. |
 | `GET /laundry` | saha | `requests[]` (açık çamaşır talepleri, blok kuralıyla). |
 
 Web: `GET /housekeeping/field-report?date=` (müdür + amir), `PUT /housekeeping/field-qr-enforcement`
