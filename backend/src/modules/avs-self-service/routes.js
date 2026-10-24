@@ -23,6 +23,7 @@ import {
 } from './schemas.js'
 import { getStaffTransport } from '../transport/self-service.js'
 import { avsRoleGroup } from '../../shared/auth/avsRoles.js'
+import { FIELD_SKIP_REASONS } from '../housekeeping/field.js'
 
 export const avsSelfServiceRouter = Router()
 const cleaningProofUpload = createImageUpload('housekeeping').fields([
@@ -714,14 +715,7 @@ avsSelfServiceRouter.patch(
       if (req.avsTask.completed_at) {
         return res.status(409).json({ error: 'Tamamlanmış görev temizlenemedi olarak işaretlenemez' })
       }
-      const labels = {
-        occupied: 'Oda kullanımda',
-        dnd: 'Rahatsız etmeyin',
-        locked: 'Kapı kilitli',
-        fault: 'Arıza nedeniyle',
-        other: 'Diğer',
-      }
-      const reason = `${labels[req.validated.reason]}${req.validated.note ? `: ${req.validated.note}` : ''}`
+      const reason = `${FIELD_SKIP_REASONS[req.validated.reason]}${req.validated.note ? `: ${req.validated.note}` : ''}`
       const db = getDB()
       const applySkip = db.transaction(() => {
         db.prepare(`
