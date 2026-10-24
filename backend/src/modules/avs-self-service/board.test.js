@@ -109,7 +109,9 @@ describe('saha oda panosu uçları', () => {
     const before = count()
     const dry = await request(app).post(`${BOARD}/floor`).set(auth(cleaner.token)).send({ block: 'FB', floor: 1, dry_run: true })
     expect(dry.status).toBe(200)
-    expect(dry.body).toEqual({ locations: ['FB-101'], excluded: { closed: 1, locked: 0, night: 0, empty: 0, no_clean: 0, marked: 1 } })
+    expect(dry.body).toEqual({
+      locations: ['FB-101'], excluded: { closed: 1, locked: 0, night: 0, empty: 0, no_clean: 0, qr_required: 0, marked: 1 },
+    })
     expect(count()).toBe(before)
     expect((await request(app).post(`${BOARD}/floor`).set(auth(cleaner.token)).send({ block: 'FB', floor: 1 })).status).toBe(400)
 

@@ -71,13 +71,13 @@ avsBoardRouter.get('/rooms', (req, res, next) => {
 
 avsBoardRouter.post('/mark', acceptFieldPhotos, verifyImageMagicBytes, validateUploadBody(fieldMarkSchema), (req, res, next) => {
   try {
-    const { location, action, reason, note } = req.validated
+    const { location, action, reason, note, scan_id: scanId } = req.validated
     if (!blockAllowed(req, blockOf(location))) {
       removeUploadedFiles(req)
       return res.status(403).json(BLOCK_DENIED)
     }
     const photoUrls = uploadedFiles(req).map(file => `/uploads/${file.filename}`)
-    const result = markField({ location, action, reason, note, workerId: req.fieldWorker.id, photoUrls })
+    const result = markField({ location, action, reason, note, workerId: req.fieldWorker.id, photoUrls, scanId })
     if (result.already) removeUploadedFiles(req) // ilk temizleyenin kaydı korunur; yeni dosya bağlanmaz
     res.json(result)
   } catch (e) {

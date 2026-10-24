@@ -39,6 +39,8 @@ export const fieldMarkSchema = z.object({
     errorMap: () => ({ message: 'Geçersiz temizlenememe nedeni' }),
   }).optional(),
   note: z.string().trim().max(300, 'Not çok uzun').nullish(),
+  // Kapıdaki QR'ın okutması (qr-scan yanıtı); çok parçalı gövdede metin gelir
+  scan_id: z.coerce.number().int().positive().optional(),
 })
 
 export const fieldLocationSchema = z.object({ location: fieldLocation })

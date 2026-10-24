@@ -4,6 +4,7 @@
 // oda `BLOK-ODANO`, M bloğu ortak alanı `BLOK-KAT-kod` — Hermes /temizlik ve web aynı kaydı görür.
 import { getDB } from '../../shared/db/index.js'
 import { BLOCK_BY_NAME } from '../../shared/blocks.js'
+import { fieldQrEnforcement, findValidFieldScan, labelStates, qrRequiredFor } from '../location-portal/field-scan.js'
 import { COMMON_AREAS, localToday } from './queries.js'
 
 // Kiosk "temizlenemedi" sebepleri (mevcut kiosk görev sekmesiyle aynı etiketler)
@@ -16,7 +17,9 @@ export const FIELD_SKIP_REASONS = {
 }
 
 const isMBlock = block => BLOCK_BY_NAME[block]?.type === 'M'
-const fail = (message, statusCode) => Object.assign(new Error(message), { statusCode })
+const fail = (message, statusCode, code) => Object.assign(new Error(message), { statusCode }, code ? { code } : {})
+// Zorunluluk açık ve kapının etiketi doğrulanmışsa (docs/superpowers/specs/2026-10-24-oda-qr-saha-design.md)
+const QR_REQUIRED = "Bu kapıda QR etiketi var; işaretlemek için kapıdaki QR'ı okut"
 
 const ROOM_KEY = /^([A-Za-z0-9]+)-([A-Za-z0-9]+)$/
 const COMMON_KEY = /^([A-Za-z0-9]+)-(\d+)-([a-z]+)$/
@@ -46,8 +49,10 @@ export function resolveFieldLocation(location, db = getDB()) {
 
 const spotKey = spot => (spot.kind === 'room' ? `${spot.room.block}-${spot.room.room_no}` : `${spot.block}-${spot.floor}-${spot.code}`)
 
-const todayTask = (db, key, today) => db.prepare(`
-  SELECT * FROM cleaning_tasks WHERE qr_location=? AND DATE(scheduled_at)=? ORDER BY id LIMIT 1
+// Bugünün geçerli görevi = son görev: sakin şikayetinden doğan takip görevi (cleaning_task_reviews.followup_task_id)
+// ilk görevin yerine geçer; pano, işaret, geri alma ve kat toplusu hep bunu görür.
+export const currentTask = (db, key, today) => db.prepare(`
+  SELECT * FROM cleaning_tasks WHERE qr_location=? AND DATE(scheduled_at)=? ORDER BY id DESC LIMIT 1
 `).get(key, today)
 
 // Bugün görevi olmayan yer işaretlenince görev o an açılır (üretimle aynı alan metni ve saat; gececi oda 19:00)
@@ -80,7 +85,9 @@ function audit(db, action, targetId, detail, userId = null) {
 }
 
 // Temizlendi / temizlenemedi. İkinci "temizlendi" ilk temizleyeni ve saatini ezmez (already: true).
-export function markField({ location, action, reason, note, workerId, photoUrls = [] }, db = getDB()) {
+// scanId: aynı kişinin bu yerdeki son 60 dk okutması → işaret QR ile doğrulanmış (verified_by_qr). Geçersiz okutma
+// sessizce doğrulamasız sayılır; zorunluluk açık ve etiket doğrulanmışsa okutmasız işaret 409 qr_scan_required.
+export function markField({ location, action, reason, note, workerId, photoUrls = [], scanId = null }, db = getDB()) {
   if (action !== 'clean' && action !== 'skip') throw fail('Geçersiz işlem', 400)
   if (action === 'skip' && !FIELD_SKIP_REASONS[reason]) throw fail('Geçersiz temizlenememe nedeni', 400)
   const spot = resolveFieldLocation(location, db)
@@ -88,29 +95,39 @@ export function markField({ location, action, reason, note, workerId, photoUrls 
   const key = spotKey(spot)
   const today = localToday(db)
   return db.transaction(() => {
-    let task = todayTask(db, key, today)
+    let task = currentTask(db, key, today)
     if (task?.completed_at) {
-      if (action === 'clean') return { task_id: task.id, status: 'cleaned', at: task.completed_at, already: true }
+      if (action === 'clean') {
+        return { task_id: task.id, status: 'cleaned', at: task.completed_at, already: true, verified_by_qr: Boolean(task.verified_by_qr) }
+      }
       throw fail('Tamamlanmış görev temizlenemedi olarak işaretlenemez', 409)
     }
+    const scan = findValidFieldScan({ scanId, workerId, location: key }, db)
+    if (!scan && qrRequiredFor(db, key)) throw fail(QR_REQUIRED, 409, 'qr_scan_required')
     if (!task) task = openFieldTask(db, spot, key, today)
     const text = String(note ?? '').trim()
+    const verified = scan ? 1 : 0
     if (action === 'clean') {
       db.prepare(`
         UPDATE cleaning_tasks SET completed_at=datetime('now'), skipped=0, skip_reason=NULL,
-          completed_by_worker_id=?, field_worker_id=? WHERE id=?
-      `).run(workerId, workerId, task.id)
+          completed_by_worker_id=?, field_worker_id=?, verified_by_qr=?, verified_scan_event_id=? WHERE id=?
+      `).run(workerId, workerId, verified, scan?.id ?? null, task.id)
     } else {
-      db.prepare('UPDATE cleaning_tasks SET skipped=1, skip_reason=?, completed_at=NULL, field_worker_id=? WHERE id=?')
-        .run(`${FIELD_SKIP_REASONS[reason]}${text ? `: ${text}` : ''}`, workerId, task.id)
+      db.prepare(`
+        UPDATE cleaning_tasks SET skipped=1, skip_reason=?, completed_at=NULL, field_worker_id=?,
+          verified_by_qr=?, verified_scan_event_id=? WHERE id=?
+      `).run(`${FIELD_SKIP_REASONS[reason]}${text ? `: ${text}` : ''}`, workerId, verified, scan?.id ?? null, task.id)
     }
     addFieldPhotos(db, task.id, photoUrls, action === 'clean' ? 'sonrasi' : 'genel', workerId)
     audit(db, action === 'clean' ? 'field_clean' : 'field_skip', task.id, {
       workerId, location: key, photoCount: photoUrls.length,
+      ...(scan ? { scanId: scan.id } : {}),
       ...(action === 'skip' ? { reason, note: text || null } : {}),
     })
     const { completed_at } = db.prepare('SELECT completed_at FROM cleaning_tasks WHERE id=?').get(task.id)
-    return { task_id: task.id, status: action === 'clean' ? 'cleaned' : 'skipped', at: completed_at, already: false }
+    return {
+      task_id: task.id, status: action === 'clean' ? 'cleaned' : 'skipped', at: completed_at, already: false, verified_by_qr: Boolean(scan),
+    }
   })()
 }
 
@@ -121,7 +138,7 @@ export function undoField({ location, workerId }, db = getDB()) {
   const key = spotKey(spot)
   const today = localToday(db)
   return db.transaction(() => {
-    const task = todayTask(db, key, today)
+    const task = currentTask(db, key, today)
     if (!task || (!task.completed_at && !task.skipped)) throw fail('Bugün geri alınacak işaret yok', 404)
     const owner = task.field_worker_id ?? task.completed_by_worker_id
     if (owner == null || Number(owner) !== Number(workerId)) {
@@ -139,7 +156,7 @@ export function undoField({ location, workerId }, db = getDB()) {
     } else {
       db.prepare(`
         UPDATE cleaning_tasks SET completed_at=NULL, completed_by_worker_id=NULL, skipped=0, skip_reason=NULL,
-          field_worker_id=NULL WHERE id=?
+          field_worker_id=NULL, verified_by_qr=0, verified_scan_event_id=NULL WHERE id=?
       `).run(task.id)
     }
     audit(db, 'field_undo', task.id, { workerId, location: key, removed })
@@ -198,6 +215,7 @@ export function boardRooms(block, { workerId = null } = {}, db = getDB()) {
     LEFT JOIN staff fw ON fw.id=ct.field_worker_id
     LEFT JOIN users u ON u.id=ct.assigned_to
     WHERE ct.block=? AND DATE(ct.scheduled_at)=?
+    ORDER BY ct.id
   `).all(block, today).map(t => [t.qr_location, t]))
   const lastCleaned = new Map(db.prepare(`
     SELECT qr_location, MAX(completed_at) AS at FROM cleaning_tasks
@@ -248,12 +266,13 @@ export function setOccupancy(roomId, occupancy, { workerId = null, userId = null
 
 // "Katın hepsi temizlendi" dışında kalanlar; oda birden çok sebebe uyuyorsa ilk sebepte sayılır
 // (önce odanın durumu, en son "bugün zaten işaretli").
-function floorExclusion(room, task) {
+function floorExclusion(room, task, qrRequired) {
   if (room.use_state === 'closed') return 'closed'
   if (room.use_state === 'locked') return 'locked'
   if (room.no_clean) return 'no_clean'
   if (room.occupant_shift === 'night') return 'night'
   if (room.occupancy === 'empty') return 'empty'
+  if (qrRequired) return 'qr_required'
   if (task && (task.completed_at || task.skipped)) return 'marked'
   return null
 }
@@ -270,24 +289,29 @@ export function cleanFloor({ block, floor, workerId, dryRun = false }, db = getD
     `).all(block, Number(floor))
     if (!rooms.length) throw fail('Kat bulunamadı', 404)
     const today = localToday(db)
+    // Yer başına geçerli (son) görev — şikayet takip görevi ilk görevin yerine geçer
     const tasks = new Map(db.prepare(`
-      SELECT qr_location, completed_at, skipped FROM cleaning_tasks WHERE block=? AND floor=? AND DATE(scheduled_at)=?
+      SELECT qr_location, completed_at, skipped FROM cleaning_tasks WHERE block=? AND floor=? AND DATE(scheduled_at)=? ORDER BY id
     `).all(block, Number(floor), today).map(t => [t.qr_location, t]))
-    const excluded = { closed: 0, locked: 0, night: 0, empty: 0, no_clean: 0, marked: 0 }
+    const excluded = { closed: 0, locked: 0, night: 0, empty: 0, no_clean: 0, qr_required: 0, marked: 0 }
     const locations = []
-    if (isMBlock(block) && rooms.some(r => r.use_state !== 'closed')) {
-      for (const { code } of COMMON_AREAS) {
-        const key = `${block}-${floor}-${code}`
-        if (isMarked(tasks.get(key))) excluded.marked += 1
-        else locations.push(key)
-      }
-    }
-    for (const r of rooms) {
-      const key = `${block}-${r.room_no}`
-      const why = floorExclusion(r, tasks.get(key))
-      if (why) excluded[why] += 1
+    const commonKeys = isMBlock(block) && rooms.some(r => r.use_state !== 'closed')
+      ? COMMON_AREAS.map(({ code }) => `${block}-${floor}-${code}`)
+      : []
+    const roomKeys = rooms.map(r => `${block}-${r.room_no}`)
+    // Zorunluluk açıkken etiketi doğrulanmış kapı toplu işaretlenmez: kanıt kapı kapı okutmayla gelir
+    const labels = fieldQrEnforcement(db) === 'verified_labels' ? labelStates(db, [...commonKeys, ...roomKeys]) : new Map()
+    const needsQr = key => labels.get(key) === 'verified'
+    for (const key of commonKeys) {
+      if (needsQr(key)) excluded.qr_required += 1
+      else if (isMarked(tasks.get(key))) excluded.marked += 1
       else locations.push(key)
     }
+    rooms.forEach((r, i) => {
+      const why = floorExclusion(r, tasks.get(roomKeys[i]), needsQr(roomKeys[i]))
+      if (why) excluded[why] += 1
+      else locations.push(roomKeys[i])
+    })
     if (!dryRun) for (const location of locations) markField({ location, action: 'clean', workerId }, db)
     return { locations, excluded }
   })()
