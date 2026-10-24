@@ -36,7 +36,7 @@ describe('saha çamaşır defteri uçları', () => {
     expect((await request(app).get(LAUNDRY).set(auth(housekeeper.token))).status).toBe(200)
     const res = await request(app).get(LAUNDRY).set(auth(laundry.token))
     expect(res.status).toBe(200)
-    expect(res.body).toEqual({ open: [], ready: [], delivered_today: [] })
+    expect(res.body).toEqual({ open: [], ready: [], delivered_today: [], requests: [] })
   })
 
   it('al → hazır → teslim → geri al tam akışı oda bazında yürür', async () => {
@@ -96,6 +96,14 @@ describe('bloğa atanmış personel çamaşırda da yalnız kendi bloğunda', ()
     const all = res => [...res.body.open, ...res.body.ready, ...res.body.delivered_today]
     expect(all(await request(app).get(LAUNDRY).set(auth(laundry.token))).some(g => g.block === 'FC')).toBe(true)
     expect(all(await request(app).get(LAUNDRY).set(auth(assigned.token))).some(g => g.block !== 'M2')).toBe(false)
+  })
+
+  it('sakinin çamaşır talebi defterde; atanmış personel yalnız kendi bloğununkini görür', async () => {
+    db.prepare(`
+      INSERT INTO laundry_pickup_requests(service_location_id, room_id) VALUES((SELECT id FROM service_locations WHERE room_id=?), ?)
+    `).run(otherRoom, otherRoom)
+    expect((await request(app).get(LAUNDRY).set(auth(laundry.token))).body.requests.some(r => r.room_id === otherRoom)).toBe(true)
+    expect((await request(app).get(LAUNDRY).set(auth(assigned.token))).body.requests.some(r => r.room_id === otherRoom)).toBe(false)
   })
 
   it('başka bloğun odasında alım, hazır, teslim ve geri alma 403; kendi bloğunda alım geçer', async () => {

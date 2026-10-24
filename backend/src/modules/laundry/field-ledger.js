@@ -6,6 +6,7 @@
 import { getDB } from '../../shared/db/index.js'
 import { istanbulDayBoundsUtc } from '../../shared/time.js'
 import { getKioskSystemUserId } from '../avs-self-service/inventory-helpers.js'
+import { closePickupRequest } from '../location-portal/laundry-request-action.js'
 import { AKSIYON, resolveScan } from './cardScan.js'
 import { markReadyFromLedgerService } from './ledger.js'
 import { createItemService, deleteItemService, deliverItemService, revertItemService } from './service.js'
@@ -71,6 +72,40 @@ export function ledgerOverview(db = getDB(), { block = null } = {}) {
     open: list("li.status IN ('dirty','washing','ironing') ORDER BY li.urgent DESC, li.created_at, li.id", []),
     ready: list("li.status='ready' ORDER BY li.updated_at, li.id", []),
     delivered_today: list("li.status='delivered' AND li.updated_at >= ? AND li.updated_at < ? ORDER BY li.updated_at DESC, li.id", [from, to]),
+    // Sakinin oda QR'ından açık alma talepleri (en eski önce); sakin adı sahaya gösterilmez
+    requests: db.prepare(`
+      SELECT r.id, rm.id AS room_id, rm.block, rm.room_no, r.note, r.request_count, r.created_at
+      FROM laundry_pickup_requests r
+      JOIN service_locations sl ON sl.id=r.service_location_id
+      JOIN rooms rm ON rm.id=sl.room_id
+      WHERE r.status='open' AND (? IS NULL OR rm.block=?)
+      ORDER BY r.created_at, r.id
+      LIMIT ${LIST_LIMIT}
+    `).all(block, block),
+  }
+}
+
+// Alım geri alınırsa o alımın kapattığı talep yeniden açılır; oda o arada yeni talep açtıysa (oda başına tek açık
+// talep) eski talep iptal edilir. Torba silinmeden ÖNCE çağrılır: talep ilk torbaya yabancı anahtarla bağlı.
+function reopenPickupRequests(db, ids) {
+  const linked = db.prepare(`
+    SELECT id, service_location_id FROM laundry_pickup_requests WHERE laundry_item_id IN (${ids.map(() => '?').join(',')})
+  `).all(...ids)
+  for (const request of linked) {
+    const newer = db.prepare(`
+      SELECT 1 FROM laundry_pickup_requests WHERE service_location_id=? AND status='open' AND id<>?
+    `).get(request.service_location_id, request.id)
+    if (newer) {
+      db.prepare(`
+        UPDATE laundry_pickup_requests SET status='cancelled', laundry_item_id=NULL,
+          cancelled_reason='Saha alımı geri alındı; odanın yeni talebi açık', updated_at=datetime('now') WHERE id=?
+      `).run(request.id)
+    } else {
+      db.prepare(`
+        UPDATE laundry_pickup_requests SET status='open', laundry_item_id=NULL, collected_at=NULL, collected_by=NULL,
+          updated_at=datetime('now') WHERE id=?
+      `).run(request.id)
+    }
   }
 }
 
@@ -90,7 +125,7 @@ export function intakeBags({ roomId, bags, ironing = false, urgent = false, note
   const systemUserId = getKioskSystemUserId()
   const historyNote = `Saha ekranı · ${workerName(db, workerId)}`
   const notes = [LEDGER_NOTE, String(note ?? '').trim()].filter(Boolean).join(' · ')
-  const ids = db.transaction(() => {
+  const { ids, requestClosed } = db.transaction(() => {
     const out = []
     for (let i = 1; i <= bags; i += 1) {
       out.push(createItemService(
@@ -99,10 +134,16 @@ export function intakeBags({ roomId, bags, ironing = false, urgent = false, note
         { cardScan: gate.scan, clientRequestId: `${key}#${i}`, workerId, historyNote },
       ).id)
     }
-    audit(db, 'field_laundry_intake', { workerId, roomId: room.id, bags, ids: out })
-    return out
+    // Sakinin açık alma talebi bu alımla karşılandı: talep 'collected', ilk torbaya bağlanır
+    const open = db.prepare(`
+      SELECT r.id FROM laundry_pickup_requests r JOIN service_locations sl ON sl.id=r.service_location_id
+      WHERE r.status='open' AND sl.room_id=?
+    `).get(room.id)
+    if (open) closePickupRequest(open.id, { status: 'collected', laundryItemId: out[0], userId: systemUserId }, db)
+    audit(db, 'field_laundry_intake', { workerId, roomId: room.id, bags, ids: out, ...(open ? { requestId: open.id } : {}) })
+    return { ids: out, requestClosed: open?.id ?? null }
   })()
-  return { ids, already: false }
+  return { ids, already: false, request_closed: requestClosed }
 }
 
 // Hazır: odanın yıkamadaki bütün torbaları rafa (makine/ütü adımı kaydedilmez — defter akışı)
@@ -186,6 +227,7 @@ export function undoLedger({ action, ids, workerId }, db = getDB()) {
     if (rows.some(r => !histories.get(r.id).at(-1).fresh)) {
       throw fail('24 saatten eski adım — çamaşırhane ekranından düzeltilmeli', 403)
     }
+    if (action === 'intake') reopenPickupRequests(db, rows.map(r => r.id))
     for (const r of rows) step.run(db, r.id, systemUserId, workerId)
     if (action !== 'intake') touch(db, rows.map(r => r.id), workerId)
     audit(db, 'field_laundry_undo', { workerId, action, ids: rows.map(r => r.id) })
