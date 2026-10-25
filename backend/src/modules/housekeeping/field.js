@@ -295,6 +295,30 @@ export function setOccupancy(roomId, occupancy, { workerId = null, userId = null
   })()
 }
 
+// Toplu doluluk (Telegram "/oda A 101-105 dolu", web toplu seçim): blok zorunlu, kat ve/veya oda numaraları daraltır.
+// Kapalı oda atlanır ve sayılır; bulunmayan numara söylenir. Tek odalık kuralla aynı (setOccupancy), tek transaction.
+export function setOccupancyBulk({ block, floor = null, room_nos = null, occupancy }, { userId = null, workerId = null } = {}, db = getDB()) {
+  if (occupancy !== null && occupancy !== 'occupied' && occupancy !== 'empty') throw fail('Geçersiz doluluk', 400)
+  const params = [block]
+  let sql = "SELECT id, room_no, use_state, occupancy FROM rooms WHERE block=? AND status='active'"
+  if (floor !== null && floor !== undefined) { sql += ' AND floor=?'; params.push(Number(floor)) }
+  const wanted = room_nos?.length ? [...new Set(room_nos.map(String))] : null
+  if (wanted) { sql += ` AND room_no IN (${wanted.map(() => '?').join(',')})`; params.push(...wanted) }
+  return db.transaction(() => {
+    const rooms = db.prepare(`${sql} ORDER BY floor, CAST(room_no AS INTEGER), room_no`).all(...params)
+    if (!rooms.length) throw fail('Oda bulunamadı', 404)
+    const found = new Set(rooms.map(r => r.room_no))
+    const result = { updated: 0, unchanged: 0, skipped_closed: [], not_found: wanted ? wanted.filter(no => !found.has(no)) : [] }
+    for (const room of rooms) {
+      if (room.use_state === 'closed') { result.skipped_closed.push(room.room_no); continue }
+      setOccupancy(room.id, occupancy, { userId, workerId }, db)
+      if (room.occupancy === occupancy) result.unchanged += 1
+      else result.updated += 1
+    }
+    return result
+  })()
+}
+
 // "Katın hepsi temizlendi" dışında kalanlar; oda birden çok sebebe uyuyorsa ilk sebepte sayılır
 // (önce odanın durumu, en son "bugün zaten işaretli").
 function floorExclusion(room, task, qrRequired) {

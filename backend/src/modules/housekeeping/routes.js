@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { createImageUpload, upload, verifyMagicBytes, verifyImageMagicBytes } from '../../shared/uploads/middleware.js'
 import * as svc from './service.js'
-import { setOccupancy } from './field.js'
+import { setOccupancy, setOccupancyBulk } from './field.js'
 import { fieldReport, setFieldQrEnforcement } from './field-report.js'
 import { getDailyGenerationStatus, setDailyGenerationEnabled } from './generation.js'
 import { logger } from '../../shared/logger.js'
@@ -11,7 +11,7 @@ import {
   completeFloorSchema, skipTaskSchema, roomNotesSchema, noCleanSchema,
   faultReportSchema, createStaffSchema, updateStaffSchema, completeTaskSchema, photoRetentionSchema,
   addTaskPhotoSchema, updateTaskPhotoSchema, roomStateSchema, roomStateBulkSchema, roomOccupancySchema,
-  fieldQrEnforcementSchema,
+  fieldQrEnforcementSchema, roomOccupancyBulkSchema,
 } from './schemas.js'
 
 export const housekeepingRouter = Router()
@@ -184,8 +184,8 @@ housekeepingRouter.get('/rooms/state-summary', ...hkAccess, (req, res) => {
 
 housekeepingRouter.get('/rooms/state', ...hkAccess, (req, res) => {
   try {
-    const { block, use_state, occupant_shift } = req.query
-    res.json({ rooms: svc.listRoomsWithStateService({ block, use_state, occupant_shift }) })
+    const { block, use_state, occupant_shift, occupancy } = req.query
+    res.json({ rooms: svc.listRoomsWithStateService({ block, use_state, occupant_shift, occupancy }) })
   } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
@@ -198,6 +198,14 @@ housekeepingRouter.patch('/rooms/:id/state', ...hkAccess, validate(roomStateSche
 housekeepingRouter.patch('/rooms/:id/occupancy', ...supervisorAccess, validate(roomOccupancySchema), (req, res, next) => {
   try { res.json(setOccupancy(+req.params.id, req.validated.occupancy, { userId: req.user.id })) }
   catch (e) { next(e) }
+})
+
+// Toplu doluluk (Telegram /oda, web toplu seçim) — tek odalıkla aynı yetki
+housekeepingRouter.post('/rooms/occupancy-bulk', ...supervisorAccess, validate(roomOccupancyBulkSchema), (req, res, next) => {
+  try {
+    const { block, floor, room_nos, occupancy } = req.validated
+    res.json({ ok: true, ...setOccupancyBulk({ block, floor, room_nos, occupancy }, { userId: req.user.id }) })
+  } catch (e) { next(e) }
 })
 
 // Saha takibi: kişi başı temizlik ve QR oranı, etiket kapsaması (müdür + amir); QR zorunluluğu yalnız müdür
