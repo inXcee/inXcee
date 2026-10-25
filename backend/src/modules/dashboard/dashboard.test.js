@@ -4,6 +4,7 @@ import app from '../../app.js'
 import { initDB, getDB } from '../../shared/db/index.js'
 import { seedDev } from '../../shared/db/seed.js'
 import { getTrends, getHealthScore, getAnomalies } from './queries.js'
+import { addDays, istanbulDate } from '../../shared/time.js'
 
 let token
 beforeAll(async () => {
@@ -279,5 +280,20 @@ describe('Panel doluluğu — saha verisi (oda bazlı)', () => {
     const beds = (await request(app).get('/api/dashboard/bed-occupancy').set(auth())).body
     expect(beds.blocks.find(b => b.block === 'QF')).toMatchObject({ occupied_rooms: 3, empty_rooms: 1, unknown_rooms: 1 })
     expect(beds.totals).toMatchObject({ occupied_rooms: 3, empty_rooms: 1, unknown_rooms: unknown })
+  })
+
+  // Doluluk geçmişi (room_occupancy_daily): 7 gün önceki görüntü karşılaştırmayı, günlük görüntüler trendi verir
+  it('7 gün önceki anlık görüntü varsa karşılaştırma ondan; trend oda bazlı, görüntüsüz gün null', async () => {
+    const db = getDB()
+    const weekAgo = addDays(istanbulDate(), -7)
+    db.prepare(`INSERT INTO room_occupancy_daily(day, block, rooms, closed, occupied, empty, unknown) VALUES(?, 'QF', 6, 1, 1, 3, 1)`).run(weekAgo)
+    expect(await kpi()).toMatchObject({ occupancy_source: 'field', occupancy_pct: 75, occupancy_pct_prev: 25 })
+
+    const trends = (await request(app).get('/api/dashboard/trends?metrics=occupancy&days=10').set(auth())).body
+    expect(trends.occupancy_source).toBe('field')
+    expect(trends.occupancy).toHaveLength(10)
+    expect(trends.occupancy.at(-1)).toEqual({ date: istanbulDate(), value: 75 })
+    expect(trends.occupancy.find(p => p.date === weekAgo).value).toBe(25)
+    expect(trends.occupancy.find(p => p.date === addDays(istanbulDate(), -3)).value).toBeNull()
   })
 })

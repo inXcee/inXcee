@@ -68,6 +68,7 @@ cd backend && node -e "import('./src/shared/db/index.js').then(m=>m.initDB()).th
 - Güncel işletim, API, kurallar ve kurulum kaynağı: `docs/saha-ekrani.md`. Telefon: `/saha` (kişisel oturum, kilitsiz); ortak tablet: `/avs-kiosk`.
 - Temizlik kaydı sahadan **istendiğinde** açılır (`cleaning_tasks.origin='field'`); günlük toplu üretim kapalı kalır. Kural kodu `housekeeping/field.js`.
 - Doluluk **oda bazlıdır** (`rooms.occupancy`); herhangi bir odada saha bilgisi varsa panel doluluğu bundan gelir, kapalı odalar paydaya girmez.
+- Doluluk geçmişi `room_occupancy_daily` (saatlik :55 cron, günün son yazımı kalır); bugün canlı, görüntüsüz gün `null` — sıfır çizilmez. Hermes akşam özeti metni sunucuda kurulur (`housekeeping/evening-summary.js`, `?format=text`).
 - Çamaşır defterinde her `laundry_items` satırı bir **torba** (Hermes `/camasir` ile aynı). Geri alma yetkisi `last_modified_worker_id`'den değil torbanın `laundry_history`'sinden okunur (`laundry/field-ledger.js`).
 - Yalnız temizlik + çamaşırhane grupları (`requireFieldGroup`); kayıtlı kiosk cihazının kuralı `device_mode`'dan önceliklidir.
 - **Kapıdaki QR:** okutma `location_portal_events.field_scan`; aynı kişinin aynı yerdeki 60 dk içindeki işareti `verified_by_qr`. Zorunluluk `saha_qr_enforcement` (`off` | `verified_labels`) yalnız etiketi doğrulanmış kapıda. Geçerli görev = günün **son** görevi (sakin şikayetinin takip görevi ilk görevin yerine geçer). Kod `location-portal/field-scan.js`.

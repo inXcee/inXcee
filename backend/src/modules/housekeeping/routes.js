@@ -2,8 +2,10 @@ import { Router } from 'express'
 import { requireRole } from '../../shared/auth/middleware.js'
 import { createImageUpload, upload, verifyMagicBytes, verifyImageMagicBytes } from '../../shared/uploads/middleware.js'
 import * as svc from './service.js'
-import { setOccupancy } from './field.js'
+import { setOccupancy, setOccupancyBulk } from './field.js'
 import { fieldReport, setFieldQrEnforcement } from './field-report.js'
+import { eveningSummary } from './evening-summary.js'
+import { occupancyTrend } from './occupancy-history.js'
 import { getDailyGenerationStatus, setDailyGenerationEnabled } from './generation.js'
 import { logger } from '../../shared/logger.js'
 import { validate } from '../../shared/middleware/validate.js'
@@ -11,7 +13,7 @@ import {
   completeFloorSchema, skipTaskSchema, roomNotesSchema, noCleanSchema,
   faultReportSchema, createStaffSchema, updateStaffSchema, completeTaskSchema, photoRetentionSchema,
   addTaskPhotoSchema, updateTaskPhotoSchema, roomStateSchema, roomStateBulkSchema, roomOccupancySchema,
-  fieldQrEnforcementSchema,
+  fieldQrEnforcementSchema, roomOccupancyBulkSchema,
 } from './schemas.js'
 
 export const housekeepingRouter = Router()
@@ -184,8 +186,8 @@ housekeepingRouter.get('/rooms/state-summary', ...hkAccess, (req, res) => {
 
 housekeepingRouter.get('/rooms/state', ...hkAccess, (req, res) => {
   try {
-    const { block, use_state, occupant_shift } = req.query
-    res.json({ rooms: svc.listRoomsWithStateService({ block, use_state, occupant_shift }) })
+    const { block, use_state, occupant_shift, occupancy } = req.query
+    res.json({ rooms: svc.listRoomsWithStateService({ block, use_state, occupant_shift, occupancy }) })
   } catch (e) { logger.error('[Route]', e); res.status(500).json({ error: 'Sunucu hatası' }) }
 })
 
@@ -198,6 +200,29 @@ housekeepingRouter.patch('/rooms/:id/state', ...hkAccess, validate(roomStateSche
 housekeepingRouter.patch('/rooms/:id/occupancy', ...supervisorAccess, validate(roomOccupancySchema), (req, res, next) => {
   try { res.json(setOccupancy(+req.params.id, req.validated.occupancy, { userId: req.user.id })) }
   catch (e) { next(e) }
+})
+
+// Doluluk trendi (web grafiği, Telegram /oda trend): günlük anlık görüntüler, bugün canlı; ?days=1..180&block=
+housekeepingRouter.get('/occupancy/trend', ...supervisorAccess, (req, res, next) => {
+  try { res.json(occupancyTrend({ days: req.query.days, block: req.query.block ? String(req.query.block) : null })) }
+  catch (e) { next(e) }
+})
+
+// Akşam saha özeti (Hermes zamanlanmış görevi): ?date=YYYY-MM-DD (varsayılan bugün); ?format=text düz metin döner
+housekeepingRouter.get('/evening-summary', ...supervisorAccess, (req, res, next) => {
+  try {
+    const summary = eveningSummary({ date: req.query.date ? String(req.query.date) : undefined })
+    if (req.query.format === 'text') res.type('text/plain; charset=utf-8').send(summary.text)
+    else res.json(summary)
+  } catch (e) { next(e) }
+})
+
+// Toplu doluluk (Telegram /oda, web toplu seçim) — tek odalıkla aynı yetki
+housekeepingRouter.post('/rooms/occupancy-bulk', ...supervisorAccess, validate(roomOccupancyBulkSchema), (req, res, next) => {
+  try {
+    const { block, floor, room_nos, occupancy } = req.validated
+    res.json({ ok: true, ...setOccupancyBulk({ block, floor, room_nos, occupancy }, { userId: req.user.id }) })
+  } catch (e) { next(e) }
 })
 
 // Saha takibi: kişi başı temizlik ve QR oranı, etiket kapsaması (müdür + amir); QR zorunluluğu yalnız müdür

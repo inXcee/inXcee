@@ -15,6 +15,8 @@ import RoomDetailPanel from './RoomDetailPanel.jsx'
 import StaffSection from './StaffSection.jsx'
 import PhotoControlCenter from './PhotoControlCenter.jsx'
 import FieldTrackingPanel from './FieldTrackingPanel.jsx'
+import OccupancyTrendPanel from './OccupancyTrendPanel.jsx'
+import EveningSummaryCard from './EveningSummaryCard.jsx'
 import { useAuthStore } from '../../shared/store/authStore.js'
 
 export default function HousekeepingPage() {
@@ -25,7 +27,10 @@ export default function HousekeepingPage() {
   const [selectedRoomNo, setSelected] = useState(null)
   const [uncleanedOnly, setUncleanedOnly] = useState(false)
   const [viewMode, setViewMode] = useState('plan')
-  const isManager = useAuthStore(state => state.user?.role) === 'campus_manager'
+  const role = useAuthStore(state => state.user?.role)
+  const isManager = role === 'campus_manager'
+  // Doluluk trendi ve akşam özeti amir/müdür uçları
+  const canSeeFieldSummary = isManager || role === 'shift_supervisor'
 
   const cfg = BLOCK_BY_NAME[block]
   const isM = cfg?.type === 'M'
@@ -160,7 +165,13 @@ export default function HousekeepingPage() {
         <button className={`filter-chip${viewMode === 'field' ? ' active' : ''}`} onClick={() => { setViewMode('field'); setSelected(null) }}>📍 SAHA TAKİBİ</button>
       </div>
 
-      {viewMode === 'photos' ? <PhotoControlCenter /> : viewMode === 'field' ? <FieldTrackingPanel canManage={isManager} /> : <>
+      {viewMode === 'photos' ? <PhotoControlCenter /> : viewMode === 'field' ? (
+        <>
+          {canSeeFieldSummary && <EveningSummaryCard />}
+          {canSeeFieldSummary && <OccupancyTrendPanel />}
+          <FieldTrackingPanel canManage={isManager} />
+        </>
+      ) : <>
 
       {/* Progress */}
       {isLoading

@@ -2,6 +2,8 @@ import { getDB } from '../../shared/db/index.js'
 import { createRequest as createMaintenanceRequest } from '../maintenance/queries.js'
 import { canonicalMaintenanceRow, resolveMaintenanceLocation } from '../maintenance/location.js'
 import { BLOCK_BY_NAME } from '../../shared/blocks.js'
+import { addDays, istanbulDate } from '../../shared/time.js'
+import { occupancyOnDay, staleOccupancy, totalsOf } from './occupancy-history.js'
 
 // Oda durumundan doğan atlama gerekçeleri — durum değişince bugünkü görevi geri açmak için de bu metinler aranır
 export const ROOM_SKIP = { locked: 'Oda kilitli', noClean: 'Temizlik istenmiyor', closed: 'Oda kapalı' }
@@ -422,7 +424,8 @@ export function findRoomIds({ block, floor, room_nos } = {}) {
   return db.prepare(sql).all(...params).map(r => r.id)
 }
 
-// Blok başına durum sayıları + bugünkü temizlik ilerlemesi
+// Blok başına durum sayıları + bugünkü temizlik ilerlemesi + saha doluluğu (Telegram /oda ve web aynı uçtan).
+// Doluluk kapalı olmayan odalardan: occupied / empty / unknown, oran panelle aynı; dünkü anlık görüntüyle fark.
 export function getRoomStateSummary() {
   const db = getDB()
   const today = localToday(db)
@@ -430,24 +433,42 @@ export function getRoomStateSummary() {
     SELECT block, COUNT(*) AS rooms,
       SUM(use_state='open') AS open, SUM(use_state='closed') AS closed, SUM(use_state='locked') AS locked,
       SUM(occupant_shift='night') AS night, SUM(occupant_shift='day') AS day, SUM(occupant_shift='mixed') AS mixed,
-      SUM(no_clean=1) AS no_clean
+      SUM(no_clean=1) AS no_clean,
+      SUM(use_state!='closed' AND occupancy='occupied') AS occupied, SUM(use_state!='closed' AND occupancy='empty') AS empty,
+      SUM(use_state!='closed' AND occupancy IS NULL) AS unknown
     FROM rooms WHERE status='active' GROUP BY block ORDER BY block`).all()
+    .map(b => ({ ...b, occupancy_pct: totalsOf([b]).pct }))
   const tasks = db.prepare(`
     SELECT block, COUNT(*) AS total, SUM(completed_at IS NOT NULL) AS done, SUM(skipped=1) AS skipped,
       SUM(completed_at IS NULL AND skipped=0) AS pending
     FROM cleaning_tasks WHERE DATE(scheduled_at)=? GROUP BY block`).all(today)
   const byBlock = Object.fromEntries(tasks.map(t => [t.block, t]))
-  return { date: today, blocks: blocks.map(b => ({ ...b, tasks: byBlock[b.block] || null })) }
+  const totals = totalsOf(blocks)
+  const yesterday = occupancyOnDay(addDays(istanbulDate(), -1), {}, db)
+  return {
+    date: today,
+    occupancy: {
+      occupied: totals.occupied, empty: totals.empty, unknown: totals.unknown, pct: totals.pct, coverage: totals.coverage,
+      yesterday_pct: yesterday?.pct ?? null,
+      change_1d: totals.pct !== null && yesterday?.pct != null ? totals.pct - yesterday.pct : null,
+      stale: staleOccupancy({}, db).total,
+    },
+    blocks: blocks.map(b => ({ ...b, tasks: byBlock[b.block] || null })),
+  }
 }
 
-export function listRoomsWithState({ block, use_state, occupant_shift } = {}) {
+// occupancy filtresi: 'occupied' | 'empty' | 'unknown' (bilinmiyor = NULL, kapalı odalar hariç)
+export function listRoomsWithState({ block, use_state, occupant_shift, occupancy } = {}) {
   const db = getDB()
-  let sql = `SELECT id, block, floor, room_no, use_state, occupant_shift, no_clean, state_note, state_until, state_updated_at
+  let sql = `SELECT id, block, floor, room_no, use_state, occupant_shift, no_clean, state_note, state_until, state_updated_at,
+                    occupancy, occupancy_updated_at
              FROM rooms WHERE status='active'`
   const params = []
   if (block) { sql += ' AND block=?'; params.push(block) }
   if (use_state) { sql += ' AND use_state=?'; params.push(use_state) }
   if (occupant_shift) { sql += ' AND occupant_shift=?'; params.push(occupant_shift) }
+  if (occupancy === 'unknown') sql += " AND occupancy IS NULL AND use_state!='closed'"
+  else if (occupancy === 'occupied' || occupancy === 'empty') { sql += ' AND occupancy=?'; params.push(occupancy) }
   sql += ' ORDER BY block, floor, CAST(room_no AS INTEGER), room_no'
   return db.prepare(sql).all(...params)
 }

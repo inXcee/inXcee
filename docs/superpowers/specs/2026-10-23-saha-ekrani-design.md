@@ -133,7 +133,8 @@ istenmişse kişisel oturum kuralı uygulanır. `/saha` yolu bunu otomatik gönd
   kullanır (bileşen kaldırılmaz). Isı haritası ve blok doluluk paneli aynı kuralla blok bazında.
 - Web oda kutucukları/paneli doluluk rozetini gösterir; müdür/amir oradan da değiştirebilir.
 - **Sonra (bu işin dışında):** Hermes akşam özeti ve `/oda`'da doluluk; günlük doluluk anlık görüntüsüyle
-  doluluk trend grafiği.
+  doluluk trend grafiği. → **Yapıldı (25 Eki 2026):** migration 127, `occupancy-history.js`, `evening-summary.js`;
+  bkz. `docs/saha-ekrani.md` → "Doluluk geçmişi", "Hermes akşam özeti".
 
 ## 9. Kurulum
 

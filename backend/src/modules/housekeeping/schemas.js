@@ -103,6 +103,14 @@ export const roomOccupancySchema = z.object({
   occupancy: z.enum(['occupied', 'empty'], { errorMap: () => ({ message: 'Geçersiz doluluk' }) }).nullable(),
 })
 
+// Toplu doluluk: blok zorunlu; kat ve/veya oda numaraları daraltır (hiçbiri yoksa bütün blok). null = bilinmiyor
+export const roomOccupancyBulkSchema = z.object({
+  block: z.string().trim().min(1, 'Blok gerekli').max(10, 'Blok geçersiz'),
+  floor: z.coerce.number().int().min(0).max(20).nullish(),
+  room_nos: z.array(z.string().trim().min(1).max(10)).max(200).optional(),
+  occupancy: z.enum(['occupied', 'empty'], { errorMap: () => ({ message: 'Geçersiz doluluk' }) }).nullable(),
+})
+
 // Saha QR zorunluluğu: kapalı ya da yalnız etiketi doğrulanmış kapılarda okutma şartı
 export const fieldQrEnforcementSchema = z.object({
   mode: z.enum(['off', 'verified_labels'], { errorMap: () => ({ message: 'Geçersiz mod' }) }),
