@@ -28,6 +28,7 @@ import { cleanupWaterFiles } from '../../modules/water/file-lifecycle.js'
 import { captureError } from '../sentry.js'
 import { reconcileAttendanceService } from '../../modules/shifts/service.js'
 import { cleanupHousekeepingPhotos } from '../../modules/housekeeping/photo-retention.js'
+import { captureOccupancySnapshot } from '../../modules/housekeeping/occupancy-history.js'
 import { cleanupLaundryPhotos } from '../../modules/laundry/photo-retention.js'
 import { notifyUpcomingTrips } from '../../modules/transport/notifications.js'
 import { istanbulDate } from '../time.js'
@@ -123,6 +124,12 @@ export function startCronJobs() {
       // daily task generation completed
     } catch (e) { logger.error('[Cron] Temizlik görev hatası:', e) }
   }, TZ)
+
+  // Doluluk anlık görüntüsü: günün satırı her saat :55'te yeniden yazılır, 23:55'teki gün sonu durumudur.
+  // Saatlik olduğu için sunucu gece kapalı kalsa da gün boş geçmez (o günün son yazımı kalır).
+  cron.schedule('55 * * * *', withLock('occupancy-snapshot', () => {
+    captureOccupancySnapshot()
+  }), TZ)
 
   // Her saat stok kontrolü
   cron.schedule('0 * * * *', () => {
