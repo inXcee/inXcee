@@ -4,6 +4,8 @@ import { createImageUpload, upload, verifyMagicBytes, verifyImageMagicBytes } fr
 import * as svc from './service.js'
 import { setOccupancy, setOccupancyBulk } from './field.js'
 import { fieldReport, setFieldQrEnforcement } from './field-report.js'
+import { eveningSummary } from './evening-summary.js'
+import { occupancyTrend } from './occupancy-history.js'
 import { getDailyGenerationStatus, setDailyGenerationEnabled } from './generation.js'
 import { logger } from '../../shared/logger.js'
 import { validate } from '../../shared/middleware/validate.js'
@@ -198,6 +200,21 @@ housekeepingRouter.patch('/rooms/:id/state', ...hkAccess, validate(roomStateSche
 housekeepingRouter.patch('/rooms/:id/occupancy', ...supervisorAccess, validate(roomOccupancySchema), (req, res, next) => {
   try { res.json(setOccupancy(+req.params.id, req.validated.occupancy, { userId: req.user.id })) }
   catch (e) { next(e) }
+})
+
+// Doluluk trendi (web grafiği, Telegram /oda trend): günlük anlık görüntüler, bugün canlı; ?days=1..180&block=
+housekeepingRouter.get('/occupancy/trend', ...supervisorAccess, (req, res, next) => {
+  try { res.json(occupancyTrend({ days: req.query.days, block: req.query.block ? String(req.query.block) : null })) }
+  catch (e) { next(e) }
+})
+
+// Akşam saha özeti (Hermes zamanlanmış görevi): ?date=YYYY-MM-DD (varsayılan bugün); ?format=text düz metin döner
+housekeepingRouter.get('/evening-summary', ...supervisorAccess, (req, res, next) => {
+  try {
+    const summary = eveningSummary({ date: req.query.date ? String(req.query.date) : undefined })
+    if (req.query.format === 'text') res.type('text/plain; charset=utf-8').send(summary.text)
+    else res.json(summary)
+  } catch (e) { next(e) }
 })
 
 // Toplu doluluk (Telegram /oda, web toplu seçim) — tek odalıkla aynı yetki
