@@ -128,6 +128,11 @@ Tasarım: `docs/superpowers/specs/2026-10-24-oda-qr-saha-design.md`. Etiketler o
 | `PATCH /api/housekeeping/rooms/:id/occupancy` | web, müdür + amir |
 | `GET /api/housekeeping/field-report?date=` | web, müdür + amir: kişi başı temizlik / QR, blok etiket kapsaması, açık yanlış kapı |
 | `PUT /api/housekeeping/field-qr-enforcement` | web, yalnız müdür: `{mode:'off'\|'verified_labels'}` |
+| `POST /api/housekeeping/rooms/occupancy-bulk` | müdür + amir (Telegram `/oda`): `{block, floor?, room_nos?, occupancy:'occupied'\|'empty'\|null}` → `{updated, unchanged, skipped_closed, not_found}` |
+| `GET /api/housekeeping/rooms/state-summary` | blok başına `occupied/empty/unknown/occupancy_pct` + toplam `occupancy {pct, coverage, yesterday_pct, change_1d, stale}` |
+| `GET /api/housekeeping/rooms/state?occupancy=` | odaların `occupancy`, `occupancy_updated_at`; süzgeç `occupied` \| `empty` \| `unknown` |
+| `GET /api/housekeeping/occupancy/trend?days=&block=` | müdür + amir: günlük seri (1..180 gün, bugün canlı) + `summary {pct, change_7d, avg, min, max, days_with_data}` |
+| `GET /api/housekeeping/evening-summary?date=&format=` | müdür + amir: akşam saha özeti JSON; `format=text` Telegram'a hazır düz metin |
 
 Servis hatası `statusCode`'uyla (ve varsa `code`'uyla, ör. `qr_scan_required`) döner (400/403/404/409); beklenmeyen hata genel
 işleyicide *"Sunucu hatası"* + hata kaydı.
@@ -136,11 +141,62 @@ işleyicide *"Sunucu hatası"* + hata kaydı.
 
 - Herhangi bir odada saha doluluk bilgisi varsa **KPI doluluk** oda bazlı: `dolu / (dolu + boş)`, kapalı odalar hariç
   (`occupancy_source:'field'`, `rooms_occupied/empty/unknown`; alt satır "412 dolu / 840 oda · 214 bilinmiyor").
-  Saha verisi yoksa yatak bazlı eski hesap aynen. Saha modunda 7 gün öncesiyle karşılaştırma yok.
+  Saha verisi yoksa yatak bazlı eski hesap aynen. Saha modunda 7 gün öncesiyle karşılaştırma o günün anlık
+  görüntüsünden; görüntü yoksa karşılaştırma yok.
 - Sağlık skorunun DOLULUK bileşeni aynı yüzdeyi kullanır (bileşen kaldırılmadı).
 - Isı haritası ve blok doluluk paneli bloğa göre: saha bilgisi olan blok oda bazlı, olmayan blok yatak bazlı.
-- Doluluk trend grafiği şimdilik yatak bazlı (günlük doluluk anlık görüntüsü yok).
+- Doluluk trend grafiği panelle aynı kaynaktan: saha bilgisi varsa oda bazlı günlük görüntüler ("Doluluk · oda bazlı"),
+  görüntüsüz gün boş; yoksa yatak bazlı.
 - Web oda paneli (Temizlik → oda) DOLULUK satırı yalnız müdür ve amire görünür; kutucukta 👤 / ○ rozeti.
+
+## Doluluk geçmişi (`backend/src/modules/housekeeping/occupancy-history.js`)
+
+- `rooms.occupancy` anlıktır; günün durumu `room_occupancy_daily`'ye (gün × blok: `rooms, closed, occupied, empty,
+  unknown`) yazılır. Cron her saat **:55**'te günün satırlarını yeniden yazar — günün son yazımı (23:55) gün sonu durumudur;
+  sunucu gece kapalı kalsa da gün boş geçmez. Geçmiş günlere dokunulmaz.
+- **Bugün her zaman canlı** okunur, geçmiş gün görüntüden. Görüntüsü olmayan gün `null` döner ve grafikte boş kalır —
+  sıfır diye çizilmez (kayıt başlamadan önceki günler böyle).
+- Oran her yerde aynı: `dolu / (dolu + boş)`, kapalı oda paydaya girmez. **Kapsama** = durumu bilinen / kapalı olmayan oda.
+- **Bayat**: durumu bilinen ama 14 gündür kimsenin teyit etmediği oda (`occupancy_updated_at`). Aynı değer yeniden
+  verilince teyit zamanı tazelenir (denetime satır düşmez).
+- Gün içi değişiklikler `audit_log.room_occupancy_change`'ten sayılır (dolu oldu / boş oldu / ilk kez girildi / silindi).
+- Web: Temizlik → **📍 Saha takibi** → "Doluluk trendi" (blok, 14/30/90 gün; çizgi oran, gri çubuk bilinmeyen oda).
+
+## Hermes akşam özeti (`backend/src/modules/housekeeping/evening-summary.js`)
+
+`GET /api/housekeeping/evening-summary` günün saha durumunu tek yanıtta verir; **metin sunucuda kurulur** (`text`), Hermes
+olduğu gibi gönderir — web önizlemesi (Saha takibi → "Akşam özeti") aynı metni gösterir. Hiçbir şey yazmaz.
+
+| Bölüm | İçerik |
+|---|---|
+| `occupancy` | oran, dolu/boş/bilinmiyor, düne göre fark (dünkü görüntü), gün içi değişiklikler, en çok bilinmeyen 3 blok, bayat oda (yalnız bugün) |
+| `cleaning` | temizlendi / temizlenemedi (sebebe göre), QR oranı, **işaretsiz** oda (blok başına), çalışan sayısı ve en çok temizleyen 3 kişi |
+| `laundry` | o gün alınan / hazırlanan / teslim edilen torba; **şu an** yıkamada (acil), hazırda, 24 saati aşan hazır, açık alma talebi |
+| `complaints` | günün sakin onay / şikayet sayısı ve ortalama puanı; takip temizliği yapılmamış şikayet (gün fark etmez) |
+| `alerts` | dikkat satırları: kapsama < %50, bayat oda, işaretsiz oda, açık yanlış kapı, 24 saati aşan hazır torba, 48 saati aşan açık torba, 12 saati aşan alma talebi, açık şikayet |
+
+- Temizlik sayımlarında **her işaretli görev ayrı iştir** (saha raporuyla aynı: şikayet sonrası yeniden temizlik ilk
+  temizliği silmez). **İşaretsiz** ise yer başına geçerli (son) göreve bakar: açık, temizlik istenmeyen değil, boş bilinmeyen
+  ve geçerli görevi işaretsiz oda. Kilitli, kapalı ve boş oda beklenmez.
+- Geçmiş gün (`?date=`): doluluk o günün görüntüsünden (yoksa "bu gün için kayıt yok"); bayatlık söylenmez; "işaretsiz"
+  bugünkü oda durumuyla hesaplanır; çamaşırın "şu an bekleyen" satırı her zaman şimdiki durumdur. Gelecek gün 400.
+- Sıfır tek başına yazılmaz: "henüz dolu/boş bilgisi girilmedi", "saha işareti yok (beklenen N oda)" ayrı cümlelerdir.
+
+### Hermes'te kurulum (sunucuda, repo dışı)
+
+Hermes'in YYS'ye bağlandığı vardiya amiri hesabıyla (Telegram botunun mevcut kimliği) zamanlanmış görev:
+
+```
+Her gün 20:30 (Europe/Istanbul):
+  GET https://avskamp.com/api/housekeeping/evening-summary?format=text   (Authorization: Bearer <amir oturumu>)
+  → yanıtı olduğu gibi sahibin Telegram sohbetine gönder (parse_mode yok — düz metin).
+  Hata ya da 5xx → bir kez 10 dk sonra dene; yine olmazsa "Akşam özeti alınamadı: <durum>" yaz.
+```
+
+`/oda` komutunda doluluk: `GET rooms/state-summary` yanıtındaki `occupancy` (toplam oran, düne göre fark, bayat) ve blok
+satırlarındaki `occupied/empty/unknown/occupancy_pct` gösterilir; `/oda <blok> <odalar> dolu|boş|bilinmiyor` →
+`POST rooms/occupancy-bulk` (kapalı odalar atlanır, bulunmayan numara söylenir); `/oda trend [blok]` →
+`GET occupancy/trend?days=14`. Hermes betikleri `~/.hermes/` altındadır, bu repoda değildir.
 
 ## Veri ve denetim
 
@@ -148,6 +204,7 @@ işleyicide *"Sunucu hatası"* + hata kaydı.
   `cleaning_tasks.origin`, `cleaning_tasks.field_worker_id`.
 - Migration 126: `cleaning_tasks.verified_scan_event_id`; `location_qr_deployments.installed_by_staff_id`,
   `verified_by_staff_id`; `location_qr_verify_mismatches.reported_by_staff_id`; `saha_qr_enforcement='off'`.
+- Migration 127: `room_occupancy_daily` (gün × blok doluluk anlık görüntüsü, PK `(day, block)`).
 - `audit_log` (`module='avs-self-service'`, `user_id=NULL`, kişi `detail.workerId`): `field_clean`, `field_skip`, `field_undo`,
   `room_occupancy_change`, `field_laundry_intake`, `field_laundry_ready`, `field_laundry_deliver`, `field_laundry_undo`.
   Webden doluluk: `module='housekeeping'`, `user_id` = kullanıcı.
