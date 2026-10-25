@@ -2,6 +2,7 @@ import { getDB } from '../../shared/db/index.js'
 import { istanbulDate, istanbulDayBoundsUtc, istanbulDayStartUtc, addDays, istanbulNowNaive, istanbulSqliteModifier } from '../../shared/time.js'
 import { memoize } from '../../shared/middleware/memo.js'
 import { getOverdueInside } from '../access/service.js'
+import { occupancyOnDay, occupancyTrend } from '../housekeeping/occupancy-history.js'
 
 // Saha ekranı doluluğu (rooms.occupancy, oda bazlı): kapalı odalar hariç. Herhangi bir odada saha bilgisi
 // varsa panel doluluğu bundan gelir (dolu / (dolu + boş)); yoksa yatak bazlı eski hesap aynen kalır.
@@ -36,8 +37,10 @@ function _getKPI() {
   const D = "date('now','-7 days')"
   const active_personnel_prev = db.prepare(`SELECT COUNT(*) c FROM personnel WHERE date(check_in_date) <= ${D} AND (check_out_date IS NULL OR date(check_out_date) > ${D})`).get().c
   const occupied_prev = db.prepare(`SELECT COUNT(*) c FROM room_assignments WHERE date(assigned_at) <= ${D} AND (check_out_at IS NULL OR date(check_out_at) > ${D})`).get().c
-  // Saha doluluğunun geçmişi tutulmuyor (anlık): karşılaştırma yok
-  const occupancy_pct_prev = field.active ? null : (total_beds > 0 ? Math.round((occupied_prev / total_beds) * 100) : 0)
+  // Saha doluluğu: 7 gün önceki günün anlık görüntüsüyle (room_occupancy_daily); görüntü yoksa karşılaştırma yok
+  const occupancy_pct_prev = field.active
+    ? (occupancyOnDay(addDays(istanbulDate(), -7), {}, db)?.pct ?? null)
+    : (total_beds > 0 ? Math.round((occupied_prev / total_beds) * 100) : 0)
   const open_maintenance_prev = db.prepare(`SELECT COUNT(*) c FROM maintenance_requests WHERE date(opened_at) <= ${D} AND (closed_at IS NULL OR date(closed_at) > ${D})`).get().c
 
   return {
@@ -436,7 +439,12 @@ export function getTrends(metrics, days = 30) {
   for (const metric of metrics) {
     if (!allowed.includes(metric)) continue
 
-    if (metric === 'occupancy') {
+    if (metric === 'occupancy' && fieldOccupancy(db).active) {
+      // Panelle aynı kaynak: saha bilgisi varsa oda bazlı, günlük anlık görüntülerden (görüntüsüz gün null)
+      result.occupancy = occupancyTrend({ days: n }, db).series.map(p => ({ date: p.date, value: p.pct }))
+      result.occupancy_source = 'field'
+    } else if (metric === 'occupancy') {
+      result.occupancy_source = 'beds'
       const totalBeds = db.prepare(
         `SELECT COALESCE(SUM(active_beds), 1) as t FROM rooms WHERE status='active'`
       ).get().t

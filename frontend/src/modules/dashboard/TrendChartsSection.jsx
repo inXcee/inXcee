@@ -28,7 +28,7 @@ export default function TrendChartsSection({ days = 30, label }) {
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '12px' }}>
           {METRICS.map(metric => (
-            <TrendCard key={metric} metric={metric} data={data?.[metric]} />
+            <TrendCard key={metric} metric={metric} data={data?.[metric]} source={data?.occupancy_source} />
           ))}
         </div>
       )}

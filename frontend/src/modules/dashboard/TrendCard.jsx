@@ -15,16 +15,19 @@ function formatDate(dateStr) {
   return `${d.getDate()}/${d.getMonth() + 1}`
 }
 
+// Değeri olmayan gün (doluluk anlık görüntüsü yok) sıfır sayılmaz: ok yalnız iki uç biliniyorsa
 function getTrend(data, cfg) {
   if (!data || data.length < 2) return null
-  const last = cfg.type === 'line2' ? (data[data.length - 1].in ?? 0) : (data[data.length - 1].value ?? 0)
-  const prev = cfg.type === 'line2' ? (data[data.length - 2].in ?? 0) : (data[data.length - 2].value ?? 0)
+  const last = cfg.type === 'line2' ? (data[data.length - 1].in ?? 0) : data[data.length - 1].value
+  const prev = cfg.type === 'line2' ? (data[data.length - 2].in ?? 0) : data[data.length - 2].value
+  if (last == null || prev == null) return null
   if (last > prev) return { arrow: '↑', color: 'var(--green)' }
   if (last < prev) return { arrow: '↓', color: 'var(--red)' }
   return { arrow: '→', color: 'var(--text3)' }
 }
 
-export default function TrendCard({ metric, data }) {
+// source='field': doluluk oda bazlı (saha), aksi halde yatak bazlı
+export default function TrendCard({ metric, data, source }) {
   const cfg = CONFIGS[metric]
   if (!cfg || !data || data.length === 0) return null
 
@@ -32,7 +35,8 @@ export default function TrendCard({ metric, data }) {
   const lastPoint = data[data.length - 1]
   const displayValue = cfg.type === 'line2'
     ? `${lastPoint.in ?? 0} / ${lastPoint.out ?? 0}`
-    : `${lastPoint.value ?? 0}${cfg.unit}`
+    : (lastPoint.value == null ? '—' : `${lastPoint.value}${cfg.unit}`)
+  const label = metric === 'occupancy' && source === 'field' ? `${cfg.label} · oda bazlı` : cfg.label
 
   const tooltipStyle = { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px', fontSize: '11px' }
 
@@ -47,7 +51,7 @@ export default function TrendCard({ metric, data }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
         <div>
           <div style={{ fontSize: '11px', color: 'var(--text2)', fontWeight: 500 }}>
-            {cfg.label}
+            {label}
           </div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '4px' }}>
             <span style={{
@@ -92,7 +96,7 @@ export default function TrendCard({ metric, data }) {
             <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
             <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fontSize: 9, fill: 'var(--text3)' }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
             <YAxis domain={[0, 100]} tick={{ fontSize: 9, fill: 'var(--text3)' }} tickLine={false} axisLine={false} />
-            <Tooltip contentStyle={tooltipStyle} labelFormatter={formatDate} formatter={(val) => [`${val}%`]} />
+            <Tooltip contentStyle={tooltipStyle} labelFormatter={formatDate} formatter={(val) => [val == null ? 'Kayıt yok' : `${val}%`]} />
             <Area type="monotone" dataKey="value" stroke={cfg.color} strokeWidth={1.5} fill={`url(#grad-${metric})`} dot={false} />
           </AreaChart>
         )}
