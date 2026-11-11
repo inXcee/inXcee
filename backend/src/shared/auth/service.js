@@ -5,6 +5,7 @@ import { getDB } from '../db/index.js'
 import { validatePassword } from './password-policy.js'
 import { verifyTotp, makeTotpChallengeToken, consumeTotpChallengeToken, verifyBackupCode } from './totp.js'
 import { logger } from '../logger.js'
+import { isAgentKey, verifyAgentKey } from './agentKeys.js'
 
 const SECRET = process.env.JWT_SECRET
 if (!SECRET) {
@@ -641,6 +642,8 @@ export function getKioskSession(payload) {
 }
 
 export function verifyToken(token, { allowLocked = false, allowPinChange = false } = {}) {
+  // Ajan API anahtarı (Hermes): JWT değil; bağlı kullanıcının yüküne çözülür (bkz. agentKeys.js).
+  if (isAgentKey(token)) return verifyAgentKey(token)
   const payload = jwt.verify(token, SECRET)
   if (isBlacklisted(payload.jti)) throw new Error('Token iptal edildi')
   assertPrincipalActive(payload)
