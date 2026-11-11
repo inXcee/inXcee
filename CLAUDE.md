@@ -72,6 +72,14 @@ cd backend && node -e "import('./src/shared/db/index.js').then(m=>m.initDB()).th
 - Yalnız temizlik + çamaşırhane grupları (`requireFieldGroup`); kayıtlı kiosk cihazının kuralı `device_mode`'dan önceliklidir.
 - **Kapıdaki QR:** okutma `location_portal_events.field_scan`; aynı kişinin aynı yerdeki 60 dk içindeki işareti `verified_by_qr`. Zorunluluk `saha_qr_enforcement` (`off` | `verified_labels`) yalnız etiketi doğrulanmış kapıda. Geçerli görev = günün **son** görevi (sakin şikayetinin takip görevi ilk görevin yerine geçer). Kod `location-portal/field-scan.js`.
 
+### Hermes Entegrasyonu (ajan anahtarı + API kataloğu)
+
+- Güncel kurulum, yetki modeli ve API kaynağı: `docs/hermes-entegrasyon.md`. Hermes tarafı (komut + beceri): `integrations/hermes/`.
+- Hermes'e özel "komut" ucu YAZILMAZ: ajan, anahtarıyla (`Authorization: Bearer yysa_…`, `shared/auth/agentKeys.js`) arayüzün kullandığı normal uçları bağlı kullanıcının rolüyle çağırır. `verifyToken` anahtarı kullanıcı yüküne çözer (`req.user.agent` dolu gelir).
+- Katalog (`GET /api/agent/catalog`) elle tutulmaz, çalışan uygulamadan üretilir: yetki guard etiketlerinden (`middleware.js` sonu), şema `validate()`'ten, açıklama ucun üstündeki `//` yorumundan. **Yeni guard → etiket ekle; yeni uç → üstüne bir satır Türkçe yorum.**
+- Ajana kapalı uçlar tek yerde: `modules/agent/gate.js → BLOCKED` (kimlik/oturum, ajan anahtarları, özel kasa, sesli Hermes, yedek geri yükleme). Sahip bayrağı ajan anahtarına geçmez.
+- Ajanın her yazması `audit_log.module='agent'` olarak düşer; bu kayıt uçların kendi denetim kaydının yerine geçmez.
+
 ### Oda QR Portalı Modülü
 
 - Güncel işletim, API, rol, etiket basımı ve saha kurulumu kaynağı: `docs/room-qr-portal.md`.
