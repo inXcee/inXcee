@@ -100,6 +100,7 @@ export const SETTINGS_GROUPS = [
       { key: 'email', label: 'Genel & E-Posta', icon: '⎓', roles: ROL.YONETICI, desc: 'SMTP ve genel sistem ayarları', keywords: 'smtp eposta ayar genel' },
       { key: 'users', label: 'Kullanıcılar', icon: '🔐', roles: ROL.YONETICI, desc: 'Panel hesapları ve rolleri', keywords: 'kullanici hesap rol yetki' },
       { key: 'sessions', label: 'Açık Oturumlar', icon: '🔑', roles: ROL.YONETICI, desc: 'Aktif oturumlar, tekil çıkış', keywords: 'oturum session cikis token' },
+      { key: 'agent-keys', label: 'Ajan Anahtarları', icon: '🤖', roles: ROL.YONETICI, desc: 'Hermes ve diğer ajanların YYS erişimi', keywords: 'hermes ajan agent anahtar api key telegram bot' },
       // Arka uç yalnız yöneticiye izin veriyor. Koruma olmadığı için amir
       // URL'den girip her isteği 403 dönen boş bir sayfa görüyordu.
       { key: 'automation', label: 'Otomasyon', icon: '⚙', roles: ROL.YONETICI, desc: 'Otomatik kural ve tetikleyiciler', keywords: 'otomasyon kural tetik' },

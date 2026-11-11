@@ -107,6 +107,7 @@ const BackupPage = lazy(() => import('./modules/admin/BackupPage.jsx'))
 const KvkkAdminPage = lazy(() => import('./modules/admin/KvkkAdminPage.jsx'))
 const SystemHealthPage = lazy(() => import('./modules/admin/SystemHealthPage.jsx'))
 const SessionsPage = lazy(() => import('./modules/admin/SessionsPage.jsx'))
+const AgentKeysPage = lazy(() => import('./modules/admin/AgentKeysPage.jsx'))
 const ProjectsPage = lazy(() => import('./modules/admin/ProjectsPage.jsx'))
 const KioskDevicesPage = lazy(() => import('./modules/admin/KioskDevicesPage.jsx'))
 const KioskEnrollmentPage = lazy(() => import('./modules/kiosk-enrollment/KioskEnrollmentPage.jsx'))
@@ -404,6 +405,7 @@ export default function App() {
               <Route path="kvkk-admin" element={<SettingsRoute settingsKey="kvkk-admin"><KvkkAdminPage /></SettingsRoute>} />
               <Route path="system" element={<SettingsRoute settingsKey="system"><SystemHealthPage /></SettingsRoute>} />
               <Route path="sessions" element={<SettingsRoute settingsKey="sessions"><SessionsPage /></SettingsRoute>} />
+              <Route path="agent-keys" element={<SettingsRoute settingsKey="agent-keys"><AgentKeysPage /></SettingsRoute>} />
               <Route path="projects" element={<SettingsRoute settingsKey="projects"><ProjectsPage /></SettingsRoute>} />
               {/* Yonetim modulleri sekmeler olarak */}
               <Route path="companies" element={<SettingsRoute settingsKey="companies"><CompaniesPage /></SettingsRoute>} />
