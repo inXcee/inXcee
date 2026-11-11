@@ -17,5 +17,7 @@ export function sessionUser(req) {
 export function isOwner(user) {
   // Kiosk/cihaz token'larının id'si users tablosuyla çakışabilir → rol de şart.
   if (!user?.id || user.role !== 'campus_manager') return false
+  // Ajan anahtarı sahibin hesabına bağlı olsa bile kişisel özelliklere (özel kasa, sesli Hermes) geçemez.
+  if (user.agent) return false
   return Boolean(getDB().prepare('SELECT 1 FROM users WHERE id=? AND is_owner=1 AND is_active=1').get(user.id))
 }

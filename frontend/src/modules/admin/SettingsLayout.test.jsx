@@ -99,7 +99,7 @@ describe('gruplar', () => {
     const baslik = kenar().getByTitle('Hesaplar, otomasyon, yedek ve sağlık')
     await userEvent.click(baslik)
     expect(baslik).toHaveAttribute('aria-expanded', 'false')
-    expect(within(baslik).getByText('8')).toBeInTheDocument()
+    expect(within(baslik).getByText('9')).toBeInTheDocument()
   })
 
   // Kapalı grupta aktif sayfa varsa kullanıcı nerede olduğunu kaybetmemeli.

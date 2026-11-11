@@ -29,3 +29,5 @@ frontend/e2e/.tmp/
 scripts/import/roster.csv
 scripts/import/inventory.csv
 .codex-runtime/
+__pycache__/
+*.pyc

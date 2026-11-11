@@ -58,10 +58,12 @@ export function requireSSEAuth(req, res, next) {
 }
 
 export function requireRole(...roles) {
-  return [requireAuth, (req, res, next) => {
+  const check = (req, res, next) => {
     if (!roles.includes(req.user.role)) return res.status(403).json({ error: 'Yetkisiz' })
     next()
-  }]
+  }
+  check.guard = { kind: 'role', roles }
+  return [requireAuth, check]
 }
 
 // requireAuth kiosk (sakin, role='kiosk') ve AVS kiosk (çalışan, role='avs_kiosk')
@@ -166,3 +168,14 @@ export function requireKioskDevice(req, res, next) {
     res.status(500).json({ error: 'Kiosk cihaz doğrulama hatası' })
   }
 }
+
+// Yetki etiketleri — /api/agent/catalog her ucun kuralını çalışma anında bu etiketlerden okur
+// (bkz. modules/agent/catalog.js). Davranışı değiştirmez; yeni bir guard eklenirse buraya da ekle.
+requireAuth.guard = { kind: 'auth' }
+requireSSEAuth.guard = { kind: 'auth' }
+staffOnly.guard = { kind: 'staff' }
+requireAvsKiosk.guard = { kind: 'kiosk' }
+requireLaundryKioskOperator.guard = { kind: 'laundry_operator' }
+requireKioskOrStaff.guard = { kind: 'kiosk_or_staff' }
+requireStation.guard = { kind: 'device' }
+requireKioskDevice.guard = { kind: 'device' }

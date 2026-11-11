@@ -5,6 +5,7 @@ import compression from 'compression'
 import cookieParser from 'cookie-parser'
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
 import jwt from 'jsonwebtoken'
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { statfs } from 'node:fs/promises'
 import v8 from 'node:v8'
@@ -103,6 +104,9 @@ import { locationPortalRouter } from './modules/location-portal/routes.js'
 import { roomPortalRouter } from './modules/location-portal/public-routes.js'
 import { privateFinanceRouter } from './modules/private-finance/routes.js'
 import { hermesVoiceRouter } from './modules/hermes-voice/routes.js'
+import { agentRouter } from './modules/agent/routes.js'
+import { agentGate } from './modules/agent/gate.js'
+import { agentKeyFromRequest } from './shared/auth/agentKeys.js'
 
 if (process.env.NODE_ENV === 'production' && !process.env.ALLOWED_ORIGIN) {
   logger.error('[Startup] HATA: ALLOWED_ORIGIN env değişkeni production\'da zorunludur.')
@@ -193,6 +197,8 @@ app.use(express.json({ limit: '5mb' }))
 app.use(cookieParser())
 app.use((req, res, next) => (req.path.startsWith('/api/pf/') ? next() : sanitizeBody(req, res, next)))
 app.use('/api', kioskIdempotencyMiddleware)
+// Ajan API anahtarı (Hermes): salt-okur kuralı, kapalı uçlar ve yazma denetim kaydı — bkz. modules/agent/gate.js
+app.use('/api', agentGate)
 // Multer dosya isimleri unique (Date.now()-rand) — immutable cache güvenli.
 // Hassas personel belgeleri (kimlik, sağlık raporu, sözleşme, banka) varsayılan
 // olarak UPLOADS_DIR/documents altına yazılır (DOCUMENTS_DIR boşsa). /uploads
@@ -319,6 +325,9 @@ app.get('/api/health', async (req, res) => {
 // kovası için tutarlı bir anahtar yeterli, güvenlik yetki kontrolüne bağlı.
 const rateLimitKey = (req, _res) => {
   const h = req.headers.authorization
+  // Ajan anahtarı JWT değildir; kendi kovası olmazsa aynı sunucudaki her şeyle loopback IP kovasını paylaşır.
+  const agentKey = agentKeyFromRequest(req)
+  if (agentKey) return `agent:${createHash('sha256').update(agentKey).digest('hex').slice(0, 16)}`
   if (h?.startsWith('Bearer ')) {
     try {
       const p = jwt.decode(h.slice(7))
@@ -443,6 +452,7 @@ app.use('/api/shifts', writeLimiter, shiftsRouter)
 app.use('/api/water', writeLimiter, waterRouter)
 app.use('/api/pf', readLimiter, privateFinanceRouter)
 app.use('/api/hermes', writeLimiter, hermesVoiceRouter)
+app.use('/api/agent', readLimiter, agentRouter)
 app.use('/api/checkout', writeLimiter, checkoutRouter)
 app.use('/api/bulk-actions', writeLimiter, bulkActionsRouter)
 app.use('/api/companies', writeLimiter, companiesRouter)
