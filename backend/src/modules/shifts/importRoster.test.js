@@ -52,8 +52,13 @@ describe('çizelge aktarımı + İK kadrosu', () => {
   it('arşiv kopyası değil aktif kişi eşleşir', async () => {
     const res = await commit(week([{ name: 'MUHAMMED BUDAKX', cells: [cell('2026-11-03')] }]))
     expect(res.status).toBe(200)
-    const row = getDB().prepare("SELECT staff_id FROM shift_schedule WHERE work_date='2026-11-03'").get()
-    expect(row.staff_id).toBe(existingId)
+    // Tohum verisi bugünün çevresindeki günlere de vardiya yazar; yalnız bu adın satırlarına bakılır
+    // (tarih 2026-11-03'e yaklaşınca ilk satır tohumdaki başka bir kişiye denk geliyordu).
+    const rows = getDB().prepare(`
+      SELECT ss.staff_id FROM shift_schedule ss JOIN staff s ON s.id=ss.staff_id
+      WHERE ss.work_date='2026-11-03' AND s.full_name='MUHAMMED BUDAKX'
+    `).all()
+    expect(rows.map(r => r.staff_id)).toEqual([Number(existingId)])
   })
 
   it('onaylanan yazım farkı kalıcı olur, sonraki hafta sorulmaz; geri alma eşleştirmeyi siler', async () => {
