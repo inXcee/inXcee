@@ -16,7 +16,7 @@
  */
 
 export function validate(schema, source = 'body') {
-  return (req, res, next) => {
+  const handler = (req, res, next) => {
     const data = req[source]
     const result = schema.safeParse(data)
     if (!result.success) {
@@ -35,4 +35,7 @@ export function validate(schema, source = 'body') {
     req.validated = result.data
     next()
   }
+  // /api/agent/catalog gövde şemasını buradan okur
+  handler.validation = { schema, source }
+  return handler
 }
