@@ -95,7 +95,7 @@ describe('cards/CardsPage smoke', () => {
   it('sakin çamaşır kartlarını çalışanlardan ayrı gösterir', async () => {
     const api = (await import('../../shared/api/client.js')).default
     renderWithProviders(<CardsPage />)
-    fireEvent.click(screen.getByRole('button', { name: /Sakin Çamaşır Kartları/ }))
+    fireEvent.click(screen.getByRole('tab', { name: /Sakin Çamaşır Kartları/ }))
     expect(await screen.findByText('Sakin Resident')).toBeInTheDocument()
     expect(screen.getByText('Kartsız Sakin')).toBeInTheDocument()
     expect(screen.getByText('Sakin Resident').closest('button')).toHaveTextContent('M1/101')
@@ -113,7 +113,7 @@ describe('cards/CardsPage smoke', () => {
 
   it('sorunlu okutma listesini KPI ve denetim ayrıntılarıyla gösterir', async () => {
     renderWithProviders(<CardsPage />)
-    fireEvent.click(screen.getByRole('button', { name: /Sorunlu Okutmalar/ }))
+    fireEvent.click(screen.getByRole('tab', { name: /Sorunlu Okutmalar/ }))
     expect(await screen.findByText('%80')).toBeInTheDocument()
     expect(screen.getByText('Başka Sakin')).toBeInTheDocument()
     expect(screen.getByText('T-0044')).toBeInTheDocument()

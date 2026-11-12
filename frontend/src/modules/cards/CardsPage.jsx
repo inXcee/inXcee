@@ -166,34 +166,27 @@ export default function CardsPage() {
 
   return (
     <div style={{ padding: '24px' }}>
-      <div className="fade-up" style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
-        <div>
-          <h2 style={{ fontSize: '28px', letterSpacing: '4px' }}>KARTLAR</h2>
-          <p style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--text3)', letterSpacing: '1px', marginTop: '4px' }}>
-            AMAÇ BAZINDA KİMLİK · GİRİŞ + YEMEK + SAKİN ÇAMAŞIR KARTI · PDF · NFC
-          </p>
-        </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: 3 }}>
-          <button onClick={() => setView('roster')} className="btn btn-xs"
-            style={{ borderRadius: 8, border: 'none', background: view === 'roster' ? 'var(--accent)' : 'transparent', color: view === 'roster' ? '#000' : 'var(--text3)' }}>
-            🪪 Kartlar
-          </button>
-          <button onClick={() => setView('analytics')} className="btn btn-xs"
-            style={{ borderRadius: 8, border: 'none', background: view === 'analytics' ? 'var(--accent)' : 'transparent', color: view === 'analytics' ? '#000' : 'var(--text3)' }}>
-            📊 Analiz
-          </button>
-          <button onClick={() => setView('enroll')} className="btn btn-xs"
-            style={{ borderRadius: 8, border: 'none', background: view === 'enroll' ? 'var(--accent)' : 'transparent', color: view === 'enroll' ? '#000' : 'var(--text3)' }}>
-            📲 Hızlı Kayıt
-          </button>
-          <button onClick={() => setView('residents')} className="btn btn-xs"
-            style={{ borderRadius: 8, border: 'none', background: view === 'residents' ? '#0f9f9a' : 'transparent', color: view === 'residents' ? '#fff' : 'var(--text3)' }}>
-            🧺 Sakin Çamaşır Kartları
-          </button>
-          <button onClick={() => setView('scan-issues')} className="btn btn-xs"
-            style={{ borderRadius: 8, border: 'none', background: view === 'scan-issues' ? '#b45309' : 'transparent', color: view === 'scan-issues' ? '#fff' : 'var(--text3)' }}>
-            ⚠ Sorunlu Okutmalar
-          </button>
+      {/* Başlık + okunur sekme çubuğu (vardiya ekranıyla aynı dil): küçük harf aralıklı hap düğmeler yerine */}
+      <div className="fade-up" style={{ marginBottom: 16 }}>
+        <h2 style={{ fontSize: 22, letterSpacing: 1, margin: '0 0 10px' }}>Kartlar</h2>
+        <div role="tablist" aria-label="Kart görünümü" style={{ display: 'flex', gap: 4, overflowX: 'auto', borderBottom: '1px solid var(--border)' }}>
+          {[
+            ['roster', '🪪 Kartlar'],
+            ['analytics', '📊 Analiz'],
+            ['enroll', '📲 Hızlı Kayıt'],
+            ['residents', '🧺 Sakin Çamaşır Kartları'],
+            ['scan-issues', '⚠ Sorunlu Okutmalar'],
+          ].map(([key, label]) => (
+            <button key={key} type="button" role="tab" aria-selected={view === key} onClick={() => setView(key)}
+              style={{
+                padding: '9px 14px', whiteSpace: 'nowrap', background: 'none', cursor: 'pointer', fontSize: 14,
+                borderWidth: 0, borderBottomWidth: 2, borderStyle: 'solid',
+                borderColor: view === key ? 'var(--accent)' : 'transparent',
+                color: view === key ? 'var(--text)' : 'var(--text2)', fontWeight: view === key ? 600 : 400,
+              }}>
+              {label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -242,8 +235,8 @@ export default function CardsPage() {
             ⊞ {ct.short.toLocaleLowerCase('tr')} toplu PDF ({coverage[ct.type]})
           </button>
         ))}
-        <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text3)', marginLeft: 'auto' }}>
-          {coverage.access}/{roster.length} giriş · {coverage.meal}/{roster.length} yemek
+        <span style={{ fontSize: 13, color: 'var(--text2)', marginLeft: 'auto' }}>
+          {roster.length} çalışandan {coverage.access} giriş kartlı · {coverage.meal} yemek kartlı
         </span>
       </div>
       )}
