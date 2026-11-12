@@ -16,7 +16,7 @@ Yalnız Python standart kitaplığı kullanır. Belge: YYS deposu docs/hermes-en
   yys post /api/... --dosya photo=/tmp/a.jpg not=deneme      çok parçalı (multipart) yükleme
   yys get /api/.../pdf --cikti /tmp/a.pdf                    ikili yanıtı dosyaya yaz
   yys kasa                               özel finans kasası: store'lar (yalnız sahip kasa izni verdiyse)
-  yys kasa oku finance-storage --yol accounts             store verisi (isteğe bağlı JSON yolu: a.b.0)
+  yys kasa oku finance-storage --yol accounts             uygulama verisi (JSON yolu a.b.0; zarf için --ham)
   yys kasa gecmis finance-storage                         store'un sürüm geçmişi
 
 Çıkış kodu: 0 başarılı · 1 YYS hata döndü (durum kodu ve mesaj stderr'de) · 2 kullanım/kurulum hatası
@@ -414,12 +414,18 @@ def cmd_kasa(args):
                                                    row.get('updated_at') or '', row.get('actor') or ''))
         return
     if not args:
-        die('Kullanım: yys kasa oku|gecmis <store> [--yol a.b] [--tam]')
+        die('Kullanım: yys kasa oku|gecmis <store> [--yol a.b] [--tam] [--ham]')
     store = urllib.parse.quote(args[0], safe='')
     if sub in ('oku', 'read'):
         path, full = take(args, '--yol'), take_flag(args, '--tam')
+        raw = take_flag(args, '--ham')
         row = kasa_call('/api/pf/state/' + store)
-        data = dig(row.get('data'), path) if path else row.get('data')
+        data = row.get('data')
+        # FinansApp senkron zarfı {format, blob: {state: …}}: uygulama verisi state'tedir (kasa_ops.finance_state ile aynı).
+        # --yol state'e göredir; zarfın kendisi için --ham.
+        if not raw and isinstance(data, dict) and isinstance(data.get('blob'), dict):
+            data = data['blob'].get('state', data['blob'])
+        data = dig(data, path) if path else data
         if not path:
             sys.stderr.write('%s v%s · %s · %s\n' % (row.get('store_key'), row.get('version'), row.get('updated_at'), row.get('actor')))
         text = json.dumps(data, ensure_ascii=False, indent=1)
