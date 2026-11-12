@@ -63,7 +63,7 @@ kullan; onlar o işin doğrulama adımlarını içerir. Bu beceri geri kalan her
 Kullanıcının kişisel kasası — yalnız sahip bu anahtara kasa izni verdiyse açılır (`yys kimim` → "özel kasa: …").
 İzin yoksa her kasa ucu `404` döner; bu "kasa yok" demek değildir, kullanıcıya "anahtarın kasa izni yok" de.
 
-- `yys kasa` → store listesi · `yys kasa oku <store> --yol accounts` → veri (büyükse `--yol` ile daralt) ·
+- `yys kasa` → store listesi · `yys kasa oku <store> --yol accounts` → uygulama verisi (senkron zarfı kendiliğinden açılır; yollar: `accounts`, `transactions`, `budgets`…; büyükse `--yol` ile daralt, zarfın kendisi `--ham`) ·
   `yys kasa gecmis <store>` → sürümler.
 - Kasa sorularında **önce `kasa` becerisi / `kasa-ops`** (özet, kartlar, yaklaşan ödemeler hazır hesaplanmış gelir);
   `yys kasa` ham veriye bakmak içindir.
