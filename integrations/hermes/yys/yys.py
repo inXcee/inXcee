@@ -15,6 +15,9 @@ Yalnız Python standart kitaplığı kullanır. Belge: YYS deposu docs/hermes-en
   yys post /api/... ad=Ali yas:=30       ad=değer metin, ad:=değer JSON (sayı, true, liste…)
   yys post /api/... --dosya photo=/tmp/a.jpg not=deneme      çok parçalı (multipart) yükleme
   yys get /api/.../pdf --cikti /tmp/a.pdf                    ikili yanıtı dosyaya yaz
+  yys kasa                               özel finans kasası: store'lar (yalnız sahip kasa izni verdiyse)
+  yys kasa oku finance-storage --yol accounts             store verisi (isteğe bağlı JSON yolu: a.b.0)
+  yys kasa gecmis finance-storage                         store'un sürüm geçmişi
 
 Çıkış kodu: 0 başarılı · 1 YYS hata döndü (durum kodu ve mesaj stderr'de) · 2 kullanım/kurulum hatası
 """
@@ -284,6 +287,8 @@ def cmd_kimim(_args):
     user, agent = who['user'], who.get('agent') or {}
     print('%s (%s) — rol: %s' % (user.get('full_name') or user['username'], user['username'], user['role']))
     print('anahtar: %s · erişim: %s' % (agent.get('name', '—'), 'okuma + yazma' if agent.get('access') == 'write' else 'yalnız okuma'))
+    if agent.get('kasa'):
+        print('özel kasa: %s' % ('okuma + yazma' if agent['kasa'] == 'write' else 'yalnız okuma'))
     print('sunucu saati: %s %s (%s)' % (who['local_date'], who['local_time'], who['timezone']))
 
 
@@ -375,7 +380,62 @@ def cmd_belge(args):
     print(text)
 
 
+def dig(value, path):
+    for part in [p for p in path.split('.') if p]:
+        if isinstance(value, list):
+            try:
+                value = value[int(part)]
+            except (ValueError, IndexError):
+                die('Yol bulunamadı: %s (liste, indeks bekleniyor)' % part, 1)
+        elif isinstance(value, dict):
+            if part not in value:
+                die('Yol bulunamadı: %s (anahtarlar: %s)' % (part, ', '.join(list(value)[:40])), 1)
+            value = value[part]
+        else:
+            die('Yol bulunamadı: %s (değer %s)' % (part, type(value).__name__), 1)
+    return value
+
+
+def kasa_call(path):
+    try:
+        return call('GET', path)[1]
+    except SystemExit as exc:
+        if exc.code == 1:
+            sys.stderr.write('not: kasa 404 dönüyorsa bu anahtara kasa izni verilmemiştir (izni yalnız sahip verir).\n')
+        raise
+
+
+def cmd_kasa(args):
+    # Salt okuma: kasaya yazma kasa-ops (hermes-inbox) üzerinden yapılır; uygulamanın store'unu doğrudan ezme.
+    sub = args.pop(0).lower() if args else 'liste'
+    if sub in ('liste', 'list'):
+        for row in kasa_call('/api/pf/state')['stores']:
+            print('%-28s v%-5s %8d bayt  %s  %s' % (row['store_key'], row['version'], row.get('bytes') or 0,
+                                                   row.get('updated_at') or '', row.get('actor') or ''))
+        return
+    if not args:
+        die('Kullanım: yys kasa oku|gecmis <store> [--yol a.b] [--tam]')
+    store = urllib.parse.quote(args[0], safe='')
+    if sub in ('oku', 'read'):
+        path, full = take(args, '--yol'), take_flag(args, '--tam')
+        row = kasa_call('/api/pf/state/' + store)
+        data = dig(row.get('data'), path) if path else row.get('data')
+        if not path:
+            sys.stderr.write('%s v%s · %s · %s\n' % (row.get('store_key'), row.get('version'), row.get('updated_at'), row.get('actor')))
+        text = json.dumps(data, ensure_ascii=False, indent=1)
+        if len(text) > MAX_OUTPUT and not full:
+            keys = ', '.join(list(data)[:60]) if isinstance(data, dict) else '%d öğe' % len(data) if isinstance(data, list) else ''
+            text = text[:MAX_OUTPUT] + '\n… kesildi (%d karakter). Daralt: --yol <anahtar>%s' % (len(text), (' — ' + keys) if keys else '')
+        print(text)
+    elif sub in ('gecmis', 'history'):
+        for row in kasa_call('/api/pf/state/%s/history' % store)['versions']:
+            print('v%-5s %s  %8d bayt  %s' % (row['version'], row['saved_at'], row.get('bytes') or 0, row.get('actor') or ''))
+    else:
+        die('Bilinmeyen kasa komutu: %s (liste | oku | gecmis)' % sub)
+
+
 COMMANDS = {
+    'kasa': cmd_kasa,
     'kimim': cmd_kimim, 'whoami': cmd_kimim,
     'ara': cmd_ara, 'search': cmd_ara,
     'moduller': cmd_moduller, 'modules': cmd_moduller,

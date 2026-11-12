@@ -8,7 +8,8 @@ import { fileURLToPath } from 'node:url'
 import { z } from 'zod'
 import { requireRole, requireStaff } from '../../shared/auth/middleware.js'
 import { validate } from '../../shared/middleware/validate.js'
-import { createAgentKey, listAgentKeys, revokeAgentKey } from '../../shared/auth/agentKeys.js'
+import { createAgentKey, listAgentKeys, revokeAgentKey, setAgentKeyKasa, agentKasaAccess } from '../../shared/auth/agentKeys.js'
+import { isOwner } from '../../shared/auth/owner.js'
 import { logAudit } from '../../shared/audit.js'
 import { getDB } from '../../shared/db/index.js'
 import { searchCatalog, catalogModules, endpointSource, readSource } from './catalog.js'
@@ -22,7 +23,11 @@ agentRouter.get('/whoami', ...requireStaff, (req, res) => {
   const now = new Date()
   res.json({
     user: { id: req.user.id, username: req.user.username, full_name: req.user.full_name, role: req.user.role },
-    agent: req.user.agent ? { name: req.user.agent.name, access: req.user.agent.access } : null,
+    agent: req.user.agent ? {
+      name: req.user.agent.name, access: req.user.agent.access,
+      // Yalnız izin varsa görünür: kasa izni olmayan anahtar kasanın varlığını buradan da öğrenmez.
+      ...(agentKasaAccess(req.user.agent) ? { kasa: agentKasaAccess(req.user.agent) } : {}),
+    } : null,
     server_time: now.toISOString(),
     local_date: now.toLocaleDateString('sv-SE', { timeZone: 'Europe/Istanbul' }),
     local_time: now.toLocaleTimeString('tr-TR', { timeZone: 'Europe/Istanbul', hour12: false }),
@@ -99,8 +104,14 @@ const createKeySchema = z.object({
   expires_at: z.string().datetime({ offset: true }).nullish(),
 })
 
+// Kasa izni sütunları yalnız sahibe gösterilir; diğer müdürler kasanın varlığını anahtar listesinden öğrenmez.
 agentRouter.get('/keys', ...managerOnly, (req, res) => {
-  res.json(listAgentKeys())
+  const owner = isOwner(req.user)
+  res.json(listAgentKeys().map(k => {
+    if (owner) return k
+    const { kasa_access: _a, kasa_granted_at: _b, ...rest } = k
+    return rest
+  }))
 })
 
 // Yanıttaki `key` yalnız bu bir kez görünür. user_id verilmezse anahtar oluşturan müdürün hesabına bağlanır.
@@ -118,6 +129,20 @@ agentRouter.delete('/keys/:id', ...managerOnly, (req, res) => {
   if (!Number.isInteger(id) || !revokeAgentKey(id)) return res.status(404).json({ error: 'Anahtar bulunamadı ya da zaten iptal' })
   logAudit(req.user.id, 'agent_key_revoke', 'agent', id, null)
   res.json({ ok: true })
+})
+
+// Anahtara özel finans kasası izni ver/kaldır: { access: 'read' | 'write' | null }. Yalnız SAHİBİN web oturumu;
+// diğer herkese 404 (kasa görünmez). Firma denetim günlüğüne yazılmaz (müdürlere açık) — iz satırda tutulur.
+const kasaSchema = z.object({ access: z.enum(['read', 'write']).nullable() })
+agentRouter.patch('/keys/:id/kasa', ...managerOnly, (req, res, next) => {
+  if (!isOwner(req.user)) return res.status(404).json({ error: 'Bulunamadı' })
+  next()
+}, validate(kasaSchema), (req, res, next) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isInteger(id)) return res.status(404).json({ error: 'Anahtar bulunamadı' })
+    res.json(setAgentKeyKasa(id, req.validated.access, req.user.id))
+  } catch (e) { next(e) }
 })
 
 // Ajanın yaptığı son yazma işlemleri (denetim günlüğünden) — "Hermes ne yaptı?".

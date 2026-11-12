@@ -1,10 +1,11 @@
-// Özel finans kasası API'si — yalnız SAHİP (users.is_owner=1, campus_manager) ve
-// kapsamlı API anahtarı (Hermes). Diğer HERKES — oturumsuz, müdür, vardiya — her uçta
+// Özel finans kasası API'si — yalnız SAHİP (users.is_owner=1, campus_manager), kapsamlı kasa
+// anahtarı (x-pf-key) ve sahibin kasa izni verdiği YYS ajan anahtarı (Hermes, migration 128). Diğer HERKES — oturumsuz, müdür, vardiya — her uçta
 // 404 alır: kasanın varlığı dışarıdan anlaşılmaz. Firma denetim günlüğüne (logAudit)
 // bilinçli olarak YAZILMAZ; o günlük müdürlere açıktır.
 import { Router } from 'express'
 import { getDB } from '../../shared/db/index.js'
 import { sessionUser, isOwner } from '../../shared/auth/owner.js'
+import { agentKasaAccess } from '../../shared/auth/agentKeys.js'
 import * as vault from './vault.js'
 
 export const privateFinanceRouter = Router()
@@ -21,6 +22,14 @@ function access(scope, { allowKey = true } = {}) {
       const k = vault.verifyApiKey(key)
       if (!k || !k.scopes.includes(scope)) return hide(res)
       req.pfActor = `anahtar:${k.name}`
+      return next()
+    }
+    // YYS ajan anahtarı (Hermes, Bearer yysa_…): ön kapı (agent/gate.js) doğruladı; burada sahibin verdiği
+    // kasa izni kapsamı denetlenir. read → yalnız okuma, write → okuma + yazma. Geri yükleme/me ajana kapalı.
+    if (req.agentKey) {
+      const kasa = agentKasaAccess(req.agentKey)
+      if (!allowKey || !kasa || (scope === 'write' && kasa !== 'write')) return hide(res)
+      req.pfActor = `ajan:${req.agentKey.name}`
       return next()
     }
     const user = sessionUser(req)

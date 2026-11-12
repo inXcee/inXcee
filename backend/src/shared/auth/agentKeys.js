@@ -51,7 +51,7 @@ export function createAgentKey({ name, userId, access = 'write', expiresAt = nul
 export function listAgentKeys() {
   return getDB().prepare(`
     SELECT k.id, k.name, k.key_prefix, k.access, k.created_at, k.expires_at, k.last_used_at, k.use_count,
-           k.revoked_at, k.user_id, u.username, u.full_name, u.role, u.is_active AS user_active
+           k.revoked_at, k.kasa_access, k.kasa_granted_at, k.user_id, u.username, u.full_name, u.role, u.is_active AS user_active
     FROM agent_api_keys k JOIN users u ON u.id=k.user_id
     ORDER BY k.revoked_at IS NOT NULL, k.id DESC
   `).all()
@@ -68,7 +68,7 @@ export function revokeAgentKey(id) {
 export function verifyAgentKey(raw) {
   const db = getDB()
   const row = db.prepare(`
-    SELECT k.id AS key_id, k.name, k.access, k.expires_at, k.revoked_at,
+    SELECT k.id AS key_id, k.name, k.access, k.expires_at, k.revoked_at, k.kasa_access, k.kasa_granted_by,
            u.id, u.username, u.full_name, u.role, u.is_active
     FROM agent_api_keys k JOIN users u ON u.id=k.user_id
     WHERE k.key_hash=?
@@ -88,8 +88,39 @@ export function verifyAgentKey(raw) {
   }
   return {
     id: row.id, role: row.role, username: row.username, full_name: row.full_name,
-    agent: { key_id: row.key_id, name: row.name, access: row.access },
+    agent: {
+      key_id: row.key_id, name: row.name, access: row.access,
+      // Kasa izni ayrıca sahibin hâlâ sahip olmasına bağlıdır — bkz. agentKasaAccess().
+      kasa: row.kasa_access || null, kasa_granted_by: row.kasa_granted_by ?? null,
+    },
   }
+}
+
+// ── Özel finans kasası izni (migration 128) ────────────────────────────────────────────────────────
+// Sahip: aktif, campus_manager, is_owner=1 ve kendisi bir ajan DEĞİL (bkz. owner.js isOwner).
+const activeOwner = id => id != null && Boolean(getDB().prepare(
+  "SELECT 1 FROM users WHERE id=? AND is_owner=1 AND is_active=1 AND role='campus_manager'",
+).get(id))
+
+// İsteğin ajanının o anki kasa erişimi: 'read' | 'write' | null. İzni veren sahip artık sahip değilse null.
+export function agentKasaAccess(agent) {
+  if (!agent?.kasa) return null
+  return activeOwner(agent.kasa_granted_by) ? agent.kasa : null
+}
+
+// Kasa iznini ver/değiştir/kaldır. access: 'read' | 'write' | null. ownerId izni veren sahiptir.
+export function setAgentKeyKasa(id, access, ownerId) {
+  if (access != null && !['read', 'write'].includes(access)) throw fail('Kasa erişimi read, write ya da boş olmalı', 400)
+  if (!activeOwner(ownerId)) throw fail('Kasa iznini yalnız sistem sahibi verebilir', 403)
+  const db = getDB()
+  const key = db.prepare('SELECT id, revoked_at FROM agent_api_keys WHERE id=?').get(id)
+  if (!key) throw fail('Anahtar bulunamadı', 404)
+  if (key.revoked_at && access) throw fail('İptal edilmiş anahtara kasa izni verilemez', 409)
+  db.prepare(`
+    UPDATE agent_api_keys SET kasa_access=?, kasa_granted_by=?, kasa_granted_at=CASE WHEN ? IS NULL THEN NULL ELSE CURRENT_TIMESTAMP END
+    WHERE id=?
+  `).run(access, access ? ownerId : null, access, id)
+  return { id, kasa_access: access }
 }
 
 export function _resetAgentKeyCacheForTests() { lastTouch.clear() }

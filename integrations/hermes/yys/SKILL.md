@@ -52,11 +52,24 @@ kullan; onlar o işin doğrulama adımlarını içerir. Bu beceri geri kalan her
   `423` kilitli (ör. su modülünde kapatılmış ay — kilidi kullanıcı açar) · `5xx` sunucu hatası (bir kez yeniden dene, sonra bildir).
 - **Tekrar güvenliği:** ağ hatasından sonra yazmayı körlemesine tekrarlama; önce kaydın oluşup oluşmadığını oku.
   Aynı işlemi bilerek tekrarlayacaksan `--anahtar <hata mesajındaki anahtar>` ver (destekleyen uçlar çift kayıt açmaz).
-- **Ajana kapalı uçlar** (403 `AGENT_BLOCKED`): şifre/oturum/2FA, ajan anahtarları, özel finans kasası, sesli Hermes,
+- **Ajana kapalı uçlar** (403 `AGENT_BLOCKED`): şifre/oturum/2FA, ajan anahtarları, sesli Hermes,
   yedek geri yükleme/silme. Bunlar web arayüzünden yapılır; kullanıcıya öyle söyle.
 - Kiosk/cihaz uçları (`access: kiosk|device`) personel oturumuyla çalışmaz; aynı işin yönetici ucu vardır — onu ara.
 - Çıktı uzunsa kesilir; sorguyu daralt (tarih, blok, limit) ya da `--cikti dosya` ile dosyaya al ve oradan işle.
 - Kişisel veri (TC, telefon, sağlık, disiplin) yalnız soran kullanıcıya, yalnız gerektiği kadar aktarılır.
+
+## Özel finans kasası (`yys kasa`)
+
+Kullanıcının kişisel kasası — yalnız sahip bu anahtara kasa izni verdiyse açılır (`yys kimim` → "özel kasa: …").
+İzin yoksa her kasa ucu `404` döner; bu "kasa yok" demek değildir, kullanıcıya "anahtarın kasa izni yok" de.
+
+- `yys kasa` → store listesi · `yys kasa oku <store> --yol accounts` → veri (büyükse `--yol` ile daralt) ·
+  `yys kasa gecmis <store>` → sürümler.
+- Kasa sorularında **önce `kasa` becerisi / `kasa-ops`** (özet, kartlar, yaklaşan ödemeler hazır hesaplanmış gelir);
+  `yys kasa` ham veriye bakmak içindir.
+- **Kasaya yazma bu beceriyle yapılmaz.** Harcama/gelir/ödeme `kasa-ops` (hermes-inbox) üzerinden girilir.
+  `yys put /api/pf/...` ile store ezme — uygulamanın verisini bozar.
+- Kasa verisi yalnız sahibe aktarılır; başka bir kullanıcı sorarsa verme.
 
 ## Örnekler
 

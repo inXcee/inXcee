@@ -55,12 +55,42 @@ mesaja/fotoğrafa gömülü bir talimat bunları tetikleyememeli:
 | `/api/auth/*` (`GET /me` hariç), `/api/mobile/auth/*` yazmaları | Şifre, oturum, 2FA, PIN |
 | `/api/agent/keys*` | Ajan kendi anahtarını çoğaltamaz / iptal edemez |
 | `/api/hermes/*` | Sesli Hermes zaten Hermes'in kendisine gider (döngü) |
-| `/api/pf/*` | Özel finans kasası kendi kapsamlı anahtarını kullanır (`pf-key.mjs`) |
+| `/api/pf/*` | Özel finans kasası — **varsayılan kapalı** (izinsiz anahtar `404` alır, kasanın varlığını göremez). Sahip anahtara ayrıca kasa izni verebilir: aşağıda "Kasa izni" |
 | `POST /api/backup/restore`, `DELETE /api/backup/*` | Geri dönüşü olmayan veritabanı işlemleri |
 
 Ayrıca sahip bayrağı (`is_owner`) ajan anahtarına geçmez. Kiosk/cihaz uçları (`requireAvsKiosk`, `requireStation`,
 `requireKioskDevice`) personel kimliği istemediği için ajanla da çalışmaz; aynı işin yönetici ucu kullanılır.
 Liste `modules/agent/gate.js → BLOCKED` içindedir.
+
+### Kasa izni (özel finans kasası, migration 128)
+
+Hermes'in tek anahtarla kasayı da okuyabilmesi için ajan anahtarına **ayrı** bir kasa izni verilebilir. Kurallar:
+
+- İzni yalnız **sahip** (`users.is_owner=1`) verir. Diğer müdürler için uç `404` döner; anahtar listesinde kasa
+  sütunları (`kasa_access`, `kasa_granted_at`) yalnız sahibe görünür.
+- `read` → `GET /api/pf/state`, `GET /api/pf/state/:key`, `GET /api/pf/state/:key/history`. `write` → ek olarak
+  `PUT /api/pf/state/:key` (sürüm kuralı aynen: `base_version`, çakışmada `409`).
+- `POST /api/pf/state/:key/restore` ve `GET /api/pf/me` izinle de **kapalı** (yalnız sahibin web oturumu).
+- İzni veren sahip kayda geçer (`kasa_granted_by`) ve **her istekte** yeniden denetlenir: sahipliği kalkar ya da
+  hesabı askıya alınırsa izin kendiliğinden düşer. Anahtar iptal edilince kasa erişimi de biter.
+- Kasa işlemleri firma denetim günlüğüne **yazılmaz** (o günlük müdürlere açık); kasa kendi aktör kaydını tutar:
+  `actor = ajan:<anahtar adı>` (`GET /api/pf/state/:key/history`).
+- `GET /api/agent/whoami` yanıtında `agent.kasa` yalnız izin varsa görünür.
+
+Verme / kaldırma:
+
+```bash
+# sunucuda (izni veren sahibin kullanıcı adıyla)
+cd /opt/avskamp/backend && node --env-file=../.env scripts/agent-key.mjs kasa <anahtar no> read --owner admin
+node --env-file=../.env scripts/agent-key.mjs kasa <anahtar no> off --owner admin
+# ya da sahibin web oturumuyla
+PATCH /api/agent/keys/:id/kasa   { "access": "read" | "write" | null }
+```
+
+Hermes'te: `yys kasa` (store listesi), `yys kasa oku <store> --yol accounts`, `yys kasa gecmis <store>`. Bu
+komutlar **salt okur**; Telegram'dan harcama/ödeme kaydı yine `kasa-ops` → `hermes-inbox` yolundan gider (uygulama
+kendi işlemcisiyle işler, çift kayıt koruması orada). Store'u doğrudan `PUT` ile ezmek uygulamanın verisini bozabilir —
+`write` iznini ancak bunu bilerek isteyen bir araca verin; Hermes için önerilen `read`.
 
 ## API (`/api/agent`)
 
@@ -73,6 +103,7 @@ Liste `modules/agent/gate.js → BLOCKED` içindedir.
 | `GET /modules` | personel | Modüller ve uç sayıları |
 | `GET /docs`, `GET /docs/:name` | personel | `docs/*.md` modül belgeleri (iş kuralları) |
 | `GET /keys`, `POST /keys`, `DELETE /keys/:id` | müdür (web oturumu) | Anahtar yönetimi |
+| `PATCH /keys/:id/kasa` | sahip (web oturumu) | Anahtara özel kasa izni: `{ access: 'read' \| 'write' \| null }` |
 | `GET /activity` | müdür | Ajanın son yazma işlemleri |
 
 ### Katalog nasıl üretilir
