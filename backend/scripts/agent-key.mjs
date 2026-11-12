@@ -5,6 +5,7 @@
 //   node --env-file=../.env scripts/agent-key.mjs create rapor --user vardiya --read    (salt-okur)
 //   node --env-file=../.env scripts/agent-key.mjs list
 //   node --env-file=../.env scripts/agent-key.mjs revoke 3
+//   node --env-file=../.env scripts/agent-key.mjs kasa 3 read --owner admin   (özel kasa izni: read | write | off)
 //
 // Anahtar yalnız oluşturulurken bir kez yazılır (stdout'a, tek satır); veritabanında SHA-256 özeti tutulur.
 import { randomBytes } from 'node:crypto'
@@ -13,17 +14,17 @@ import bcrypt from 'bcryptjs'
 const out = s => process.stdout.write(`${s}\n`)
 const err = s => process.stderr.write(`${s}\n`)
 const usage = () => {
-  err('kullanım: agent-key.mjs create <ad> (--user <kullanıcı adı> | --service) [--read] [--days N] | list | revoke <id>')
+  err('kullanım: agent-key.mjs create <ad> (--user <kullanıcı adı> | --service) [--read] [--days N] | list | revoke <id> | kasa <id> read|write|off --owner <sahip>')
   process.exit(2)
 }
 
 const args = process.argv.slice(2)
 const cmd = args[0]
 if (!process.env.DB_PATH) { err('DB_PATH gerekli (--env-file=../.env)'); process.exit(2) }
-if (!['create', 'list', 'revoke'].includes(cmd)) usage()
+if (!['create', 'list', 'revoke', 'kasa'].includes(cmd)) usage()
 
 const { initDB, getDB } = await import('../src/shared/db/index.js')
-const { createAgentKey, listAgentKeys, revokeAgentKey } = await import('../src/shared/auth/agentKeys.js')
+const { createAgentKey, listAgentKeys, revokeAgentKey, setAgentKeyKasa } = await import('../src/shared/auth/agentKeys.js')
 await initDB()
 const db = getDB()
 
@@ -63,6 +64,16 @@ if (cmd === 'create') {
   } catch (e) { err(e.message); process.exit(1) }
 } else if (cmd === 'list') {
   out(JSON.stringify(listAgentKeys(), null, 1))
+} else if (cmd === 'kasa') {
+  // İzni veren sahip kayda geçer; o hesap sahipliğini yitirirse izin kendiliğinden düşer.
+  const [id, level] = [Number(args[1]), args[2]]
+  const ownerName = args.includes('--owner') ? args[args.indexOf('--owner') + 1] : null
+  if (!Number.isInteger(id) || !['read', 'write', 'off'].includes(level) || !ownerName) usage()
+  const ownerId = db.prepare('SELECT id FROM users WHERE username=?').get(ownerName)?.id
+  try {
+    const r = setAgentKeyKasa(id, level === 'off' ? null : level, ownerId)
+    out(r.kasa_access ? `anahtar #${id}: kasa erişimi ${r.kasa_access}` : `anahtar #${id}: kasa erişimi kapatıldı`)
+  } catch (e) { err(e.message); process.exit(1) }
 } else {
   out(revokeAgentKey(Number(args[1])) ? 'iptal edildi' : 'bulunamadı / zaten iptal')
 }

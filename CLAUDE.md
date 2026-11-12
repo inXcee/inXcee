@@ -77,7 +77,8 @@ cd backend && node -e "import('./src/shared/db/index.js').then(m=>m.initDB()).th
 - Güncel kurulum, yetki modeli ve API kaynağı: `docs/hermes-entegrasyon.md`. Hermes tarafı (komut + beceri): `integrations/hermes/`.
 - Hermes'e özel "komut" ucu YAZILMAZ: ajan, anahtarıyla (`Authorization: Bearer yysa_…`, `shared/auth/agentKeys.js`) arayüzün kullandığı normal uçları bağlı kullanıcının rolüyle çağırır. `verifyToken` anahtarı kullanıcı yüküne çözer (`req.user.agent` dolu gelir).
 - Katalog (`GET /api/agent/catalog`) elle tutulmaz, çalışan uygulamadan üretilir: yetki guard etiketlerinden (`middleware.js` sonu), şema `validate()`'ten, açıklama ucun üstündeki `//` yorumundan. **Yeni guard → etiket ekle; yeni uç → üstüne bir satır Türkçe yorum.**
-- Ajana kapalı uçlar tek yerde: `modules/agent/gate.js → BLOCKED` (kimlik/oturum, ajan anahtarları, özel kasa, sesli Hermes, yedek geri yükleme). Sahip bayrağı ajan anahtarına geçmez.
+- Ajana kapalı uçlar tek yerde: `modules/agent/gate.js → BLOCKED` (kimlik/oturum, ajan anahtarları, sesli Hermes, yedek geri yükleme). Sahip bayrağı ajan anahtarına geçmez.
+- Özel kasa (`/api/pf/*`) ajana varsayılan kapalı (404); yalnız sahibin verdiği anahtar başına kasa izniyle açılır (`agent_api_keys.kasa_access`, mig 128, `agentKasaAccess` her istekte izni verenin hâlâ sahip olduğunu denetler). Kasa işlemleri firma `audit_log`'una yazılmaz.
 - Ajanın her yazması `audit_log.module='agent'` olarak düşer; bu kayıt uçların kendi denetim kaydının yerine geçmez.
 
 ### Oda QR Portalı Modülü

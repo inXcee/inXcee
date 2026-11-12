@@ -102,7 +102,6 @@ describe('ajan anahtarı — yazma, salt-okur ve kapalı uçlar', () => {
       ['get', '/api/agent/keys'],
       ['post', '/api/agent/keys'],
       ['get', '/api/hermes/status'],
-      ['get', '/api/pf/state'],
       ['post', '/api/backup/restore'],
       ['delete', '/api/backup/yys-2026.db'],
     ]
@@ -110,6 +109,14 @@ describe('ajan anahtarı — yazma, salt-okur ve kapalı uçlar', () => {
       const res = await as(request(app)[method](path), writeKey).send({})
       expect(res.status, `${method} ${path}`).toBe(403)
       expect(res.body.code).toBe('AGENT_BLOCKED')
+    }
+  })
+
+  it('kasa izni olmayan anahtar özel kasayı hiç göremez (403 değil 404)', async () => {
+    for (const [method, path] of [['get', '/api/pf/state'], ['put', '/api/pf/state/finance-storage'], ['get', '/api/PF/state']]) {
+      const res = await as(request(app)[method](path), writeKey).send({})
+      expect(res.status, `${method} ${path}`).toBe(404)
+      expect(res.body).toEqual({ error: 'Bulunamadı' })
     }
   })
 
