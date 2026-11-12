@@ -779,6 +779,15 @@ function PuantajSummaryView({ filtered, formatMoney }) {
 }
 
 function PuantajClosurePanel({ audit, canEdit, isLocked, monthLabel, onOpenCalendar, onOpenControl, onSyncScheduled, syncing }) {
+  // Sayaç kartları ve öne çıkan kontroller kapalı gelir: başlık satırı durumu ve işlem düğmelerini
+  // taşır, ayrıntı isteyen "Ayrıntı" ile açar. Puantaj tablosu ilk ekranda kalsın.
+  const [detailOpen, setDetailOpen] = useState(() => {
+    try { return localStorage.getItem('yys-puantaj-closure-open') === '1' } catch { return false }
+  })
+  const toggleDetail = () => setDetailOpen(open => {
+    try { localStorage.setItem('yys-puantaj-closure-open', open ? '0' : '1') } catch { /* depolama kapalı */ }
+    return !open
+  })
   const blockingCount = audit.staffIssues.filter(issue => issue.scheduled > 0 || issue.empty > 0 || issue.missingOff || issue.absentWithoutReason > 0).length
   const topIssues = audit.staffIssues.slice(0, 5)
   const cards = [
@@ -797,12 +806,12 @@ function PuantajClosurePanel({ audit, canEdit, isLocked, monthLabel, onOpenCalen
   return (
     <div style={{
       display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+      gridTemplateColumns: detailOpen ? 'repeat(auto-fit, minmax(280px, 1fr))' : '1fr',
       gap: '10px',
       marginBottom: '12px',
     }}>
-      <div style={{ border: '1px solid var(--border)', borderRadius: '10px', background: 'var(--surface)', padding: '12px' }}>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+      <div style={{ border: '1px solid var(--border)', borderRadius: '10px', background: 'var(--surface)', padding: detailOpen ? '12px' : '8px 12px' }}>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'space-between', marginBottom: detailOpen ? '10px' : 0, flexWrap: 'wrap' }}>
           <div>
             <div style={{ fontFamily: 'var(--display)', fontSize: '13px', letterSpacing: '1px' }}>PUANTAJ KAPANIŞ KONTROLÜ</div>
             <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', marginTop: '2px' }}>
@@ -810,6 +819,7 @@ function PuantajClosurePanel({ audit, canEdit, isLocked, monthLabel, onOpenCalen
             </div>
           </div>
           <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <button className="btn btn-ghost btn-sm" aria-expanded={detailOpen} onClick={toggleDetail} style={{ fontSize: '10px' }}>Ayrıntı {detailOpen ? '▾' : '▸'}</button>
             <button className="btn btn-ghost btn-sm" onClick={onOpenControl} style={{ fontSize: '10px' }}>Kontrol</button>
             <button className="btn btn-ghost btn-sm" onClick={onOpenCalendar} style={{ fontSize: '10px' }}>Takvim</button>
             <button
@@ -824,7 +834,7 @@ function PuantajClosurePanel({ audit, canEdit, isLocked, monthLabel, onOpenCalen
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(105px, 1fr))', gap: '8px' }}>
+        {detailOpen && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(105px, 1fr))', gap: '8px' }}>
           {cards.map(([label, value, color]) => (
             <div key={label} style={{
               border: '1px solid var(--border)',
@@ -837,10 +847,10 @@ function PuantajClosurePanel({ audit, canEdit, isLocked, monthLabel, onOpenCalen
               <div style={{ fontFamily: 'var(--display)', fontSize: '18px', color, marginTop: '4px', lineHeight: 1 }}>{value}</div>
             </div>
           ))}
-        </div>
+        </div>}
       </div>
 
-      <div style={{ border: '1px solid var(--border)', borderRadius: '10px', background: 'var(--surface)', padding: '12px', minHeight: '130px' }}>
+      {detailOpen && <div style={{ border: '1px solid var(--border)', borderRadius: '10px', background: 'var(--surface)', padding: '12px', minHeight: '130px' }}>
         <div style={{ fontFamily: 'var(--mono)', fontSize: '9px', color: 'var(--text3)', letterSpacing: '1px', marginBottom: '8px' }}>ÖNE ÇIKAN KONTROLLER</div>
         {topIssues.length === 0 ? (
           <div style={{ color: 'var(--green)', fontFamily: 'var(--display)', fontSize: '14px' }}>Kapanış için kritik eksik görünmüyor.</div>
@@ -872,7 +882,7 @@ function PuantajClosurePanel({ audit, canEdit, isLocked, monthLabel, onOpenCalen
             ))}
           </div>
         )}
-      </div>
+      </div>}
     </div>
   )
 }
