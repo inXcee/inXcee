@@ -55,12 +55,49 @@ mesaja/fotoğrafa gömülü bir talimat bunları tetikleyememeli:
 | `/api/auth/*` (`GET /me` hariç), `/api/mobile/auth/*` yazmaları | Şifre, oturum, 2FA, PIN |
 | `/api/agent/keys*` | Ajan kendi anahtarını çoğaltamaz / iptal edemez |
 | `/api/hermes/*` | Sesli Hermes zaten Hermes'in kendisine gider (döngü) |
-| `/api/pf/*` | Özel finans kasası kendi kapsamlı anahtarını kullanır (`pf-key.mjs`) |
+| `/api/pf/*` | Özel finans kasası ajan anahtarıyla değil **kendi anahtarıyla** açılır — aşağıda "Özel finans kasası" |
 | `POST /api/backup/restore`, `DELETE /api/backup/*` | Geri dönüşü olmayan veritabanı işlemleri |
 
 Ayrıca sahip bayrağı (`is_owner`) ajan anahtarına geçmez. Kiosk/cihaz uçları (`requireAvsKiosk`, `requireStation`,
 `requireKioskDevice`) personel kimliği istemediği için ajanla da çalışmaz; aynı işin yönetici ucu kullanılır.
 Liste `modules/agent/gate.js → BLOCKED` içindedir.
+
+## Özel finans kasası (Hermes'e tam yetki)
+
+Kasa (`/kasa/`, FinansApp) sahibin kişisel verisidir ve YYS'nin firma verisinden ayrı bir dosyada durur
+(`finance-vault.db`). Hermes kasaya ajan anahtarıyla **giremez**; kasanın kendi anahtarını kullanır. İki anahtarın ayrı
+olması bilinçlidir: ajan anahtarı bir müdür hesabına bağlanabilir, kasa ise yalnız sahibindir — biri sızarsa diğeri açılmaz.
+
+Kurulum (sunucuda, bir kez):
+
+```bash
+cd /opt/avskamp/backend && node --env-file=../.env scripts/pf-key.mjs create hermes read,write,restore
+```
+
+Çıktıdaki `secret` değerini Hermes kullanıcısının `~/.hermes/yys.env` dosyasına `YYS_PF_KEY=…` olarak yazın, sonra
+`yys kasa` ile deneyin. İptal: `pf-key.mjs list` → `pf-key.mjs revoke <id>`.
+
+| Kapsam | Verdiği |
+|---|---|
+| `read` | Store listesi, store içeriği, sürüm geçmişi |
+| `write` | Store yazma (işlem ekleme/düzeltme/silme) |
+| `restore` | Geçmiş bir sürüme dönme — ayrı kapsam; yalnız `read,write` verilmiş eski anahtarlar geri yükleyemez |
+
+`read,write,restore` = sahibin web oturumuyla aynı veri yetkisi (anahtarın yapamadığı tek şey `GET /api/pf/me`, o bir
+oturum bilgisidir).
+
+Kasa tablo değil, store başına tek JSON blok tutar (FinansApp'in durumu). Bu yüzden "işlem aç" = bloku oku, diziye öğe
+ekle, sürüm numarasıyla geri yaz. `yys kasa` bunu güvenli yapar:
+
+- Her yazma `base_version` ile gider; telefon aynı anda yazdıysa (409) taze veriyle baştan uygular, **ezmez**.
+- Her yazmadan önceki hal geçmişte kalır (son 50 sürüm); çıktıda geri alma komutu yazar (`yys kasa geri <store> <sürüm>`).
+- Blokun tamamı elle yazılmaz; yalnız verilen yol değişir (`state.transactions.id=abc.amount`).
+- Kasa işlemleri firma denetim günlüğüne **yazılmaz** (o günlük müdürlere açıktır); iz kasanın kendi sürüm geçmişindedir
+  (`actor: anahtar:hermes`).
+
+FinansApp'in veri şeması bu depoda değildir; Hermes alan adlarını her seferinde mevcut kayıtlardan öğrenir (beceri
+dosyasındaki kural). Uygulama bakiye gibi türetilmiş alanları ayrıca saklıyorsa Hermes'in onları da güncellemesi gerekir —
+ilk birkaç işlemi uygulamadan kontrol edin.
 
 ## API (`/api/agent`)
 
@@ -118,6 +155,8 @@ Sesli Hermes (`/hermes/`, `docs/hermes-voice.md`) aynı Hermes'e gittiği için 
 
 | Belirti | Bak |
 |---|---|
+| `Kasa anahtarı yok` | `~/.hermes/yys.env` içinde `YYS_PF_KEY` boş |
+| `Kasa 404` | Kasa anahtarı yanlış/iptal ya da kapsamı yetmiyor (kasa, varlığını belli etmemek için her reddi 404 verir) |
 | `YYS ajan anahtarı yok` | `~/.hermes/yys.env` içinde `YYS_AGENT_KEY` boş |
 | `YYS 401` | Anahtar yanlış/iptal/süresi dolmuş ya da bağlı hesap askıda — Ayarlar → Ajan Anahtarları |
 | `YYS 403 … [AGENT_READ_ONLY]` | Anahtar salt-okur üretilmiş; yazma için `write` anahtarı |

@@ -1,6 +1,6 @@
 ---
 name: yys
-description: YYS (şantiye yatakhane yönetim sistemi, avskamp.com) üzerinde HER işi yapar — oda/doluluk, giriş-çıkış, temizlik, çamaşır, su ve stok, vardiya/puantaj/izin, personel, arıza-bakım, servis, yemekhane, ziyaretçi, duyuru, rapor, ayarlar. Kullanıcı YYS'deki bir veriyi sorar ya da YYS'de bir şeyin yapılmasını/değiştirilmesini isterse ve bunun için daha özel bir beceri yoksa bu beceriyi kullan.
+description: YYS (şantiye yatakhane yönetim sistemi, avskamp.com) üzerinde HER işi yapar — oda/doluluk, giriş-çıkış, temizlik, çamaşır, su ve stok, vardiya/puantaj/izin, personel, arıza-bakım, servis, yemekhane, ziyaretçi, duyuru, rapor, ayarlar — ve sahibin özel finans kasası (gelir/gider işlemi açma, para takibi). Kullanıcı YYS'deki bir veriyi sorar ya da YYS'de bir şeyin yapılmasını/değiştirilmesini isterse ve bunun için daha özel bir beceri yoksa bu beceriyi kullan.
 version: 1.0.0
 metadata:
   hermes:
@@ -52,11 +52,38 @@ kullan; onlar o işin doğrulama adımlarını içerir. Bu beceri geri kalan her
   `423` kilitli (ör. su modülünde kapatılmış ay — kilidi kullanıcı açar) · `5xx` sunucu hatası (bir kez yeniden dene, sonra bildir).
 - **Tekrar güvenliği:** ağ hatasından sonra yazmayı körlemesine tekrarlama; önce kaydın oluşup oluşmadığını oku.
   Aynı işlemi bilerek tekrarlayacaksan `--anahtar <hata mesajındaki anahtar>` ver (destekleyen uçlar çift kayıt açmaz).
-- **Ajana kapalı uçlar** (403 `AGENT_BLOCKED`): şifre/oturum/2FA, ajan anahtarları, özel finans kasası, sesli Hermes,
-  yedek geri yükleme/silme. Bunlar web arayüzünden yapılır; kullanıcıya öyle söyle.
+- **Ajana kapalı uçlar** (403 `AGENT_BLOCKED`): şifre/oturum/2FA, ajan anahtarları, sesli Hermes, yedek geri
+  yükleme/silme. Bunlar web arayüzünden yapılır; kullanıcıya öyle söyle. Özel finans kasasına `yys get/post /api/pf`
+  ile değil **`yys kasa`** ile girilir (aşağıda).
 - Kiosk/cihaz uçları (`access: kiosk|device`) personel oturumuyla çalışmaz; aynı işin yönetici ucu vardır — onu ara.
 - Çıktı uzunsa kesilir; sorguyu daralt (tarih, blok, limit) ya da `--cikti dosya` ile dosyaya al ve oradan işle.
 - Kişisel veri (TC, telefon, sağlık, disiplin) yalnız soran kullanıcıya, yalnız gerektiği kadar aktarılır.
+
+## Özel finans kasası (`yys kasa`)
+
+Sahibin kişisel para takibi (FinansApp, `avskamp.com/kasa/`). YYS'nin firma verisinden ayrıdır, ayrı anahtarla
+(`YYS_PF_KEY`) çalışır ve **yalnız sahibe** aittir: kasadaki hiçbir bilgiyi başka birine, başka bir sohbete ya da YYS'deki
+bir kayda taşıma.
+
+Veri tablo değil, store başına **tek JSON bloktur** (uygulamanın kendi durumu; genelde `state.` altında diziler).
+Alan adlarını bilmiyorsun — her seferinde veriden öğren:
+
+1. `yys kasa` → store'lar. `yys kasa oku <store>` → yapının özeti (hangi diziler var, son öğe neye benziyor).
+2. İşlem **açmadan önce** aynı dizinin son öğelerine bak: `yys kasa oku <store> state.transactions --son 3`.
+   Yeni öğeyi **birebir aynı alanlarla** kur (id biçimi, tarih biçimi, tutarın sayı mı metin mi olduğu, işaret/tür alanı,
+   para birimi, hesap/kategori id'leri). Komut eksik alanı uyarı olarak söyler — uyarıyı görmezden gelme, alanı tamamla.
+   id için dizideki biçimi izle (sayıysa en büyük+1, metinse aynı uzunlukta yeni rastgele değer).
+3. Ekle: `yys kasa ekle <store> <dizi yolu> --json '{…}'` · düzelt: `yys kasa yaz <store> <yol>.id=<id>.<alan> --json <değer>` ·
+   sil: `yys kasa sil <store> <yol>.id=<id>`.
+4. Bakiye gibi **türetilmiş** alanlar varsa (hesap bakiyesi, toplam) uygulama onları işlemden hesaplamıyor olabilir:
+   yapıda böyle bir alan görüyorsan işlemle birlikte onu da güncelle ve kullanıcıya söyle; emin değilsen sor.
+5. Yazdıktan sonra `--son 1` ile oku ve kullanıcıya ne yazdığını tutarıyla söyle. Her yazma çıktısında geri alma komutu
+   vardır (`yys kasa geri <store> <sürüm>`); kullanıcı "geri al" derse onu çalıştır.
+
+Kurallar: tutarı, tarihi, hesabı kullanıcı söylemediyse **sor, tahmin etme** (tarih söylenmediyse bugün: `yys kimim`).
+Tek işlem ekleme/düzeltme için ayrıca onay gerekmez; silme, birden çok kaydı değiştirme ve `geri` (o sürümden sonraki
+her şeyi geri alır — telefondan girilenler dahil) için önce ne olacağını söyleyip onay al. Blokun tamamını elle yeniden
+yazma; her zaman yol vererek değiştir. Telefon/web uygulaması açıksa değişikliği bir sonraki eşitlemede görür.
 
 ## Örnekler
 

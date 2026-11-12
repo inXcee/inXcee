@@ -23,6 +23,7 @@ function access(scope, { allowKey = true } = {}) {
       req.pfActor = `anahtar:${k.name}`
       return next()
     }
+    // Sahip oturumu her kapsamı taşır; kapsam yalnız anahtarları sınırlar.
     const user = sessionUser(req)
     if (!isOwner(user)) return hide(res)
     req.pfUser = user
@@ -78,7 +79,8 @@ privateFinanceRouter.get('/state/:key/history', access('read'), (req, res) => {
   try { res.json({ versions: vault.stateHistory(req.params.key) }) } catch (e) { send(res, e) }
 })
 
-privateFinanceRouter.post('/state/:key/restore', access('write', { allowKey: false }), (req, res) => {
+// Geri yükleme: sahip oturumu ya da 'restore' kapsamlı anahtar ('write' tek başına yetmez).
+privateFinanceRouter.post('/state/:key/restore', access('restore'), (req, res) => {
   try {
     const version = Number(req.body?.version)
     if (!Number.isInteger(version) || version < 1) return res.status(400).json({ error: 'version gerekli' })

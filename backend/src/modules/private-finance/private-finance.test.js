@@ -130,6 +130,13 @@ describe('Özel finans kasası — API anahtarı (Hermes)', () => {
     expect((await key(rw)(request(app).get('/api/pf/state/hermes-test'))).body.actor).toBe('anahtar:hermes')
     expect((await key(rw)(request(app).get('/api/pf/me'))).status).toBe(404) // anahtar kullanıcı oturumu değildir
     expect((await key(rw)(request(app).post('/api/pf/state/hermes-test/restore')).send({ version: 1 })).status).toBe(404)
+    // tam yetkili anahtar ('restore' kapsamı) geri yükleyebilir; 'write' tek başına yetmez (yukarıdaki satır)
+    const full = createApiKey('hermes-tam', ['read', 'write', 'restore'])
+    const cur = (await key(full)(request(app).get('/api/pf/state/hermes-test'))).body
+    await key(full)(request(app).put('/api/pf/state/hermes-test')).send({ data: { n: 'yeni' }, base_version: cur.version })
+    const back = await key(full)(request(app).post('/api/pf/state/hermes-test/restore')).send({ version: cur.version })
+    expect(back.status).toBe(200)
+    expect((await key(full)(request(app).get('/api/pf/state/hermes-test'))).body.data).toEqual(cur.data)
     revokeApiKey(rw.id)
     expect((await key(rw)(request(app).get('/api/pf/state'))).status).toBe(404)
     expect((await request(app).get('/api/pf/state').set('X-PF-Key', 'pfk_uydurma')).status).toBe(404)

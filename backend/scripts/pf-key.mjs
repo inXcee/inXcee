@@ -1,6 +1,7 @@
 // Özel finans kasası API anahtarları — yalnız sunucuda, elle.
 //
-//   node --env-file=../.env scripts/pf-key.mjs create hermes read,write
+//   node --env-file=../.env scripts/pf-key.mjs create hermes read,write            (okur, yazar)
+//   node --env-file=../.env scripts/pf-key.mjs create hermes read,write,restore    (tam yetki: geri yükleme dahil)
 //   node --env-file=../.env scripts/pf-key.mjs list
 //   node --env-file=../.env scripts/pf-key.mjs revoke 3
 //
@@ -22,6 +23,6 @@ if (cmd === 'create') {
 } else if (cmd === 'revoke') {
   process.stdout.write(revokeApiKey(Number(a)) ? 'iptal edildi\n' : 'bulunamadı / zaten iptal\n')
 } else {
-  process.stderr.write('kullanım: pf-key.mjs create <ad> <read,write> | list | revoke <id>\n')
+  process.stderr.write('kullanım: pf-key.mjs create <ad> <read,write,restore> | list | revoke <id>\n')
   process.exit(2)
 }

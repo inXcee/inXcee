@@ -6,7 +6,7 @@
 # Yaptıkları (hepsi tekrar çalıştırılabilir; mevcut anahtara dokunmaz):
 #   ~/.local/bin/yys                       komut
 #   ~/.hermes/skills/avs-operations/yys/   beceri (SKILL.md)
-#   ~/.hermes/yys.env                      yoksa şablon (YYS_URL, YYS_AGENT_KEY) — izin 600
+#   ~/.hermes/yys.env                      yoksa şablon (YYS_URL, YYS_AGENT_KEY, YYS_PF_KEY) — izin 600
 set -euo pipefail
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/yys"
@@ -29,7 +29,9 @@ if [ ! -e "$ENV_FILE" ]; then
     '# YYS ajan bağlantısı — bu dosyayı yalnız Hermes kullanıcısı okuyabilmeli (chmod 600).' \
     '# Anahtar: YYS → Ayarlar → Sistem → Ajan Anahtarları, ya da sunucuda backend/scripts/agent-key.mjs' \
     'YYS_URL=http://127.0.0.1:3001' \
-    'YYS_AGENT_KEY=' > "$ENV_FILE")
+    'YYS_AGENT_KEY=' \
+    '# Özel finans kasası (isteğe bağlı): backend/scripts/pf-key.mjs create hermes read,write,restore' \
+    'YYS_PF_KEY=' > "$ENV_FILE")
   echo "şablon: $ENV_FILE  ← YYS_AGENT_KEY değerini yazın"
 else
   chmod 600 "$ENV_FILE"
@@ -43,4 +45,8 @@ if grep -q '^YYS_AGENT_KEY=.\+' "$ENV_FILE" 2>/dev/null; then
   YYS_ENV_FILE="$ENV_FILE" "$BIN_DIR/yys" kimim || echo "bağlantı kurulamadı (yukarıdaki mesaja bakın)" >&2
 else
   echo "Anahtarı yazdıktan sonra deneyin:  yys kimim"
+fi
+if grep -q '^YYS_PF_KEY=.\+' "$ENV_FILE" 2>/dev/null; then
+  echo "--- kasa denemesi ---"
+  YYS_ENV_FILE="$ENV_FILE" "$BIN_DIR/yys" kasa || echo "kasaya ulaşılamadı (yukarıdaki mesaja bakın)" >&2
 fi

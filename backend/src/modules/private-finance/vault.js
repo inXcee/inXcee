@@ -17,7 +17,9 @@ import { resolveDatabasePath } from '../../shared/db/index.js'
 export const HISTORY_KEEP = 50
 export const MAX_BLOB_BYTES = 20 * 1024 * 1024
 export const STORE_KEY_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/
-export const KEY_SCOPES = Object.freeze(['read', 'write'])
+// restore: geçmiş bir sürüme geri dönme. Ayrı kapsamdır — yalnız 'read,write' verilmiş eski anahtarlar
+// geri yükleyemez; tam yetkili anahtar 'read,write,restore' ile üretilir.
+export const KEY_SCOPES = Object.freeze(['read', 'write', 'restore'])
 
 let vault = null
 let openedPath = null

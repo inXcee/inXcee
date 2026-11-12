@@ -14,7 +14,7 @@ const BLOCKED = [
   { test: (p, m) => p.startsWith('/mobile/auth/') && !READ_METHODS.has(m), reason: 'Mobil PIN işlemleri ajan anahtarıyla yapılamaz' },
   { test: p => p === '/agent/keys' || p.startsWith('/agent/keys/'), reason: 'Ajan anahtarları yalnız web oturumundan yönetilir' },
   { test: p => p === '/hermes' || p.startsWith('/hermes/'), reason: 'Sesli Hermes uçları ajana kapalıdır' },
-  { test: p => p === '/pf' || p.startsWith('/pf/'), reason: 'Özel finans kasası kendi anahtarını kullanır' },
+  { test: p => p === '/pf' || p.startsWith('/pf/'), reason: 'Özel finans kasası ajan anahtarıyla değil kendi anahtarıyla (X-PF-Key; Hermes\'te `yys kasa`) açılır' },
   { test: (p, m) => p === '/backup/restore' || (m === 'DELETE' && p.startsWith('/backup/')), reason: 'Yedek geri yükleme/silme yalnız web oturumundan yapılır' },
 ]
 
