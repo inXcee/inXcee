@@ -51,7 +51,14 @@ describe('mod → tercih', () => {
 
   // Bilinmeyen mod tercihleri boşaltmamalı.
   it('bilinmeyen modda hepsini açık bırakır', () => {
-    expect(modePanelPrefs('yok')).toEqual(defaultPanelPrefs())
+    expect(Object.values(modePanelPrefs('yok')).every(Boolean)).toBe(true)
+  })
+})
+
+describe('sade mod', () => {
+  it('varsayılan tercihler Sade modla eşleşir', () => {
+    expect(detectMode(defaultPanelPrefs())).toBe('simple')
+    expect(WORK_MODES[0].key).toBe('simple')
   })
 })
 

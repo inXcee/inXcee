@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  SCHEDULE_PANELS, defaultPanelPrefs, normalizePanelPrefs, togglePanel,
+  SCHEDULE_PANELS, SIMPLE_PANELS, defaultPanelPrefs, normalizePanelPrefs, togglePanel,
   setAllPanels, hiddenPanelCount, loadPanelPrefs, savePanelPrefs,
 } from './panelPrefs.js'
 
@@ -14,14 +14,16 @@ function sahteDepo(baslangic = {}) {
 }
 
 describe('panel tercihleri', () => {
-  it('varsayılanda hepsi açık — mevcut davranış korunur', () => {
+  // Hepsi açıkken çizelge ekranın altına itiliyordu: varsayılan artık sade.
+  it('varsayılanda yalnız yayın durumu açık — çizelge ilk ekranda görünür', () => {
     const v = defaultPanelPrefs()
     expect(Object.keys(v).sort()).toEqual(SCHEDULE_PANELS.map(p => p.key).sort())
-    expect(Object.values(v).every(Boolean)).toBe(true)
+    expect(Object.keys(v).filter(k => v[k])).toEqual(SIMPLE_PANELS)
+    expect(SIMPLE_PANELS).toEqual(['publish'])
   })
 
   it('tek panel açılıp kapanır, diğerleri etkilenmez', () => {
-    const kapali = togglePanel(defaultPanelPrefs(), 'crossover')
+    const kapali = togglePanel(setAllPanels(true), 'crossover')
     expect(kapali.crossover).toBe(false)
     expect(kapali.dayDetail).toBe(true)
     expect(togglePanel(kapali, 'crossover').crossover).toBe(true)
@@ -39,15 +41,18 @@ describe('panel tercihleri', () => {
   // Kaç panelin kapalı olduğu düğmede yazacak: kullanıcı bir paneli kapatıp
   // unutunca "veri gelmiyor" sanmasın.
   it('kapalı panel sayısını verir', () => {
-    expect(hiddenPanelCount(defaultPanelPrefs())).toBe(0)
+    expect(hiddenPanelCount(setAllPanels(true))).toBe(0)
+    expect(hiddenPanelCount(defaultPanelPrefs())).toBe(SCHEDULE_PANELS.length - SIMPLE_PANELS.length)
     expect(hiddenPanelCount(setAllPanels(false))).toBe(SCHEDULE_PANELS.length)
   })
 
-  // Eski/eksik kayıt paneli yok etmemeli: eksik anahtar açık kabul edilir.
+  // Eksik anahtar varsayılanı alır (yeni eklenen panel kendiliğinden açılıp ekranı doldurmaz);
+  // kullanıcının açıkça seçtiği değer korunur.
   it('eksik anahtarlar varsayılana düşer, fazlalıklar atılır', () => {
-    const v = normalizePanelPrefs({ dayDetail: false, eskiPanel: true })
-    expect(v.dayDetail).toBe(false)
-    expect(v.coverage).toBe(true)
+    const v = normalizePanelPrefs({ dayDetail: true, publish: false, eskiPanel: true })
+    expect(v.dayDetail).toBe(true)
+    expect(v.publish).toBe(false)
+    expect(v.coverage).toBe(false)
     expect(v.eskiPanel).toBeUndefined()
   })
 
@@ -60,7 +65,7 @@ describe('panel tercihleri', () => {
 describe('panel tercihleri — depolama', () => {
   it('kaydedip geri okur', () => {
     const depo = sahteDepo()
-    savePanelPrefs(togglePanel(defaultPanelPrefs(), 'coverage'), depo)
+    savePanelPrefs(togglePanel(setAllPanels(true), 'coverage'), depo)
     expect(loadPanelPrefs(depo).coverage).toBe(false)
     expect(loadPanelPrefs(depo).dayDetail).toBe(true)
   })

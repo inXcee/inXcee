@@ -53,6 +53,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
   // Çizelge altındaki yardımcı paneller kapatılabilir; tercih tarayıcıda kalır.
   const [panels, setPanels] = useState(loadPanelPrefs)
   const [panelMenuOpen, setPanelMenuOpen] = useState(false)
+  const [warningsOpen, setWarningsOpen] = useState(false)
   // Elle değişiklik modu 'custom' yapar; kullanıcının açtığı panel geri alınmaz,
   // sadece artık bir modla eşleşmediği yazılır.
   const setPanel = next => { setPanels(next); savePanelPrefs(next); saveWorkMode(detectMode(next)) }
@@ -912,7 +913,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
         {scheduleView === 'weekly' && (
           <div style={{ position: 'relative' }}>
             <button
-              className={`btn btn-sm ${hiddenPanelCount(panels) ? 'btn-primary' : 'btn-ghost'}`}
+              className={`btn btn-sm ${aktifMod === 'custom' && hiddenPanelCount(panels) ? 'btn-primary' : 'btn-ghost'}`}
               onClick={() => setPanelMenuOpen(o => !o)}
               aria-expanded={panelMenuOpen}
               title="Çizelge altındaki panelleri göster/gizle"
@@ -1187,7 +1188,8 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
       {scheduleView === 'weekly' && canEdit && (
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+          gridTemplateColumns: 'minmax(0, 2fr) minmax(220px, 1fr)',
+          alignItems: 'start',
           gap: '10px',
           marginBottom: '10px',
         }}>
@@ -1230,7 +1232,17 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
           </div>
 
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '10px', padding: '10px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
+            {/* Uyarı listesi kapalı gelir: yüzlerce uyarı her açılışta çizelgenin üstünü doldurmasın.
+                Sayılar hep görünür; liste başlığa tıklayınca açılır. */}
+            <div
+              role="button"
+              tabIndex={0}
+              aria-expanded={warningsOpen}
+              onClick={() => setWarningsOpen(open => !open)}
+              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setWarningsOpen(open => !open) } }}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: warningsOpen ? '8px' : 0, cursor: 'pointer' }}
+            >
+              <span style={{ fontSize: '11px', color: 'var(--text3)' }}>{warningsOpen ? '▾' : '▸'}</span>
               <span style={{ fontFamily: 'var(--display)', fontSize: '12px', letterSpacing: '1px', color: 'var(--text)' }}>CANLI KONTROL</span>
               <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: warningSummary.high ? 'var(--red)' : 'var(--green)' }}>{warningSummary.high} kritik</span>
               <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--accent)' }}>{warningSummary.medium} uyarı</span>
@@ -1240,8 +1252,8 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                 </span>
               )}
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px', maxHeight: '82px', overflowY: 'auto' }}>
-              {scheduleWarnings.slice(0, 6).map((w, idx) => (
+            {warningsOpen && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px', maxHeight: '160px', overflowY: 'auto' }}>
+              {scheduleWarnings.slice(0, 12).map((w, idx) => (
                 <button
                   key={`${w.type}-${w.staffId || w.dept || idx}-${w.date || idx}`}
                   onClick={() => w.date && setDayDetail(w.date)}
@@ -1264,7 +1276,7 @@ export default function ScheduleTab({ departments, shiftDefs, onPersonClick }) {
                   Çizelge kontrolleri temiz
                 </div>
               )}
-            </div>
+            </div>}
           </div>
         </div>
       )}

@@ -1,4 +1,4 @@
-import { SCHEDULE_PANELS, normalizePanelPrefs } from './panelPrefs.js'
+import { SCHEDULE_PANELS, SIMPLE_PANELS, normalizePanelPrefs } from './panelPrefs.js'
 
 // Faz 15 — Çalışma modları.
 //
@@ -14,6 +14,13 @@ import { SCHEDULE_PANELS, normalizePanelPrefs } from './panelPrefs.js'
 const KEY = 'shifts.workMode.v1'
 
 export const WORK_MODES = [
+  {
+    // Varsayılan: çizelgenin kendisi + haftanın yayın durumu. Diğer paneller isteyen için bir tık uzakta.
+    key: 'simple',
+    label: 'Sade',
+    hint: 'Yalnız çizelge ve yayın durumu — yardımcı paneller kapalı',
+    panels: SIMPLE_PANELS,
+  },
   {
     key: 'planner',
     label: 'Planlayıcı',
