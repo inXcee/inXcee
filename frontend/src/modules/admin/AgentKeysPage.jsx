@@ -28,6 +28,15 @@ function formatStamp(value) {
   return date ? date.toLocaleString('tr-TR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'
 }
 
+// Özel kasa izni yalnız sahibe gösterilir: backend kasa sütununu yalnız sahibin listesine koyar,
+// bu yüzden ayrı bir "sahip miyim" sorgusu gerekmez (bkz. docs/hermes-entegrasyon.md → Kasa izni).
+const KASA_OPTIONS = [
+  { value: '', label: 'Kasa kapalı' },
+  { value: 'read', label: 'Kasa: yalnız okuma' },
+  { value: 'write', label: 'Kasa: okuma + yazma' },
+]
+const kasaVisible = key => Object.prototype.hasOwnProperty.call(key, 'kasa_access')
+
 const toast = (message, kind) => useToastStore.getState().addToast(message, kind)
 const apiError = (err, fallback) => err.response?.data?.error || fallback
 
@@ -66,6 +75,29 @@ export default function AgentKeysPage() {
     onError: err => toast(apiError(err, 'Anahtar iptal edilemedi'), 'error'),
   })
 
+  const setKasa = useMutation({
+    mutationFn: ({ id, value }) => api.patch(`/agent/keys/${id}/kasa`, { access: value || null }).then(r => r.data),
+    onSuccess: (data) => {
+      toast(data.kasa_access ? 'Kasa izni güncellendi' : 'Kasa izni kaldırıldı', 'success')
+      queryClient.invalidateQueries({ queryKey: ['agent-keys'] })
+    },
+    onError: err => toast(apiError(err, 'Kasa izni değiştirilemedi'), 'error'),
+  })
+
+  async function handleKasa(key, value) {
+    if (value === (key.kasa_access || '')) return
+    if (value === 'write') {
+      const ok = await confirmDialog({
+        title: 'Kasaya yazma izni',
+        body: `"${key.name}" kasadaki uygulama verisini doğrudan değiştirebilecek. Hermes'in Telegram kayıtları zaten kendi kasa anahtarıyla gidiyor; yazma izni yalnız bunu bilerek isteyen bir araç için gerekir.`,
+        confirmLabel: 'Yazma izni ver',
+        danger: true,
+      })
+      if (!ok) return
+    }
+    setKasa.mutate({ id: key.id, value })
+  }
+
   async function handleRevoke(key) {
     const ok = await confirmDialog({
       title: 'Anahtarı iptal et',
@@ -99,7 +131,7 @@ export default function AgentKeysPage() {
         <h2 style={{ margin: 0, fontFamily: 'var(--display)', letterSpacing: 1, color: 'var(--text)' }}>AJAN ANAHTARLARI</h2>
         <p style={{ margin: '4px 0 0', color: 'var(--text2)', fontSize: 13 }}>
           Hermes gibi bir ajanın YYS'de sizin adınıza işlem yapabilmesi için kalıcı anahtar. Anahtar, bağlandığı
-          kullanıcının rolüyle çalışır; şifre, oturum, yedek geri yükleme ve özel kasa uçlarına giremez.
+          kullanıcının rolüyle çalışır; şifre, oturum ve yedek geri yükleme uçlarına giremez; özel kasaya ancak ayrıca izin verilirse girer.
         </p>
       </header>
 
@@ -168,6 +200,17 @@ export default function AgentKeysPage() {
                   <small style={{ color: 'var(--text2)' }}>
                     {key.full_name || key.username} · {ROLE_LABELS[key.role] || key.role} · {key.access === 'read' ? 'yalnız okuma' : 'okuma + yazma'}
                   </small>
+                  {kasaVisible(key) && !key.revoked_at && (
+                    <select
+                      aria-label={`${key.name} kasa izni`}
+                      style={{ ...input, display: 'block', marginTop: 6, padding: '4px 8px', fontSize: 12 }}
+                      value={key.kasa_access || ''}
+                      disabled={setKasa.isPending}
+                      onChange={e => handleKasa(key, e.target.value)}
+                    >
+                      {KASA_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  )}
                 </div>
                 <div style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                   <div style={{ color: 'var(--text)', fontSize: 13 }}>
