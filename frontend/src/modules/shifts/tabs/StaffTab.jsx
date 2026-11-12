@@ -35,15 +35,15 @@ function StaffQualityPanel({ quality, onEdit }) {
   ]
 
   return (
-    <div className="panel" style={{ marginBottom: '16px', borderColor: rows.length ? 'rgba(240,165,0,.45)' : 'rgba(39,201,106,.35)' }}>
-      <div className="panel-header" style={{ alignItems: 'center' }}>
-        <div>
+    <div className="panel" style={{ marginBottom: '12px', borderColor: open && rows.length ? 'rgba(240,165,0,.45)' : undefined }}>
+      <div className="panel-header" style={{ alignItems: 'center', padding: open ? undefined : '6px 14px', borderBottom: open ? undefined : 'none' }}>
+        <div style={open ? undefined : { display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
           <div className="panel-title">PERSONEL VERİ KALİTESİ</div>
-          <div className="panel-subtitle">
+          <div className="panel-subtitle" style={open ? undefined : { margin: 0 }}>
             {summary.checked_staff || 0} kayıt kontrol edildi · {summary.issue_total || 0} açık konu
           </div>
         </div>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setOpen(value => !value)}>
+        <button type="button" className={`btn btn-ghost ${open ? 'btn-sm' : 'btn-xs'}`} onClick={() => setOpen(value => !value)}>
           {open ? 'Daralt' : 'Aç'}
         </button>
       </div>
@@ -494,19 +494,20 @@ function RiskBadges({ staff, compact = false }) {
   )
 }
 
+// Özet sayaçları: büyük kart yerine tek satırlık düğme. Tıklayınca aynı filtre uygulanır; ekranın ilk
+// 100 pikselini sayaçlara ayırmak personel tablosunu aşağı itiyordu.
 function SummaryCard({ value, label, color, active = false, onClick }) {
   return (
-    <button type="button" onClick={onClick} aria-pressed={active} aria-label={`${label}: ${value}`} style={{
-      padding: '16px 18px', background: active ? `color-mix(in srgb, ${color} 12%, var(--surface2))` : 'var(--surface2)',
-      borderStyle: 'solid', borderWidth: '1px 1px 1px 3px',
-      borderColor: active ? color : `var(--border) var(--border) var(--border) ${color}`, borderRadius: '12px',
-      color: 'inherit', textAlign: 'left', cursor: onClick ? 'pointer' : 'default', width: '100%',
-      boxShadow: active ? `0 0 0 2px color-mix(in srgb, ${color} 16%, transparent)` : 'none',
-      transition: 'border-color .18s ease, transform .18s ease, box-shadow .18s ease',
-    }}>
-      <div style={{ fontFamily: 'var(--display)', fontSize: '28px', color, lineHeight: 1 }}>{value}</div>
-      <div style={{ fontFamily: 'var(--mono)', fontSize: '8px', color: 'var(--text3)', letterSpacing: '1px', marginTop: '6px' }}>{label}</div>
-      {onClick && <div style={{ fontFamily: 'var(--mono)', fontSize: '7px', color: active ? color : 'var(--text3)', marginTop: '7px' }}>{active ? 'FİLTRE AKTİF' : 'FİLTRELE'}</div>}
+    <button type="button" onClick={onClick} aria-pressed={active} aria-label={`${label}: ${value}`}
+      title={onClick ? (active ? 'Filtre açık — kaldırmak için tıklayın' : 'Bu gruba süz') : undefined}
+      style={{
+        display: 'inline-flex', alignItems: 'baseline', gap: 8, padding: '7px 12px',
+        background: active ? `color-mix(in srgb, ${color} 14%, var(--surface2))` : 'var(--surface2)',
+        borderWidth: 1, borderStyle: 'solid', borderColor: active ? color : 'var(--border)', borderRadius: 8,
+        color: 'inherit', cursor: onClick ? 'pointer' : 'default', whiteSpace: 'nowrap',
+      }}>
+      <strong style={{ fontSize: 15, color, fontVariantNumeric: 'tabular-nums' }}>{value}</strong>
+      <span style={{ fontSize: 12, color: 'var(--text2)' }}>{label}</span>
     </button>
   )
 }
@@ -594,7 +595,7 @@ function BulkAssignmentSheet({ count, projects, departments, roles = [], workLoc
 }
 
 function DepartmentOverview({ rows, selectedDepartment, onSelect }) {
-  const [open, setOpen] = usePersistentState('yys-shifts-staff-department-overview', true)
+  const [open, setOpen] = usePersistentState('yys-shifts-staff-department-overview-v2', false)
   const distribution = useMemo(() => {
     const counts = new Map()
     rows.forEach(staff => {
@@ -609,10 +610,10 @@ function DepartmentOverview({ rows, selectedDepartment, onSelect }) {
 
   return (
     <div className="panel" style={{ marginBottom: 12 }}>
-      <div className="panel-header" style={{ alignItems: 'center', padding: '10px 14px' }}>
+      <div className="panel-header" style={{ alignItems: 'center', padding: open ? '10px 14px' : '6px 14px', borderBottom: open ? undefined : 'none' }}>
         <div>
           <div className="panel-title">BÖLÜM DAĞILIMI</div>
-          <div className="panel-subtitle">Bölüme dokunarak personel listesini anında süzün</div>
+          {open && <div className="panel-subtitle">Bölüme dokunarak personel listesini anında süzün</div>}
         </div>
         <button type="button" className="btn btn-ghost btn-xs" onClick={() => setOpen(value => !value)}>{open ? 'Daralt' : 'Göster'}</button>
       </div>
@@ -716,6 +717,7 @@ export default function StaffTab({ departments, onPersonClick }) {
   const [groupByDepartment, setGroupByDepartment] = usePersistentState('yys-shifts-staff-group-department', false)
   const [viewProfile, setViewProfile] = usePersistentState('yys-shifts-staff-view-profile', 'custom')
   const [favoriteIds, setFavoriteIds] = usePersistentState('yys-shifts-staff-favorites', [])
+  const [viewOptionsOpen, setViewOptionsOpen] = usePersistentState('yys-shifts-staff-view-options-open', false)
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
   const [page, setPage] = useState(1)
   const [selected, setSelected] = useState(() => new Set())
@@ -1081,7 +1083,7 @@ export default function StaffTab({ departments, onPersonClick }) {
   return (
     <div className="fade-up">
       {sectionSwitcher}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px', marginBottom: '14px' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
         <SummaryCard value={staffList.length} label="TOPLAM PERSONEL" color="var(--text)" active={!hasActiveStaffFilter} onClick={clearAllFilters} />
         <SummaryCard value={riskStaffCount} label="RİSK / EKSİK KAYIT" color={riskStaffCount ? 'var(--red)' : 'var(--green)'} active={filters.risk === 'any'} onClick={() => toggleRiskFilter('any')} />
         <SummaryCard value={missingDocumentCount} label="EKSİK BELGE" color={missingDocumentCount ? 'var(--accent)' : 'var(--green)'} active={filters.risk === 'documents'} onClick={() => toggleRiskFilter('documents')} />
@@ -1222,7 +1224,7 @@ export default function StaffTab({ departments, onPersonClick }) {
             </div>
           )}
 
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+          {viewOptionsOpen && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
             <span style={{ color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: 8, marginRight: 3 }}>HAZIR GÖRÜNÜM</span>
             {VIEW_PROFILES.map(profile => (
               <button key={profile.key} type="button" aria-pressed={viewProfile === profile.key} title={profile.description} onClick={() => applyViewProfile(profile)}
@@ -1231,9 +1233,13 @@ export default function StaffTab({ departments, onPersonClick }) {
               </button>
             ))}
             {viewProfile === 'custom' && <span style={{ color: 'var(--purple)', fontFamily: 'var(--mono)', fontSize: 8 }}>ÖZEL DÜZEN</span>}
-          </div>
+          </div>}
 
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center', borderTop: '1px solid var(--border)', paddingTop: '10px' }}>
+            {/* Tablo/kart, sıklık, gruplama ve kolon seçimi bir kez ayarlanıp bırakılır: tek düğmenin arkasında. */}
+            <button type="button" className={`btn btn-xs ${viewOptionsOpen ? 'btn-primary' : 'btn-ghost'}`} aria-expanded={viewOptionsOpen}
+              onClick={() => setViewOptionsOpen(open => !open)}>Görünüm {viewOptionsOpen ? '▾' : '▸'}</button>
+            {viewOptionsOpen && <>
             <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: '7px', overflow: 'hidden' }}>
               <button aria-pressed={viewMode === 'table'} className={`btn btn-xs ${viewMode === 'table' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => { setViewMode('table'); setViewProfile('custom') }}>Tablo</button>
               <button aria-pressed={viewMode === 'cards'} className={`btn btn-xs ${viewMode === 'cards' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => { setViewMode('cards'); setViewProfile('custom') }}>Kartlar</button>
@@ -1260,6 +1266,7 @@ export default function StaffTab({ departments, onPersonClick }) {
                 ))}
               </div>
             </details>
+            </>}
             <button className="btn btn-ghost btn-xs" onClick={exportSelectedCsv} disabled={!filteredAndSorted.length}>CSV Listesi</button>
             <button className="btn btn-primary btn-xs" onClick={exportSelectedExcel} disabled={!filteredAndSorted.length}>Detaylı Excel</button>
             <span aria-live="polite" style={{ color: 'var(--text3)', fontFamily: 'var(--mono)', fontSize: '9px', marginLeft: 'auto' }}>
