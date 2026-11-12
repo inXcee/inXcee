@@ -312,3 +312,52 @@
   .personnel-card::before,
   .personnel-card__open { transition: none; }
 }
+
+/* ── Geniş ekranda sade liste ─────────────────────────────────────────────────────────────────────
+   İki sütun büyük kart yerine satır satır liste: ekrana 8 yerine ~16 kişi sığar, ad / birim / iletişim
+   aynı hizada okunur. Dar ekranda (telefon) kart düzeni yukarıdaki kurallarla aynen kalır. */
+@media (min-width: 900px) {
+  .personnel-grid {
+    grid-template-columns: 1fr;
+    gap: 0;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+  }
+  .personnel-card {
+    display: grid;
+    grid-template-columns: minmax(280px, 1.4fr) minmax(170px, 1fr) minmax(300px, 1.3fr);
+    align-items: center;
+    gap: 16px;
+    padding: 9px 16px 9px 18px;
+    border-width: 0 0 1px;
+    border-radius: 0;
+    background: none;
+  }
+  .personnel-card:last-child { border-bottom-width: 0; }
+  .personnel-card:hover {
+    border-color: var(--border);
+    background: var(--surface2);
+    box-shadow: none;
+    transform: none;
+  }
+  .personnel-card::before { display: none; }
+  .personnel-card--selected { background: color-mix(in srgb, var(--accent) 9%, var(--surface)); box-shadow: none; }
+  .personnel-card__accent { inset: 8px auto 8px 0; }
+  .personnel-card__header { align-items: center; }
+  .personnel-card__checkbox { margin-top: 0; }
+  .personnel-card__avatar { flex-basis: 34px; width: 34px; height: 34px; border-radius: 9px; font-size: 12px; }
+  .personnel-card__identity { padding-top: 0; }
+  .personnel-card__name { font-size: 14px; }
+  .personnel-card__role { font-size: 12px; }
+  .personnel-card__role-detail { display: none; }
+  .personnel-card__context { margin: 0; flex-wrap: wrap; }
+  .personnel-card__context-item,
+  .personnel-card__context-empty { max-width: 100%; font-size: 12px; }
+  .personnel-card__footer { padding-top: 0; border-top: 0; }
+  .personnel-card__detail { font-size: 12px; }
+  .personnel-card__open { opacity: 0; }
+  .personnel-card:hover .personnel-card__open,
+  .personnel-card:focus-within .personnel-card__open { opacity: 1; }
+}

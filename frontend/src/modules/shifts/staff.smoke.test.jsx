@@ -75,6 +75,8 @@ describe('shifts staff smoke', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.clear()
+    // Görünüm seçenekleri varsayılanda kapalı; bu testlerin çoğu o düğmeleri kullandığı için açık başlatılır.
+    localStorage.setItem('yys-shifts-staff-view-options-open', 'true')
     window.history.replaceState({}, '', '/shifts?tab=staff')
     useAuthStore.setState({ user: null, token: null })
     api.get.mockImplementation(url => {
@@ -100,6 +102,18 @@ describe('shifts staff smoke', () => {
   it('StaffTab çökmeden render olur', () => {
     renderWithProviders(<StaffTab departments={[]} onPersonClick={() => {}} />)
     expect(screen.getByText('TOPLAM PERSONEL')).toBeInTheDocument()
+  })
+
+  // Sade varsayılan: görünüm ayarları ve bölüm dağılımı kapalı gelir, tablo ilk ekranda kalır.
+  it('görünüm seçenekleri varsayılanda kapalı, Görünüm düğmesiyle açılır', async () => {
+    localStorage.clear()
+    renderWithProviders(<StaffTab departments={[]} onPersonClick={() => {}} />)
+    expect(screen.queryByRole('button', { name: 'Kartlar' })).not.toBeInTheDocument()
+    expect(screen.queryByText('HAZIR GÖRÜNÜM')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Detaylı Excel' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /^Görünüm/ }))
+    expect(screen.getByRole('button', { name: 'Kartlar' })).toBeInTheDocument()
+    expect(screen.getByText('HAZIR GÖRÜNÜM')).toBeInTheDocument()
   })
 
   it('StaffDetailPanel çökmeden render olur (veri yok)', async () => {
@@ -280,6 +294,9 @@ describe('shifts staff smoke', () => {
     renderWithProviders(<StaffTab departments={[{ id: 2, name: 'Operasyon' }, { id: 3, name: 'Teknik' }]} onPersonClick={() => {}} />)
 
     expect(await screen.findByText('Ayşe Yılmaz')).toBeInTheDocument()
+    // Bölüm dağılımı kapalı gelir; "Göster" ile açılır.
+    expect(screen.queryByRole('button', { name: /Operasyon 1/ })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Göster' }))
     const departmentButton = screen.getByRole('button', { name: /Operasyon 1/ })
     fireEvent.click(departmentButton)
     expect(departmentButton).toHaveAttribute('aria-pressed', 'true')

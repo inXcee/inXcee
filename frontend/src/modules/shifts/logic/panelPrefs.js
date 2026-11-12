@@ -26,13 +26,17 @@ export const SCHEDULE_PANELS = [
 
 const TUM_ANAHTARLAR = SCHEDULE_PANELS.map(p => p.key)
 
-// Varsayılan: hepsi açık — mevcut davranış korunur, kullanıcı isterse kapatır.
+// Varsayılan SADE: yalnız yayın durumu açık gelir. On üç panelin hepsi açıkken çizelge ekranın altına
+// itiliyordu; tabloyu görmek için her açılışta kaydırmak gerekiyordu. Diğer paneller "Paneller" menüsünden
+// (tek tek ya da çalışma moduyla) açılır. Daha önce tercih kaydetmiş kullanıcının seçimi aynen korunur.
+export const SIMPLE_PANELS = ['publish']
+
 export function defaultPanelPrefs() {
-  return Object.fromEntries(TUM_ANAHTARLAR.map(k => [k, true]))
+  return Object.fromEntries(TUM_ANAHTARLAR.map(k => [k, SIMPLE_PANELS.includes(k)]))
 }
 
 // Bilinmeyen anahtarlar atılır, eksikler varsayılana düşer: eski bir kayıt ya da
-// elle bozulmuş depolama yüzünden panel kaybolmasın.
+// elle bozulmuş depolama yüzünden tercih bozulmasın.
 export function normalizePanelPrefs(value) {
   const varsayilan = defaultPanelPrefs()
   if (!value || typeof value !== 'object') return varsayilan
@@ -58,7 +62,7 @@ export function loadPanelPrefs(storage = globalThis.localStorage) {
   try {
     return normalizePanelPrefs(JSON.parse(storage?.getItem(KEY) || 'null'))
   } catch {
-    return defaultPanelPrefs()   // bozuk kayıt paneli yok etmesin
+    return defaultPanelPrefs()   // bozuk kayıt ekranı bozmasın
   }
 }
 

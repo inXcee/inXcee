@@ -12,10 +12,12 @@ vi.mock('../../../shared/api/client.js', () => ({
 }))
 
 import ScheduleTab from './ScheduleTab.jsx'
+import { setAllPanels } from '../logic/panelPrefs.js'
 
 describe('ScheduleTab smoke', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
     useAuthStore.setState({ user: { role: 'campus_manager' } })
   })
 
@@ -30,12 +32,23 @@ describe('ScheduleTab smoke', () => {
   // Asıl çizelge beş yardımcı panelin ALTINDA render ediliyordu: kullanıcı
   // çizelgeye bakarken güne tıklamak için sayfanın tepesine dönüyordu.
   it('çizelge tablosu yardımcı panellerin ÜSTÜNDE gelir', async () => {
+    localStorage.setItem('shifts.schedulePanels.v1', JSON.stringify(setAllPanels(true)))
     const { container } = renderWithProviders(<ScheduleTab departments={[]} shiftDefs={[]} onPersonClick={() => {}} />)
     await waitFor(() => expect(container.querySelector('table')).toBeTruthy())
     const tablo = container.querySelector('table')
     const gunDetayi = screen.getByText(/GÜN DETAYI/)
     // compareDocumentPosition: FOLLOWING = panel tablodan SONRA geliyor demek
     expect(tablo.compareDocumentPosition(gunDetayi) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  // Varsayılan sade: yardımcı paneller kapalı gelir, çizelge ilk ekranda görünür.
+  it('varsayılanda yardımcı paneller kapalı', async () => {
+    localStorage.removeItem('shifts.schedulePanels.v1')
+    const { container } = renderWithProviders(<ScheduleTab departments={[]} shiftDefs={[]} onPersonClick={() => {}} />)
+    await waitFor(() => expect(container.querySelector('table')).toBeTruthy())
+    expect(screen.queryByText(/GÜN DETAYI/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/HAZIRLIK DURUMU/)).not.toBeInTheDocument()
+    expect(screen.getByText(/Paneller · Sade/)).toBeInTheDocument()
   })
 
   // Uzun listede aşağı inince hangi sütunun hangi gün olduğu kayboluyordu.
